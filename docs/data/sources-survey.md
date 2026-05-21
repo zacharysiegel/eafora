@@ -2,6 +2,8 @@
 
 <!--
 Status: draft, generated 2026-05-21 from a research-agent survey. Confidence varies by source — see "Open questions / things to verify" section near the end. Several claims (rate limits, license edge cases, exact API shapes) should be confirmed against the live source before Eafora commits to ingesting from it.
+
+Update 2026-05-21: licensing claims for World Bank WDI, UN WPP, HFD, HMD, OWID, and Gapminder have been verified against live primary sources and revised in place. The deeper write-up (verbatim license text, monetization-model matrix, ingestion tiering) lives at `docs/research/data-source-licensing.md`; this document carries only the hard findings.
 -->
 
 ## Executive summary
@@ -10,17 +12,17 @@ Eafora should prioritize integrating data from five foundational sources in v1, 
 
 1. **UN World Population Prospects (WPP)** — the de facto authoritative standard for global TFR, age-structure, and demographic projections. Covers 195+ countries; updated biennially with a 1-2 year lag. Critical for establishing baseline credibility.
 2. **Eurostat** — EU's primary statistical authority. Mandated open data (CC-BY). Provides granular subnational data for all EU member states plus EEA; updated quarterly to annually depending on indicator. Highest-quality data for the EU region.
-3. **World Bank Open Data** — broad coverage (180+ countries), free API and bulk download, critical indicators (TFR, CBR, CDR, ASFR). License permits non-commercial reuse with attribution; check dataset-specific terms. Lag typically 2-3 years.
+3. **World Bank Open Data** — broad coverage (180+ countries), free API and bulk download, critical indicators (TFR, CBR, CDR, ASFR). WDI is **CC BY 4.0** (verified against the World Bank Data Catalog and the WDI dataset entry); commercial use, modification, and redistribution permitted. Lag typically 2-3 years.
 4. **Human Fertility Database (HFD)** — unparalleled high-quality fertility detail for 38 developed countries. Open access. Provides period and cohort TFR, age-specific fertility, mean age at birth, completed fertility by birth order. Ideal for deep historical and regional (subnational) breakdowns in Austria, Canada, Scandinavia, UK, US.
 5. **Our World in Data (OWID)** — re-aggregator drawing from WPP, HFD, HMD, and others. Provides calculated indicators (effective TFR, fertility intentions) and clean, versioned downloads. Fully open-licensed (CC-BY). Useful as a secondary source validation layer and for indicators OWID calculates itself.
 
 **Gaps and risks:**
-- **License complexity**: World Bank and some national statistics offices have mixed licensing (some derivatives allowed, some prohibited). Must verify per dataset before ingesting into PostgreSQL.
+- **License complexity is narrower than initially feared, but real**: World Bank WDI is cleanly CC BY 4.0. **UN WPP licensing is genuinely ambiguous** on the public web (the WPP download pages carry no explicit CC mark, and the general UN terms restrict to "personal, non-commercial use") — source the same indicators via World Bank WDI for v1, or get written confirmation from `population@un.org` before ingesting WPP directly. **HFD and HMD have a dual layer**: their *derived outputs* (TFR, life tables) are CC BY 4.0, but the *underlying NSO input data* they also host is NOT — ingest only outputs. **IPUMS is incompatible with Eafora's product model** (per-user registration, redistribution prohibited; several collections also prohibit commercial use outright).
 - **Sub-national data sparse outside developed world**: DHS and IPUMS International are vital for developing-country subnational breakdowns, but require separate ingestion pipelines.
 - **Disaggregation scarcity**: Race/ethnicity fertility data exists only for select countries (US Census, UK ONS, Australia ABS); religion-fertility intersections are severely limited (Pew Research has survey estimates only, not official stats; WRD has no fertility data). Political affiliation is essentially absent from official statistics globally.
 - **Timeliness trade-off**: Official statistics lag 18-36 months; survey data (DHS, IPUMS, GGP) lag 2-5 years or more post-collection. Eafora will need to explicitly timestamp every data point and manage user expectations about recency.
 
-Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset whether derivative aggregation (combining TFR from multiple sources into a canonical store) is permitted. Recommend contacting datahelpdesk@worldbank.org before committing to WB as v1 primary source.
+The detailed monetization-model matrix and the verbatim license-text quotes live in `docs/research/data-source-licensing.md`. The survey below carries the hard findings inline.
 
 ## Source profiles
 
@@ -40,7 +42,7 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 
 **Publication Lag:** ~18 months (2024 revision published May 2024, contains 2023 reference data where final)
 
-**License:** Public domain. UN data is generally not restricted; check https://www.un.org/en/about-us/copyright/ for specifics. Typically free reuse with citation.
+**License:** **Ambiguous on the public web — treat as blocked pending written confirmation.** The WPP download pages at `population.un.org/wpp/` do not carry an explicit CC mark. Adjacent UN sources give conflicting signals: UNdata states data "may be copied freely, duplicated and further distributed" with citation, while the general UN terms of use (`https://www.un.org/en/about-us/terms-of-use`) restrict use to "the User's personal, non-commercial use, without any right to resell or redistribute them." The general UN copyright page reserves all rights. In practice many third parties (OWID, World Bank) redistribute WPP indicators without controversy, but Eafora should not rely on that as a license. **Recommendation:** for v1, source the same indicators via World Bank WDI (clear CC BY 4.0); contact `population@un.org` for written confirmation before any direct WPP ingestion in a product with a commercial dimension.
 
 **Format:**
 - Excel (.xlsx) summary tables (country profiles, key indicators)
@@ -122,13 +124,18 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 
 **Publication Lag:** 2–3 years typical (reference year 2022 data published mid-2024, for example)
 
-**License:** Mixed. The World Bank terms (https://www.worldbank.org/en/about/legal/terms-and-conditions) state:
-- Datasets in the Data Catalog have **separate, dataset-specific terms of use** incorporated by reference
-- Some datasets allow commercial reuse and derivatives; others restrict commercial use
-- Attribution required: "The World Bank Group authorizes the use of this material subject to the terms and conditions on its website"
-- Non-commercial reuse is generally permitted; commercial aggregation requires verification per dataset
+**License:** **Creative Commons Attribution 4.0 International (CC BY 4.0)** for WDI, verified against two primary sources:
+- World Bank Data Catalog license overview (`https://datacatalog.worldbank.org/public-licenses`): "CC-BY 4.0, with the additional terms below, is the default license for all Datasets produced by the World Bank itself."
+- WDI dataset entry: "This dataset is licensed under Creative Commons Attribution 4.0."
 
-**Action Required**: Contact datahelpdesk@worldbank.org to confirm whether creating a derivative canonical database for Eafora's PostgreSQL store constitutes commercial use. Eafora's monetization model is undecided (per the initial brief: nonprofit funding, grants, sponsorships, and freemium are all in scope, but no direction is locked); some plausible models would qualify as commercial use under World Bank dataset terms, so this needs to be settled before ingesting.
+Required attribution string (per `https://www.worldbank.org/en/about/legal/terms-of-use-for-datasets`): `"The World Bank: Dataset name: Data source (if known)."`
+
+**Additional terms beyond CC BY:**
+- **No-endorsement clause**: cannot represent or imply that the World Bank sponsored, approved, or endorsed Eafora.
+- **Trademark restriction**: World Bank name, trademarks, official emblems, and logos require prior written consent (independent of the data license).
+- **Third-party data carve-out**: some indicators are sourced from third parties and may not be redistributable; per-indicator metadata in the catalog is the load-bearing source. Most core fertility indicators (e.g. `SP.DYN.TFRT.IN`) are World-Bank-produced compilations and fall under the default CC BY 4.0.
+
+API and bulk download share the same dataset license. Commercial use, modification, redistribution, and derivative aggregation into Eafora's PostgreSQL store are all permitted.
 
 **Format:**
 - **REST API** (https://data.worldbank.org/developers): JSON responses; supports country, indicator, date filtering
@@ -169,7 +176,12 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 
 **Publication Lag:** 2–3 years (e.g., 2022 data typically released mid-2025)
 
-**License:** Open data (no formal CC designation stated, but site emphasizes "open data principles"). Data is free to download and reuse; cite source as "Human Fertility Database (HFD). Max Planck Institute for Demographic Research (MPIDR) and Vienna Institute of Demography (VID)."
+**License:** **Dual layer — outputs CC BY 4.0; underlying NSO inputs NOT.** Per the HFD User Agreement:
+- HFD's *own derived estimates* (period and cohort TFR, ASFR by parity, completed cohort fertility, tempo-adjusted TFR) are released under CC BY 4.0. Commercial use permitted with attribution.
+- *Input data from national statistical offices* hosted alongside the outputs "should not be used for commercial gain or re-published in any form without the explicit permission of the data owners."
+- HFD also "discourages" redistribution of copies (request, not a CC-level restriction).
+
+**Operational rule for Eafora**: ingest only HFD's output indicators, never the raw NSO input tables. Citation: "Human Fertility Database (HFD). Max Planck Institute for Demographic Research (MPIDR) and Vienna Institute of Demography (VID)."
 
 **Format:**
 - **Excel (.xlsx) summary tables**: Key indicators (TFR, mean age, completed fertility) by country and year in single spreadsheet
@@ -210,7 +222,7 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 
 **Publication Lag:** Inherits lag from upstream sources (WPP ~18 months, HFD ~24 months, DHS 3–5 years post-survey)
 
-**License:** CC-BY 4.0 (fully open; allows commercial reuse and derivatives). Attribution: "Our World in Data, [indicator], accessed [date]."
+**License:** OWID's *own* work (charts, articles, derivative processing) is CC BY 4.0. **However**, per OWID's FAQ: "Most of the data on Our World in Data comes from third-party providers (such as the WHO, UN, and World Bank) and is subject to the license terms of those providers." OWID is **not a license-laundering shortcut** — pulling a TFR series from OWID inherits UN WPP terms (with all the WPP ambiguity above). Treat OWID as a processing/curation reference, not a primary source for license purposes. Attribution: "Our World in Data, [indicator], accessed [date]."
 
 **Format:**
 - **Chart download links** (CSV, JSON, Excel) via each chart's "Download" tab
@@ -845,7 +857,7 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 
 **Publication Lag:** 1–2 years
 
-**License:** Open data (see https://mortality.org/Public/About/contact.php for terms). Typically free; attribution required: "Human Mortality Database, [country], [date of access]."
+**License:** **Same dual-layer structure as HFD.** HMD's own derived outputs (life tables, period and cohort death rates) are under CC BY 4.0; the underlying NSO input data is NOT for commercial use without explicit per-country permission. Ingest only HMD outputs. Attribution: "Human Mortality Database, [country], [date of access]."
 
 **Format:**
 - **Excel summary tables**: Key indicators (life expectancy, infant mortality, survival rates) by country and year
@@ -903,11 +915,11 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 
 | **Source** | **License** | **Attribution Required?** | **Share-Alike Clause?** | **Allow Derivatives?** | **Allow Commercial Use?** | **Redistribution Allowed?** |
 |---|---|---|---|---|---|---|
-| **UN WPP** | Public domain / CC0 | Yes (best practice) | No | Yes | Yes | Yes |
+| **UN WPP** | **Ambiguous (verify)** | Yes | No | **Verify** | **Verify** (general UN terms say "personal, non-commercial use") | **Verify** |
 | **Eurostat** | CC-BY 4.0 | Yes (format: "Eurostat [dataset code]") | No | Yes | Yes | Yes |
-| **World Bank WDI** | Custom / Mixed | Yes ("World Bank Group authorizes...") | No | **Verify per dataset** | **Verify per dataset** (non-commercial default) | Limited |
-| **HFD** | Open data (no formal CC) | Yes ("Max Planck/VID") | No | Yes | Yes | Yes |
-| **Our World in Data** | CC-BY 4.0 | Yes ("Our World in Data, [indicator]") | No | Yes | Yes | Yes |
+| **World Bank WDI** | **CC BY 4.0** + no-endorsement + trademark restriction | Yes ("The World Bank: Dataset name: Data source") | No | Yes | Yes | Yes |
+| **HFD** | **Dual: outputs CC BY 4.0; NSO inputs NOT** | Yes ("MPIDR/VID") | No | Yes (outputs only) | Yes (outputs only) | Yes (outputs only) |
+| **Our World in Data** | OWID's own work CC BY 4.0; **upstream data inherits upstream license** | Yes ("Our World in Data, [indicator]") | No | Per upstream | Per upstream | Per upstream |
 | **DHS** | Custom | Yes ("DHS Program, [country/year]") | No | Limited (research only) | No (research/eval only) | Limited |
 | **IPUMS** | Custom (by project) | Yes (DOI required) | No | **Restricted** (varies by collection) | No (research/edu only) | No (microdata not redistributable) |
 | **CDC NCHS** | Public domain | Yes (best practice) | No | Yes | Yes | Yes |
@@ -926,7 +938,7 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 | **World Values Survey** | CC-BY-SA / Custom | Yes | **Yes (SA clause)** | Yes | Verify | Verify |
 | **ESS** | CC-BY-SA / CC-BY | Yes | Varies | Yes | Yes | With restrictions |
 | **GGP** | Custom / CC-BY | Yes | Varies | Verify | Verify | Limited |
-| **HMD** | Open data | Yes ("HMD, [country]") | No | Yes | Yes | Yes |
+| **HMD** | **Dual: outputs CC BY 4.0; NSO inputs NOT** | Yes ("HMD, [country]") | No | Yes (outputs only) | Yes (outputs only) | Yes (outputs only) |
 
 **Key column definitions:**
 - **Share-Alike Clause**: If "Yes," derivative works must use same license (restrictive for proprietary aggregation)
@@ -1100,9 +1112,7 @@ This list deliberately omits developing-region preliminary tracks; coverage and 
 
 ## Open questions / things to verify
 
-1. **World Bank WDI License — Commercial Use Clarification**
-   - Does creating a derivative PostgreSQL store with aggregated WB data for a product whose monetization model is not yet decided (and which could plausibly involve commercial use) constitute "commercial use" under WB terms?
-   - Action: Contact datahelpdesk@worldbank.org before Phase 1 ingestion; get written confirmation
+1. **~~World Bank WDI License — Commercial Use Clarification~~** **Resolved 2026-05-21**: WDI is CC BY 4.0 with no-endorsement and trademark-restriction add-ons. Commercial use, modification, and redistribution permitted. See `docs/research/data-source-licensing.md` for verbatim license quotes.
 
 2. **UN WPP Revision Cycle & Data Lag**
    - WPP revisions are biennial (next: mid-2026); how should Eafora version and republish data with each new WPP revision?
@@ -1173,9 +1183,10 @@ This list deliberately omits developing-region preliminary tracks; coverage and 
 ## Summary of key findings
 
 **Immediate actions (before Phase 1):**
-1. Clarify World Bank WDI licensing for commercial derivative use
-2. Audit licensing implications under each plausible monetization model (nonprofit, grant-funded, freemium, sponsorship, advertising) and document the constraints each model imposes on which sources Eafora can ingest and redistribute.
-3. Prototype PostgreSQL schema with provenance (per-cell source attribution, retrieval timestamp, version/revision tracking)
+1. ~~Clarify World Bank WDI licensing for commercial derivative use~~ **Resolved**: CC BY 4.0 + no-endorsement + trademark restriction. See `docs/research/data-source-licensing.md`.
+2. ~~Audit licensing implications under each plausible monetization model~~ **Resolved**: matrix at `docs/research/data-source-licensing.md`. Tier 1 (safe under any monetization model — nonprofit, grant, sponsorship, ads, freemium, paid, selling API access): World Bank WDI, OECD, Eurostat, Gapminder, US Census/CDC, and major open-license NSOs (UK ONS, Destatis, INSEE, StatCan). Tier 3 (verify before shipping): UN WPP. Tier 4 (incompatible with Eafora's product model): IPUMS, HFD/HMD raw input layer.
+3. **New action: confirm UN WPP terms in writing** (`population@un.org`) before any direct WPP ingestion, OR commit to sourcing the same indicators via World Bank WDI for v1.
+4. Prototype PostgreSQL schema with provenance (per-cell source attribution, retrieval timestamp, version/revision tracking, **per-indicator license string**).
 
 **Phase 1 achievable with:**
 - UN WPP (global TFR, CBR, CDR, ASFR, population structure) — 195 countries, 1950–present
@@ -1192,10 +1203,11 @@ This list deliberately omits developing-region preliminary tracks; coverage and 
 - Real-time data (all sources lag 18–36 months; users must manage expectations)
 - Effective TFR detail (limited to HFD, OWID calculations; not available for many countries)
 
-**License complexity:**
-- Eurostat, HFD, OWID, national offices are fully open (CC-BY or public domain) — safest for v1
-- World Bank mixed (verify dataset-by-dataset)
-- DHS, IPUMS restrictive (research/non-commercial use; microdata not redistributable)
-- Pew, WVS, ESS, GGP: check per-dataset terms; varying restrictions
+**License complexity (revised 2026-05-21):**
+- **Tier 1 (safe under any monetization model)**: World Bank WDI (CC BY 4.0 confirmed), OECD (CC BY 4.0 since July 2024), Eurostat (CC BY 4.0), Gapminder (CC BY 4.0), US Census / CDC NCHS public-use (US public domain), major open-license NSOs (ONS, Destatis, INSEE, StatCan).
+- **Tier 2 (usable but constrained)**: HFD/HMD *outputs only* (CC BY 4.0); never their NSO input layer. Our World in Data as a curation reference, not a license shortcut.
+- **Tier 3 (verify before shipping)**: UN WPP — public-web license posture is genuinely ambiguous; source via World Bank WDI for v1 or get written confirmation from UN DESA.
+- **Tier 4 (incompatible with Eafora's product model)**: IPUMS (any collection — per-user registration, redistribution prohibited, several collections also commercial-use-prohibited); HFD/HMD raw input layer.
+- DHS, Pew, WVS, ESS, GGP: per-dataset terms; varying restrictions.
 
 Before Phase 1 ingestion, the licensing findings above should be reviewed against the chosen monetization model and confirmed in writing with the source where the terms are ambiguous. This is solo work today, so "review with legal counsel" is something to schedule if and when funding or commercial monetization becomes a real path; until then, conservative interpretation of each license is the safer default.
