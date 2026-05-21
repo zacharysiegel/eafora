@@ -983,7 +983,7 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 - Census microdata (IPUMS, national census records) enable education, wealth, and regional breakdowns not available in macro-statistical publications
 - GGP provides longitudinal perspective on how fertility decisions form (adds research depth)
 
-**Deliverable:** Extended schema with family-formation indicators; subnational TFR for 30–50 countries across Africa, Asia, Latin America
+**Deliverable:** Extended schema with family-formation indicators; subnational TFR for 30–50 countries across Africa, Asia, Latin America. Also: preliminary-data freshness for the EU + Anglosphere via national-stat-office quarterly/monthly tracks (see "Preliminary vs final vital statistics" section below for the integration list and schema implications).
 
 **Timeline:** 12–16 weeks (parallel ingestion of DHS API, IPUMS extraction tool, census releases)
 
@@ -1021,6 +1021,80 @@ Priority integration risk: **World Bank licensing**. Clarify dataset-by-dataset 
 - Religion-fertility data are survey estimates, not official statistics; large confidence intervals; caveats essential
 - Political affiliation data do not exist in official statistics; WVS and similar provide attitudes only, not realized fertility-by-party
 - Subnational sourcing is geographically fragmented (no unified API); requires custom per-country scraping/ETL
+
+---
+
+## Preliminary vs final vital statistics (v2 concern)
+
+The MVP can ship using only "final" data from stable aggregator sources (UN WPP, Eurostat final, HFD, World Bank). Lag of 18–36 months from reference year to publication is structural and acceptable for v1.
+
+**Beyond v1, every credible aggregator has to confront a parallel publication track that the survey above only mentions in passing**: most national statistics offices publish *preliminary* (a.k.a. *provisional*) vital statistics on a much faster cadence than their final annual releases. To compete with academic and journalistic uses of fertility data, Eafora needs to surface preliminary data — visibly flagged as such — by v2.
+
+### How preliminary data is published (the pattern)
+
+The flow is the same everywhere, with national variations in cadence and naming:
+
+```
+Hospital / birthing center
+        │   (files birth certificate)
+        ▼
+State / regional vital records office
+        │   (aggregates, runs first-pass quality checks)
+        ▼
+National statistical office
+        │
+        ├── Preliminary / provisional track  (fast)
+        │     • Released quarterly or after ~3–6 months
+        │     • Late-filed certificates, demographic re-coding, and imputation
+        │       for missing fields are not yet finalized
+        │     • Subject to revision in subsequent releases
+        │
+        └── Final track  (slow)
+              • Released annually, ~12–24 months after reference year
+              • Audited, fully coded, late-arrival certificates incorporated
+```
+
+Both tracks come from the same underlying vital registration system; the difference is the amount of QA, imputation, and late-filing wait time the data has been through. Preliminary numbers can revise meaningfully when finals land — usually small, occasionally not.
+
+### Country specifics
+
+**United States**
+- Preliminary: CDC NCHS *Vital Statistics Rapid Release* (VSRR), quarterly, ~3–6 month lag. Includes births by state, age of mother, race/ethnicity, total counts, TFR.
+- Final: CDC NCHS *National Vital Statistics Reports* (NVSR), "Births: Final Data for <year>", annual, ~12–14 month lag. Adds long-tail fields (mother's education, prenatal-care timing, payer source, attendant at birth).
+- Both are public-domain, free, downloadable from `data.cdc.gov` and CDC WONDER.
+
+| Country | Preliminary track | Cadence / lag | Final track |
+|---|---|---|---|
+| United States | CDC NCHS VSRR (Vital Statistics Rapid Release) | Quarterly, ~3–6 mo | NVSR "Births: Final Data" annual, ~12–14 mo |
+| United Kingdom | ONS "Births in England and Wales (provisional)" | Quarterly | ONS "Births in England and Wales" annual, ~12 mo |
+| Australia | ABS "Births, Australia (provisional)" | Quarterly | Annual final, ~12 mo |
+| Canada | StatCan provisional vital statistics | Quarterly | Annual final, ~12–18 mo |
+| EU (aggregate) | Eurostat "Population on 1 January (flash)" + provisional fertility | Annual ~6 mo lag | Annual final, ~18–24 mo |
+| France | INSEE "Bilan démographique" (provisional) | Annual, ~3 mo | Annual final, ~18 mo |
+| Germany | DESTATIS "Lebendgeborene (vorläufig)" | Quarterly | Annual final, ~12–18 mo |
+| Netherlands | CBS provisional monthly counts | Monthly | Annual final, ~12 mo |
+| Sweden | SCB monthly preliminary counts | Monthly | Annual final, ~12 mo |
+| New Zealand | Stats NZ "Births and deaths (provisional)" | Quarterly | Annual final, ~12 mo |
+
+The pattern is most useful for the EU + Anglosphere (Eafora's stated initial scope). Outside those regions, vital-registration coverage is the binding constraint, and preliminary tracks are rarely meaningful.
+
+### What this means for Eafora's schema and ingestion (v2 work)
+
+1. **Schema must carry a `data_status` field per cell**, not just a freshness timestamp. Plausible enum values: `final`, `provisional`, `preliminary`, `flash_estimate`, `projection`, `imputed`, `interpolated`. The user-facing display can color-code, footnote, or filter by status; the ingestion merge layer can prefer `final` over `provisional` when both exist for the same `(country, year, indicator)` tuple. Constitution Principle II (source provenance) implies we already need this fidelity — preliminary tracks just make it operationally important.
+2. **Ingestion runs on different cadences per source.** v1 can be a manual annual run pulling from UN WPP, Eurostat final, HFD. v2 needs at least: a quarterly pull for VSRR, ONS provisional, ABS provisional, StatCan provisional; a monthly pull for CBS and SCB. The ingestion layer should track per-source cadence as configuration, not bake it into code.
+3. **The merge layer needs revision tracking.** Preliminary numbers revise when finals land. Eafora should retain old values with their original status for audit/reproducibility, not silently overwrite. This is a v2 schema decision that will be expensive to retrofit in v3.
+4. **Per-source ingestion adapters cost more than aggregator adapters.** Each national statistical office has its own portal, format, and authentication model. The v2 budget for adding preliminary-data freshness for the EU + Anglosphere is plausibly several months of part-time work, with most of the cost in writing 6–10 separate scrapers/parsers, not in building one beautiful generic one.
+
+### Sources to add for v2 freshness
+
+In rough priority order (highest user impact first):
+1. **CDC NCHS VSRR** — US is high-traffic and the freshest cadence available; quarterly VSRR pulls are cheap (CSV download).
+2. **ONS provisional births (England and Wales)** — second-largest English-speaking audience.
+3. **Eurostat flash estimates** — single source feeding the entire EU; biggest leverage per integration.
+4. **DESTATIS, INSEE, ISTAT, CBS, SCB** — picked up via Eurostat already; direct national portals add slightly faster cadence and finer subnational detail at the cost of one adapter per office.
+5. **ABS, StatCan, Stats NZ** — smaller audiences, but completes the Anglosphere story.
+
+This list deliberately omits developing-region preliminary tracks; coverage and quality there don't justify the work in v2.
 
 ---
 
