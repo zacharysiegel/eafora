@@ -1,9 +1,10 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 0.0.0 → 1.0.0 (initial ratification)
-Modified principles: N/A (initial ratification)
-Added principles:
+Version: 1.0.0 → 1.1.0 (MINOR — added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh)
+Earlier amendments:
+  - 1.0.0 (2026-05-21): initial ratification (8 principles + governance: license, versioning, boundary recognition, app code language, git workflow, tooling discipline, amendments, compliance review)
+Current principles (unchanged in 1.1.0):
   - I. Educational neutrality (NON-NEGOTIABLE)
   - II. Source provenance (NON-NEGOTIABLE)
   - III. Rust core, native UI shells
@@ -12,25 +13,17 @@ Added principles:
   - VI. CDN-delivered data, no live data API through v2
   - VII. Test-first for core logic
   - VIII. Workflow discipline
-Added governance subsections:
-  - License
-  - Versioning
-  - Boundary recognition
-  - Application code language
-  - Git workflow
-  - Tooling discipline
-  - Amendment procedure
-  - Compliance review
+Modified governance subsections in 1.1.0:
+  - Git workflow: added Branch cleanup rule
+  - Tooling discipline: registered scripts/cleanup-merged.sh
 Removed sections: N/A
 Templates requiring updates:
-  - .specify/templates/plan-template.md       (⚠ pending — Constitution Check section to align with the 8 principles below; updated in this branch if needed)
-  - .specify/templates/spec-template.md       (⚠ pending — confirm scope sections accommodate provenance and constitution-check references; updated in this branch if needed)
-  - .specify/templates/tasks-template.md      (⚠ pending — task categorization should reflect TDD-for-core-logic and explicit-over-implicit; updated in this branch if needed)
-  - .specify/templates/checklist-template.md  (⚠ pending — confirm checklist categories align with the 8 principles; updated in this branch if needed)
+  - none from this amendment (the 8 principles are unchanged; only operating rules expanded)
 Follow-up TODOs:
   - License revisit before any public source release (Governance §License)
   - Replace placeholder `eafora` crate (currently 0.0.x on crates.io) with a real crate from inside the monorepo when workspace structure lands (Governance §Versioning)
   - Confirm GitHub repo settings preserve empty commits during "rebase and merge" (the spec-kit-bootstrap PR initially merged without its marker; resolved manually by the owner this branch). If the setting drops empty commits, the marker convention is unenforceable for merged PRs.
+  - Enable GitHub's "Automatically delete head branches" setting on the eafora/eafora repo so merged PR branches are cleaned from origin without manual `git push --delete`.
 -->
 
 # Eafora Constitution
@@ -175,6 +168,8 @@ The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` f
 
 **Force-push policy.** Force-pushes to feature branches MUST use `--force-with-lease` (never plain `--force`) to avoid clobbering remote updates. Force-pushes to `master` are forbidden except for the owner's manual workflow corrections.
 
+**Branch cleanup.** When a PR has been merged into `master`, the corresponding branch MUST be deleted both from origin and locally, and stale remote-tracking refs MUST be pruned. Use `./scripts/cleanup-merged.sh <branch-name>...` (see Tooling discipline §Currently registered scripts) which handles the full sequence. Stale local branches accumulating in `git branch` and stale tracking refs accumulating in `git branch -r` are forbidden — they degrade the signal of `git log --all` and the branch-marker search. Cleanup is per-PR, not batched.
+
 **No `--amend` for cleanups.** When a commit is wrong or incomplete, add a new commit. Do not amend a published commit unless the owner explicitly requests it.
 
 **No skipping hooks.** Pre-commit hooks MUST NOT be skipped (`--no-verify` is forbidden) unless the owner explicitly requests it. Hook failures indicate real issues to fix.
@@ -189,6 +184,7 @@ The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` f
 
 **Reference scripts from the constitution or relevant spec.** When a script implements a convention, the convention's section in this document MUST name the script. Currently registered scripts:
 - `scripts/branch-init.sh` — creates a new branch from current HEAD with the canonical marker commit and pushes with upstream tracking. (See Git workflow §Branch marker.)
+- `scripts/cleanup-merged.sh` — deletes named branches from origin and locally, then prunes stale remote-tracking refs. Used after a PR has been merged into master. (See Git workflow §Branch cleanup.)
 
 **Third-party dependencies.** Adding a new third-party Rust crate, build tool, linter, test framework, CI service, or comparable tooling MUST be discussed with the owner before the dependency is committed. Defaults are inherited from Singularity (see §IV).
 
@@ -208,6 +204,6 @@ Every spec produced via `/speckit-specify` MUST include a "Constitution Check" s
 
 ---
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Ratified**: 2026-05-21
 **Last amended**: 2026-05-21
