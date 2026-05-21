@@ -1,0 +1,11 @@
+# Per-machine Claude Code settings (allowlist, etc.)
+.claude/settings.local.json
+
+# Rust build output
+target/
+
+# IDE
+.idea/
+
+# macOS
+.DS_Store

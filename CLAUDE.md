@@ -124,3 +124,8 @@ Notable items relevant here:
 - Never use `git add -A` or `git add .`. Stage by explicit path.
 - When implementing a planned change, report deviations from the plan
   afterward and update the plan doc with notes about the deviations.
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
