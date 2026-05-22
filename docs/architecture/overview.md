@@ -459,8 +459,8 @@ iOS signing: App Store Connect API key (.p8) stored in repo secrets, decoded in 
 
 ### Domain and email
 
-- **Domain**: `eafora.app` from Namecheap or Porkbun; ~$11–15/year (`.app` TLD requires HTTPS, which we'd have anyway).
-- **Email**: registrar-provided forwarding (`hello@eafora.app` → personal inbox), free; outbound via Sendgrid/Postmark free tier when app-to-user emails are needed (probably not in v1–v2).
+- **Domain**: `eafora.org` (already chosen). `.org` is traditionally for nonprofit / educational / research-shaped projects, which fits the stated mission; pricing ~$8–12/year at standard registrars (Namecheap, Porkbun). `.org` does not carry the `.app` TLD's HSTS-preload requirement, but Eafora will run HTTPS regardless.
+- **Email**: registrar-provided forwarding (`hello@eafora.org` → personal inbox), free; outbound via Sendgrid/Postmark free tier when app-to-user emails are needed (probably not in v1–v2).
 
 ## Cost estimate
 
