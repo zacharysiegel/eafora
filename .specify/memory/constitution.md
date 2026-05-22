@@ -1,14 +1,12 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 1.1.0 → 1.2.0 (MINOR — replaced Git workflow §Merge strategy clause: PRs MUST be merged via local rebase + push, never the GitHub UI button which drops empty commits and would lose the marker convention; registered scripts/pr-merge.sh)
-
-NOTE ON VERSION NUMBERING: at the time this branch was authored, two other constitution amendments were open (constitution-statistic-rename → 1.2.0 terminology rename; constitution-drop-qa-stacked → 1.2.1 Q&A removal). Whichever lands first in master takes the lower numbers; this amendment will rebase to whatever the next version is. Owner can re-number as needed at merge time.
-
+Version: 1.2.0 → 1.3.0 (MINOR — terminology rename: the user-facing concept previously called an "indicator" is now called a "statistic" throughout the constitution. The publisher-side terminology (World Development Indicators, etc.) is unchanged because it's quoted publisher language, not Eafora's voice.)
 Earlier amendments:
   - 1.0.0 (2026-05-21): initial ratification (8 principles + governance: license, versioning, boundary recognition, app code language, git workflow, tooling discipline, amendments, compliance review)
   - 1.1.0 (2026-05-21): added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh
-Current principles (unchanged in this amendment):
+  - 1.2.0 (2026-05-23): replaced Git workflow §Merge strategy clause to mandate local rebase + push (GitHub UI rebase-merge drops empty commits and would lose the marker convention); registered scripts/pr-merge.sh
+Current principles (unchanged in 1.3.0):
   - I. Educational neutrality (NON-NEGOTIABLE)
   - II. Source provenance (NON-NEGOTIABLE)
   - III. Rust core, native UI shells
@@ -17,18 +15,21 @@ Current principles (unchanged in this amendment):
   - VI. CDN-delivered data, no live data API through v2
   - VII. Test-first for core logic
   - VIII. Workflow discipline
-Modified governance subsections:
-  - Git workflow: §Merge strategy clause replaced. The earlier text said GitHub repo settings MUST preserve empty commits during rebase-merge, which is unworkable — verified 2026-05-23 that GitHub's rebase-merge UI drops empty commits regardless of repo settings. The replacement clause mandates local-rebase + push for every merge.
-  - Tooling discipline: registered `scripts/pr-merge.sh`.
+Modified principle prose in 1.3.0:
+  - I: "indicator definitions" → "statistic definitions"
+  - III: "indicator math" → "statistic math"
+  - VI: "Indicator-data artifacts" → "Statistic-data artifacts"
+  - VII: "indicator math" → "statistic math"
 Removed sections: N/A
 Templates requiring updates:
-  - none from this amendment (the 8 principles are unchanged; only operating rules expanded)
+  - none from this amendment (terminology change does not invalidate existing templates)
 Resolved follow-up TODOs (from prior SYNC IMPACT REPORTs):
-  - "Confirm GitHub repo settings preserve empty commits during rebase and merge" → RESOLVED: they don't, regardless of settings; addressed by this amendment's manual-merge requirement.
-  - "Enable GitHub's 'Automatically delete head branches' setting" → RESOLVED: enabled by owner 2026-05-23.
+  - "Confirm GitHub repo settings preserve empty commits during rebase and merge" → RESOLVED in v1.2.0
+  - "Enable GitHub's 'Automatically delete head branches' setting" → RESOLVED in v1.2.0
 Follow-up TODOs (still pending):
   - License revisit before any public source release (Governance §License)
   - Replace placeholder `eafora` crate (currently 0.0.x on crates.io) with a real crate from inside the monorepo when workspace structure lands (Governance §Versioning)
+  - Propagate the indicator → statistic rename across `docs/data/sources-survey.md`, `docs/research/data-source-licensing.md`, `CLAUDE.md`, and `docs/architecture/overview.md` line 29. Quoted publisher terminology (e.g. "World Development Indicators") stays as-is. Tracked in the docs-statistic-rename branch.
 -->
 
 # Eafora Constitution
@@ -37,7 +38,7 @@ Follow-up TODOs (still pending):
 
 ### I. Educational neutrality (NON-NEGOTIABLE)
 
-Eafora is a data visualization and aggregation tool. The product MUST NOT contain editorial copy, opinion, or advocacy. UI text MUST be limited to labels, units, source attribution, and standardized indicator definitions. Users learn by exploring data and following links to primary sources (including, but not limited to, Wikipedia and the original publishing source for each datum).
+Eafora is a data visualization and aggregation tool. The product MUST NOT contain editorial copy, opinion, or advocacy. UI text MUST be limited to labels, units, source attribution, and standardized statistic definitions. Users learn by exploring data and following links to primary sources (including, but not limited to, Wikipedia and the original publishing source for each datum).
 
 **Rationale**: Aligns with the stated educational and research mission; protects funding optionality; reduces app-store and PR risk associated with politically charged content.
 
@@ -49,7 +50,7 @@ Every numeric value displayed in the UI MUST be traceable to a named source, an 
 
 ### III. Rust core, native UI shells
 
-Application logic MUST live in Rust crates. This includes — but is not limited to — data models, indicator math, projection geometry, hit-testing, ingestion, normalization, artifact building, and the WebGPU/Metal/Vulkan rendering pipeline (`wgpu`).
+Application logic MUST live in Rust crates. This includes — but is not limited to — data models, statistic math, projection geometry, hit-testing, ingestion, normalization, artifact building, and the WebGPU/Metal/Vulkan rendering pipeline (`wgpu`).
 
 UI MUST be platform-native: Leptos with WASM on the web, SwiftUI on iOS, Jetpack Compose on Android. The Rust core is consumed by clients via WASM bindings on the web and via UniFFI on iOS and Android. Cross-platform UI frameworks that defeat the native-quality goal (e.g. Flutter, React Native, Dioxus-everywhere) MUST NOT be introduced.
 
@@ -85,7 +86,7 @@ RPC frameworks (gRPC, tonic, GraphQL, JSON-RPC frameworks, Cap'n Proto, Leptos `
 
 ### VI. CDN-delivered data, no live data API through v2
 
-Through v2, data MUST be delivered to clients as versioned, immutable artifacts hosted on a CDN. Geometry artifacts MUST use **PMTiles**. Indicator-data artifacts MUST use **SQLite**. Both MUST be produced by a server-side ingestion pipeline (Rust, scheduled or manual through v1) that writes to a canonical PostgreSQL store and emits the artifacts to the CDN with content-hashed filenames.
+Through v2, data MUST be delivered to clients as versioned, immutable artifacts hosted on a CDN. Geometry artifacts MUST use **PMTiles**. Statistic-data artifacts MUST use **SQLite**. Both MUST be produced by a server-side ingestion pipeline (Rust, scheduled or manual through v1) that writes to a canonical PostgreSQL store and emits the artifacts to the CDN with content-hashed filenames.
 
 Through v2, clients MUST NOT depend on a live application server for hot-path data. A live API for user contributions, interactive search, semantic Q&A, or other online-only features MAY be introduced from v3+ via its own spec, **with no obligation to also support those features without a live server**. Offline operability is a side effect of the v1-v2 architecture, not a product guarantee — it MUST NOT be promised in marketing copy or used to constrain v3+ design.
 
@@ -93,7 +94,7 @@ Through v2, clients MUST NOT depend on a live application server for hot-path da
 
 ### VII. Test-first for core logic
 
-The Rust core MUST follow test-first development for: indicator math, projection math, hit-testing, ingestion normalization, source-merge conflict resolution, artifact diffing, and error mapping. Tests MUST be written and reviewed before implementation; the Red-Green-Refactor cycle MUST be respected.
+The Rust core MUST follow test-first development for: statistic math, projection math, hit-testing, ingestion normalization, source-merge conflict resolution, artifact diffing, and error mapping. Tests MUST be written and reviewed before implementation; the Red-Green-Refactor cycle MUST be respected.
 
 UI shell code (Leptos components, SwiftUI views, Jetpack Compose composables, wgpu shaders, layout code, animation curves) is exempt from strict TDD. UI code SHOULD have integration or visual-regression tests where they add value, but is not held to the test-first discipline.
 
@@ -210,6 +211,6 @@ Every spec produced via `/speckit-specify` MUST include a "Constitution Check" s
 
 ---
 
-**Version**: 1.2.0
+**Version**: 1.3.0
 **Ratified**: 2026-05-21
 **Last amended**: 2026-05-23
