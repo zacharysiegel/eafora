@@ -10,9 +10,9 @@ Several specifics — exact pricing, current GitHub Actions free-tier limits, Ap
 
 This is the architecture **overview**: the cross-cutting decisions that bind the four segments of Eafora (Rust core, ingestion + canonical store, web client, native mobile clients) into one coherent system. It does not double as a per-segment implementation plan. Each of the segments below gets its own implementation document in a subsequent branch:
 
-- `docs/architecture/web-client.md`
-- `docs/architecture/ios-client.md`
-- `docs/architecture/android-client.md`
+- `docs/architecture/client-web.md`
+- `docs/architecture/client-ios.md`
+- `docs/architecture/client-android.md`
 - `docs/architecture/ingestion.md`
 
 Those follow-up documents inherit the contracts established here. Conflicts between this document and a segment plan are resolved by amending this document first.
@@ -292,7 +292,7 @@ Eafora uses **UDL** (the declarative `.udl` file form). Pros: separation between
 
 ## Web client (overview)
 
-Detailed plan: `docs/architecture/web-client.md` (follow-up branch). Key contracts established here:
+Detailed plan: `docs/architecture/client-web.md` (follow-up branch). Key contracts established here:
 
 - **Framework**: Leptos, built with `cargo-leptos`. The `web/` workspace member contains the Leptos app.
 - **Rendering modes**: hybrid. Country detail pages (e.g., `/country/jp`) are SSG'd at build time so search engines see real content. The map view is CSR — the wgpu canvas can't be SSR'd, and we don't try.
@@ -304,7 +304,7 @@ Detailed plan: `docs/architecture/web-client.md` (follow-up branch). Key contrac
 
 ## iOS client (overview)
 
-Detailed plan: `docs/architecture/ios-client.md` (follow-up branch). Key contracts:
+Detailed plan: `docs/architecture/client-ios.md` (follow-up branch). Key contracts:
 
 - **UI**: SwiftUI.
 - **Map surface**: `MTKView` wrapped in `UIViewRepresentable`. Delegate methods (`drawableSizeWillChange`, `draw(in:)`) drive the render loop on the main thread; heavy compute is offloaded to background tasks before the next frame.
@@ -315,7 +315,7 @@ Detailed plan: `docs/architecture/ios-client.md` (follow-up branch). Key contrac
 
 ## Android client (overview)
 
-Detailed plan: `docs/architecture/android-client.md` (follow-up branch). Key contracts:
+Detailed plan: `docs/architecture/client-android.md` (follow-up branch). Key contracts:
 
 - **UI**: Jetpack Compose.
 - **Map surface**: `SurfaceView` wrapped in `AndroidView`. The render loop runs on a dedicated thread (not Choreographer-on-main) to avoid main-thread jank from GPU command encoding. Surface lifecycle (rotation, pause/resume) is explicitly handled via `SurfaceHolder.Callback`.
@@ -486,7 +486,7 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 1. **PMTiles + SQLite in WASM, range-request shape.** sql.js-httpvfs works in browsers but introduces a second SQLite runtime alongside our Rust SQLite. Better long-term: Rust-side SQLite with HTTP range requests (`sqlx`-based, custom `Connection` impl). Worth verifying this is mature enough by v1 build time, or accepting full-download-then-IndexedDB until it is.
 2. **Map projection final pick.** Robinson is the default proposal; Winkel Tripel and Natural Earth are alternates. Final pick is fine to defer to the web client implementation plan.
 3. **Postgres deployment for v2.** Neon free tier is plausibly enough; if not, $5–10/mo VPS or Neon paid tier. Deferred until artifact-build cadence pushes us past free-tier limits.
-4. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/web-client.md` follow-up.
+4. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
 5. **Animations API.** Reuse Singularity's `LockedSwitch`-style state-machine pattern in `core::geometry::animation`, or invent something new? Singularity's pattern is fine for stage transitions but the camera animation here is continuous, not discrete; probably a different shape.
 6. **i18n for indicator names and country names.** Native i18n stays in the platform shells; but the source data has names in many languages and we need a canonical fallback. Likely English in `core` with platform shells overriding; deferred to per-platform plans.
 7. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for it but not wired. The shape of the v3 API (auth, schemas, rate-limiting) needs its own spec when the time comes.
@@ -513,9 +513,9 @@ These are claims in this document where I'm working from research-agent output w
 
 Subsequent branches that depend on this overview:
 
-- `docs-architecture-web-client` — full Leptos + WASM + cargo-leptos plan, CSS approach, component layout, build optimizations, IndexedDB cache lifecycle.
-- `docs-architecture-ios-client` — full SwiftUI + UniFFI + xcframework plan, MTKView details, App Store submission walkthrough.
-- `docs-architecture-android-client` — full Compose + UniFFI + cargo-ndk plan, SurfaceView lifecycle, Play Store submission walkthrough.
+- `docs-architecture-client-web` — full Leptos + WASM + cargo-leptos plan, CSS approach, component layout, build optimizations, IndexedDB cache lifecycle.
+- `docs-architecture-client-ios` — full SwiftUI + UniFFI + xcframework plan, MTKView details, App Store submission walkthrough.
+- `docs-architecture-client-android` — full Compose + UniFFI + cargo-ndk plan, SurfaceView lifecycle, Play Store submission walkthrough.
 - `docs-architecture-ingestion` — full Postgres schema, per-source adapters, artifact builder, scheduling, license tracking.
 - `docs-product-plan` — vision, audience, monetization options, scope phases.
 - `docs-claude-md-rewrite` — fold the locked decisions into `CLAUDE.md` and remove the stale next-steps section.
