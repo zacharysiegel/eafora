@@ -138,7 +138,7 @@ core/src/
 ├── error.rs                # uses minimer; per-feature error variants live in their feature module
 ├── geometry/               # vector polygon model, projection math, hit-testing
 │   ├── mod.rs              # `mod ...; pub use ...;` only
-│   ├── projection.rs       # Robinson projection (default); Laskowski tri-optimal optional
+│   ├── projection.rs       # Robinson (v1 ships only this); Laskowski tri-optimal as a post-v1 user-toggleable alternate
 │   ├── polygon.rs          # boundary representation, simplification
 │   └── hit_test.rs         # smoothed-scale-without-hitbox-growth math
 ├── statistic/              # statistic types (TFR, CBR, CDR, etc.), units, time series, parsing
@@ -187,7 +187,7 @@ Practical rules:
 4. **Async is supported but cancellation is not.** UniFFI added async support around 2023 but cancellation tokens are still missing as of early 2026. The core's async functions must self-cancel based on a polled flag if cancellation matters.
 5. **Vectors and maps cross the boundary, but expensively.** Returning a `Vec<CountryStatistic>` of 200 entries is fine; doing it 200 times per frame is not. Design the API for batch calls (one call returning all statistics for a viewport, not 200 calls returning one each). FFI overhead is roughly 1–10 µs per call before payload marshaling.
 
-The `ffi::wasm` and `ffi::uniffi` submodules contain the *only* code that knows about a binding tool. They wrap concrete `core::*` types in binding-specific facade types where the binding tool requires it (e.g. an `IndicatorSetWeb` wrapping an `IndicatorSet`). This isolation means the core itself stays binding-agnostic and independently testable.
+The `ffi::wasm` and `ffi::uniffi` submodules contain the *only* code that knows about a binding tool. They wrap concrete `core::*` types in binding-specific facade types where the binding tool requires it (e.g. an `StatisticSetWeb` wrapping an `StatisticSet`). This isolation means the core itself stays binding-agnostic and independently testable.
 
 ### Error handling
 
@@ -196,9 +196,9 @@ Per the constitution: **minimer**. The core uses `minimer::Error` (or whatever t
 ```rust
 // core/src/statistic/error.rs (sketch)
 #[derive(Debug)]
-pub enum IndicatorError {
+pub enum StatisticError {
     InvalidIso(String),
-    UnknownIndicator(String),
+    UnknownStatistic(String),
     MissingYear { country: String, year: u32 },
 }
 
@@ -223,7 +223,7 @@ To keep the core code agnostic, the `core` crate is `#[cfg]`-aware where it must
 
 The `core::geometry` module is the math heart of the renderer. Concretely:
 
-- **Projection**: Robinson is the default (humped projection per the user's preference; widely recognized; pleasant tradeoff between equal-area and conformal). Laskowski tri-optimal (Laskowski 1991) is available as an option — a polynomial compromise projection minimizing a weighted blend of Airy, Tissot, and Chebyshev distortion. Less common in mainstream tooling than Robinson or Winkel Tripel, but the user prefers it on aesthetic and distortion-balance grounds. Both are pure-function `(longitude, latitude) → (x, y)` mappings with closed-form expressions; no GIS library required.
+- **Projection**: **v1 ships Robinson only.** Robinson is humped (per the user's preference), widely recognized, and a pleasant tradeoff between equal-area and conformal. **Post-v1**, Laskowski tri-optimal (Laskowski 1991) — a polynomial compromise projection minimizing a weighted blend of Airy, Tissot, and Chebyshev distortion — gets added as a user-toggleable alternate. Less common in mainstream tooling than Robinson or Winkel Tripel, but the user prefers it on aesthetic and distortion-balance grounds. Both are pure-function `(longitude, latitude) → (x, y)` mappings with closed-form expressions; no GIS library required.
 - **Polygon representation**: Simplified to a few zoom levels at build time and packed into the PMTiles artifact. The renderer streams tiles as the user pans/zooms.
 - **Hit-testing**: A spatial index (R-tree or interval-tree) over the country polygons, queried at viewport-space resolution. **Critical UX rule**: the hit-test geometry uses the *unscaled* country polygon. The hover-scale effect only changes the rendering transform, never the hit-test — this is the user-stated requirement that off-the-shelf map SDKs typically violate.
 - **Animation**: Zoom-to-country uses a cubic-easing time curve; the camera target is the country's polygon centroid; the camera scale is computed from the polygon's bounding box plus a margin. Implemented as a `core::geometry::animation::Camera` state machine the renderer polls each frame.
@@ -256,7 +256,7 @@ Not everything goes through the Rust core. The cost of FFI calls plus the limita
 | Concern | Where it lives | Why |
 |---|---|---|
 | Geometry, projection, hit-testing | Rust core | Hot, math-heavy, identical across platforms |
-| Indicator math (color mapping, time-series interpolation, derivation) | Rust core | Same |
+| Statistic math (color mapping, time-series interpolation, derivation) | Rust core | Same |
 | wgpu rendering pipeline | Rust core | Whole point of the architecture |
 | Artifact parsing (PMTiles, SQLite reads) | Rust core | One source of truth for the data format |
 | HTTP fetches | Each platform's native HTTP stack | Battle-tested; integrates with platform caching, proxies, certs; async ergonomics are better; FFI overhead dominates over the I/O time anyway |
@@ -400,7 +400,7 @@ Properties:
 
 ### Projection
 
-Robinson is the default. Its parameters are tabulated; the projection is a closed-form interpolation between known table points. We implement it ourselves in `core::geometry::projection` (~50 lines). Laskowski tri-optimal is offered as a user-selectable alternative — a polynomial whose coefficients come straight from Laskowski's 1991 paper; implementing it is similar in size to Robinson. A one-line config flip in the renderer toggles between them.
+**v1 ships Robinson only.** Robinson's parameters are tabulated; the projection is a closed-form interpolation between known table points. We implement it ourselves in `core::geometry::projection` (~50 lines). **Post-v1**, Laskowski tri-optimal lands as a user-toggleable alternate — a polynomial whose coefficients come straight from Laskowski's 1991 paper; implementing it is similar in size to Robinson. A one-line config flip in the renderer toggles between them once both ship.
 
 ### Hover scaling
 
@@ -489,7 +489,7 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 ## Open questions
 
 1. **PMTiles + SQLite in WASM, range-request shape.** sql.js-httpvfs works in browsers but introduces a second SQLite runtime alongside our Rust SQLite. Better long-term: Rust-side SQLite with HTTP range requests (`sqlx`-based, custom `Connection` impl). Worth verifying this is mature enough by v1 build time, or accepting full-download-then-IndexedDB until it is.
-2. **Map projection final pick.** Robinson is the default proposal; Laskowski tri-optimal is the user-preferred alternate. Final pick is fine to defer to the web client implementation plan.
+2. **Map projection v1 vs post-v1.** v1 ships Robinson only. Laskowski tri-optimal is the user-preferred post-v1 alternate. Final pick (or both?) is fine to defer to the web client implementation plan.
 3. **Postgres deployment for v2.** Neon free tier is plausibly enough; if not, $5–10/mo VPS or Neon paid tier. Deferred until artifact-build cadence pushes us past free-tier limits.
 4. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
 5. **Animations API.** Reuse Singularity's `LockedSwitch`-style state-machine pattern in `core::geometry::animation`, or invent something new? Singularity's pattern is fine for stage transitions but the camera animation here is continuous, not discrete; probably a different shape.
