@@ -248,5 +248,5 @@ Subsequent branches that depend on or extend this document:
 - `docs-product-funder-shortlist` — research a concrete list of named funders (pro-natal foundations, family-policy think tanks, "civic data" infrastructure funders) with each one's grant size, fit, and application cycle. Distinct from this strategic doc; takes real work to get right.
 - `docs-product-pitch-deck` — when there's a real funder conversation pending, distill this document into a 6–10 slide deck plus a 2-page proposal. Defer until needed.
 - `docs-product-launch-plan` — the v1.5 public-launch plan: who to contact, what to post where, what to have ready. Defer until v1.5 is built.
-- `docs-architecture-{web,ios,android,ingestion}-client` — the per-segment architecture plans flagged in `docs/architecture/overview.md`.
+- `docs-architecture-client-{android,ios,web}` and `docs-architecture-ingestion` — the per-segment architecture plans flagged in `docs/architecture/overview.md`.
 - `docs-claude-md-rewrite` — fold locked decisions into `CLAUDE.md`.
