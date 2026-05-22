@@ -295,6 +295,20 @@ For wasm-bindgen the facade is similar but uses `#[wasm_bindgen]` and JS-friendl
 
 Eafora uses **UDL** (the declarative `.udl` file form). Pros: separation between Rust impl and FFI contract; easier IDE navigation; better error messages on schema violations; community norm (1Password, Mozilla AppServices). Proc-macros are slightly more flexible for generics (which we don't use) and inline-with-code. UDL is the boring-correct choice.
 
+## Per-platform v1 build vs iteration scope
+
+All three platform shells (web, iOS, Android) are **scaffolded with their full build toolchain from day one** — workspace member, FFI binding consumption, signing config, CI workflow, "hello world" surface that calls into the Rust core and renders something. The reasons are the same as for iOS earlier in this document: forcing the Rust core's API to be honest with three consumers from the start, validating the build pipeline before it's gnarly to fix, and avoiding cross-platform surprises late.
+
+**v1 iteration scope is narrower:**
+
+| Platform | Build toolchain | Iteration in v1 |
+|---|---|---|
+| Web | Live, end-to-end (cargo-leptos + wasm-bindgen + Cloudflare Pages deploy) | Yes — primary surface |
+| iOS | Live, end-to-end (xcframework + Xcode + TestFlight) | Yes — second surface, lags web |
+| Android | Live, end-to-end (cargo-ndk → AAR + Gradle + Play Console internal track) | Minimal — keep the hello-world building, do not actively iterate features until web + iOS stabilize |
+
+In other words: Android's full toolchain is on the critical path for v1's "complete and working" definition; Android's *user-facing features* are not. This avoids the trap of writing a lot of Android-touching architecture that only gets validated in v2.
+
 ## Web client (overview)
 
 Detailed plan: `docs/architecture/client-web.md` (follow-up branch). Key contracts established here:
