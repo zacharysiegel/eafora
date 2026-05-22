@@ -123,7 +123,7 @@ Notes on this shape:
 - `ingestion/` is a separate crate that depends on `core` and adds the actix-web router, sqlx queries, source adapters, and artifact builders. Splitting it from `core` means clients don't pull in actix-web or sqlx into their WASM/UniFFI builds.
 - `ios/` and `android/` are not Cargo crates — they're native projects that consume artifacts produced by `core`. The `core` crate's UniFFI build emits an `xcframework` and an AAR that these projects link against.
 - `web/` is a Cargo workspace member because cargo-leptos drives it. It depends on `core` directly and adds Leptos components, routing, and the wasm-bindgen adapter.
-- `data/` is gitignored. The bundled-fallback artifacts (small downsampled PMTiles + SQLite shipped inside each app build for instant first-launch UX) are generated at build time by `scripts/build-fallback.sh`, which fetches the latest manifest from the CDN, downloads the latest full artifact, downsamples it (drop sub-national geometry, keep only the most recent year of indicator values), and stages the results into `data/` plus the per-platform resource directories (`ios/EaforaApp/Resources/`, `android/app/src/main/assets/`, `web/static/`). Reproducibility for any given commit comes from the CDN's content-addressed object store, not from `git`.
+- `data/` is gitignored. The bundled-fallback artifacts (small downsampled PMTiles + SQLite shipped inside each app build for instant first-launch UX) are generated at build time by `scripts/build-fallback.sh`, which fetches the latest manifest from the CDN, downloads the latest full artifact, downsamples it (drop sub-national geometry, keep only the most recent year of statistic values), and stages the results into `data/` plus the per-platform resource directories (`ios/EaforaApp/Resources/`, `android/app/src/main/assets/`, `web/static/`). Reproducibility for any given commit comes from the CDN's content-addressed object store, not from `git`.
 - Per the constitution's Singularity convention parity, `compose.yaml` / `dbmate.sh` / `setup.sh` / `secrets.yaml` mirror Singularity's setup verbatim.
 
 ## Rust core
@@ -141,7 +141,7 @@ core/src/
 │   ├── projection.rs       # Robinson projection (default); Laskowski tri-optimal optional
 │   ├── polygon.rs          # boundary representation, simplification
 │   └── hit_test.rs         # smoothed-scale-without-hitbox-growth math
-├── indicator/              # indicator types, units, time series, parsing
+├── statistic/              # statistic types (TFR, CBR, CDR, etc.), units, time series, parsing
 │   ├── mod.rs
 │   ├── tfr.rs
 │   ├── time_series.rs
@@ -185,7 +185,7 @@ Practical rules:
 2. **No trait objects or `dyn Trait` exposed.** Same reason.
 3. **All errors are concrete enums implementing minimer's traits**, with payload data limited to strings and primitives. Both UniFFI and wasm-bindgen marshal these cleanly.
 4. **Async is supported but cancellation is not.** UniFFI added async support around 2023 but cancellation tokens are still missing as of early 2026. The core's async functions must self-cancel based on a polled flag if cancellation matters.
-5. **Vectors and maps cross the boundary, but expensively.** Returning a `Vec<CountryIndicator>` of 200 entries is fine; doing it 200 times per frame is not. Design the API for batch calls (one call returning all indicators for a viewport, not 200 calls returning one each). FFI overhead is roughly 1–10 µs per call before payload marshaling.
+5. **Vectors and maps cross the boundary, but expensively.** Returning a `Vec<CountryStatistic>` of 200 entries is fine; doing it 200 times per frame is not. Design the API for batch calls (one call returning all statistics for a viewport, not 200 calls returning one each). FFI overhead is roughly 1–10 µs per call before payload marshaling.
 
 The `ffi::wasm` and `ffi::uniffi` submodules contain the *only* code that knows about a binding tool. They wrap concrete `core::*` types in binding-specific facade types where the binding tool requires it (e.g. an `IndicatorSetWeb` wrapping an `IndicatorSet`). This isolation means the core itself stays binding-agnostic and independently testable.
 
@@ -194,7 +194,7 @@ The `ffi::wasm` and `ffi::uniffi` submodules contain the *only* code that knows 
 Per the constitution: **minimer**. The core uses `minimer::Error` (or whatever the published name turns out to be — the crate is the user's published generalization of Singularity's in-house `AppError`). Per-feature modules define their own concrete error variants where useful for matching:
 
 ```rust
-// core/src/indicator/error.rs (sketch)
+// core/src/statistic/error.rs (sketch)
 #[derive(Debug)]
 pub enum IndicatorError {
     InvalidIso(String),
@@ -235,11 +235,11 @@ The core owns a small set of wgpu render pipelines, all written in WGSL:
 | Pipeline | Purpose |
 |---|---|
 | `borders` | Country boundary lines, anti-aliased, single-pixel thin |
-| `fills` | Solid country fills, color computed per-country from the indicator value (red→blue gradient for TFR) |
+| `fills` | Solid country fills, color computed per-country from the statistic value (red→blue gradient for TFR) |
 | `hover_scale` | Per-country scale transform applied at draw time; outputs to an offscreen buffer composited atop |
 | `country_label` | Small pinned text, rendered via msdf textures |
 
-Shaders are simple — the data is small (200 countries, simplified polygons), so we don't need indirect draws or compute. The core exposes a single `render(viewport, indicator_state) -> CommandBuffer` function the platform shells call from their render loop.
+Shaders are simple — the data is small (200 countries, simplified polygons), so we don't need indirect draws or compute. The core exposes a single `render(viewport, statistic_state) -> CommandBuffer` function the platform shells call from their render loop.
 
 The `core::render::surface` adapter receives a platform-agnostic surface handle (a `*mut c_void` plus dimensions) and creates a `wgpu::Surface` from it. Each platform shell does the small bit of glue to provide that handle:
 
@@ -289,7 +289,7 @@ impl EaforaCore {
 }
 ```
 
-For wasm-bindgen the facade is similar but uses `#[wasm_bindgen]` and JS-friendly types (`Vec<u8>` instead of `String` for binary payloads, `JsValue` for fallible returns). The two facades wrap the same internal types from `core::indicator`, `core::geometry`, etc. — the duplication is in the *binding plumbing*, not the *logic*.
+For wasm-bindgen the facade is similar but uses `#[wasm_bindgen]` and JS-friendly types (`Vec<u8>` instead of `String` for binary payloads, `JsValue` for fallible returns). The two facades wrap the same internal types from `core::statistic`, `core::geometry`, etc. — the duplication is in the *binding plumbing*, not the *logic*.
 
 ### UDL vs proc-macro for UniFFI
 
@@ -336,12 +336,12 @@ Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contract
 - **Per-source adapters**: one Rust module per source. Each adapter exposes a `pub async fn fetch_and_normalize(pool: &PgPool) -> Result<IngestReport, AppError>` that reqwest-fetches, parses, and writes to the canonical store. Sources are independent — adding a new one is one new module, not a refactor.
 - **Canonical store**: PostgreSQL. Schema sketch:
   - `country (iso3, name, region, ...)`
-  - `indicator (id, name, units, definition, ...)` — TFR, CBR, CDR, etc.
+  - `statistic (id, name, units, definition, ...)` — TFR, CBR, CDR, etc.
   - `source (id, name, url, license, license_url, ...)` — every row in the licensing matrix from `docs/research/data-source-licensing.md` is one record here
-  - `indicator_value (country_iso3, indicator_id, year, value, source_id, retrieved_at, data_status)` — the fact table; one row per (country, indicator, year, source). When multiple sources publish the same datum, all rows are kept; the merge is done at artifact-build time per a documented preference order.
+  - `statistic_value (country_iso3, statistic_id, year, value, source_id, retrieved_at, data_status)` — the fact table; one row per (country, statistic, year, source). When multiple sources publish the same datum, all rows are kept; the merge is done at artifact-build time per a documented preference order.
   - `data_status` is an enum: `final`, `provisional`, `preliminary`, `flash_estimate`, `projection`, `imputed`, `interpolated` (matches the `docs/data/sources-survey.md` Preliminary section).
   - `artifact_version (id, manifest_url, built_at, source_versions_jsonb)` for reproducibility.
-- **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `pmtiles` file (geometry) + a `sqlite` file (indicator data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
+- **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `pmtiles` file (geometry) + a `sqlite` file (statistic data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
 - **Schedule**: through v1, manual invocation. v2 moves to a scheduled GitHub Actions workflow (`schedule: cron: '0 6 * * 1'` — weekly Mondays). The same workflow runs the binary against a managed Postgres, builds artifacts, uploads to CDN, updates `manifest.json`.
 
 ## Artifact distribution
@@ -372,7 +372,7 @@ manifest.json:
     "size_bytes": 4380000,
     "sha256": "..."
   },
-  "indicators": {
+  "statistics": {
     "tfr": { "url": "/data/tfr-ab12cd34.sqlite", "size_bytes": 89000, "sha256": "..." }
   },
   "source_versions": {
@@ -388,7 +388,7 @@ Properties:
 - Filenames are content-hashed → `Cache-Control: public, max-age=31536000, immutable`. Repeat fetches are free.
 - `manifest.json` itself is short-cached (e.g., `max-age=300`). Clients fetch the manifest on launch, compare versions against their local cache, fetch only what changed.
 - Brotli compression at the CDN; SQLite typically compresses 70%+, PMTiles less (already compressed internally).
-- Per-indicator SQLite files mean adding indicators in v2 doesn't bloat v1's payload.
+- Per-statistic SQLite files mean adding statistics in v2 doesn't bloat v1's payload.
 
 ### Client cache strategy
 
@@ -493,7 +493,7 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 3. **Postgres deployment for v2.** Neon free tier is plausibly enough; if not, $5–10/mo VPS or Neon paid tier. Deferred until artifact-build cadence pushes us past free-tier limits.
 4. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
 5. **Animations API.** Reuse Singularity's `LockedSwitch`-style state-machine pattern in `core::geometry::animation`, or invent something new? Singularity's pattern is fine for stage transitions but the camera animation here is continuous, not discrete; probably a different shape.
-6. **i18n for indicator names and country names.** Native i18n stays in the platform shells; but the source data has names in many languages and we need a canonical fallback. Likely English in `core` with platform shells overriding; deferred to per-platform plans.
+6. **i18n for statistic names and country names.** Native i18n stays in the platform shells; but the source data has names in many languages and we need a canonical fallback. Likely English in `core` with platform shells overriding; deferred to per-platform plans.
 7. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for it but not wired. The shape of the v3 API (auth, schemas, rate-limiting) needs its own spec when the time comes.
 
 ## Things to verify
