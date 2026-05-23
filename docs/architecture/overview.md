@@ -535,7 +535,8 @@ These are claims in this document where I'm working from research-agent output w
 3. **WebGPU readiness in Safari and Firefox in mid-2026** — Chromium is stable, Safari 18.4+ is stable as of May 2026, Firefox in progress per agent research; concrete-verify via real browser tests before relying on WebGPU as default.
 4. **UniFFI 0.27+ async cancellation status** — agent research said "no cancellation tokens as of early 2026"; reverify before designing on the assumption.
 5. **MTKView delegate threading guarantee** — long-standing but worth a spot-check against current iOS SDK docs.
-6. **GitHub repo settings status (verified 2026-05-23)** — "Automatically delete head branches" is now **enabled**. "Rebase and merge" via the GitHub UI does **not** preserve empty commits, so the `>>> branch: <name>` markers do **not** land in master through the standard merge button. Implication: the marker convention's master-history payoff requires a manual rebase + push for any PR whose marker should survive into master; PRs merged via the GitHub UI lose their markers. This needs a workflow decision (see follow-up below).
+6. **GitHub repo settings (verified 2026-05-23)** — "Automatically delete head branches" is **enabled**. "Rebase and merge" via the GitHub UI does **not** preserve empty commits, so the `>>> branch: <name>` markers do **not** land in master through the standard merge button. **Resolution**: PRs MUST be merged manually via local `git rebase` + `git push origin master` rather than via the GitHub UI button, so the marker survives into master. The constitution's Governance §Git workflow §Merge strategy clause will be amended in a follow-up branch to codify this and a `scripts/pr-merge.sh` helper will be added.
+
 ## Follow-up work
 
 Subsequent branches that depend on this overview:
