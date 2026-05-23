@@ -1,10 +1,14 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 1.0.0 → 1.1.0 (MINOR — added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh)
+Version: 1.1.0 → 1.2.0 (MINOR — replaced Git workflow §Merge strategy clause: PRs MUST be merged via local rebase + push, never the GitHub UI button which drops empty commits and would lose the marker convention; registered scripts/pr-merge.sh)
+
+NOTE ON VERSION NUMBERING: at the time this branch was authored, two other constitution amendments were open (constitution-statistic-rename → 1.2.0 terminology rename; constitution-drop-qa-stacked → 1.2.1 Q&A removal). Whichever lands first in master takes the lower numbers; this amendment will rebase to whatever the next version is. Owner can re-number as needed at merge time.
+
 Earlier amendments:
   - 1.0.0 (2026-05-21): initial ratification (8 principles + governance: license, versioning, boundary recognition, app code language, git workflow, tooling discipline, amendments, compliance review)
-Current principles (unchanged in 1.1.0):
+  - 1.1.0 (2026-05-21): added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh
+Current principles (unchanged in this amendment):
   - I. Educational neutrality (NON-NEGOTIABLE)
   - II. Source provenance (NON-NEGOTIABLE)
   - III. Rust core, native UI shells
@@ -13,17 +17,18 @@ Current principles (unchanged in 1.1.0):
   - VI. CDN-delivered data, no live data API through v2
   - VII. Test-first for core logic
   - VIII. Workflow discipline
-Modified governance subsections in 1.1.0:
-  - Git workflow: added Branch cleanup rule
-  - Tooling discipline: registered scripts/cleanup-merged.sh
+Modified governance subsections:
+  - Git workflow: §Merge strategy clause replaced. The earlier text said GitHub repo settings MUST preserve empty commits during rebase-merge, which is unworkable — verified 2026-05-23 that GitHub's rebase-merge UI drops empty commits regardless of repo settings. The replacement clause mandates local-rebase + push for every merge.
+  - Tooling discipline: registered `scripts/pr-merge.sh`.
 Removed sections: N/A
 Templates requiring updates:
   - none from this amendment (the 8 principles are unchanged; only operating rules expanded)
-Follow-up TODOs:
+Resolved follow-up TODOs (from prior SYNC IMPACT REPORTs):
+  - "Confirm GitHub repo settings preserve empty commits during rebase and merge" → RESOLVED: they don't, regardless of settings; addressed by this amendment's manual-merge requirement.
+  - "Enable GitHub's 'Automatically delete head branches' setting" → RESOLVED: enabled by owner 2026-05-23.
+Follow-up TODOs (still pending):
   - License revisit before any public source release (Governance §License)
   - Replace placeholder `eafora` crate (currently 0.0.x on crates.io) with a real crate from inside the monorepo when workspace structure lands (Governance §Versioning)
-  - Confirm GitHub repo settings preserve empty commits during "rebase and merge" (the spec-kit-bootstrap PR initially merged without its marker; resolved manually by the owner this branch). If the setting drops empty commits, the marker convention is unenforceable for merged PRs.
-  - Enable GitHub's "Automatically delete head branches" setting on the eafora/eafora repo so merged PR branches are cleaned from origin without manual `git push --delete`.
 -->
 
 # Eafora Constitution
@@ -164,7 +169,7 @@ The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` f
 
 **Stacked PRs.** When branches are stacked, the PR for each phase targets its parent branch, not `master`. After the parent merges, GitHub will retarget the child PR to `master` automatically.
 
-**Merge strategy.** PRs MUST land in `master` via "rebase and merge". This linearizes history; the branch-marker commits preserve PR boundaries. The repository's GitHub settings MUST be configured to preserve empty commits during rebase-merge so the marker convention is enforceable.
+**Merge strategy.** PRs MUST be merged into `master` via a local rebase followed by `git push origin master`. The GitHub UI's "rebase and merge" button MUST NOT be used: it drops empty commits when replaying them onto master, which destroys the `>>> branch: <name>` marker convention. Verified 2026-05-23: GitHub strips empty commits regardless of repository settings. The canonical command sequence is encapsulated in `scripts/pr-merge.sh` (see Tooling discipline §Currently registered scripts), which uses `git rebase` consistently (not `git merge --ff-only`) per owner preference. For stacked branches, `git rebase --onto` is the right tool — `pr-merge.sh --onto <former-parent>` handles it. The result is a linear master history that preserves every PR's marker commit.
 
 **Force-push policy.** Force-pushes to feature branches MUST use `--force-with-lease` (never plain `--force`) to avoid clobbering remote updates. Force-pushes to `master` are forbidden except for the owner's manual workflow corrections.
 
@@ -185,6 +190,7 @@ The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` f
 **Reference scripts from the constitution or relevant spec.** When a script implements a convention, the convention's section in this document MUST name the script. Currently registered scripts:
 - `scripts/branch-init.sh` — creates a new branch from current HEAD with the canonical marker commit and pushes with upstream tracking. (See Git workflow §Branch marker.)
 - `scripts/cleanup-merged.sh` — deletes named branches from origin and locally, then prunes stale remote-tracking refs. Used after a PR has been merged into master. (See Git workflow §Branch cleanup.)
+- `scripts/pr-merge.sh` — merges a feature branch into master via the canonical rebase-and-push sequence (preserves marker commits, calls cleanup-merged.sh at the end). Supports stacked branches via `--onto`. (See Git workflow §Merge strategy.)
 
 **Third-party dependencies.** Adding a new third-party Rust crate, build tool, linter, test framework, CI service, or comparable tooling MUST be discussed with the owner before the dependency is committed. Defaults are inherited from Singularity (see §IV).
 
@@ -204,6 +210,6 @@ Every spec produced via `/speckit-specify` MUST include a "Constitution Check" s
 
 ---
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 **Ratified**: 2026-05-21
-**Last amended**: 2026-05-21
+**Last amended**: 2026-05-23
