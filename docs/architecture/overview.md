@@ -3,7 +3,7 @@
 <!--
 Status: draft, 2026-05-21. This document is the cross-cutting architecture for Eafora — the contracts, the workspace shape, the data flow, the per-platform integration patterns, and the cost model. Per-platform implementation plans (web, iOS, Android, ingestion) get their own documents in follow-up branches and reference this overview for shared decisions.
 
-Several specifics — exact pricing, current GitHub Actions free-tier limits, Apple ETP applicability — are approximate and flagged in §Things to verify near the end.
+Several specifics — exact pricing, the chosen CI service's free-tier limits, Apple ETP applicability — are approximate and flagged in §Things to verify near the end.
 -->
 
 ## Scope of this document
@@ -358,7 +358,7 @@ Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contract
   - `data_status` is an enum: `final`, `provisional`, `preliminary`, `flash_estimate`, `projection`, `imputed`, `interpolated` (matches the `docs/data/sources-survey.md` Preliminary section).
   - `artifact_version (id, manifest_url, built_at, source_versions_jsonb)` for reproducibility.
 - **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `flatgeobuf` file (geometry) + a `sqlite` file (statistic data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
-- **Schedule**: through v1, manual invocation. v2 moves to a scheduled GitHub Actions workflow (`schedule: cron: '0 6 * * 1'` — weekly Mondays). The same workflow runs the binary against a managed Postgres, builds artifacts, uploads to CDN, updates `manifest.json`.
+- **Schedule**: through v1, manual invocation. v2 moves to a scheduled runner — provider TBD; the architecture does not constrain the choice. Plausible options include the developer's machine via `launchd`/`systemd`, a $5/mo VPS cron, a managed-runtime cron (Fly.io / Railway / Render), GitHub Actions on a schedule, or AWS Lambda + EventBridge. Whichever runs the ingestion binary against a managed Postgres, builds artifacts, uploads to CDN, and updates `manifest.json`.
 
 ## Artifact distribution
 
@@ -445,7 +445,9 @@ The local-dev story mirrors Singularity:
 
 ## CI/CD
 
-GitHub Actions, single `.github/workflows/build.yml` with conditional jobs based on changed paths:
+The CI service is **not yet chosen**; the architecture is provider-agnostic. Any modern hosted CI that can run macOS (for iOS xcframework builds), Linux (for everything else), and store secrets works — GitHub Actions, Buildkite, CircleCI, Jenkins, GitLab CI, etc. The concrete examples below assume GitHub Actions because it's the most common starting point for solo / small projects and lets the working numbers (build times, free-tier minutes) be specific. None of the per-target shapes change with a different provider.
+
+A typical layout is a single workflow file with conditional jobs based on changed paths:
 
 | Job | Runner | Triggers on | Caching |
 |---|---|---|---|
@@ -465,7 +467,7 @@ iOS signing: App Store Connect API key (.p8) stored in repo secrets, decoded in 
 
 - **Cost**: $99/year (verified standard pricing).
 - **Enrollment**: individual or organization; identity verification typically 1–7 days; first submission viable ~2–5 business days after approval.
-- **App Store Connect API key** for CI: generated under Users and Access → Keys, downloaded once (cannot be re-downloaded), stored as GitHub Actions secrets (`APPSTORE_CONNECT_API_KEY_CONTENT`, `_KEY_ID`, `_ISSUER_ID`).
+- **App Store Connect API key** for CI: generated under Users and Access → Keys, downloaded once (cannot be re-downloaded), stored in the chosen CI service's secret store (e.g. GitHub Actions secrets) as `APPSTORE_CONNECT_API_KEY_CONTENT`, `_KEY_ID`, `_ISSUER_ID`.
 - **TestFlight**: internal testing (up to 100 testers, no review); external testing requires beta review (~24–48 hours).
 - **App Store review**: ~24–48 hours typical in 2026 for compliant apps. Common rejection reasons for a map / data viz app: misleading data, claims of endorsement without evidence, mishandling of politically contested borders. Eafora's neutrality principle (no editorial copy) and US-recognized-borders default reduce both risks; the contested-borders abstraction in `core::boundary` lets us swap if a market demands it.
 - **Apple-employee considerations**: per publicly documented policy, Apple employees publish apps via personal Developer accounts; Apple's External Technology Participation policy requires disclosure when an external project competes with Apple products, uses confidential information, or markets Apple trademarks. Eafora plausibly does none of these, but the owner **must verify with Apple internal policy before submitting** (we don't speculate beyond public documentation).
@@ -491,10 +493,10 @@ Concrete numbers carry the same approximation caveats as the source agent resear
 |---|---|---|---|
 | CDN (Cloudflare R2 + Pages) | ~$0–2/mo | ~$1–5/mo | ~$5–20/mo |
 | Postgres (Neon free tier → small VPS) | $0 | $0–10/mo | $0–15/mo |
-| Ingestion compute (GitHub Actions cron) | $0 | $0 | $0–50/mo |
+| Ingestion compute (scheduled runner; provider TBD) | $0 | $0 | $0–50/mo |
 | Domain (`.app`, amortized) | ~$1/mo | ~$1/mo | ~$1/mo |
 | Email (registrar forwarding + free SMTP) | $0 | $0–5/mo | $0–10/mo |
-| CI/CD (GitHub Actions) | $0 (free tier) | $0–20/mo | $20–100/mo |
+| CI/CD (chosen CI service) | $0 (free tier) | $0–20/mo | $20–100/mo |
 | Monitoring / analytics (Plausible, UptimeRobot) | $0 | $0–10/mo | $10–50/mo |
 | **Recurring monthly total** | **~$2/mo** | **~$5–25/mo** | **~$40–250/mo** |
 | Apple Developer Program | $99/year | $99/year | $99/year |
@@ -519,7 +521,7 @@ These are claims in this document where I'm working from research-agent output w
 1. **Cloudflare R2 free-tier specifics** — exact egress allowance, included CDN traffic, billing model edge cases.
 2. **Backblaze B2 current pricing** — download price, storage price.
 3. **Neon free-tier limits** — storage, compute, project count.
-4. **GitHub Actions free-tier minutes for private repos in 2026** — commonly stated as 2000/month but worth confirming.
+4. **CI service free-tier minutes for the provider eventually chosen** — commonly stated as 2000/month but worth confirming.
 5. **Apple App Store review time** — stated as ~24–48h typical in 2026; varies.
 6. **Apple ETP applicability for an Apple employee shipping Eafora** — public policy is summarized; the owner must verify with internal Apple policy before submission.
 7. **Google Play registration fee structure** — individual ($25) vs organization pricing; org changed to $10/yr at some point; confirm current.
