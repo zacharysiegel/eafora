@@ -182,7 +182,7 @@ Once a v3 live API exists, license commercial use to media organizations and das
 
 For a funder pitch *today*, the honest narrative is:
 
-> Eafora is being built for free as research infrastructure. Operating costs through v2 are well under $50/month plus the Apple Developer Program fee. The work is funded by the founder's own time. We are seeking a one-year grant of $X to fund the v2 build (subnational depth, preliminary-data integration, native mobile apps), after which the product stays free and open and continues to be maintained on volunteer time. Long-term sustainability planning includes a mix of donations, sponsorship of clearly-marked slots by aligned organizations, and (eventually) a paid commercial-embedding tier — none of which would compromise the product's editorial neutrality.
+> Eafora is being built for free as research infrastructure. Operating costs through v2 are well under $50/month plus the Apple Developer Program fee. The work is funded by the founder's own time. We are seeking a one-year grant of $X to fund the v2 build (subnational depth, preliminary-data integration, cross-source merge, comparison views), after which the product stays free and open and continues to be maintained on volunteer time. Long-term sustainability planning includes a mix of donations, sponsorship of clearly-marked slots by aligned organizations, and (eventually) a paid commercial-embedding tier — none of which would compromise the product's editorial neutrality.
 
 This narrative:
 - Doesn't oversell. The user has explicitly said this isn't expected to be a great business.
@@ -200,10 +200,9 @@ A short, honest list — not exhaustive:
 2. **Politically contested map borders.** App Store rejections, social-media-driven controversies, and even legal pressure are real outcomes for world-map apps. The constitution's "default to US-recognized lines, design data layer for swap" mitigates but doesn't eliminate; first App Store submission is the real test.
 3. **Source license drift.** The data-sources licensing matrix is a snapshot. Sources can change terms (UN WPP's licensing was already ambiguous in this snapshot; HFD's dual layer requires care). Eafora's provenance integrity makes this manageable but not free.
 4. **Statistical-source disagreements.** Different sources publish different numbers for the same country and year. Eafora's design surfaces both — but a journalist who copy-pastes the wrong one and gets corrected will blame the tool. Need clear UX around the merge order and the confidence each value carries.
-5. **Topic sensitivity.** Fertility decline is a politically polarized topic. Eafora's neutrality is real, but it will still be misread by people who skim. Clear "we are not advocacy" framing in the about page, plus disciplined UI copy review, mitigates.
-6. **Funding fit mismatch.** The most likely funder profile (pro-natal think tanks, family-policy foundations) overlaps imperfectly with the editorial-neutrality stance. A funder who wants Eafora to "make the case" will be the wrong funder; saying no to that money matters.
-7. **OWID launching their own fertility-focused product.** Plausible. If they did, Eafora would have to lean harder into depth (subnational, preliminary data, family formation indicators) where OWID's broader scope works against them.
-8. **The owner's day job at Apple constraining iOS distribution.** Apple's external-technology policy may or may not apply; the architecture overview flags this as something the owner must verify before submitting to the App Store.
+5. **Funding fit mismatch.** The most likely funder profile (pro-natal think tanks, family-policy foundations) overlaps imperfectly with the editorial-neutrality stance. A funder who wants Eafora to "make the case" *inside the product* will be the wrong funder; saying no to that money matters. (Note: Eafora being publicly *perceived* as pro-natal is accepted as an inevitable side effect of topic selection and is not itself a risk we manage.)
+6. **OWID launching their own fertility-focused product.** Plausible. If they did, Eafora would have to lean harder into depth (subnational, preliminary data, family formation indicators) where OWID's broader scope works against them.
+7. **The owner's day job at Apple constraining iOS distribution.** Apple's external-technology policy may or may not apply; the architecture overview flags this as something the owner must verify before submitting to the App Store.
 
 ## What a funding ask looks like
 
@@ -214,8 +213,8 @@ This is a sketch — the real ask gets refined when there's a real conversation 
 **Total ask**: $40k–$80k (range reflects whether the founder is buying back day-job hours or working on top of them; the higher number assumes a sabbatical equivalent for ~6 months)
 
 **Deliverables**:
-- All v1.5 work landed publicly: 5+ indicators, EU/US subnational overlays, time-series charts in country detail panel, native iOS app on TestFlight
-- v2 work: preliminary-data integration (CDC NCHS, ONS, Eurostat flash); native iOS app in App Store and Android in Play Store; comparison view; population pyramids
+- All v1.5 work landed publicly: 5+ indicators, EU/US subnational overlays, time-series charts in country detail panel
+- v2 work: preliminary-data integration (CDC NCHS, ONS, Eurostat flash); cross-source merge with documented preference order and per-cell `data_status` flagging; country comparison view; population pyramids
 - A public, citable, neutral aggregator with all primary anglosphere + EU sources integrated and freshness within 6 months of source publication
 - All source code public under a license to be determined (probably permissive open source by v2 launch — the constitution's "license revisit" follow-up TODO)
 
@@ -250,3 +249,4 @@ Subsequent branches that depend on or extend this document:
 - `docs-product-launch-plan` — the v1.5 public-launch plan: who to contact, what to post where, what to have ready. Defer until v1.5 is built.
 - `docs-architecture-client-{android,ios,web}` and `docs-architecture-ingestion` — the per-segment architecture plans flagged in `docs/architecture/overview.md`.
 - `docs-claude-md-rewrite` — fold locked decisions into `CLAUDE.md`.
+
