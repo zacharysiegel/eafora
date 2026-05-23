@@ -509,7 +509,7 @@ Concrete numbers carry the same approximation caveats as the source agent resear
 | Category | v1 (alpha, <100 users) | v1.5 (~1k DAU) | v2 (~10k DAU) |
 |---|---|---|---|
 | CDN (Cloudflare R2 + Pages) | ~$0–2/mo | ~$1–5/mo | ~$5–20/mo |
-| Postgres (on the Mac mini through v1; Neon free tier or VPS post-migration) | **$0** | $0–10/mo | $0–15/mo |
+| Postgres (on the Mac mini through v1; managed-cloud Postgres post-migration) | **$0** | $0–15/mo | $15–50/mo |
 | Ingestion compute (Mac mini through v1; managed runner post-migration) | **$0** | $0 | $0–50/mo |
 | CI/CD (Mac mini through v1; managed runner post-migration) | **$0** | $0–20/mo | $20–100/mo |
 | Domain (`eafora.org`, amortized) | ~$1/mo | ~$1/mo | ~$1/mo |
@@ -523,7 +523,7 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 
 ## Open questions
 
-1. **Postgres deployment for v2.** Neon free tier is plausibly enough; if not, $5–10/mo VPS or Neon paid tier. Deferred until artifact-build cadence pushes us past free-tier limits.
+1. **Postgres deployment beyond v1.** v1 runs on the Mac mini. When the Mac mini stops being enough (HA needs, geographic distribution, or a v3+ live API), the migration target is a serious managed-cloud Postgres — AWS RDS / Aurora is the canonical option; a Cloudflare-fronted Postgres (e.g. via Hyperdrive in front of a managed instance) is the alternative if and when the rest of the stack is fully on Cloudflare. **Neon is ruled out per owner direction.** Deferred until traffic, reliability needs, or a v3+ API actually forces it.
 2. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
 3. **Animations API.** Reuse Singularity's `LockedSwitch`-style state-machine pattern in `core::geometry::animation`, or invent something new? Singularity's pattern is fine for stage transitions but the camera animation here is continuous, not discrete; probably a different shape.
 4. **Locale list and translation provenance for domain-content i18n.** The split between domain-content i18n (in the Rust core, sourced from upstream publishers) and UI-chrome i18n (per-platform native) is settled in §FFI boundaries. What's not settled: which set of locales we ship in v1 (English only, or English + a small set; e.g. EN/FR/ES/DE/JA), and how we reconcile translations when two upstream sources disagree on a country name. Deferred to the ingestion plan.
@@ -535,7 +535,7 @@ These are claims in this document where I'm working from research-agent output w
 
 1. **Cloudflare R2 free-tier specifics** — exact egress allowance, included CDN traffic, billing model edge cases.
 2. **Backblaze B2 current pricing** — download price, storage price.
-3. **Neon free-tier limits** — storage, compute, project count.
+3. **AWS RDS / Aurora pricing for the eventual managed-Postgres migration** — instance-class options, storage, transfer-out costs.
 4. **CI service free-tier minutes for the provider eventually chosen** — commonly stated as 2000/month but worth confirming.
 5. **Apple App Store review time** — stated as ~24–48h typical in 2026; varies.
 6. **Apple ETP applicability for an Apple employee shipping Eafora** — public policy is summarized; the owner must verify with internal Apple policy before submission.
