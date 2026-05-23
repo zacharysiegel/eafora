@@ -342,7 +342,7 @@ Detailed plan: `docs/architecture/client-android.md` (follow-up branch). Key con
 - **Map surface**: `SurfaceView` wrapped in `AndroidView`. The render loop runs on a dedicated thread (not Choreographer-on-main) to avoid main-thread jank from GPU command encoding. Surface lifecycle (rotation, pause/resume) is explicitly handled via `SurfaceHolder.Callback`.
 - **Rust integration**: `core` is built as an AAR via `cargo-ndk -t aarch64-linux-android -t x86_64-linux-android build --release`; the resulting `.so` files go into `jniLibs/{arm64-v8a,x86_64}/`. UniFFI generates Kotlin bindings. (32-bit ARM is not built — see GPU baseline below for the API-31 cutoff rationale.)
 - **GPU baseline**: minSdk = **API 31** (Android 12, October 2021), per user direction symmetric with the iOS 2021-generation baseline. Vulkan 1.0 is universally available at this level; no OpenGL ES 3.0 fallback path is needed. The 32-bit `armv7-linux-androideabi` Cargo target can also be dropped from the cargo-ndk build (no API-31+ devices ship 32-bit ARM); only `aarch64-linux-android` and `x86_64-linux-android` (emulator) are required.
-- **HTTP**: Retrofit or OkHttp (Singularity's pattern would point at OkHttp directly; revisit per app's needs).
+- **HTTP**: **OkHttp**, called directly. Not Retrofit — Retrofit is an annotation-driven codegen layer over OkHttp that hides the HTTP shape behind interfaces, which conflicts with Constitution Principle V (explicit over implicit). OkHttp is the explicit choice, matches Singularity's pattern, and is the standard ergonomic Android HTTP client on its own.
 
 ## Ingestion + canonical store (overview)
 
