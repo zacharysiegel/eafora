@@ -359,7 +359,7 @@ Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contract
   - `data_status` is an enum: `final`, `provisional`, `preliminary`, `flash_estimate`, `projection`, `imputed`, `interpolated` (matches the `docs/data/sources-survey.md` Preliminary section).
   - `artifact_version (id, manifest_url, built_at, source_versions_jsonb)` for reproducibility.
 - **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `flatgeobuf` file (geometry) + a `sqlite` file (statistic data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
-- **Schedule**: through v1, manual invocation. v2 moves to a scheduled runner — provider TBD; the architecture does not constrain the choice. Plausible options include the developer's machine via `launchd`/`systemd`, a $5/mo VPS cron, a managed-runtime cron (Fly.io / Railway / Render), GitHub Actions on a schedule, or AWS Lambda + EventBridge. Whichever runs the ingestion binary against a managed Postgres, builds artifacts, uploads to CDN, and updates `manifest.json`.
+- **Schedule**: **v0.9 and v1 run on the owner's Mac mini M1 server** (already owned, runs continuously). The ingestion binary is triggered via `launchd` (macOS's cron equivalent) on a schedule — likely weekly Mondays for v1, more often as the source-update cadence grows. The same machine hosts the canonical Postgres. Through v1, manual invocation is also fine. Migration to managed compute (Fly.io / Render / Lambda / a VPS) is a v2+ concern, deferred until traffic or reliability needs force it.
 
 ## Artifact distribution
 
@@ -460,7 +460,9 @@ The local-dev story mirrors Singularity:
 
 ## CI/CD
 
-The CI service is **not yet chosen**; the architecture is provider-agnostic. Any modern hosted CI that can run macOS (for iOS xcframework builds), Linux (for everything else), and store secrets works — GitHub Actions, Buildkite, CircleCI, Jenkins, GitLab CI, etc. The concrete examples below assume GitHub Actions because it's the most common starting point for solo / small projects and lets the working numbers (build times, free-tier minutes) be specific. None of the per-target shapes change with a different provider.
+**v0.9 / v1 builds run on the owner's Mac mini M1**, the same machine that hosts the ingestion service and Postgres. This pairs naturally: Apple Silicon natively builds iOS xcframeworks (no hosted macOS runner needed — the most expensive part of cloud CI is gone), and macOS also runs Cargo, cargo-leptos, and cargo-ndk for the Linux/Android targets without trouble.
+
+The orchestration tool layered on top is provider-agnostic — a self-hosted GitHub Actions runner pointed at the Mac mini, a Buildkite agent, a Jenkins job, or just shell scripts on a launchd timer all work equivalently. The build *machine* is locked to the Mac mini through v1; the workflow tool is a follow-up choice that doesn't change the architecture.
 
 A typical layout is a single workflow file with conditional jobs based on changed paths:
 
@@ -507,11 +509,11 @@ Concrete numbers carry the same approximation caveats as the source agent resear
 | Category | v1 (alpha, <100 users) | v1.5 (~1k DAU) | v2 (~10k DAU) |
 |---|---|---|---|
 | CDN (Cloudflare R2 + Pages) | ~$0–2/mo | ~$1–5/mo | ~$5–20/mo |
-| Postgres (Neon free tier → small VPS) | $0 | $0–10/mo | $0–15/mo |
-| Ingestion compute (scheduled runner; provider TBD) | $0 | $0 | $0–50/mo |
-| Domain (`.app`, amortized) | ~$1/mo | ~$1/mo | ~$1/mo |
+| Postgres (on the Mac mini through v1; Neon free tier or VPS post-migration) | **$0** | $0–10/mo | $0–15/mo |
+| Ingestion compute (Mac mini through v1; managed runner post-migration) | **$0** | $0 | $0–50/mo |
+| CI/CD (Mac mini through v1; managed runner post-migration) | **$0** | $0–20/mo | $20–100/mo |
+| Domain (`eafora.org`, amortized) | ~$1/mo | ~$1/mo | ~$1/mo |
 | Email (registrar forwarding + free SMTP) | $0 | $0–5/mo | $0–10/mo |
-| CI/CD (chosen CI service) | $0 (free tier) | $0–20/mo | $20–100/mo |
 | Monitoring / analytics (Plausible, UptimeRobot) | $0 | $0–10/mo | $10–50/mo |
 | **Recurring monthly total** | **~$2/mo** | **~$5–25/mo** | **~$40–250/mo** |
 | Apple Developer Program | $99/year | $99/year | $99/year |
