@@ -330,7 +330,7 @@ Detailed plan: `docs/architecture/client-ios.md` (follow-up branch). Key contrac
 - **UI**: SwiftUI.
 - **Map surface**: `MTKView` wrapped in `UIViewRepresentable`. Delegate methods (`drawableSizeWillChange`, `draw(in:)`) drive the render loop on the main thread; heavy compute is offloaded to background tasks before the next frame.
 - **Rust integration**: `core` is built as an xcframework via `cargo build --target aarch64-apple-ios --release` + `cargo build --target aarch64-apple-ios-sim --release` + `xcodebuild -create-xcframework`. UniFFI generates Swift bindings into the xcframework.
-- **GPU baseline**: Apple A9 (iPhone 6s, 2015) and later. iOS 16+ minimum SDK target.
+- **GPU baseline**: Apple A14 (iPhone 12, late 2020) / A15 (iPhone 13, September 2021) and later. iOS 18+ minimum SDK target. Drops every device older than the 2021 generation per the user's direction; cuts long-tail support burden, modern Metal feature levels are uniformly available across all supported devices, and active iPhone-user share in the anglosphere/EU on pre-2021 hardware is small enough to ignore for v1.
 - **Async**: Swift's `async`/`await` consumes UniFFI async functions naturally; cancellation is one-way (Swift task cancellation does not propagate; Rust must self-cancel).
 - **HTTP**: Swift's `URLSession`. Fetched JSON payloads are passed to the Rust core for parsing.
 
