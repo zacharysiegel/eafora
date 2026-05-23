@@ -65,7 +65,7 @@ The data sources doc at `docs/data/sources-survey.md` and licensing research at 
    │   Leptos + WASM           │                   │    SwiftUI + MTKView      │         │   Compose + SurfaceView   │
    │   wgpu (WebGPU/WebGL)     │                   │    Rust core via UniFFI   │         │   Rust core via UniFFI    │
    │   Rust core via wasm-     │                   │    xcframework, wgpu via  │         │   AAR + cargo-ndk, wgpu   │
-   │   bindgen, IndexedDB      │                   │    Metal                  │         │   via Vulkan/GLES         │
+   │   bindgen, IndexedDB      │                   │    Metal                  │         │   via Vulkan              │
    │   cache                   │                   │                           │         │                           │
    └───────────────────────────┘                   └───────────────────────────┘         └───────────────────────────┘
 ```
@@ -245,7 +245,7 @@ The `core::render::surface` adapter receives a platform-agnostic surface handle 
 
 - **Web**: `Instance::create_surface_from_canvas(&canvas)` (wasm-bindgen).
 - **iOS**: passes `MTKView`'s drawable layer pointer through UniFFI; Rust uses `raw-window-handle` 0.6's iOS variant.
-- **Android**: Kotlin passes the `Surface` jobject through JNI; Rust calls `ANativeWindow_fromSurface` and constructs the wgpu surface from the Vulkan/GLES handle.
+- **Android**: Kotlin passes the `Surface` jobject through JNI; Rust calls `ANativeWindow_fromSurface` and constructs the wgpu surface from the Vulkan handle (no GLES path at the API-31 baseline).
 
 ## FFI boundaries
 
@@ -340,8 +340,8 @@ Detailed plan: `docs/architecture/client-android.md` (follow-up branch). Key con
 
 - **UI**: Jetpack Compose.
 - **Map surface**: `SurfaceView` wrapped in `AndroidView`. The render loop runs on a dedicated thread (not Choreographer-on-main) to avoid main-thread jank from GPU command encoding. Surface lifecycle (rotation, pause/resume) is explicitly handled via `SurfaceHolder.Callback`.
-- **Rust integration**: `core` is built as an AAR via `cargo-ndk -t aarch64-linux-android -t armv7-linux-androideabi -t x86_64-linux-android build --release`; the resulting `.so` files go into `jniLibs/{arm64-v8a,armeabi-v7a,x86_64}/`. UniFFI generates Kotlin bindings.
-- **GPU baseline**: Vulkan 1.0 on devices with API 26+ (which is essentially all current devices in the anglosphere/EU); OpenGL ES 3.0 fallback on API 24–25.
+- **Rust integration**: `core` is built as an AAR via `cargo-ndk -t aarch64-linux-android -t x86_64-linux-android build --release`; the resulting `.so` files go into `jniLibs/{arm64-v8a,x86_64}/`. UniFFI generates Kotlin bindings. (32-bit ARM is not built — see GPU baseline below for the API-31 cutoff rationale.)
+- **GPU baseline**: minSdk = **API 31** (Android 12, October 2021), per user direction symmetric with the iOS 2021-generation baseline. Vulkan 1.0 is universally available at this level; no OpenGL ES 3.0 fallback path is needed. The 32-bit `armv7-linux-androideabi` Cargo target can also be dropped from the cargo-ndk build (no API-31+ devices ship 32-bit ARM); only `aarch64-linux-android` and `x86_64-linux-android` (emulator) are required.
 - **HTTP**: Retrofit or OkHttp (Singularity's pattern would point at OkHttp directly; revisit per app's needs).
 
 ## Ingestion + canonical store (overview)
