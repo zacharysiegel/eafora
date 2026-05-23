@@ -48,7 +48,21 @@ for BRANCH_NAME in "$@"; do
 done
 
 if [[ "${#REMOTE_TARGETS[@]}" -gt 0 ]]; then
-    git push origin --delete "${REMOTE_TARGETS[@]}"
+    if ! git push origin --delete "${REMOTE_TARGETS[@]}"; then
+        # Race with GitHub's "Automatically delete head branches" setting:
+        # when a PR is recognized as merged (head SHA equal to base), GitHub may
+        # delete the head branch on origin between our ls-remote check above and
+        # this push --delete. Confirm the branches are actually gone, then continue.
+        echo "note: push origin --delete returned non-zero; checking whether the branches were already deleted by GitHub auto-delete..."
+        git fetch --prune origin > /dev/null
+        for BRANCH_NAME in "${REMOTE_TARGETS[@]}"; do
+            if git ls-remote --exit-code --heads origin "$BRANCH_NAME" > /dev/null 2>&1; then
+                echo "error: branch '$BRANCH_NAME' still exists on origin after delete attempt" >&2
+                exit 1
+            fi
+        done
+        echo "all named branches confirmed absent from origin; continuing with local cleanup."
+    fi
 fi
 
 LOCAL_TARGETS=()
