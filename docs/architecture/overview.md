@@ -138,7 +138,7 @@ core/src/
 ├── error.rs                # uses minimer; per-feature error variants live in their feature module
 ├── geometry/               # vector polygon model, projection math, hit-testing
 │   ├── mod.rs              # `mod ...; pub use ...;` only
-│   ├── projection.rs       # Robinson (v1 ships only this); Laskowski tri-optimal as a post-v1 user-toggleable alternate
+│   ├── projection.rs       # Miller cylindrical projection + horizontal wraparound; rectangular world fills the viewport corners
 │   ├── polygon.rs          # boundary representation, simplification
 │   └── hit_test.rs         # smoothed-scale-without-hitbox-growth math
 ├── statistic/              # statistic types (TFR, CBR, CDR, etc.), units, time series, parsing
@@ -223,7 +223,7 @@ To keep the core code agnostic, the `core` crate is `#[cfg]`-aware where it must
 
 The `core::geometry` module is the math heart of the renderer. Concretely:
 
-- **Projection**: **v1 ships Robinson only.** Robinson is humped (per the user's preference), widely recognized, and a pleasant tradeoff between equal-area and conformal. **Post-v1**, Laskowski tri-optimal (Laskowski 1991) — a polynomial compromise projection minimizing a weighted blend of Airy, Tissot, and Chebyshev distortion — gets added as a user-toggleable alternate. Less common in mainstream tooling than Robinson or Winkel Tripel, but the user prefers it on aesthetic and distortion-balance grounds. Both are pure-function `(longitude, latitude) → (x, y)` mappings with closed-form expressions; no GIS library required.
+- **Projection**: **Miller cylindrical**, the only projection. Rectangular (~5:3 aspect ratio) so it fills the viewport corners with no UI dead zones; closed-form `(lon, lat) → (x, y)` in ~5 lines. Less polar inflation than Mercator while staying conformal at low latitudes. No alternate projections, no toggle, no v2+ plans for additional projections — this decision is closed. Implementation is a pure function in `core::geometry::projection`; no GIS library required.
 - **Polygon representation**: full polygons everywhere; no LOD, no tile pyramid, no per-frame simplification. v1 ships ~200 country polygons (~5 MB compressed in FlatGeobuf, with the format's built-in R-tree spatial index used directly for hit-testing). When sub-national geometry lands in v2+, it joins the same FlatGeobuf as additional features and loads in the background after country features render. The wgpu pipeline rasterizes the same vertex data at every zoom level — small countries at low zoom contribute fewer pixels, which is the right behavior for free, with no LOD-boundary popping. Continuous zoom drops out automatically.
 - **Hit-testing**: A spatial index (R-tree or interval-tree) over the country polygons, queried at viewport-space resolution. **Critical UX rule**: the hit-test geometry uses the *unscaled* country polygon. The hover-scale effect only changes the rendering transform, never the hit-test — this is the user-stated requirement that off-the-shelf map SDKs typically violate.
 - **Animation**: Zoom-to-country uses a cubic-easing time curve; the camera target is the country's polygon centroid; the camera scale is computed from the polygon's bounding box plus a margin. Implemented as a `core::geometry::animation::Camera` state machine the renderer polls each frame.
@@ -417,7 +417,21 @@ Properties:
 
 ### Projection
 
-**v1 ships Robinson only.** Robinson's parameters are tabulated; the projection is a closed-form interpolation between known table points. We implement it ourselves in `core::geometry::projection` (~50 lines). **Post-v1**, Laskowski tri-optimal lands as a user-toggleable alternate — a polynomial whose coefficients come straight from Laskowski's 1991 paper; implementing it is similar in size to Robinson. A one-line config flip in the renderer toggles between them once both ship.
+**Miller cylindrical**, the sole projection. Closed-form, ~5 lines:
+
+```rust
+fn miller(longitude: f64, latitude: f64) -> (f64, f64) {
+    let x: f64 = longitude;
+    let y: f64 = 1.25 * ((std::f64::consts::FRAC_PI_4 + 0.4 * latitude).tan()).ln();
+    (x, y)
+}
+```
+
+Aspect ratio ~5:3. Polar inflation is moderate (much less than Mercator); at low latitudes Miller is conformal-like.
+
+**Horizontal wraparound** is part of the renderer, not a separate feature: when the viewport's longitude range crosses the ±180° antimeridian, polygons that span the seam are rendered twice — once at their natural longitude and once shifted by ±360° — so a user panning east past Japan continues seamlessly into the western hemisphere. No vertical wraparound; the poles are real and stop the pan.
+
+This decision is closed. No alternate projections in v2+, no globe-view toggle, no Equirectangular/Mercator/Robinson/Laskowski/Winkel-Tripel options.
 
 ### Hover scaling
 
@@ -508,12 +522,11 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 ## Open questions
 
 1. **SQLite-in-WASM read shape.** Two viable paths: (a) full download once → cache in IndexedDB → query in-memory via a WASM-built `rusqlite` or `sqlx`; (b) HTTP range requests against the SQLite file via a Rust-side custom `Connection` impl. Path (a) is what the architecture currently assumes. Path (b) becomes interesting only if per-statistic SQLite files grow past tens of MB — unlikely through v2 given how small fertility-statistic data actually is. Defer the decision until artifact sizes force it.
-2. **Map projection v1 vs post-v1.** v1 ships Robinson only. Laskowski tri-optimal is the user-preferred post-v1 alternate. Final pick (or both?) is fine to defer to the web client implementation plan.
-3. **Postgres deployment for v2.** Neon free tier is plausibly enough; if not, $5–10/mo VPS or Neon paid tier. Deferred until artifact-build cadence pushes us past free-tier limits.
-4. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
-5. **Animations API.** Reuse Singularity's `LockedSwitch`-style state-machine pattern in `core::geometry::animation`, or invent something new? Singularity's pattern is fine for stage transitions but the camera animation here is continuous, not discrete; probably a different shape.
-6. **Locale list and translation provenance for domain-content i18n.** The split between domain-content i18n (in the Rust core, sourced from upstream publishers) and UI-chrome i18n (per-platform native) is settled in §FFI boundaries. What's not settled: which set of locales we ship in v1 (English only, or English + a small set; e.g. EN/FR/ES/DE/JA), and how we reconcile translations when two upstream sources disagree on a country name. Deferred to the ingestion plan.
-7. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for a future live API but not wired. The most likely v3 use case is user-submitted corrections (Wikipedia-style) — auth, moderation, schemas, and rate-limiting all need their own spec when the time comes. **Semantic / NL-Q&A-style features are explicitly not on the roadmap.**
+2. **Postgres deployment for v2.** Neon free tier is plausibly enough; if not, $5–10/mo VPS or Neon paid tier. Deferred until artifact-build cadence pushes us past free-tier limits.
+3. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
+4. **Animations API.** Reuse Singularity's `LockedSwitch`-style state-machine pattern in `core::geometry::animation`, or invent something new? Singularity's pattern is fine for stage transitions but the camera animation here is continuous, not discrete; probably a different shape.
+5. **Locale list and translation provenance for domain-content i18n.** The split between domain-content i18n (in the Rust core, sourced from upstream publishers) and UI-chrome i18n (per-platform native) is settled in §FFI boundaries. What's not settled: which set of locales we ship in v1 (English only, or English + a small set; e.g. EN/FR/ES/DE/JA), and how we reconcile translations when two upstream sources disagree on a country name. Deferred to the ingestion plan.
+6. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for a future live API but not wired. The most likely v3 use case is user-submitted corrections (Wikipedia-style) — auth, moderation, schemas, and rate-limiting all need their own spec when the time comes. **Semantic / NL-Q&A-style features are explicitly not on the roadmap.**
 
 ## Things to verify
 
