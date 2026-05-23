@@ -259,7 +259,7 @@ Not everything goes through the Rust core. The cost of FFI calls plus the limita
 | Statistic math (color mapping, time-series interpolation, derivation) | Rust core | Same |
 | wgpu rendering pipeline | Rust core | Whole point of the architecture |
 | Artifact parsing (FlatGeobuf, SQLite reads) | Rust core | One source of truth for the data format |
-| HTTP fetches | Each platform's native HTTP stack | Battle-tested; integrates with platform caching, proxies, certs; async ergonomics are better; FFI overhead dominates over the I/O time anyway |
+| HTTP fetches | Each platform's native HTTP stack | Battle-tested; integrates with platform caching, proxies, certs; async ergonomics are better; FFI overhead is dominated by the I/O time anyway (a few microseconds vs hundreds of milliseconds) |
 | UI chrome (header, panels, controls, navigation) | Each platform's native UI framework | The whole point of "native UI shells" |
 | Animations of UI chrome | Each platform's UI framework | Map animations are wgpu; UI animations are SwiftUI / Compose / CSS |
 | Localization strings | Each platform's native i18n | Apple, Google, browsers all have great native i18n; no benefit to forcing this through Rust |
