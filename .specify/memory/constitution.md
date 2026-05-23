@@ -1,13 +1,14 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 1.3.0 → 1.3.1 (PATCH — clarification: removed "semantic Q&A" from Principle VI's list of example v3+ live-API features. The owner has decided NL-Q&A / vector-search style features are not on the roadmap. The principle's binding rule (no live data API through v2; v3+ features need their own spec) is unchanged.)
+Version: 1.3.1 → 1.3.2 (PATCH — housekeeping: (a) Principle VI's named geometry artifact format swapped from PMTiles to FlatGeobuf to match the architecture overview's no-LOD / full-polygon decision; the principle's binding intent (CDN-delivered immutable artifacts; no live API through v2) is unchanged. (b) Branch-marker discovery wording updated from less-pager search to `git log --grep '>>> branch:'`, and the explanation of why markers exist now references the rebase-based merge flow rather than the deprecated GitHub UI rebase-merge button.)
 Earlier amendments:
   - 1.0.0 (2026-05-21): initial ratification (8 principles + governance: license, versioning, boundary recognition, app code language, git workflow, tooling discipline, amendments, compliance review)
   - 1.1.0 (2026-05-21): added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh
   - 1.2.0 (2026-05-23): replaced Git workflow §Merge strategy clause to mandate local rebase + push (GitHub UI rebase-merge drops empty commits and would lose the marker convention); registered scripts/pr-merge.sh
   - 1.3.0 (2026-05-23): terminology rename, the user-facing concept previously called an "indicator" is now called a "statistic" throughout the constitution. Publisher-side terminology (World Development Indicators, etc.) is unchanged because it's quoted publisher language, not Eafora's voice.
-Current principles (unchanged in 1.3.1):
+  - 1.3.1 (2026-05-23): clarification — removed "semantic Q&A" from Principle VI's v3+ live-API examples list (the binding rule was unchanged).
+Current principles (unchanged in 1.3.2):
   - I. Educational neutrality (NON-NEGOTIABLE)
   - II. Source provenance (NON-NEGOTIABLE)
   - III. Rust core, native UI shells
@@ -16,11 +17,14 @@ Current principles (unchanged in 1.3.1):
   - VI. CDN-delivered data, no live data API through v2
   - VII. Test-first for core logic
   - VIII. Workflow discipline
-Modified principle prose in 1.3.1:
-  - VI: removed "semantic Q&A," from the v3+ live-API examples list (no other prose change)
+Modified prose in 1.3.2:
+  - Principle VI: "Geometry artifacts MUST use **PMTiles**" → "Geometry artifacts MUST use **FlatGeobuf**".
+  - Governance §Git workflow §Branch marker: rewrote the explanatory paragraph (compensates clause + discovery method) to reference the rebase-based merge flow and `git log --grep '>>> branch:'`.
 Removed sections: N/A
 Templates requiring updates:
-  - none from this amendment (clarification of an existing example list does not invalidate templates)
+  - none from this amendment (no template invalidation; binding format change is application-layer).
+Propagation in this amendment:
+  - `docs/architecture/overview.md` line 29: PMTiles → FlatGeobuf in the Principle VI summary line. The "indicators" → "statistics" propagation on the same line stays in the separate docs-statistic-rename branch.
 Resolved follow-up TODOs (from prior SYNC IMPACT REPORTs):
   - "Confirm GitHub repo settings preserve empty commits during rebase and merge" → RESOLVED in v1.2.0
   - "Enable GitHub's 'Automatically delete head branches' setting" → RESOLVED in v1.2.0
@@ -84,7 +88,7 @@ RPC frameworks (gRPC, tonic, GraphQL, JSON-RPC frameworks, Cap'n Proto, Leptos `
 
 ### VI. CDN-delivered data, no live data API through v2
 
-Through v2, data MUST be delivered to clients as versioned, immutable artifacts hosted on a CDN. Geometry artifacts MUST use **PMTiles**. Statistic-data artifacts MUST use **SQLite**. Both MUST be produced by a server-side ingestion pipeline (Rust, scheduled or manual through v1) that writes to a canonical PostgreSQL store and emits the artifacts to the CDN with content-hashed filenames.
+Through v2, data MUST be delivered to clients as versioned, immutable artifacts hosted on a CDN. Geometry artifacts MUST use **FlatGeobuf**. Statistic-data artifacts MUST use **SQLite**. Both MUST be produced by a server-side ingestion pipeline (Rust, scheduled or manual through v1) that writes to a canonical PostgreSQL store and emits the artifacts to the CDN with content-hashed filenames.
 
 Through v2, clients MUST NOT depend on a live application server for hot-path data. A live API for user contributions, interactive search, or other online-only features MAY be introduced from v3+ via its own spec, **with no obligation to also support those features without a live server**. Offline operability is a side effect of the v1-v2 architecture, not a product guarantee — it MUST NOT be promised in marketing copy or used to constrain v3+ design.
 
@@ -146,7 +150,7 @@ Eafora's git workflow is opinionated. Every rule in this section MUST be followe
 >>> branch: <branch-name>
 ```
 
-This marker compensates for the "rebase and merge" strategy used to land PRs into `master`, which otherwise erases PR boundaries from `master`'s history. To find boundaries in any `git log` view, search the `less` pager with `/>>> branch:` then step with `n` and `N`.
+This marker compensates for the rebase-based merge flow (`scripts/pr-merge.sh`, see §Merge strategy below), which linearizes branch commits onto `master` and would otherwise erase PR boundaries from `master`'s history. To find markers in any history view, use `git log --grep '>>> branch:'` (or `git log --all --grep '>>> branch:' --oneline` for a cross-branch listing). This finds markers whether they landed as standalone commits (canonical merge path) or as bullets in a squashed commit body (UI fallback path).
 
 The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` from the repo root. The script creates the branch, places the canonical empty commit, and pushes with upstream tracking. Manual creation of marker commits is permitted only when the script is unavailable (e.g. detached environments).
 
@@ -209,6 +213,6 @@ Every spec produced via `/speckit-specify` MUST include a "Constitution Check" s
 
 ---
 
-**Version**: 1.3.1
+**Version**: 1.3.2
 **Ratified**: 2026-05-21
 **Last amended**: 2026-05-23

@@ -26,7 +26,7 @@ The constitution at `.specify/memory/constitution.md` is the source of truth. Th
 - Maximal Rust core; native UI shells (Leptos+WASM, SwiftUI, Jetpack Compose). (III)
 - Convention parity with `/Users/singularity/singularity` for backend stack. (IV)
 - Imperative actix-web routing; hand-written `sqlx::query_as!`; no RPC frameworks; HTTP+JSON over reqwest. (V)
-- v1–v2 client data path is CDN-hosted versioned artifacts (PMTiles for geometry, SQLite for indicators); no live data API through v2. (VI)
+- v1–v2 client data path is CDN-hosted versioned artifacts (FlatGeobuf for geometry, SQLite for indicators); no live data API through v2. (VI)
 - TDD for the Rust core's logic surfaces; UI shell code exempt. (VII)
 - Spec-Kit per-feature flow; `docs/` for cross-cutting work. (VIII)
 
