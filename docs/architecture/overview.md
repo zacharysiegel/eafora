@@ -262,7 +262,8 @@ Not everything goes through the Rust core. The cost of FFI calls plus the limita
 | HTTP fetches | Each platform's native HTTP stack | Battle-tested; integrates with platform caching, proxies, certs; async ergonomics are better; FFI overhead is dominated by the I/O time anyway (a few microseconds vs hundreds of milliseconds) |
 | UI chrome (header, panels, controls, navigation) | Each platform's native UI framework | The whole point of "native UI shells" |
 | Animations of UI chrome | Each platform's UI framework | Map animations are wgpu; UI animations are SwiftUI / Compose / CSS |
-| Localization strings | Each platform's native i18n | Apple, Google, browsers all have great native i18n; no benefit to forcing this through Rust |
+| Domain-content i18n (country names, statistic names, units, source attribution, data-status labels) | Rust core | Translations come pre-bundled from upstream sources (World Bank, UN, etc.); single source of truth across all three clients; renaming or rewording happens in one file. FFI exposes `country_name(iso, locale)` / `statistic_definition(id, locale)` lookups |
+| UI-chrome i18n (controls, errors, navigation, accessibility labels) | Each platform's native i18n | Platform APIs handle pluralization, RTL, locale-aware number/date formatting, accessibility, and translator-tooling integration (`.strings` / `strings.xml` / web i18n) for free |
 | Push notifications, deep links | Each platform | Platform-specific by nature |
 
 ### Per-binding adapters
@@ -508,7 +509,7 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 3. **Postgres deployment for v2.** Neon free tier is plausibly enough; if not, $5–10/mo VPS or Neon paid tier. Deferred until artifact-build cadence pushes us past free-tier limits.
 4. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
 5. **Animations API.** Reuse Singularity's `LockedSwitch`-style state-machine pattern in `core::geometry::animation`, or invent something new? Singularity's pattern is fine for stage transitions but the camera animation here is continuous, not discrete; probably a different shape.
-6. **i18n for statistic names and country names.** Native i18n stays in the platform shells; but the source data has names in many languages and we need a canonical fallback. Likely English in `core` with platform shells overriding; deferred to per-platform plans.
+6. **Locale list and translation provenance for domain-content i18n.** The split between domain-content i18n (in the Rust core, sourced from upstream publishers) and UI-chrome i18n (per-platform native) is settled in §FFI boundaries. What's not settled: which set of locales we ship in v1 (English only, or English + a small set; e.g. EN/FR/ES/DE/JA), and how we reconcile translations when two upstream sources disagree on a country name. Deferred to the ingestion plan.
 7. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for it but not wired. The shape of the v3 API (auth, schemas, rate-limiting) needs its own spec when the time comes.
 
 ## Things to verify
