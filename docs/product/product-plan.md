@@ -68,7 +68,7 @@ This is the version that earns the "leading aggregator" claim — in scope, in f
 
 ### v3+ — depth and contributions
 
-Disaggregations: TFR by ethnicity (US, UK, Australia, Canada — the limited set where official statistics permit), by educational attainment (DHS where applicable). User-submitted corrections with moderation. Semantic search over the dataset. A live API for third parties to embed. A formal mobile-app v2 release with offline-first caching and push notifications when "your tracked country" gets a data update.
+Disaggregations: TFR by ethnicity (US, UK, Australia, Canada — the limited set where official statistics permit), by educational attainment (DHS where applicable). User-submitted corrections with moderation. A live API for third parties to embed. A formal mobile-app v2 release with offline-first caching and push notifications when "your tracked country" gets a data update.
 
 v3 is also where the project plausibly outgrows a solo nights-and-weekends shape and either dies, finds funding, or finds a partner.
 
