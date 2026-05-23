@@ -51,7 +51,7 @@ The data sources doc at `docs/data/sources-survey.md` and licensing research at 
                 │ canonical store │                       │ artifact store │
                 │   PostgreSQL    │                       │   S3 / R2 +    │
                 │  (provenance,   │                       │   CloudFront   │
-                │   versioning)   │                       │  (PMTiles +    │
+                │   versioning)   │                       │  (FlatGeobuf +    │
                 └─────────────────┘                       │   SQLite, +    │
                                                           │   manifest.json)│
                                                           └──────┬─────────┘
@@ -123,7 +123,7 @@ Notes on this shape:
 - `ingestion/` is a separate crate that depends on `core` and adds the actix-web router, sqlx queries, source adapters, and artifact builders. Splitting it from `core` means clients don't pull in actix-web or sqlx into their WASM/UniFFI builds.
 - `ios/` and `android/` are not Cargo crates — they're native projects that consume artifacts produced by `core`. The `core` crate's UniFFI build emits an `xcframework` and an AAR that these projects link against.
 - `web/` is a Cargo workspace member because cargo-leptos drives it. It depends on `core` directly and adds Leptos components, routing, and the wasm-bindgen adapter.
-- `data/` is gitignored. The bundled-fallback artifacts (small downsampled PMTiles + SQLite shipped inside each app build for instant first-launch UX) are generated at build time by `scripts/build-fallback.sh`, which fetches the latest manifest from the CDN, downloads the latest full artifact, downsamples it (drop sub-national geometry, keep only the most recent year of statistic values), and stages the results into `data/` plus the per-platform resource directories (`ios/EaforaApp/Resources/`, `android/app/src/main/assets/`, `web/static/`). Reproducibility for any given commit comes from the CDN's content-addressed object store, not from `git`.
+- `data/` is gitignored. The bundled-fallback artifacts (small downsampled FlatGeobuf + SQLite shipped inside each app build for instant first-launch UX) are generated at build time by `scripts/build-fallback.sh`, which fetches the latest manifest from the CDN, downloads the latest full artifact, downsamples it (drop sub-national geometry, keep only the most recent year of statistic values), and stages the results into `data/` plus the per-platform resource directories (`ios/EaforaApp/Resources/`, `android/app/src/main/assets/`, `web/static/`). Reproducibility for any given commit comes from the CDN's content-addressed object store, not from `git`.
 - Per the constitution's Singularity convention parity, `compose.yaml` / `dbmate.sh` / `setup.sh` / `secrets.yaml` mirror Singularity's setup verbatim.
 
 ## Rust core
@@ -156,9 +156,9 @@ core/src/
 │   ├── world_bank/         # one source = one feature module = api.rs + parser.rs + tests
 │   ├── eurostat/
 │   └── ...
-├── artifact/               # PMTiles writer, SQLite writer, manifest writer
+├── artifact/               # FlatGeobuf writer, SQLite writer, manifest writer
 │   ├── mod.rs
-│   ├── pmtiles.rs
+│   ├── flatgeobuf.rs
 │   ├── sqlite.rs
 │   └── manifest.rs
 ├── ffi/                    # FFI adapters; one submodule per binding tool
@@ -224,7 +224,7 @@ To keep the core code agnostic, the `core` crate is `#[cfg]`-aware where it must
 The `core::geometry` module is the math heart of the renderer. Concretely:
 
 - **Projection**: **v1 ships Robinson only.** Robinson is humped (per the user's preference), widely recognized, and a pleasant tradeoff between equal-area and conformal. **Post-v1**, Laskowski tri-optimal (Laskowski 1991) — a polynomial compromise projection minimizing a weighted blend of Airy, Tissot, and Chebyshev distortion — gets added as a user-toggleable alternate. Less common in mainstream tooling than Robinson or Winkel Tripel, but the user prefers it on aesthetic and distortion-balance grounds. Both are pure-function `(longitude, latitude) → (x, y)` mappings with closed-form expressions; no GIS library required.
-- **Polygon representation**: Simplified to a few zoom levels at build time and packed into the PMTiles artifact. The renderer streams tiles as the user pans/zooms.
+- **Polygon representation**: full polygons everywhere; no LOD, no tile pyramid, no per-frame simplification. v1 ships ~200 country polygons (~5 MB compressed in FlatGeobuf, with the format's built-in R-tree spatial index used directly for hit-testing). When sub-national geometry lands in v2+, it joins the same FlatGeobuf as additional features and loads in the background after country features render. The wgpu pipeline rasterizes the same vertex data at every zoom level — small countries at low zoom contribute fewer pixels, which is the right behavior for free, with no LOD-boundary popping. Continuous zoom drops out automatically.
 - **Hit-testing**: A spatial index (R-tree or interval-tree) over the country polygons, queried at viewport-space resolution. **Critical UX rule**: the hit-test geometry uses the *unscaled* country polygon. The hover-scale effect only changes the rendering transform, never the hit-test — this is the user-stated requirement that off-the-shelf map SDKs typically violate.
 - **Animation**: Zoom-to-country uses a cubic-easing time curve; the camera target is the country's polygon centroid; the camera scale is computed from the polygon's bounding box plus a margin. Implemented as a `core::geometry::animation::Camera` state machine the renderer polls each frame.
 
@@ -258,7 +258,7 @@ Not everything goes through the Rust core. The cost of FFI calls plus the limita
 | Geometry, projection, hit-testing | Rust core | Hot, math-heavy, identical across platforms |
 | Statistic math (color mapping, time-series interpolation, derivation) | Rust core | Same |
 | wgpu rendering pipeline | Rust core | Whole point of the architecture |
-| Artifact parsing (PMTiles, SQLite reads) | Rust core | One source of truth for the data format |
+| Artifact parsing (FlatGeobuf, SQLite reads) | Rust core | One source of truth for the data format |
 | HTTP fetches | Each platform's native HTTP stack | Battle-tested; integrates with platform caching, proxies, certs; async ergonomics are better; FFI overhead dominates over the I/O time anyway |
 | UI chrome (header, panels, controls, navigation) | Each platform's native UI framework | The whole point of "native UI shells" |
 | Animations of UI chrome | Each platform's UI framework | Map animations are wgpu; UI animations are SwiftUI / Compose / CSS |
@@ -318,7 +318,7 @@ Detailed plan: `docs/architecture/client-web.md` (follow-up branch). Key contrac
 - **Map rendering**: wgpu via WebGPU primarily, with WebGL2 fallback through wgpu's downlevel backend. Browser support in mid-2026: Chromium stable; Safari 18.4+ stable; Firefox WebGPU not yet shipped, falls back to WebGL2. Cargo: `wgpu = { version = "...", features = ["webgpu", "webgl"] }`.
 - **Threading**: single-threaded WASM. We **do not** use `SharedArrayBuffer` and therefore do not require `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` headers. This keeps the door open for future third-party embedding (UN portals, journalism sites) without wrestling with cross-origin isolation. Per-WASM state lives in `thread_local!`.
 - **Bundle size**: target ~500–700 KB brotli-compressed (~2–3 MB raw WASM), of which Leptos is ~400 KB and wgpu+Naga is ~600 KB. `wasm-opt -O4` in release builds.
-- **Data loading**: JS-side `fetch()` reads the artifact (manifest → SQLite + PMTiles bytes) and stores in IndexedDB. Rust receives `&[u8]` and constructs the in-memory data structures. PMTiles range-request reads via the Rust PMTiles crate (~100–150 KB add to bundle). For SQLite: download once, cache in IndexedDB, query in-memory via a WASM-built `rusqlite` or `sqlx` (see §Open questions).
+- **Data loading**: JS-side `fetch()` reads the artifact (manifest → SQLite + FlatGeobuf bytes) and stores in IndexedDB. Rust receives `&[u8]` and constructs the in-memory data structures. FlatGeobuf has a built-in R-tree spatial index that we use directly for hit-testing — no separate index build step. Country features parse first; subnational features parse in the background after the initial render. For SQLite: download once, cache in IndexedDB, query in-memory via a WASM-built `rusqlite` or `sqlx` (see §Open questions).
 - **IndexedDB quota and eviction**: the cache layer must call `navigator.storage.persist()` on first launch to opt into persistent storage (avoids LRU eviction under disk pressure), call `navigator.storage.estimate()` before each artifact write to fail fast on quota-exceeded, and recover gracefully when the cache is missing on launch (re-fetch as if first run). Per-browser policies vary; the deep details belong in `docs/architecture/client-web.md` and reference [MDN: Storage quotas and eviction criteria](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria).
 - **Hot reload**: `cargo leptos watch` for development; full WASM rebuild is ~5–15 s. Splitting `core` into a library crate and `web` into a thin entry crate minimizes recompile scope.
 
@@ -356,7 +356,7 @@ Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contract
   - `statistic_value (country_iso3, statistic_id, year, value, source_id, retrieved_at, data_status)` — the fact table; one row per (country, statistic, year, source). When multiple sources publish the same datum, all rows are kept; the merge is done at artifact-build time per a documented preference order.
   - `data_status` is an enum: `final`, `provisional`, `preliminary`, `flash_estimate`, `projection`, `imputed`, `interpolated` (matches the `docs/data/sources-survey.md` Preliminary section).
   - `artifact_version (id, manifest_url, built_at, source_versions_jsonb)` for reproducibility.
-- **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `pmtiles` file (geometry) + a `sqlite` file (statistic data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
+- **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `flatgeobuf` file (geometry) + a `sqlite` file (statistic data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
 - **Schedule**: through v1, manual invocation. v2 moves to a scheduled GitHub Actions workflow (`schedule: cron: '0 6 * * 1'` — weekly Mondays). The same workflow runs the binary against a managed Postgres, builds artifacts, uploads to CDN, updates `manifest.json`.
 
 ## Artifact distribution
@@ -383,7 +383,7 @@ manifest.json:
   "version": "2026-w21",
   "built_at": "2026-05-21T14:00:00Z",
   "geometry": {
-    "url": "/geometry/world-1.50m-ab12cd34.pmtiles",
+    "url": "/geometry/world-1.50m-ab12cd34.fgb",
     "size_bytes": 4380000,
     "sha256": "..."
   },
@@ -402,14 +402,14 @@ Properties:
 
 - Filenames are content-hashed → `Cache-Control: public, max-age=31536000, immutable`. Repeat fetches are free.
 - `manifest.json` itself is short-cached (e.g., `max-age=300`). Clients fetch the manifest on launch, compare versions against their local cache, fetch only what changed.
-- Brotli compression at the CDN; SQLite typically compresses 70%+, PMTiles less (already compressed internally).
+- Brotli compression at the CDN; SQLite typically compresses 70%+; FlatGeobuf compresses similarly under brotli (typed binary with run-length-friendly attribute encoding).
 - Per-statistic SQLite files mean adding statistics in v2 doesn't bloat v1's payload.
 
 ### Client cache strategy
 
 - **Web**: IndexedDB. Mobile browsers allow 50+ MB per origin without prompts in 2026. First-launch download → IndexedDB → in-memory (Rust-side). Subsequent launches read IndexedDB without network unless `manifest.json` says a newer version exists.
 - **iOS / Android**: file-system cache in app sandbox. Same logic; `URLSession`/`OkHttp` already handle the HTTP cache headers.
-- **Embedded fallback**: a small "good enough for first paint" SQLite + low-resolution PMTiles is bundled in each build. App opens instantly with stale-but-real data while the latest is fetched in the background.
+- **Embedded fallback**: a small "good enough for first paint" SQLite + smaller FlatGeobuf is bundled in each build. App opens instantly with stale-but-real data while the latest is fetched in the background.
 
 ## Map rendering details
 
@@ -503,7 +503,7 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 
 ## Open questions
 
-1. **PMTiles + SQLite in WASM, range-request shape.** sql.js-httpvfs works in browsers but introduces a second SQLite runtime alongside our Rust SQLite. Better long-term: Rust-side SQLite with HTTP range requests (`sqlx`-based, custom `Connection` impl). Worth verifying this is mature enough by v1 build time, or accepting full-download-then-IndexedDB until it is.
+1. **SQLite-in-WASM read shape.** Two viable paths: (a) full download once → cache in IndexedDB → query in-memory via a WASM-built `rusqlite` or `sqlx`; (b) HTTP range requests against the SQLite file via a Rust-side custom `Connection` impl. Path (a) is what the architecture currently assumes. Path (b) becomes interesting only if per-statistic SQLite files grow past tens of MB — unlikely through v2 given how small fertility-statistic data actually is. Defer the decision until artifact sizes force it.
 2. **Map projection v1 vs post-v1.** v1 ships Robinson only. Laskowski tri-optimal is the user-preferred post-v1 alternate. Final pick (or both?) is fine to defer to the web client implementation plan.
 3. **Postgres deployment for v2.** Neon free tier is plausibly enough; if not, $5–10/mo VPS or Neon paid tier. Deferred until artifact-build cadence pushes us past free-tier limits.
 4. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
@@ -539,5 +539,6 @@ Subsequent branches that depend on this overview:
 - `docs-architecture-ingestion` — full Postgres schema, per-source adapters, artifact builder, scheduling, license tracking.
 - `docs-product-plan` — vision, audience, monetization options, scope phases.
 - `docs-claude-md-rewrite` — fold the locked decisions into `CLAUDE.md` and remove the stale next-steps section.
+- **Constitution amendment (v1.3.0): swap `PMTiles` for `FlatGeobuf` in Principle VI.** The architecture overview body now uses FlatGeobuf for the geometry artifact (driven by the no-LOD / full-polygon decision); the constitution still names PMTiles, so line 29 of this doc faithfully quotes the stale wording. Small standalone amendment branch closes the gap.
 
 The first feature spec via `/speckit-specify` should be the **World Bank WDI ingestion CLI** (per the constitution's licensing-resolved status of WB WDI as v1's primary global source). Smallest viable end-to-end exercise of the canonical store + artifact builder + manifest pipeline.
