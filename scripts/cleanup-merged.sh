@@ -14,17 +14,6 @@
 #   3. Delete each named branch locally with -D (force; rebase-and-merge leaves
 #      branches unreachable from master, so safe-delete would always refuse).
 #   4. Run `git remote prune origin` to clean up stale remote-tracking refs.
-#
-# Data race with GitHub's "Automatically delete head branches" setting:
-# After a local-rebase + push-master flow (see scripts/pr-merge.sh), GitHub
-# recognizes the PR as merged (head SHA equal to base) and auto-deletes the
-# head branch on origin asynchronously. This races against the push --delete
-# step here: ls-remote can return "branch exists" at check time, then GitHub
-# deletes it, then push --delete fails with "remote ref does not exist" /
-# "cannot lock ref". The script handles this by re-fetching with --prune on
-# push --delete failure and accepting the case where the branches are already
-# absent from origin. Only a genuine "remote branch is still there" failure
-# causes the script to exit with an error.
 
 set -euo pipefail
 
