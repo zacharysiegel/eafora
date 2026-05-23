@@ -237,7 +237,7 @@ The core owns a small set of wgpu render pipelines, all written in WGSL:
 | `borders` | Country boundary lines, anti-aliased, single-pixel thin |
 | `fills` | Solid country fills, color computed per-country from the statistic value (red→blue gradient for TFR) |
 | `hover_scale` | Per-country scale transform applied at draw time; outputs to an offscreen buffer composited over the main render with source-over alpha |
-| `country_label` | Small pinned text, rendered via msdf textures |
+| (no `country_label` GPU pipeline) | Country labels render as **native text overlays** on top of the wgpu canvas — positioned via Rust-computed screen coordinates of country centroids, drawn by HTML/SwiftUI/Compose text widgets. Defers font shaping, accessibility, complex-script handling, and zoom-stable typography to the platform. A future GPU-based label pipeline (single-channel SDF or MSDF) is possible if we ever want labels rendered inside the wgpu pass; not needed for v1's modest label density. |
 
 Shaders are simple — the data is small (200 countries, simplified polygons), so we don't need indirect draws or compute. The core exposes a single `render(viewport, statistic_state) -> CommandBuffer` function the platform shells call from their render loop.
 
