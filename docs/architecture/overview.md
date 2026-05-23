@@ -407,6 +407,21 @@ Properties:
 - Brotli compression at the CDN; SQLite typically compresses 70%+; FlatGeobuf compresses similarly under brotli (typed binary with run-length-friendly attribute encoding).
 - Per-statistic SQLite files mean adding statistics in v2 doesn't bloat v1's payload.
 
+### License-segmented SQLite shards (v2+)
+
+Different upstream sources publish under different licenses. v1 ships only World Bank WDI (uniformly permissive), so v1 produces one SQLite per statistic. From v2 onward, sources with stricter terms (share-alike, no-commercial-redistribution, attribution-only) will land in the canonical store, and a single SQLite is no longer enough: an embedded third-party consumer (e.g. a NYT data dashboard) needs a redistributable subset, while a direct user on eafora.org sees the full license-aggregated set.
+
+The chosen shape is **additive shards via SQLite `ATTACH DATABASE`**, not mutually exclusive variants:
+
+- A base shard contains every datum whose source license permits the most-restrictive distribution context (commercial embedding by third parties).
+- One or more extension shards contain the additional data permitted in successively more-permissive contexts (e.g. non-commercial-only, first-party-Eafora-display-only).
+- The manifest declares which shards exist and the license tier each represents.
+- Clients identify their distribution context (eafora.org loads all tiers it's authorized for; an embedded third-party widget loads only the base) and `ATTACH` each authorized shard. Queries union across attached databases as a SQLite primitive.
+
+Why additive over mutually exclusive: (a) the licensing matrix at `docs/research/data-source-licensing.md` already has more than two distinct restriction shapes, so mutually-exclusive variants would combinatorialize; (b) the build pipeline naturally emits all shards from a single ingestion pass, keyed on per-row license metadata already present in the `source` table; the permissive subset is a free by-product of producing the full set, not a separate build; (c) the most-restrictive base is cached once on the CDN and benefits every consumer regardless of tier.
+
+This is a working direction for v2+, not a v1 commitment. The first source with stricter-than-WB terms landing in the canonical store is what triggers shard production; until then the architecture supports it without depending on it.
+
 ### Client cache strategy
 
 - **Web**: IndexedDB. Mobile browsers allow 50+ MB per origin without prompts in 2026. First-launch download → IndexedDB → in-memory (Rust-side). Subsequent launches read IndexedDB without network unless `manifest.json` says a newer version exists.
