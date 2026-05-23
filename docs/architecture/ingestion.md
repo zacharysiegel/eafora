@@ -51,7 +51,7 @@ eafora/
 │   │   └── schema.sql          # dbmate-generated cumulative schema
 │   ├── samples/                # checked-in sample data for tests + local dev seeding
 │   └── src/
-│       ├── main.rs             # tokio CLI entrypoint
+│       ├── main.rs             # tokio CLI entrypoint; dispatches subcommands (ingest-source, run-all, build-artifacts, seed-samples, upload-artifacts); the run-all subcommand loops over the registered adapters inline
 │       ├── lib.rs              # re-exports for tests
 │       ├── error.rs            # minimer wiring + per-feature variant aggregation
 │       ├── world_bank_wdi/     # one source = one feature module (the lobby/ triplet pattern)
@@ -72,8 +72,7 @@ eafora/
 │       │   ├── flatgeobuf_writer.rs        # geometry shard writer
 │       │   ├── sqlite_writer.rs            # per-statistic, per-license-tier shard writer
 │       │   └── manifest_writer.rs          # manifest.json builder + content hashing
-│       ├── geometry_ingest/                # Natural Earth ingestion (separate from statistic adapters)
-│       └── schedule/                       # launchd entrypoint + reusable run-all-adapters logic
+│       └── geometry_ingest/                # Natural Earth ingestion (separate from statistic adapters)
 ```
 
 Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `ingest-source <code>`, `build-artifacts`, `seed-samples`, `upload-artifacts`, etc. Used for manual invocation, `launchd` triggers, and local dev. The `_api.rs` filename in each feature triplet matches the Singularity `lobby/` convention and reserves the position for actix-web route configurers if v3+ introduces an HTTP server mode; no actix-web dependency is taken until that mode actually lands.
@@ -311,7 +310,7 @@ The mechanical steps for any new source:
 3. Implement `fetch_and_normalize` in `<source_code>_api.rs`.
 4. Implement source-specific SQL in `<source_code>_db.rs`.
 5. Define source-specific types and parsing in `<source_code>_model.rs`.
-6. Register the adapter in `ingestion/src/schedule/` so the run-all path knows about it.
+6. Register the adapter in `main.rs`'s `run-all` subcommand handler and `ingest-source` dispatch.
 7. Write tests against checked-in sample responses in `ingestion/samples/<source_code>/`.
 
 ### First source: World Bank WDI
@@ -456,7 +455,7 @@ Uploads happen via a separate CLI step (`ingestion upload-artifacts <version_lab
 
 ### v1: Mac mini M1 + `launchd`
 
-A `launchd` plist (`~/Library/LaunchAgents/org.eafora.ingestion.plist` on the Mac mini) triggers `ingestion run-all` on a schedule:
+A `launchd` plist (template at `scripts/eafora-ingestion.plist.tmpl`, installed by `setup.sh` to `~/Library/LaunchAgents/org.eafora.ingestion.plist` on the Mac mini) triggers `ingestion run-all` on a schedule:
 
 ```xml
 <key>StartCalendarInterval</key>
