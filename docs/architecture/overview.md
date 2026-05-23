@@ -359,7 +359,7 @@ Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contract
   - `data_status` is an enum: `final`, `provisional`, `preliminary`, `flash_estimate`, `projection`, `imputed`, `interpolated` (matches the `docs/data/sources-survey.md` Preliminary section).
   - `artifact_version (id, manifest_url, built_at, source_versions_jsonb)` for reproducibility.
 - **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `flatgeobuf` file (geometry) + a `sqlite` file (statistic data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
-- **Schedule**: **v0.9 and v1 run on the owner's Mac mini M1 server** (already owned, runs continuously). The ingestion binary is triggered via `launchd` (macOS's cron equivalent) on a schedule — likely weekly Mondays for v1, more often as the source-update cadence grows. The same machine hosts the canonical Postgres. Through v1, manual invocation is also fine. Migration to managed compute (Fly.io / Render / Lambda / a VPS) is a v2+ concern, deferred until traffic or reliability needs force it.
+- **Schedule**: **v1 runs on the owner's Mac mini M1 server** (already owned, runs continuously). The ingestion binary is triggered via `launchd` (macOS's cron equivalent) on a schedule — likely weekly Mondays for v1, more often as the source-update cadence grows. The same machine hosts the canonical Postgres. Through v1, manual invocation is also fine. Migration to managed compute (Fly.io / Render / Lambda / a VPS) is a v2+ concern, deferred until traffic or reliability needs force it.
 
 ## Artifact distribution
 
@@ -460,7 +460,7 @@ The local-dev story mirrors Singularity:
 
 ## CI/CD
 
-**v0.9 / v1 builds run on the owner's Mac mini M1**, the same machine that hosts the ingestion service and Postgres. This pairs naturally: Apple Silicon natively builds iOS xcframeworks (no hosted macOS runner needed — the most expensive part of cloud CI is gone), and macOS also runs Cargo, cargo-leptos, and cargo-ndk for the Linux/Android targets without trouble.
+**v1 builds run on the owner's Mac mini M1**, the same machine that hosts the ingestion service and Postgres. This pairs naturally: Apple Silicon natively builds iOS xcframeworks (no hosted macOS runner needed — the most expensive part of cloud CI is gone), and macOS also runs Cargo, cargo-leptos, and cargo-ndk for the Linux/Android targets without trouble.
 
 The orchestration tool layered on top is provider-agnostic — a self-hosted GitHub Actions runner pointed at the Mac mini, a Buildkite agent, a Jenkins job, or just shell scripts on a launchd timer all work equivalently. The build *machine* is locked to the Mac mini through v1; the workflow tool is a follow-up choice that doesn't change the architecture.
 
