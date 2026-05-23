@@ -348,7 +348,7 @@ Detailed plan: `docs/architecture/client-android.md` (follow-up branch). Key con
 
 Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contracts:
 
-- **Stack**: actix-web binary, tokio runtime (`features = ["full"]`), sqlx with `query_as!` and offline cache, dbmate migrations, reqwest for outbound HTTP. Per Singularity's `lobby/` pattern: each feature module is `<feature>_api.rs`, `<feature>_db.rs`, `<feature>_model.rs` triplet inside a feature directory. Through v2 the binary doesn't actually serve HTTP requests — there's no live API. The actix-web dependency is forward-looking: when v3 introduces the user-contributions / Q&A API, the same binary picks it up via a new `configurer` module.
+- **Stack**: actix-web binary, tokio runtime (`features = ["full"]`), sqlx with `query_as!` and offline cache, dbmate migrations, reqwest for outbound HTTP. Per Singularity's `lobby/` pattern: each feature module is `<feature>_api.rs`, `<feature>_db.rs`, `<feature>_model.rs` triplet inside a feature directory. Through v2 the binary doesn't actually serve HTTP requests — there's no live API. The actix-web dependency is forward-looking: if v3+ introduces a live API for user-submitted corrections (or any other online-only feature that emerges later), the same binary picks it up via a new `configurer` module.
 - **Per-source adapters**: one Rust module per source. Each adapter exposes a `pub async fn fetch_and_normalize(pool: &PgPool) -> Result<IngestReport, AppError>` that reqwest-fetches, parses, and writes to the canonical store. Sources are independent — adding a new one is one new module, not a refactor.
 - **Canonical store**: PostgreSQL. Schema sketch:
   - `country (iso3, name, region, ...)`
@@ -510,7 +510,7 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 4. **CSS / styling for the web client.** Plain CSS, Tailwind, or sass? Singularity is a Raylib game so doesn't help here. To be decided in `docs/architecture/client-web.md` follow-up.
 5. **Animations API.** Reuse Singularity's `LockedSwitch`-style state-machine pattern in `core::geometry::animation`, or invent something new? Singularity's pattern is fine for stage transitions but the camera animation here is continuous, not discrete; probably a different shape.
 6. **Locale list and translation provenance for domain-content i18n.** The split between domain-content i18n (in the Rust core, sourced from upstream publishers) and UI-chrome i18n (per-platform native) is settled in §FFI boundaries. What's not settled: which set of locales we ship in v1 (English only, or English + a small set; e.g. EN/FR/ES/DE/JA), and how we reconcile translations when two upstream sources disagree on a country name. Deferred to the ingestion plan.
-7. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for it but not wired. The shape of the v3 API (auth, schemas, rate-limiting) needs its own spec when the time comes.
+7. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for a future live API but not wired. The most likely v3 use case is user-submitted corrections (Wikipedia-style) — auth, moderation, schemas, and rate-limiting all need their own spec when the time comes. **Semantic / NL-Q&A-style features are explicitly not on the roadmap.**
 
 ## Things to verify
 
