@@ -524,27 +524,18 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 ## Open questions
 
 1. **Postgres deployment beyond v1.** v1 runs on the Mac mini. When the Mac mini stops being enough (HA needs, geographic distribution, or a v3+ live API), the migration target is a serious managed-cloud Postgres — AWS RDS / Aurora is the canonical option; a Cloudflare-fronted Postgres (e.g. via Hyperdrive in front of a managed instance) is the alternative if and when the rest of the stack is fully on Cloudflare. **Neon is ruled out per owner direction.** Deferred until traffic, reliability needs, or a v3+ API actually forces it.
-2. **Locale list and translation provenance for domain-content i18n.** The split between domain-content i18n (in the Rust core, sourced from upstream publishers) and UI-chrome i18n (per-platform native) is settled in §FFI boundaries. What's not settled: which set of locales we ship in v1 (English only, or English + a small set; e.g. EN/FR/ES/DE/JA), and how we reconcile translations when two upstream sources disagree on a country name. Deferred to the ingestion plan.
-3. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for a future live API but not wired. The most likely v3 use case is user-submitted corrections (Wikipedia-style) — auth, moderation, schemas, and rate-limiting all need their own spec when the time comes. **Semantic / NL-Q&A-style features are explicitly not on the roadmap.**
+2. **Live-API readiness for v3.** The `ingestion/` actix-web binary is provisioned for a future live API but not wired. The most likely v3 use case is user-submitted corrections (Wikipedia-style) — auth, moderation, schemas, and rate-limiting all need their own spec when the time comes. **Semantic / NL-Q&A-style features are explicitly not on the roadmap.**
 
 ## Things to verify
 
-These are claims in this document where I'm working from research-agent output without live confirmation. The user should verify any number before acting on it:
+These are claims in this document where I'm working from research-agent output without live confirmation. The user should verify any technical claim before relying on it for implementation:
 
-1. **Cloudflare R2 free-tier specifics** — exact egress allowance, included CDN traffic, billing model edge cases.
-2. **Backblaze B2 current pricing** — download price, storage price.
-3. **AWS RDS / Aurora pricing for the eventual managed-Postgres migration** — instance-class options, storage, transfer-out costs.
-4. **CI service free-tier minutes for the provider eventually chosen** — commonly stated as 2000/month but worth confirming.
-5. **Apple App Store review time** — stated as ~24–48h typical in 2026; varies.
-6. **Apple ETP applicability for an Apple employee shipping Eafora** — public policy is summarized; the owner must verify with internal Apple policy before submission.
-7. **Google Play registration fee structure** — individual ($25) vs organization pricing; org changed to $10/yr at some point; confirm current.
-8. **`.app` TLD pricing at Namecheap/Porkbun** — promotional pricing fluctuates.
-9. **wgpu Metal feature target** — confirm against the current wgpu repo if targeting devices below Apple A10.
-10. **WebGPU readiness in Safari and Firefox in mid-2026** — Chromium is stable, Safari 18.4+ is stable as of May 2026, Firefox in progress per agent research; concrete-verify via real browser tests before relying on WebGPU as default.
-11. **UniFFI 0.27+ async cancellation status** — agent research said "no cancellation tokens as of early 2026"; reverify before designing on the assumption.
-12. **MTKView delegate threading guarantee** — long-standing but worth a spot-check against current iOS SDK docs.
-13. **GitHub repo settings** — confirm "Automatically delete head branches" is enabled (carryover TODO from constitution v1.1.0 sync impact report) and that "rebase and merge" preserves empty commits in master's history (the `>>> branch:` markers).
-
+1. **Apple ETP applicability for an Apple employee shipping Eafora** — public policy is summarized; the owner must verify with internal Apple policy before submission.
+2. **wgpu Metal feature target** — confirm against the current wgpu repo if targeting devices below Apple A10.
+3. **WebGPU readiness in Safari and Firefox in mid-2026** — Chromium is stable, Safari 18.4+ is stable as of May 2026, Firefox in progress per agent research; concrete-verify via real browser tests before relying on WebGPU as default.
+4. **UniFFI 0.27+ async cancellation status** — agent research said "no cancellation tokens as of early 2026"; reverify before designing on the assumption.
+5. **MTKView delegate threading guarantee** — long-standing but worth a spot-check against current iOS SDK docs.
+6. **GitHub repo settings status (verified 2026-05-23)** — "Automatically delete head branches" is now **enabled**. "Rebase and merge" via the GitHub UI does **not** preserve empty commits, so the `>>> branch: <name>` markers do **not** land in master through the standard merge button. Implication: the marker convention's master-history payoff requires a manual rebase + push for any PR whose marker should survive into master; PRs merged via the GitHub UI lose their markers. This needs a workflow decision (see follow-up below).
 ## Follow-up work
 
 Subsequent branches that depend on this overview:
