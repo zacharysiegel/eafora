@@ -16,7 +16,7 @@ This document covers everything between **upstream data sources** and **CDN-publ
 - Geometry ingestion (Natural Earth, separate from statistic ingestion)
 - The artifact builder: FlatGeobuf writer, SQLite shard writer, manifest writer, content-hashing, R2 upload
 - Scheduling (Mac mini M1 + `launchd`)
-- Local development: compose, seeding, manual invocation
+- Local development: Postgres on the host (Homebrew + launchd), seeding, manual invocation
 - Module layout within `ingestion/`
 - Testing strategy for the TDD-required surfaces (per Constitution Principle VII)
 
@@ -43,30 +43,30 @@ The ingestion binary lives at the workspace root in its own crate:
 
 ```
 eafora/
-├── core/                       # data models, math, projection, FFI surfaces (no actix-web, no sqlx)
+├── core/                       # data models, math, projection, FFI surfaces (no sqlx)
 ├── ingestion/                  # this document's subject
-│   ├── Cargo.toml              # depends on core, actix-web, sqlx, reqwest, tokio, ...
+│   ├── Cargo.toml              # depends on core, sqlx, reqwest, tokio, ...
 │   ├── db/
 │   │   ├── migrations/         # dbmate timestamped SQL files
 │   │   └── schema.sql          # dbmate-generated cumulative schema
-│   ├── fixtures/               # checked-in sample data for tests + local dev seeding
+│   ├── samples/                # checked-in sample data for tests + local dev seeding
 │   └── src/
-│       ├── main.rs             # tokio + actix-web entrypoint; CLI subcommands
+│       ├── main.rs             # tokio CLI entrypoint
 │       ├── lib.rs              # re-exports for tests
 │       ├── error.rs            # minimer wiring + per-feature variant aggregation
 │       ├── world_bank_wdi/     # one source = one feature module (the lobby/ triplet pattern)
 │       │   ├── mod.rs
-│       │   ├── world_bank_wdi_api.rs       # actix-web routes (dormant through v2; CLI handlers live here too)
+│       │   ├── world_bank_wdi_api.rs       # CLI handlers (lobby/-triplet position; actix-web route configurer would go here if/when an HTTP server mode is added post-v2)
 │       │   ├── world_bank_wdi_db.rs        # sqlx queries scoped to this source's ingestion
 │       │   └── world_bank_wdi_model.rs     # types (WDI API response shapes, normalization helpers)
 │       ├── eurostat/                       # same shape per added source
 │       ├── hfd/
 │       ├── canonical/                      # cross-cutting reads of the canonical store
-│       │   ├── canonical_api.rs            # routes for any "what's in the canonical store?" introspection
+│       │   ├── canonical_api.rs            # CLI handlers for canonical-store inspection (lobby/-triplet position)
 │       │   ├── canonical_db.rs             # shared sqlx queries
 │       │   └── canonical_model.rs          # shared entity types
 │       ├── artifact/                       # artifact builder
-│       │   ├── artifact_api.rs             # routes for build-trigger introspection (dormant v1)
+│       │   ├── artifact_api.rs             # CLI handlers for artifact build / inspection (lobby/-triplet position)
 │       │   ├── artifact_db.rs              # queries that drive the build (read fact table)
 │       │   ├── artifact_model.rs           # Manifest, ArtifactVersion, build options
 │       │   ├── flatgeobuf_writer.rs        # geometry shard writer
@@ -76,10 +76,7 @@ eafora/
 │       └── schedule/                       # launchd entrypoint + reusable run-all-adapters logic
 ```
 
-The `ingestion/` binary supports two invocation modes:
-
-1. **CLI** (`ingestion <subcommand>`): `ingest-source <code>`, `build-artifacts`, `seed-fixtures`, `upload-artifacts`, etc. Used for manual invocation, `launchd` triggers, and local dev. The default through v1.
-2. **HTTP server** (`ingestion serve`): the actix-web binary serves an admin/introspection API. **Dormant through v2** (no clients call it) — present so the v3+ live API can land in the same binary without restructuring.
+Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `ingest-source <code>`, `build-artifacts`, `seed-samples`, `upload-artifacts`, etc. Used for manual invocation, `launchd` triggers, and local dev. The `_api.rs` filename in each feature triplet matches the Singularity `lobby/` convention and reserves the position for actix-web route configurers if v3+ introduces an HTTP server mode; no actix-web dependency is taken until that mode actually lands.
 
 ## Canonical PostgreSQL store
 
@@ -315,7 +312,7 @@ The mechanical steps for any new source:
 4. Implement source-specific SQL in `<source_code>_db.rs`.
 5. Define source-specific types and parsing in `<source_code>_model.rs`.
 6. Register the adapter in `ingestion/src/schedule/` so the run-all path knows about it.
-7. Write tests against checked-in fixture responses in `ingestion/fixtures/<source_code>/`.
+7. Write tests against checked-in sample responses in `ingestion/samples/<source_code>/`.
 
 ### First source: World Bank WDI
 
@@ -480,19 +477,21 @@ When the Mac mini becomes insufficient (HA, geographic distribution, or v3+ live
 
 ## Local development
 
-### Compose + Podman
+### Postgres on the host
 
-The repo root's `setup.sh` and `compose.template.yaml` (per Singularity convention) bring up Postgres in Podman. The default database is `eafora_dev`; the `DATABASE_URL` env var (set via `dotenvy`) points at it.
+`setup.sh` (at the repo root) installs Postgres via Homebrew (`brew install postgresql@17`) and configures it as a launchd-managed service. The plist template at `scripts/eafora-postgres.plist.tmpl` is rendered into `~/Library/LaunchAgents/org.eafora.postgres.plist`, then loaded via `launchctl bootstrap gui/$(id -u)`, so Postgres starts at login and on demand. The default database is `eafora_dev` on port 5432; `DATABASE_URL` is `postgresql://localhost/eafora_dev` (set via `dotenvy` from `.env`).
+
+This is a deviation from Singularity's Podman Compose setup (Constitution Principle IV; recorded in v1.3.3). Accepted because v1 ships on a personal Mac mini plus one developer machine — host-installed Postgres removes the Podman dependency and the compose-file plumbing at the cost of portability that doesn't matter at this scale. Containerization may return when cloud deployment lands post-v2.
 
 ### Seeding the canonical store
 
-A `seed-fixtures` CLI subcommand populates the canonical store with checked-in fixture data:
+A `seed-samples` CLI subcommand populates the canonical store with checked-in sample data:
 
 ```sh
-cargo run -p ingestion -- seed-fixtures
+cargo run -p ingestion -- seed-samples
 ```
 
-This runs all migrations (including the seed-data migrations for `country` and the initial `statistic`/`source` records), then loads fixture responses from `ingestion/fixtures/<source_code>/` and replays them through each adapter's normalize-and-insert path. The result is a fully-populated canonical store with the same shape production would have, but with fixed test data.
+This runs all migrations (including the seed-data migrations for `country` and the initial `statistic`/`source` records), then loads sample responses from `ingestion/samples/<source_code>/` and replays them through each adapter's normalize-and-insert path. The result is a fully-populated canonical store with the same shape production would have, but with fixed test data.
 
 ### Running an adapter locally
 
@@ -514,12 +513,12 @@ Writes `manifest.json` + `geometry/` + `data/` under `./build-output/`. No uploa
 
 Per Constitution Principle VII, the ingestion-side TDD-required surfaces are:
 
-- **Per-source normalization** (`<source>_model.rs` parsing functions): every fixture response → expected canonical-shape output, exhaustively.
+- **Per-source normalization** (`<source>_model.rs` parsing functions): every sample response → expected canonical-shape output, exhaustively.
 - **Source-preference merge** (`artifact/merge.rs` — the per-cell merge logic): all combinations of `(data_status, retrieved_at, preference_rank)` exercised against the merge rule.
 - **Artifact diffing** (used by `build-artifacts` to decide whether a build is no-op): trivial cases (no canonical changes) and tricky cases (rows updated but resulting artifact bytes unchanged) covered.
 - **Error mapping** (per-source error → `AppError` → log line): each variant gets a test.
 
-Integration tests use the seeded canonical store via `seed-fixtures`, exercise `fetch_and_normalize` against the fixture responses (no live HTTP), and assert on the resulting `statistic_value` rows and on the artifact output.
+Integration tests use the seeded canonical store via `seed-samples`, exercise `fetch_and_normalize` against the sample responses (no live HTTP), and assert on the resulting `statistic_value` rows and on the artifact output.
 
 Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 

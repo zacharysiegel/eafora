@@ -1,14 +1,15 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 1.3.1 → 1.3.2 (PATCH — housekeeping: (a) Principle VI's named geometry artifact format swapped from PMTiles to FlatGeobuf to match the architecture overview's no-LOD / full-polygon decision; the principle's binding intent (CDN-delivered immutable artifacts; no live API through v2) is unchanged. (b) Branch-marker discovery wording updated from less-pager search to `git log --grep '>>> branch:'`, and the explanation of why markers exist now references the rebase-based merge flow rather than the deprecated GitHub UI rebase-merge button.)
+Version: 1.3.2 → 1.3.3 (PATCH — Principle IV locked-pick swap: PostgreSQL runtime changed from "Podman Compose" to "Homebrew + launchd on the host". This is a deviation from Singularity's container-based local stack, accepted because Eafora through v1 runs only on a personal Mac mini plus one developer machine; host-installed Postgres removes a tooling dependency (Podman) without losing anything that matters at this scale. Principle IV's binding rule ("default to Singularity, deviations justified in spec/plan") is unchanged — this amendment exercises the deviation clause and records the result inline so future readers see Eafora's actual stack at a glance. Containerization may return for cloud deployment post-v2. The owner has noted Singularity itself may move the same direction.)
 Earlier amendments:
   - 1.0.0 (2026-05-21): initial ratification (8 principles + governance: license, versioning, boundary recognition, app code language, git workflow, tooling discipline, amendments, compliance review)
   - 1.1.0 (2026-05-21): added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh
   - 1.2.0 (2026-05-23): replaced Git workflow §Merge strategy clause to mandate local rebase + push (GitHub UI rebase-merge drops empty commits and would lose the marker convention); registered scripts/pr-merge.sh
   - 1.3.0 (2026-05-23): terminology rename, the user-facing concept previously called an "indicator" is now called a "statistic" throughout the constitution. Publisher-side terminology (World Development Indicators, etc.) is unchanged because it's quoted publisher language, not Eafora's voice.
   - 1.3.1 (2026-05-23): clarification — removed "semantic Q&A" from Principle VI's v3+ live-API examples list (the binding rule was unchanged).
-Current principles (unchanged in 1.3.2):
+  - 1.3.2 (2026-05-23): PMTiles → FlatGeobuf in Principle VI; rewrote Branch-marker explanatory paragraph for the rebase-based merge flow + `git log --grep` discovery; propagated PMTiles → FlatGeobuf to overview line 29.
+Current principles (unchanged in 1.3.3):
   - I. Educational neutrality (NON-NEGOTIABLE)
   - II. Source provenance (NON-NEGOTIABLE)
   - III. Rust core, native UI shells
@@ -17,14 +18,15 @@ Current principles (unchanged in 1.3.2):
   - VI. CDN-delivered data, no live data API through v2
   - VII. Test-first for core logic
   - VIII. Workflow discipline
-Modified prose in 1.3.2:
-  - Principle VI: "Geometry artifacts MUST use **PMTiles**" → "Geometry artifacts MUST use **FlatGeobuf**".
-  - Governance §Git workflow §Branch marker: rewrote the explanatory paragraph (compensates clause + discovery method) to reference the rebase-based merge flow and `git log --grep '>>> branch:'`.
+Modified prose in 1.3.3:
+  - Principle IV §Locked picks for PostgreSQL: "**PostgreSQL** via Podman Compose, ..." → "**PostgreSQL** installed via Homebrew on the host and managed via `launchd` (Singularity deviation, see SYNC IMPACT note above), ...".
 Removed sections: N/A
 Templates requiring updates:
-  - none from this amendment (no template invalidation; binding format change is application-layer).
+  - none from this amendment (no template invalidation).
 Propagation in this amendment:
-  - `docs/architecture/overview.md` line 29: PMTiles → FlatGeobuf in the Principle VI summary line. The "indicators" → "statistics" propagation on the same line stays in the separate docs-statistic-rename branch.
+  - `docs/architecture/overview.md` §Workspace and crate layout: removed `compose.template.yaml` and `compose.yaml` entries; updated the Singularity-parity note to acknowledge the Postgres runtime deviation.
+  - `docs/architecture/overview.md` §Local development: rewrote the bullets for Homebrew + launchd Postgres.
+  - `docs/architecture/ingestion.md` §Local development: replaced §Compose + Podman with §Postgres on the host.
 Resolved follow-up TODOs (from prior SYNC IMPACT REPORTs):
   - "Confirm GitHub repo settings preserve empty commits during rebase and merge" → RESOLVED in v1.2.0
   - "Enable GitHub's 'Automatically delete head branches' setting" → RESOLVED in v1.2.0
@@ -32,6 +34,7 @@ Follow-up TODOs (still pending):
   - License revisit before any public source release (Governance §License)
   - Replace placeholder `eafora` crate (currently 0.0.x on crates.io) with a real crate from inside the monorepo when workspace structure lands (Governance §Versioning)
   - Propagate the indicator → statistic rename across `docs/data/sources-survey.md`, `docs/research/data-source-licensing.md`, `CLAUDE.md`, and `docs/architecture/overview.md` line 29. Quoted publisher terminology (e.g. "World Development Indicators") stays as-is. Tracked in the docs-statistic-rename branch.
+  - If Singularity later moves to host-installed Postgres + launchd, re-evaluate whether Eafora's "deviation" framing in Principle IV is still accurate; rewrite as parity if Singularity converges.
 -->
 
 # Eafora Constitution
@@ -66,7 +69,7 @@ Locked picks confirmed for Eafora (which match Singularity except where noted):
 - HTTP server: **actix-web**
 - HTTP client: **reqwest**
 - Async runtime: **tokio** with `features = ["full"]`
-- Database: **PostgreSQL** via Podman Compose, **sqlx** for queries (using `query_as!` and the offline cache), **dbmate** for migrations
+- Database: **PostgreSQL** installed via Homebrew on the host and managed via `launchd` (Singularity deviation; v1 runs on personal hardware where host-installed Postgres is operationally simpler than containers — see SYNC IMPACT note for the 1.3.3 amendment), **sqlx** for queries (using `query_as!` and the offline cache), **dbmate** for migrations
 - Serialization: **serde** with **rmp-serde** when MessagePack is appropriate
 - Logging: **log** + **env_logger** with the message format `"<message>; [<data>] [<data2>]"`
 - Configuration: **dotenvy** for env loading; statics via `LazyLock`
@@ -213,6 +216,6 @@ Every spec produced via `/speckit-specify` MUST include a "Constitution Check" s
 
 ---
 
-**Version**: 1.3.2
+**Version**: 1.3.3
 **Ratified**: 2026-05-21
 **Last amended**: 2026-05-23
