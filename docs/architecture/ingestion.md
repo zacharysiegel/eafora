@@ -45,7 +45,7 @@ The ingestion binary lives at the workspace root in its own crate:
 eafora/
 ├── core/                       # data models, math, projection, FFI surfaces (no sqlx)
 ├── ingestion/                  # this document's subject
-│   ├── Cargo.toml              # depends on core, sqlx, reqwest, tokio, ...
+│   ├── Cargo.toml              # depends on core, sqlx, reqwest, tokio, clap, ...
 │   ├── db/
 │   │   ├── migrations/         # dbmate timestamped SQL files
 │   │   └── schema.sql          # dbmate-generated cumulative schema
@@ -76,6 +76,58 @@ eafora/
 ```
 
 Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `ingest-source <code>`, `build-artifacts`, `seed-samples`, `upload-artifacts`, etc. Used for manual invocation, `launchd` triggers, and local dev. The `_api.rs` filename in each feature triplet matches the Singularity `lobby/` convention and reserves the position for actix-web route configurers if v3+ introduces an HTTP server mode; no actix-web dependency is taken until that mode actually lands.
+
+### CLI structure (clap builder API)
+
+CLI arg parsing and dispatch use **clap**'s **builder** API (not the derive macros). Matches Constitution Principle V's explicit-over-implicit preference — the command tree is constructed imperatively, with each subcommand's arguments visible at the call site rather than derived from struct attributes.
+
+```rust
+// ingestion/src/main.rs
+use clap::{Arg, ArgAction, ArgMatches, Command};
+
+fn build_cli() -> Command {
+    Command::new("ingestion")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("ingest-source")
+                .about("Run a single source adapter")
+                .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi)"))
+                .arg(Arg::new("country-filter").long("country-filter").value_delimiter(','))
+                .arg(Arg::new("period").long("period").help("YYYY-MM-DD:YYYY-MM-DD half-open interval"))
+                .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
+        )
+        .subcommand(Command::new("run-all").about("Run every registered source adapter"))
+        .subcommand(
+            Command::new("build-artifacts")
+                .about("Build CDN artifacts from the current canonical store")
+                .arg(Arg::new("output-dir").required(true))
+                .arg(Arg::new("version-label").required(true)),
+        )
+        .subcommand(Command::new("seed-samples").about("Load checked-in sample responses into the canonical store"))
+        .subcommand(
+            Command::new("upload-artifacts")
+                .about("Upload a previously-built artifact set to R2")
+                .arg(Arg::new("version-label").required(true)),
+        )
+}
+
+#[tokio::main]
+async fn main() -> Result<(), AppError> {
+    let matches: ArgMatches = build_cli().get_matches();
+    match matches.subcommand() {
+        Some(("ingest-source",    sub_matches)) => dispatch_ingest_source(sub_matches).await,
+        Some(("run-all",          _))           => dispatch_run_all().await,
+        Some(("build-artifacts",  sub_matches)) => dispatch_build_artifacts(sub_matches).await,
+        Some(("seed-samples",     _))           => dispatch_seed_samples().await,
+        Some(("upload-artifacts", sub_matches)) => dispatch_upload_artifacts(sub_matches).await,
+        _                                        => unreachable!("subcommand_required guarantees a match"),
+    }
+}
+```
+
+Each subcommand has a `dispatch_*` helper that reads its specific arguments from `ArgMatches` and calls into the relevant feature module (`world_bank_wdi::fetch_and_store(...)`, `artifact::build_artifacts(...)`, etc.). The `dispatch_*` helpers live alongside `main` in `main.rs` for the run-all orchestration case, or — if a dispatch grows non-trivial — in the relevant feature module's `_api.rs`.
+
+Do not introduce `#[derive(Parser)]`, `#[derive(Subcommand)]`, or any clap derive macro. If a clap helper accepts both forms, pick the builder variant.
 
 ## Canonical PostgreSQL store
 
