@@ -720,7 +720,6 @@ Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 1. **dbmate's behavior with the Singularity convention for `cargo sqlx prepare`**: confirm that `dbmate.sh`'s wrapper around `sqlx prepare --workspace` works against a workspace with both `ingestion/` and `core/` crates.
 2. **Cloudflare R2 S3-compatible API surface**: confirm reqwest + `aws-sigv4` (or equivalent signature crate) work without the AWS SDK. R2's S3 compatibility is documented but corner cases (multipart upload thresholds, presigned URLs) deserve a spike before relying on them.
 3. **Natural Earth license verification**: the dataset is widely described as public domain ("free of charge for any use"), but the actual Natural Earth website's license page should be confirmed and quoted in the seeded `data_source` row.
-4. **WB WDI rate limits**: the WB API has historically been generous (no documented rate limit) but a spike against the actual endpoint should confirm before the first scheduled run.
 
 ## Follow-up work
 
