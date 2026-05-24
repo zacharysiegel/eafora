@@ -273,7 +273,7 @@ Each helper is a separate named function inside the source's feature module; the
 - **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.country_filter`, `options.period_filter`, `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
 - **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
 - **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `country` / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
-- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. Inserts new rows via `sqlx::query_as!`; updates existing rows matched on the natural key `(country_id, statistic_id, period_start, period_end, data_source_id)`. Returns counts of inserted / updated / unchanged rows plus any non-fatal warnings.
+- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. Inserts new rows via `sqlx::query_as!`; updates existing rows matched on the natural key `(country_id, statistic_id, period_start, period_end, data_source_id)`. Returns counts of inserted / updated / unchanged `statistic_value` rows plus any non-fatal warnings.
 
 Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
 
@@ -292,9 +292,9 @@ pub struct IngestReport {
     pub source_code: String,
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
-    pub rows_inserted: u64,
-    pub rows_updated: u64,
-    pub rows_unchanged: u64,
+    pub values_inserted: u64,
+    pub values_updated: u64,
+    pub values_unchanged: u64,
     pub upstream_revision: String,
     pub warnings: Vec<IngestWarning>,
 }
@@ -303,7 +303,7 @@ pub struct IngestReport {
 pub struct IngestWarning {
     pub country_iso3: Option<String>,
     pub statistic_code: Option<String>,
-    pub year: Option<i32>,
+    pub period_start: Option<NaiveDate>,
     pub message: String,
 }
 ```
