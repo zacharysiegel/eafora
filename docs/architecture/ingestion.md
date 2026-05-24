@@ -308,7 +308,7 @@ comment on column statistic_value.data_source_revision     is $$the source's own
 
 #### `artifact_version`
 
-Records each build of CDN-published artifacts. Used for reproducibility ("what data did the client see at version 2026-05-18?") and rollback.
+Records each artifact that has been **published to the CDN** (one row per successful upload — NOT per local build). Used for reproducibility ("what data did the client see at version 2026-05-18?"), rollback, and answering "what's the latest available version?" from clients. Local builds that haven't been uploaded leave no row here. If we ever need to track every build attempt (failed uploads, dry-run builds, etc.), that's a separate `build_attempt` table to add — not v1.
 
 ```sql
 create table if not exists artifact_version (
@@ -485,29 +485,45 @@ pub async fn build_artifacts(
     pool: &PgPool,
     output_dir: &Path,
     version_label: &str,
-) -> Result<ArtifactVersion, AppError> {
+) -> Result<LocalArtifactBuild, AppError> {
     let candidate_values: Vec<CandidateValue> = read_candidate_values(pool).await?;
+    let data_source_versions: BTreeMap<String, String> = collect_data_source_versions(&candidate_values);
     let merged_values: Vec<MergedValue> = apply_source_preference_merge(candidate_values);
     let sqlite_shards: Vec<ShardOutput> = emit_sqlite_shards(&merged_values, output_dir).await?;
     let geometry_shard: ShardOutput = emit_geometry_flatgeobuf(output_dir).await?;
     let hashed_outputs: HashedOutputs = compute_content_hashes(sqlite_shards, geometry_shard).await?;
-    let manifest_output: ShardOutput = emit_manifest(&hashed_outputs, version_label, output_dir).await?;
-    let artifact_version: ArtifactVersion = insert_artifact_version(pool, version_label, &manifest_output, &hashed_outputs).await?;
-    Ok(artifact_version)
+    let manifest_output: ShardOutput = emit_manifest(&hashed_outputs, version_label, &data_source_versions, output_dir).await?;
+    Ok(LocalArtifactBuild {
+        version_label: version_label.to_string(),
+        hashed_outputs,
+        manifest_output,
+        data_source_versions,
+    })
 }
 ```
+
+`build_artifacts` is local-only: it produces files on disk and returns a `LocalArtifactBuild` describing what was built. **It does not write to the `artifact_version` table.** That row is inserted by `upload_artifacts_to_r2` after the files are published to the CDN — so `artifact_version` records published artifacts, not local builds (see the `artifact_version` table intro above).
 
 Each helper is a separate named function inside the `artifact` module; the orchestrator only sequences them. The helper contracts:
 
 - **`read_candidate_values(pool)`** → `Vec<CandidateValue>`. SELECTs from `statistic_value` with joins to `data_source` (for `license_class` and `preference_rank`) and `statistic` (for `code`). Returns every candidate row that could appear in some shard. For v1's data volume (~tens of thousands of rows) the whole set fits in memory; if it grows substantially, stream into a chunked merge.
+- **`collect_data_source_versions(candidates)`** → `BTreeMap<String, String>`. Reduces candidates to one entry per source (`data_source.code` → max `data_source_revision`). The result is what goes into `manifest.json`'s `data_source_versions_jsonb` field and the `artifact_version.data_source_versions_jsonb` column. Pure function — no I/O.
 - **`apply_source_preference_merge(candidates)`** → `Vec<MergedValue>`. Groups candidates by `(region_id, statistic_id, period_start, period_end, license_class)` and applies the merge rule from §Source-preference merge (lowest `preference_rank` wins; data-status overrides where applicable). Pure function — no I/O.
 - **`emit_sqlite_shards(merged, output_dir)`** → `Vec<ShardOutput>`. Groups merged values by `(statistic_code, license_class)`, opens a SQLite file per group under `output_dir/data/`, writes rows, returns metadata for each file (path + size; not yet content-hashed).
 - **`emit_geometry_flatgeobuf(output_dir)`** → `ShardOutput`. Reads geometry from the in-repo Natural Earth bundle (`ingestion/data/world-50m.fgb` per the §Geometry ingestion lean), writes to `output_dir/geometry/`. Single file, no license-class split — Natural Earth is `public_domain`.
 - **`compute_content_hashes(shards, geometry)`** → `HashedOutputs`. SHA-256 every output file, rename from `*.tmp-<uuid>` to `*-<sha8>.<ext>` only after hashing succeeds, returns paths + full hashes for the manifest. The manifest itself is excluded — it has a stable filename (`manifest.json`).
-- **`emit_manifest(hashed, version_label, output_dir)`** → `ShardOutput`. Builds `manifest.json` from `hashed` plus the `version_label`, writes to `output_dir/manifest.json`, computes its own SHA-256 (for the `artifact_version.manifest_sha256` column). Filename is NOT content-hashed because clients fetch by stable URL with a short cache.
-- **`insert_artifact_version(pool, version_label, manifest_output, hashed)`** → `ArtifactVersion`. INSERTs into `artifact_version` with `version_label`, `manifest_sha256`, `manifest_url`, and `data_source_versions_jsonb` (derived from the latest `data_source_revision` per source in `read_candidate_values`'s output). Returns the inserted row.
+- **`emit_manifest(hashed, version_label, data_source_versions, output_dir)`** → `ShardOutput`. Builds `manifest.json` from `hashed` + `version_label` + `data_source_versions`, writes to `output_dir/manifest.json`, computes its own SHA-256 (for the eventual `artifact_version.manifest_sha256` column). Filename is NOT content-hashed because clients fetch by stable URL with a short cache.
 
-Upload is intentionally outside `build_artifacts` so the build can be inspected locally before publishing. The caller can either run `upload-artifacts <version_label>` as a separate CLI step, or chain inline via `build-artifacts --upload` (which calls `upload_artifacts_to_r2(hashed_outputs, manifest_output)` after the orchestrator returns).
+`LocalArtifactBuild` is a plain owned struct holding everything `upload_artifacts_to_r2` needs to publish + record the artifact_version row:
+
+```rust
+pub struct LocalArtifactBuild {
+    pub version_label: String,
+    pub hashed_outputs: HashedOutputs,
+    pub manifest_output: ShardOutput,
+    pub data_source_versions: BTreeMap<String, String>,
+}
+```
 
 ### Output directory layout
 
@@ -575,7 +591,31 @@ CDN cache headers (set at upload time, not in the artifact itself):
 
 ### R2 upload
 
-Uploads happen via a separate CLI step (`ingestion upload-artifacts <version_label>`) so the build can be inspected locally before publishing. The R2 client uses reqwest against R2's S3-compatible API with credentials from `secr`-encrypted secrets. Upload is idempotent — content-hashed filenames mean re-uploading the same file is a no-op semantically.
+Uploads happen via a separate CLI step (`ingestion upload-artifacts <version_label>`) so the build can be inspected locally before publishing, or chained inline via `build-artifacts --upload`. The upload orchestrator is responsible for both publishing the files AND inserting the `artifact_version` row — the row's existence means "fetchable from the CDN," so it MUST follow a successful upload:
+
+```rust
+pub async fn upload_artifacts_to_r2(
+    pool: &PgPool,
+    build: LocalArtifactBuild,
+) -> Result<ArtifactVersion, AppError> {
+    upload_files_to_r2(&build.hashed_outputs, &build.manifest_output).await?;
+    let artifact_version: ArtifactVersion = insert_artifact_version(
+        pool,
+        &build.version_label,
+        &build.manifest_output,
+        &build.hashed_outputs,
+        &build.data_source_versions,
+    ).await?;
+    Ok(artifact_version)
+}
+```
+
+Helper contracts:
+
+- **`upload_files_to_r2(hashed, manifest)`** → `()`. Uploads every file in `hashed.shards` + `hashed.geometry` + `manifest` to R2 via reqwest against the S3-compatible API. Credentials come from `secr`-encrypted secrets. Uploads are idempotent — content-hashed filenames mean re-uploading the same file is a semantic no-op (PUT overwrites the same bytes at the same key).
+- **`insert_artifact_version(pool, version_label, manifest_output, hashed, data_source_versions)`** → `ArtifactVersion`. INSERTs into `artifact_version` with `version_label`, `manifest_sha256`, `manifest_url` (now resolves to the actual CDN URL because upload just succeeded), and `data_source_versions_jsonb`. Returns the inserted row.
+
+If `upload_files_to_r2` fails, `insert_artifact_version` is not called — the canonical store stays consistent with "rows iff fetchable." The local build remains on disk for a retry.
 
 ## Scheduling
 
