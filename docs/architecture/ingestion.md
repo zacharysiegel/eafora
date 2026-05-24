@@ -617,11 +617,19 @@ Helper contracts:
 
 If `upload_files_to_r2` fails, `insert_artifact_version` is not called — the canonical store stays consistent with "rows iff fetchable." The local build remains on disk for a retry.
 
+## Postgres hosting
+
+Postgres runs as a launchd-managed host service via Homebrew. The same recipe applies to every machine that has a canonical store — the user's Mac mini (v1 production hosting) and every developer machine — so the install is identical across environments. `setup.sh` is responsible for executing it.
+
+`setup.sh` (at the repo root) installs Postgres via Homebrew (`brew install postgresql@17`) and configures it as a launchd-managed service. The plist template at `scripts/eafora-postgres.plist.template` is rendered into `~/Library/LaunchAgents/org.eafora.postgres.plist`, then loaded via `launchctl bootstrap gui/$(id -u)`, so Postgres starts at login and on demand. The default database is `eafora_dev` on port 5432; `DATABASE_URL` is `postgresql://localhost/eafora_dev` (set via `dotenvy` from `.env`).
+
+This is a deviation from Singularity's Podman Compose setup (Constitution Principle IV; recorded in v1.3.3). Accepted because v1 ships on a personal Mac mini plus one developer machine — host-installed Postgres removes the Podman dependency and the compose-file plumbing at the cost of portability that doesn't matter at this scale. Containerization may return when cloud deployment lands post-v2.
+
 ## Scheduling
 
 ### v1: Mac mini M1 + `launchd`
 
-A `launchd` plist (template at `scripts/eafora-ingestion.plist.tmpl`, installed by `setup.sh` to `~/Library/LaunchAgents/org.eafora.ingestion.plist` on the Mac mini) triggers `ingestion run-all` on a schedule:
+A `launchd` plist (template at `scripts/eafora-ingestion.plist.template`, installed by `setup.sh` to `~/Library/LaunchAgents/org.eafora.ingestion.plist` on the Mac mini) triggers `ingestion run-all` on a schedule:
 
 ```xml
 <key>StartCalendarInterval</key>
@@ -642,12 +650,6 @@ When the Mac mini becomes insufficient (HA, geographic distribution, or v3+ live
 
 ## Local development
 
-### Postgres on the host
-
-`setup.sh` (at the repo root) installs Postgres via Homebrew (`brew install postgresql@17`) and configures it as a launchd-managed service. The plist template at `scripts/eafora-postgres.plist.tmpl` is rendered into `~/Library/LaunchAgents/org.eafora.postgres.plist`, then loaded via `launchctl bootstrap gui/$(id -u)`, so Postgres starts at login and on demand. The default database is `eafora_dev` on port 5432; `DATABASE_URL` is `postgresql://localhost/eafora_dev` (set via `dotenvy` from `.env`).
-
-This is a deviation from Singularity's Podman Compose setup (Constitution Principle IV; recorded in v1.3.3). Accepted because v1 ships on a personal Mac mini plus one developer machine — host-installed Postgres removes the Podman dependency and the compose-file plumbing at the cost of portability that doesn't matter at this scale. Containerization may return when cloud deployment lands post-v2.
-
 ### Seeding the canonical store
 
 A `seed-samples` CLI subcommand populates the canonical store with checked-in sample data:
@@ -656,7 +658,9 @@ A `seed-samples` CLI subcommand populates the canonical store with checked-in sa
 cargo run -p ingestion -- seed-samples
 ```
 
-This runs all migrations (including the seed-data migrations for `country` and the initial `statistic`/`data_source` records), then loads sample responses from `ingestion/samples/<source_code>/` and replays them through each adapter's normalize-and-insert path. The result is a fully-populated canonical store with the same shape production would have, but with fixed test data.
+This loads sample responses from `ingestion/samples/<source_code>/` and replays them through each adapter's normalize-and-insert path. The result is a fully-populated canonical store with the same shape production would have, but with fixed test data.
+
+`seed-samples` does NOT run migrations — that's dbmate's job. The expected workflow is `./dbmate.sh up` first (which applies schema migrations including the seed-data migrations for `country`, `statistic`, and `data_source` reference rows), then `cargo run -p ingestion -- seed-samples` to fill in the sample `statistic_value` rows on top of that schema. `setup.sh` chains them on first-time setup; manual re-seeding after a schema change runs them in that order.
 
 ### Running an adapter locally
 

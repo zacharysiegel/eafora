@@ -88,7 +88,7 @@ eafora/
 ├── secrets.yaml            # secr-encrypted secrets
 ├── setup.sh                # first-time setup: brew install postgresql@17, install launchd plist, decrypt secrets, run migrations, cargo sqlx prepare --workspace
 ├── dbmate.sh               # dbmate wrapper, also runs cargo sqlx prepare --workspace
-├── scripts/                # tooling scripts (branch-init.sh, cleanup-merged.sh, pr-merge.sh, eafora-postgres.plist.tmpl)
+├── scripts/                # tooling scripts (branch-init.sh, cleanup-merged.sh, pr-merge.sh, eafora-postgres.plist.template)
 ├── docs/                   # cross-cutting research and architecture
 ├── specs/                  # per-feature spec-kit artifacts (NNN-slug)
 ├── .specify/               # spec-kit machinery
@@ -464,7 +464,7 @@ When the user clicks a country, the camera animates from current viewport to a v
 
 The local-dev story mostly mirrors Singularity (deviation: Postgres runtime, see Principle IV and Constitution v1.3.3 SYNC IMPACT):
 
-- `setup.sh` checks prerequisites (cargo, brew, dbmate, secr, websocat where applicable), runs `brew install postgresql@17`, renders `scripts/eafora-postgres.plist.tmpl` into `~/Library/LaunchAgents/org.eafora.postgres.plist` and loads it via `launchctl bootstrap gui/$(id -u)`, creates the `eafora_dev` database, decrypts secrets, generates `.env` from the template, runs migrations, and runs `cargo sqlx prepare --workspace`.
+- `setup.sh` checks prerequisites (cargo, brew, dbmate, secr, websocat where applicable), runs `brew install postgresql@17`, renders `scripts/eafora-postgres.plist.template` into `~/Library/LaunchAgents/org.eafora.postgres.plist` and loads it via `launchctl bootstrap gui/$(id -u)`, creates the `eafora_dev` database, decrypts secrets, generates `.env` from the template, runs migrations, and runs `cargo sqlx prepare --workspace`.
 - Postgres runs on the host as a launchd-managed service (port 5432; `DATABASE_URL` is `postgresql://localhost/eafora_dev` by default). If a developer already has Postgres bound to 5432, `setup.sh` errors out and the developer overrides via `DATABASE_URL` or rebinds the existing instance.
 - `dbmate.sh` wraps dbmate and re-runs `cargo sqlx prepare --workspace`.
 - `cargo leptos watch` runs the web app on localhost.
