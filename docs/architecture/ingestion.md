@@ -386,11 +386,11 @@ The full implementation lives in the feature spec; this section documents only w
 
 ## Source-preference merge
 
-When multiple sources publish a value for the same `(country, statistic, period_start, period_end)`, all rows stay in `statistic_value`. The merge into a single "what does the user see?" value happens at **artifact-build time**, not at ingestion time. This keeps every source's contribution intact in the canonical store for reproducibility, license accounting, and rollback.
+When multiple sources publish a value for the same `(region, statistic, period_start, period_end)`, all rows stay in `statistic_value`. The merge into a single "what does the user see?" value happens at **artifact-build time**, not at ingestion time. This keeps every source's contribution intact in the canonical store for reproducibility, license accounting, and rollback.
 
 ### Merge rule
 
-For each `(country, statistic, period_start, period_end)` cell published into the artifact:
+For each `(region, statistic, period_start, period_end)` cell published into the artifact:
 
 1. Select all candidate rows from `statistic_value`.
 2. Filter by license-class eligibility (the base shard only considers rows whose `data_source.license_class` is `public_domain` or `attribution`; the `share_alike` shard adds rows of class `attribution_sa`; the `noncommercial` shard adds rows of class `noncommercial`).
