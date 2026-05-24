@@ -105,14 +105,19 @@ Each country row points at its *deepest* applicable region (Brazil → South Ame
 ```sql
 create table if not exists region (
   id               uuid                     not null primary key,
-  code             text                     not null unique,                  -- human-readable slug ('americas', 'south_america', 'sub_saharan_africa')
+  code             text                     not null unique,
   name_en          text                     not null,
-  level            text                     not null,                         -- 'region' | 'subregion' | 'intermediate_region'
-  parent_region_id uuid                              references region (id),  -- null only for top-level region nodes (Africa, Americas, Asia, Europe, Oceania)
-  m49_code         text                     not null unique,                  -- UN M49 numeric code as text (preserves leading zeros like '021'); text vs int leaves room for a non-M49 taxonomy if §Boundary recognition's alt-taxonomy clause is exercised
+  level            text                     not null,
+  parent_region_id uuid                              references region (id),
+  m49_code         text                     not null unique,  -- text vs int leaves room for a non-M49 taxonomy if §Boundary recognition's alt-taxonomy clause is exercised
   created          timestamp with time zone not null default now(),
   modified         timestamp with time zone not null default now()
 );
+
+comment on column region.code             is $$human-readable slug ('americas', 'south_america', 'sub_saharan_africa')$$;
+comment on column region.level            is $$'region' | 'subregion' | 'intermediate_region'$$;
+comment on column region.parent_region_id is $$null only for top-level region nodes (Africa, Americas, Asia, Europe, Oceania)$$;
+comment on column region.m49_code         is $$UN M49 numeric code as text (preserves leading zeros like '021')$$;
 ```
 
 Bootstrapped from M49 in a seed migration; not ingested per-cycle.
@@ -160,13 +165,15 @@ Statistic definitions (TFR, CBR, CDR, ASFR, mean age at first birth, etc.).
 ```sql
 create table if not exists statistic (
   id          uuid                     not null primary key,
-  code        text                     not null unique,                       -- short identifier used downstream ('tfr', 'cbr', 'asfr_15_19'); stable across versions, renaming is a migration event
+  code        text                     not null unique,
   name_en     text                     not null,
   description text                     not null,
   units       text                     not null,
   created     timestamp with time zone not null default now(),
   modified    timestamp with time zone not null default now()
 );
+
+comment on column statistic.code is $$short identifier used downstream ('tfr', 'cbr', 'asfr_15_19'); stable across versions, renaming is a migration event$$;
 ```
 
 #### `data_source`
@@ -176,17 +183,23 @@ Publishers of the data. Per Constitution Principle II, every datum traces back t
 ```sql
 create table if not exists data_source (
   id               uuid                     not null primary key,
-  code             text                     not null unique,                  -- short identifier ('wb_wdi', 'eurostat_demo_fer', 'hfd')
+  code             text                     not null unique,
   name_en          text                     not null,
   homepage_url     text                     not null,
-  license_class    text                     not null,                         -- one of: public_domain | attribution | attribution_sa | noncommercial; see §License-class shard mapping
-  license_name     text                     not null,                         -- e.g. 'CC BY 4.0', 'Open Government Licence v3.0'
+  license_class    text                     not null,
+  license_name     text                     not null,
   license_url      text                     not null,
-  attribution_text text                     not null,                         -- exact display string for UI citations
-  preference_rank  int                      not null,                         -- drives data-source-preference merge; lower wins; ties broken deterministically by data_source.id; see §Source-preference merge
+  attribution_text text                     not null,
+  preference_rank  int                      not null,
   created          timestamp with time zone not null default now(),
   modified         timestamp with time zone not null default now()
 );
+
+comment on column data_source.code             is $$short identifier ('wb_wdi', 'eurostat_demo_fer', 'hfd')$$;
+comment on column data_source.license_class    is $$one of: public_domain | attribution | attribution_sa | noncommercial$$;
+comment on column data_source.license_name     is $$e.g. 'CC BY 4.0', 'Open Government Licence v3.0'$$;
+comment on column data_source.attribution_text is $$exact display string for UI citations$$;
+comment on column data_source.preference_rank  is $$drives data-source-preference merge; lower wins; ties broken deterministically by data_source.id$$;
 ```
 
 The license fields are denormalized onto `data_source` rather than a separate `license` table because a source's license is effectively a property of the source. If a source changes its license, that's a schema-and-data event documented in the relevant migration, not a runtime swap.
@@ -200,18 +213,25 @@ create table if not exists statistic_value (
   id                       uuid                     not null primary key,
   country_id               uuid                     not null references country (id),
   statistic_id             uuid                     not null references statistic (id),
-  period_start             date                     not null,                        -- inclusive lower bound: calendar year 2024 → '2024-01-01'; Q1 2024 → '2024-01-01'; 2020-2025 cohort → '2020-01-01'
-  period_end               date                     not null,                        -- exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'
+  period_start             date                     not null,
+  period_end               date                     not null,
   value                    double precision         not null,
   data_source_id           uuid                     not null references data_source (id),
-  data_status              text                     not null,                        -- one of: final | provisional | preliminary | projection | imputed | interpolated; see table below
-  retrieved_at             timestamp with time zone not null,                        -- wall-clock instant our adapter fetched this row
-  data_source_published_at timestamp with time zone,                                 -- source's own publication timestamp where derivable (often only a year or version label, hence nullable)
-  data_source_revision     text,                                                     -- the source's own revision label for the dataset captured by this row (WB WDI '2024-Q4', Eurostat '2026-w20', HFD '2025-12', WPP 'WPP-2024-rev1'); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter's read_last_seen_revision step for incremental fetches; aggregated per-source into the manifest's data_source_versions_jsonb at artifact-build time
+  data_status              text                     not null,
+  retrieved_at             timestamp with time zone not null,
+  data_source_published_at timestamp with time zone,
+  data_source_revision     text,
   created                  timestamp with time zone not null default now(),
   modified                 timestamp with time zone not null default now(),
   unique (country_id, statistic_id, period_start, period_end, data_source_id)
 );
+
+comment on column statistic_value.period_start             is $$inclusive lower bound: calendar year 2024 → '2024-01-01'; Q1 2024 → '2024-01-01'; 2020-2025 cohort → '2020-01-01'$$;
+comment on column statistic_value.period_end               is $$exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'$$;
+comment on column statistic_value.data_status              is $$one of: final | provisional | preliminary | projection | imputed | interpolated$$;
+comment on column statistic_value.retrieved_at             is $$wall-clock instant our adapter fetched this row$$;
+comment on column statistic_value.data_source_published_at is $$source's own publication timestamp where derivable (often only a year or version label, hence nullable)$$;
+comment on column statistic_value.data_source_revision     is $$the source's own revision label for the dataset captured by this row (WB WDI '2024-Q4', Eurostat '2026-w20', HFD '2025-12', WPP 'WPP-2024-rev1'); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter's read_last_seen_revision step for incremental fetches; aggregated per-source into the manifest's data_source_versions_jsonb at artifact-build time$$;
 ```
 
 `data_status` values:
@@ -232,13 +252,18 @@ Records each build of CDN-published artifacts. Used for reproducibility ("what d
 ```sql
 create table if not exists artifact_version (
   id                         uuid                     not null primary key,
-  version_label              text                     not null unique,              -- ISO date of the scheduled build (e.g. '2026-05-18'); disambiguating suffix added if two builds land the same day
+  version_label              text                     not null unique,
   artifact_created           timestamp with time zone not null default now(),
-  manifest_sha256            text                     not null,                     -- content hash of manifest.json
-  manifest_url               text                     not null,                     -- CDN URL of manifest.json
-  data_source_versions_jsonb jsonb                    not null,                     -- snapshot of every data_source's data_source_revision at build time: {"wb_wdi": "2024-Q4", "hfd": "2025-12"}; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile
+  manifest_sha256            text                     not null,
+  manifest_url               text                     not null,
+  data_source_versions_jsonb jsonb                    not null,
   notes                      text
 );
+
+comment on column artifact_version.version_label              is $$ISO date of the scheduled build (e.g. '2026-05-18'); disambiguating suffix added if two builds land the same day$$;
+comment on column artifact_version.manifest_sha256            is $$content hash of manifest.json$$;
+comment on column artifact_version.manifest_url               is $$CDN URL of manifest.json$$;
+comment on column artifact_version.data_source_versions_jsonb is $$snapshot of every data_source's data_source_revision at build time: {"wb_wdi": "2024-Q4", "hfd": "2025-12"}; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile$$;
 ```
 
 ### Migrations
