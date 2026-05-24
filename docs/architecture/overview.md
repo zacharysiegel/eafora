@@ -413,7 +413,7 @@ The chosen shape is **additive shards via SQLite `ATTACH DATABASE`**, not mutual
 
 - A base shard contains every datum whose source license permits the most-restrictive distribution context (commercial embedding by third parties).
 - One or more extension shards contain the additional data permitted in successively more-permissive contexts (e.g. non-commercial-only, first-party-Eafora-display-only).
-- The manifest declares which shards exist and the license tier each represents.
+- The manifest declares which shards exist and the license class each represents.
 - Clients identify their distribution context (eafora.org loads all tiers it's authorized for; an embedded third-party widget loads only the base) and `ATTACH` each authorized shard. Queries union across attached databases as a SQLite primitive.
 
 Why additive over mutually exclusive: (a) the licensing matrix at `docs/research/data-source-licensing.md` already has more than two distinct restriction shapes, so mutually-exclusive variants would combinatorialize; (b) the build pipeline naturally emits all shards from a single ingestion pass, keyed on per-row license metadata already present in the `source` table; the permissive subset is a free by-product of producing the full set, not a separate build; (c) the most-restrictive base is cached once on the CDN and benefits every consumer regardless of tier.

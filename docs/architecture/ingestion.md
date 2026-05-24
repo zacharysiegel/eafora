@@ -169,48 +169,47 @@ create table if not exists statistic (
 );
 ```
 
-#### `source`
+#### `data_source`
 
 Publishers of the data. Per Constitution Principle II, every datum traces back to a row here.
 
 ```sql
-create table if not exists source (
+create table if not exists data_source (
   id               uuid                     not null primary key,
   code             text                     not null unique,                  -- short identifier ('wb_wdi', 'eurostat_demo_fer', 'hfd')
   name_en          text                     not null,
   homepage_url     text                     not null,
-  license_tier     text                     not null,                         -- one of: public_domain | attribution | attribution_sa | noncommercial; see §License-tier shard mapping
+  license_class    text                     not null,                         -- one of: public_domain | attribution | attribution_sa | noncommercial; see §License-class shard mapping
   license_name     text                     not null,                         -- e.g. 'CC BY 4.0', 'Open Government Licence v3.0'
   license_url      text                     not null,
   attribution_text text                     not null,                         -- exact display string for UI citations
-  preference_rank  int                      not null,                         -- drives source-preference merge; lower wins; see §Source-preference merge
+  preference_rank  int                      not null,                         -- drives data-source-preference merge; lower wins; ties broken deterministically by data_source.id; see §Source-preference merge
   created          timestamp with time zone not null default now(),
   modified         timestamp with time zone not null default now()
 );
 ```
 
-The license fields are denormalized onto `source` rather than a separate `license` table because a source's license is effectively a property of the source. If a source changes its license, that's a schema-and-data event documented in the relevant migration, not a runtime swap.
+The license fields are denormalized onto `data_source` rather than a separate `license` table because a source's license is effectively a property of the source. If a source changes its license, that's a schema-and-data event documented in the relevant migration, not a runtime swap.
 
 #### `statistic_value`
 
-The fact table. One row per `(country_id, statistic_id, year, source_id)`. When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time.
+The fact table. One row per `(country_id, statistic_id, year, data_source_id)`. When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time.
 
 ```sql
 create table if not exists statistic_value (
-  id                  uuid                     not null primary key,
-  country_id          uuid                     not null references country (id),
-  statistic_id        uuid                     not null references statistic (id),
-  year                int                      not null,
-  value               double precision         not null,
-  source_id           uuid                     not null references source (id),
-  data_status         text                     not null,                        -- one of: final | provisional | preliminary | flash_estimate | projection | imputed | interpolated; see table below
-  retrieved_at        timestamp with time zone not null,                        -- wall-clock instant our adapter fetched this row
-  source_published_at timestamp with time zone,                                 -- source's own publication timestamp where derivable (often only a year or version label, hence nullable)
-  source_revision     text,                                                     -- source-specific revision identifier ('2024-Q4', 'WPP-2024-rev1'); used for upstream-change detection between ingestion runs
-  created             timestamp with time zone not null default now(),
-  modified            timestamp with time zone not null default now(),
-  deleted_at          timestamp with time zone,
-  unique (country_id, statistic_id, year, source_id)
+  id                       uuid                     not null primary key,
+  country_id               uuid                     not null references country (id),
+  statistic_id             uuid                     not null references statistic (id),
+  year                     int                      not null,
+  value                    double precision         not null,
+  data_source_id           uuid                     not null references data_source (id),
+  data_status              text                     not null,                        -- one of: final | provisional | preliminary | flash_estimate | projection | imputed | interpolated; see table below
+  retrieved_at             timestamp with time zone not null,                        -- wall-clock instant our adapter fetched this row
+  data_source_published_at timestamp with time zone,                                 -- source's own publication timestamp where derivable (often only a year or version label, hence nullable)
+  data_source_revision     text,                                                     -- source-specific revision identifier ('2024-Q4', 'WPP-2024-rev1'); used for upstream-change detection between ingestion runs
+  created                  timestamp with time zone not null default now(),
+  modified                 timestamp with time zone not null default now(),
+  unique (country_id, statistic_id, year, data_source_id)
 );
 ```
 
@@ -232,14 +231,14 @@ Records each build of CDN-published artifacts. Used for reproducibility ("what d
 
 ```sql
 create table if not exists artifact_version (
-  id                    uuid                     not null primary key,
-  version_label         text                     not null unique,              -- human-readable build label ('2026-w21')
-  built_at              timestamp with time zone not null default now(),
-  manifest_sha256       text                     not null,                     -- content hash of manifest.json
-  manifest_url          text                     not null,                     -- CDN URL of manifest.json
-  source_versions_jsonb jsonb                    not null,                     -- snapshot of every source's source_revision at build time: {"wb_wdi": "2024-Q4", "hfd": "2025-12"}; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile
-  notes                 text,
-  created               timestamp with time zone not null default now()
+  id                         uuid                     not null primary key,
+  version_label              text                     not null unique,              -- human-readable build label ('2026-w21')
+  built_at                   timestamp with time zone not null default now(),
+  manifest_sha256            text                     not null,                     -- content hash of manifest.json
+  manifest_url               text                     not null,                     -- CDN URL of manifest.json
+  data_source_versions_jsonb jsonb                    not null,                     -- snapshot of every data_source's data_source_revision at build time: {"wb_wdi": "2024-Q4", "hfd": "2025-12"}; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile
+  notes                      text,
+  created                    timestamp with time zone not null default now()
 );
 ```
 
@@ -264,14 +263,14 @@ pub async fn fetch_and_normalize(
 
 The function:
 
-1. Reads the source's last-seen revision from the canonical store (`statistic_value.source_revision` max within this source) to decide what to fetch.
+1. Reads the source's last-seen revision from the canonical store (max `statistic_value.data_source_revision` within this source) to decide what to fetch.
 2. Makes HTTP requests via reqwest to the source's API or static endpoint.
 3. Parses the response into intermediate types (source-specific, in `<source>_model.rs`).
 4. Normalizes to the canonical `statistic_value` shape (joins to `country`/`statistic` by code).
-5. Inserts new rows via `sqlx::query_as!`; updates existing rows where the source has revised them (matched on the `(country, statistic, year, source)` natural key).
+5. Inserts new rows via `sqlx::query_as!`; updates existing rows where the source has revised them (matched on the `(country, statistic, year, data_source)` natural key).
 6. Returns an `IngestReport`.
 
-Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `source` record.
+Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
 
 ### `AdapterOptions` and `IngestReport`
 
@@ -326,7 +325,7 @@ These convert to `AppError` at the public boundary (`fetch_and_normalize`'s retu
 
 The mechanical steps for any new source:
 
-1. Add a migration inserting a row in `source` with the source's code, license, attribution string, and `preference_rank` (see §Source-preference merge for ranking).
+1. Add a migration inserting a row in `data_source` with the source's code, license, attribution string, and `preference_rank` (see §Source-preference merge for ranking).
 2. Create `ingestion/src/<source_code>/` with the three-file lobby triplet.
 3. Implement `fetch_and_normalize` in `<source_code>_api.rs`.
 4. Implement source-specific SQL in `<source_code>_db.rs`.
@@ -341,8 +340,8 @@ The first concrete adapter (and the first `/speckit-specify` feature) is World B
 - Endpoint: `https://api.worldbank.org/v2/country/all/indicator/SP.DYN.TFRT.IN?format=json&per_page=20000`
 - Response shape: JSON array `[paging_metadata, [rows...]]` where each row has `country.id`, `date` (year), `value`, etc.
 - Coverage: ~200 countries, years ~1960–latest-published.
-- License: CC BY 4.0 → `license_tier = 'attribution'`.
-- `source.code = "wb_wdi"`; `preference_rank = 90` (lowest priority among fertility-data sources because WB aggregates from elsewhere).
+- License: CC BY 4.0 → `license_class = 'attribution'`.
+- `data_source.code = "wb_wdi"`; `preference_rank = 90` (lowest priority among fertility-data sources because WB aggregates from elsewhere).
 
 The full implementation lives in the feature spec; this section documents only what's relevant to the ingestion architecture (the adapter is a normal instance of the contract above).
 
@@ -354,9 +353,9 @@ When multiple sources publish a value for the same `(country, statistic, year)`,
 
 For each `(country, statistic, year)` cell published into the artifact:
 
-1. Select all candidate rows from `statistic_value` where `deleted_at is null`.
-2. Filter by license tier eligibility (a Tier 0/1 base shard only considers rows from Tier 0/1 sources).
-3. Among eligible candidates, pick the row with the lowest `source.preference_rank`. Ties (which should not happen — ranks are unique within a statistic) break to the most recent `retrieved_at`.
+1. Select all candidate rows from `statistic_value`.
+2. Filter by license-class eligibility (the base shard only considers rows whose `data_source.license_class` is `public_domain` or `attribution`; the `share_alike` shard adds rows of class `attribution_sa`; the `noncommercial` shard adds rows of class `noncommercial`).
+3. Among eligible candidates, pick the row with the lowest `data_source.preference_rank`. Ties (allowed — `preference_rank` is not unique) break by the lower `data_source.id`, which gives a stable arbitrary ordering when two sources sit at the same priority.
 4. If the picked source's `data_status` is `provisional`/`preliminary`/`flash_estimate` AND a lower-priority source has a `final` value for the same year that is fresher than 2 years old, prefer the `final` value. (Don't show stale "final" data when fresher "preliminary" data exists, and don't show preliminary data when a high-quality final value is available.)
 
 ### Current preference ranking (v1+)
@@ -376,7 +375,7 @@ The numeric gaps leave room for inserting new sources without renumbering. The r
 Geometry is ingested separately from statistic ingestion, with a different cadence (rarely changes) and a different source (boundary datasets, not statistical agencies).
 
 - **Source**: Natural Earth 1:50m Cultural Vectors (`ne_50m_admin_0_countries.zip` for v1; subnational comes from `ne_10m_admin_1_states_provinces.zip` in v2+).
-- **License**: Public domain (`license_tier = 'public_domain'` in the `source` record).
+- **License**: Public domain (`license_class = 'public_domain'` in the `data_source` record).
 - **Pipeline**: `geometry_ingest::fetch_natural_earth(version) -> Result<(), AppError>` downloads the shapefile, projects to WGS84 (already is), joins to `country.iso3` via Natural Earth's `ADM0_A3` field, and writes geometry into a separate `country_geometry` table (or stores directly in a checked-in FlatGeobuf if the dataset is stable enough to bundle — open question, see below).
 
 Two-tier shard model (per License-segmented shards in the overview) does not apply to geometry: Natural Earth is public domain, so geometry ships in the base FlatGeobuf without segmentation.
@@ -395,9 +394,9 @@ pub async fn build_artifacts(
 
 Steps:
 
-1. Read `statistic_value` from the canonical store grouped by `(statistic_code, license_tier)`.
+1. Read `statistic_value` from the canonical store grouped by `(statistic_code, license_class)`.
 2. Apply the source-preference merge per cell (see §Source-preference merge).
-3. For each `(statistic_code, license_tier)` group, emit a SQLite shard via `sqlite_writer`.
+3. For each `(statistic_code, license_class)` group, emit a SQLite shard via `sqlite_writer`.
 4. Emit the geometry FlatGeobuf via `flatgeobuf_writer` (single file, no tier split).
 5. Compute content hashes (SHA-256) for every output file.
 6. Emit `manifest.json` via `manifest_writer`.
@@ -418,7 +417,7 @@ output_dir/
     └── ...
 ```
 
-Filenames are `<statistic_code>-<license_tier>-<sha8>.sqlite` (with `base` covering Tier 0 + Tier 1). Content-hash suffix uses the first 8 hex chars of SHA-256 for filename brevity; the full hash is in the manifest.
+Filenames are `<statistic_code>-<license_class>-<sha8>.sqlite` (with `base` covering `public_domain` + `attribution`). Content-hash suffix uses the first 8 hex chars of SHA-256 for filename brevity; the full hash is in the manifest.
 
 ### Manifest format
 
@@ -446,18 +445,18 @@ Filenames are `<statistic_code>-<license_tier>-<sha8>.sqlite` (with `base` cover
 }
 ```
 
-The client loads the manifest first, then fetches whatever shards its license tier permits. The base shard is always present; non-base shards may be missing for a given statistic if no rows in that tier exist.
+The client loads the manifest first, then fetches whatever shards its license class permits. The base shard is always present; non-base shards may be missing for a given statistic if no rows in that class exist.
 
-### License-tier shard mapping
+### License-class shard mapping
 
-| `source.license_tier` value | Shard          |
+| `data_source.license_class` value | Shard          |
 |-----------------------------|----------------|
 | `public_domain`             | `base`         |
 | `attribution`               | `base`         |
 | `attribution_sa`            | `share_alike`  |
 | `noncommercial`             | `noncommercial`|
 
-v1 emits only `base` shards (the only seeded source is WB WDI). The other shards activate when a source with the corresponding license tier lands. Clients identify their distribution context and `ATTACH DATABASE` each authorized shard; query results union across attached databases.
+v1 emits only `base` shards (the only seeded source is WB WDI). The other shards activate when a source with the corresponding license class lands. Clients identify their distribution context and `ATTACH DATABASE` each authorized shard; query results union across attached databases.
 
 ### Content hashing and immutability
 
@@ -511,7 +510,7 @@ A `seed-samples` CLI subcommand populates the canonical store with checked-in sa
 cargo run -p ingestion -- seed-samples
 ```
 
-This runs all migrations (including the seed-data migrations for `country` and the initial `statistic`/`source` records), then loads sample responses from `ingestion/samples/<source_code>/` and replays them through each adapter's normalize-and-insert path. The result is a fully-populated canonical store with the same shape production would have, but with fixed test data.
+This runs all migrations (including the seed-data migrations for `country` and the initial `statistic`/`data_source` records), then loads sample responses from `ingestion/samples/<source_code>/` and replays them through each adapter's normalize-and-insert path. The result is a fully-populated canonical store with the same shape production would have, but with fixed test data.
 
 ### Running an adapter locally
 
@@ -549,15 +548,15 @@ Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 ## Open questions
 
 1. **Geometry storage shape: in-DB or pre-built FlatGeobuf bundled in the repo?** Natural Earth's 1:50m countries dataset is ~3 MB raw, ~5 MB FlatGeobuf, stable across years. Bundling the FlatGeobuf directly in the repo (as `ingestion/data/world-50m.fgb`) and copying it to artifact output during build avoids the Postgres-as-staging step entirely for geometry. Storing in Postgres (PostGIS `geometry` column on a `country_geometry` table) makes the canonical store the single source of truth at the cost of operational complexity (PostGIS extension, larger backup, harder local-dev setup). Lean: **bundle the FlatGeobuf in-repo for v1**; switch to PostGIS if subnational geometry ever needs to be merged with custom overlays. Defer until v2.
-2. **Per-statistic preference overrides.** The current `source.preference_rank` is global. Some sources may be authoritative for one statistic and not another (e.g. CDC NCHS for US TFR but not US migration). A `statistic_source_preference` association table would handle this. Defer until v2; for v1 the global ranking is sufficient.
-3. **Revision detection granularity.** `source_revision` is stored per-row, but most sources publish a single version label that applies to the whole download. Should there be a `source_publication (source_id, revision_label, fetched_at)` table tracking publication-level metadata distinct from per-row metadata? Defer; first ingestion pass will reveal whether per-row revision tracking is overkill.
+2. **Per-statistic preference overrides.** The current `data_source.preference_rank` is global. Some sources may be authoritative for one statistic and not another (e.g. CDC NCHS for US TFR but not US migration). A `statistic_data_source_preference` association table would handle this. Defer until v2; for v1 the global ranking is sufficient.
+3. **Revision detection granularity.** `data_source_revision` is stored per-row, but most sources publish a single version label that applies to the whole download. Should there be a `data_source_publication (data_source_id, revision_label, fetched_at)` table tracking publication-level metadata distinct from per-row metadata? Defer; first ingestion pass will reveal whether per-row revision tracking is overkill.
 4. **Artifact build cadence vs. ingestion cadence.** Currently `run-all` calls `build-artifacts` if any adapter reported changes. Should artifact builds be debounced (e.g. only build at most once per day even if multiple ingestion runs report changes)? Probably yes once the cost of an artifact build becomes non-trivial; not a v1 concern.
 
 ## Things to verify
 
 1. **dbmate's behavior with the Singularity convention for `cargo sqlx prepare`**: confirm that `dbmate.sh`'s wrapper around `sqlx prepare --workspace` works against a workspace with both `ingestion/` and `core/` crates.
 2. **Cloudflare R2 S3-compatible API surface**: confirm reqwest + `aws-sigv4` (or equivalent signature crate) work without the AWS SDK. R2's S3 compatibility is documented but corner cases (multipart upload thresholds, presigned URLs) deserve a spike before relying on them.
-3. **Natural Earth license verification**: the dataset is widely described as public domain ("free of charge for any use"), but the actual Natural Earth website's license page should be confirmed and quoted in the seeded `source` row.
+3. **Natural Earth license verification**: the dataset is widely described as public domain ("free of charge for any use"), but the actual Natural Earth website's license page should be confirmed and quoted in the seeded `data_source` row.
 4. **WB WDI rate limits**: the WB API has historically been generous (no documented rate limit) but a spike against the actual endpoint should confirm before the first scheduled run.
 
 ## Follow-up work
