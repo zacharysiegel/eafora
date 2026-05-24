@@ -92,9 +92,57 @@ All tables follow the Singularity-inherited conventions:
 
 ### Tables
 
+#### `region`
+
+UN M49 geographic taxonomy as a self-referential reference table. M49 has three levels (see [unstats.un.org/unsd/methodology/m49/](https://unstats.un.org/unsd/methodology/m49/)):
+
+- **Region** (5 nodes): Africa, Americas, Asia, Europe, Oceania.
+- **Subregion** (17 nodes): one or more per region (Northern Africa, Sub-Saharan Africa, Northern America, Latin America and the Caribbean, Central Asia, Eastern Asia, South-eastern Asia, Southern Asia, Western Asia, Eastern Europe, Northern Europe, Southern Europe, Western Europe, Australia and New Zealand, Melanesia, Micronesia, Polynesia).
+- **Intermediate region** (7 nodes; M49 uses this level only under two subregions): under **Sub-Saharan Africa** — Eastern Africa, Middle Africa, Southern Africa, Western Africa; under **Latin America and the Caribbean** — Caribbean, Central America, South America.
+
+Each country row points at its *deepest* applicable region (Brazil → South America; France → Western Europe; USA → Northern America; Egypt → Northern Africa, which has no intermediate level). Hierarchical queries ("all countries in the Americas") use a recursive CTE; see below.
+
+```sql
+create table if not exists region (
+  id               uuid                     not null,
+  code             text                     not null,
+  name_en          text                     not null,
+  level            text                     not null,
+  parent_region_id uuid,
+  m49_code         text                     not null,
+  created          timestamp with time zone not null default now(),
+  modified         timestamp with time zone not null default now(),
+  constraint region_pk          primary key (id),
+  constraint region_code_uk     unique (code),
+  constraint region_m49_code_uk unique (m49_code),
+  constraint region_parent_fk   foreign key (parent_region_id) references region (id)
+);
+```
+
+`level` is one of `'region'`, `'subregion'`, `'intermediate_region'`. `m49_code` is the UN M49 numeric code as text (preserves leading zeros like `"021"` for Northern America); kept as text rather than `int` so that a future non-M49 taxonomy could coexist in the same column space if Constitution §Boundary recognition's alternate-taxonomy clause is ever exercised. Bootstrapped from M49 in a seed migration; not ingested per-cycle.
+
+Hierarchical descendant query:
+
+```sql
+with recursive region_descendants as (
+    select id
+        from region
+        where code = 'americas'
+    union all
+    select region.id
+        from region
+        join region_descendants on region.parent_region_id = region_descendants.id
+)
+select country.*
+    from country
+    join region_descendants on country.region_id = region_descendants.id
+order by country.iso3 asc
+;
+```
+
 #### `country`
 
-Canonical country reference. Bootstrapped from ISO 3166-1 in a seed migration; not ingested per-cycle.
+Canonical country reference. Bootstrapped from ISO 3166-1 in a seed migration, with each row joined to its deepest M49 region; not ingested per-cycle.
 
 ```sql
 create table if not exists country (
@@ -102,19 +150,19 @@ create table if not exists country (
   iso3       text                     not null,
   iso2       text                     not null,
   name_en    text                     not null,
-  region     text,
-  subregion  text,
+  region_id  uuid                     not null,
   created    timestamp with time zone not null default now(),
   modified   timestamp with time zone not null default now(),
   deleted_at timestamp with time zone,
-  constraint country_pk primary key (id),
-  constraint country_iso3_uk unique (iso3)
+  constraint country_pk        primary key (id),
+  constraint country_iso3_uk   unique (iso3),
+  constraint country_region_fk foreign key (region_id) references region (id)
 );
 ```
 
 #### `statistic`
 
-Statistic definitions (TFR, CBR, CDR, ASFR, mean age at first birth, etc.). Curated, not ingested.
+Statistic definitions (TFR, CBR, CDR, ASFR, mean age at first birth, etc.).
 
 ```sql
 create table if not exists statistic (
