@@ -87,6 +87,27 @@ Honest competitive landscape:
 
 The defensible position is: **the easiest place to look up a fertility number, compare neighbors, drill into a country, and trace the citation, without paying or wading through a research portal.** Nothing in that sentence is technically novel — but no one currently optimizes for exactly it.
 
+## Source license classes
+
+Different upstream sources publish under different licenses, which constrains what Eafora can do with the data — which monetization paths stay open, which downstream uses are permitted, what attribution is required. Eafora classifies every source into one of four classes (recorded in the canonical store as `data_source.license_class`):
+
+| Class             | Example upstream licenses                                              | Eafora's own atlas can display | Third-party commercial embedder (post-v3 API) can use |
+|-------------------|------------------------------------------------------------------------|--------------------------------|--------------------------------------------------------|
+| `public_domain`   | US federal works (CDC NCHS, US Census), Natural Earth boundaries, CC0 datasets | Yes, no attribution required   | Yes                                                    |
+| `attribution`     | CC BY 4.0 (World Bank WDI, Eurostat, OECD), UK Open Government Licence (ONS) | Yes, with attribution          | Yes, with attribution                                  |
+| `attribution_sa`  | CC BY-SA 4.0 (some Wikipedia-derived demographic compilations), ODbL    | Yes, with attribution          | Only if the embedder's own site is under a compatible ShareAlike license |
+| `noncommercial`   | HFD (research / teaching use only), CC BY-NC 4.0, some academic survey datasets | Yes (Eafora is non-commercial through v2+) | No                                                     |
+
+**Implications:**
+
+- **For Eafora's atlas surfaces** (web / iOS / Android, free to use): every class is loadable as long as Eafora itself remains non-commercial — which the v1–v2 plan does. See Monetization options for which paths preserve this property.
+- **For the v3+ commercial-embedding API** (Monetization option G): only `public_domain` and `attribution` data is unconditionally available. `attribution_sa` requires per-embedder license-compatibility checks; `noncommercial` is excluded entirely from any commercial-embed tier.
+- **For pitch framing**: the highest-quality fertility data tends to live in the `noncommercial` class (HFD especially). Eafora's value as the leading aggregator depends on being able to display all four classes on its own atlas. Commercial monetization is necessarily constrained to a permissive subset; pricing and product positioning for option G must reflect that the most permissive data is also the most commodity (WB WDI, Eurostat, etc.).
+
+The technical separation into distribution shards lives in the architecture docs (overview's §License-segmented SQLite shards, ingestion's §License-class shard mapping). The product-level commitment here is the four-class taxonomy — every source gets assigned to exactly one class, and the assignment drives both what Eafora can do with it and what downstream consumers can do.
+
+**Source-license drift** (a real risk; see §Risks) interacts with this taxonomy: a source switching class — e.g. CC BY 4.0 → CC BY-SA 4.0 — would reshuffle which distribution surface its data appears on. The architecture lets the artifact builder re-classify by updating `data_source.license_class` and re-building, without re-ingesting.
+
 ## Monetization options
 
 The user's stated brief: "I don't expect this to be a great business or anything." That's a healthy starting position. The goal of this section is not to identify the optimal revenue model — it's to enumerate the plausible ones honestly so a funding pitch can land on whichever model the funder prefers, and so the product stays compatible with future shifts.
