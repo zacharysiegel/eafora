@@ -380,8 +380,8 @@ Comparison (concrete numbers approximate; see §Things to verify):
 ```
 manifest.json:
 {
-  "version": "2026-w21",
-  "artifact_created": "2026-05-21T14:00:00Z",
+  "version": "2026-05-18",
+  "artifact_created": "2026-05-18T03:00:00Z",
   "geometry": {
     "url": "/geometry/world-1.50m-ab12cd34.fgb",
     "size_bytes": 4380000,

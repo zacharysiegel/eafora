@@ -227,12 +227,12 @@ create table if not exists statistic_value (
 
 #### `artifact_version`
 
-Records each build of CDN-published artifacts. Used for reproducibility ("what data did the client see at version 2026-w21?") and rollback.
+Records each build of CDN-published artifacts. Used for reproducibility ("what data did the client see at version 2026-05-18?") and rollback.
 
 ```sql
 create table if not exists artifact_version (
   id                         uuid                     not null primary key,
-  version_label              text                     not null unique,              -- human-readable build label ('2026-w21')
+  version_label              text                     not null unique,              -- ISO date of the scheduled build (e.g. '2026-05-18'); disambiguating suffix added if two builds land the same day
   artifact_created           timestamp with time zone not null default now(),
   manifest_sha256            text                     not null,                     -- content hash of manifest.json
   manifest_url               text                     not null,                     -- CDN URL of manifest.json
@@ -423,8 +423,8 @@ Filenames are `<statistic_code>-<license_class>-<sha8>.sqlite` (with `base` cove
 
 ```json
 {
-  "version": "2026-w21",
-  "artifact_created": "2026-05-21T14:00:00Z",
+  "version": "2026-05-18",
+  "artifact_created": "2026-05-18T03:00:00Z",
   "geometry": {
     "url": "geometry/world-50m-ab12cd34.fgb",
     "size_bytes": 4380000,
@@ -523,7 +523,7 @@ The filters keep the run small enough to iterate quickly. Without filters, a ful
 ### Producing artifacts locally
 
 ```sh
-cargo run -p ingestion -- build-artifacts ./build-output 2026-w21
+cargo run -p ingestion -- build-artifacts ./build-output 2026-05-18
 ```
 
 Writes `manifest.json` + `geometry/` + `data/` under `./build-output/`. No upload. The artifacts can be served via `python -m http.server` in a pinch (with `Content-Encoding: br` headers ad-hoc'd in front of `nginx` or `caddy` if compression-aware testing is wanted), or pointed at directly from the web client via a local file URL.
