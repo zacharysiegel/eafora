@@ -226,8 +226,8 @@ create table if not exists statistic_value (
   value                    double precision         not null,
   data_source_id           uuid                     not null references data_source (id),
   data_status              text                     not null,
-  retrieved_at             timestamp with time zone not null,
-  data_source_published_at timestamp with time zone,
+  retrieved                timestamp with time zone not null,
+  data_source_published    timestamp with time zone,
   data_source_revision     text,
   created                  timestamp with time zone not null default now(),
   modified                 timestamp with time zone not null default now(),
@@ -238,8 +238,8 @@ comment on column statistic_value.region_id                is $$points at any le
 comment on column statistic_value.period_start             is $$inclusive lower bound: calendar year 2024 → '2024-01-01'; Q1 2024 → '2024-01-01'; 2020-2025 cohort → '2020-01-01'$$;
 comment on column statistic_value.period_end               is $$exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'$$;
 comment on column statistic_value.data_status              is $$one of: final | provisional | preliminary | projection | imputed | interpolated$$;
-comment on column statistic_value.retrieved_at             is $$wall-clock instant our adapter fetched this row$$;
-comment on column statistic_value.data_source_published_at is $$source's own publication timestamp where derivable (often only a year or version label, hence nullable)$$;
+comment on column statistic_value.retrieved                is $$wall-clock instant our adapter fetched this row$$;
+comment on column statistic_value.data_source_published    is $$source's own publication timestamp where derivable (often only a year or version label, hence nullable)$$;
 comment on column statistic_value.data_source_revision     is $$the source's own revision label for the dataset captured by this row (WB WDI '2024-Q4', Eurostat '2026-w20', HFD '2025-12', WPP 'WPP-2024-rev1'); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter's read_last_seen_revision step for incremental fetches; aggregated per-source into the manifest's data_source_versions_jsonb at artifact-build time$$;
 ```
 
@@ -575,7 +575,7 @@ Writes `manifest.json` + `geometry/` + `data/` under `./build-output/`. No uploa
 Per Constitution Principle VII, the ingestion-side TDD-required surfaces are:
 
 - **Per-source normalization** (`<source>_model.rs` parsing functions): every sample response → expected canonical-shape output, exhaustively.
-- **Source-preference merge** (`artifact/merge.rs` — the per-cell merge logic): all combinations of `(data_status, retrieved_at, preference_rank)` exercised against the merge rule.
+- **Source-preference merge** (`artifact/merge.rs` — the per-cell merge logic): all combinations of `(data_status, retrieved, preference_rank)` exercised against the merge rule.
 - **Artifact diffing** (used by `build-artifacts` to decide whether a build is no-op): trivial cases (no canonical changes) and tricky cases (rows updated but resulting artifact bytes unchanged) covered.
 - **Error mapping** (per-source error → `AppError` → log line): each variant gets a test.
 
