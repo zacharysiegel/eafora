@@ -262,35 +262,55 @@ comment on column data_source.preference_rank  is $$drives data-source-preferenc
 
 The license fields are denormalized onto `data_source` rather than a separate `license` table because a source's license is effectively a property of the source. If a source changes its license, that's a schema-and-data event documented in the relevant migration, not a runtime swap.
 
+#### `data_source_publication`
+
+One row per publication event we've captured from a source. Sources publish in batches (WB WDI's quarterly drops, Eurostat's weekly releases, HFD's annual updates); each batch is a "publication." This table normalizes the publication metadata out of `statistic_value` — a single fetch that produces 12,000 `statistic_value` rows produces ONE row here, not 12,000 redundant copies of the revision label.
+
+```sql
+create table if not exists data_source_publication (
+  id             uuid                     not null primary key,
+  data_source_id uuid                     not null references data_source (id),
+  revision_label text                     not null,
+  published      timestamp with time zone,
+  fetched        timestamp with time zone not null,
+  created        timestamp with time zone not null default now(),
+  modified       timestamp with time zone not null default now(),
+  unique (data_source_id, revision_label)
+);
+
+comment on column data_source_publication.revision_label is $$the source's own revision label for this publication event (WB WDI '2024-Q4', Eurostat '2026-w20', HFD '2025-12', WPP 'WPP-2024-rev1'); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter's read_last_seen_revision step for incremental fetches; aggregated per-source into the manifest's data_source_versions_jsonb at artifact-build time$$;
+comment on column data_source_publication.published      is $$source's own publication timestamp where derivable (often only a year or version label, hence nullable)$$;
+comment on column data_source_publication.fetched        is $$wall-clock instant our adapter captured this publication$$;
+```
+
+Publications are append-only — once captured, the row stays as an audit trail. If a source republishes under the same `revision_label` (a re-fetch with no upstream change), the existing row is matched on `(data_source_id, revision_label)` and no insert happens. If the source publishes a new revision, a new row is inserted, and `statistic_value` rows are updated to point at it (the old publication row stays in this table).
+
 #### `statistic_value`
 
-The fact table. One row per `(region_id, statistic_id, period_start, period_end, data_source_id)`. `region_id` can point at any level — country (the common case for v1), subnational region (when subnational data lands in v2+), or supranational grouping (for stored aggregates like an EU-wide TFR). When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time. Periods are half-open intervals (inclusive start, exclusive end); see the column comments for examples.
+The fact table. One row per `(region_id, statistic_id, period_start, period_end, data_source_id)`. `region_id` can point at any level — country (the common case for v1), subnational region (when subnational data lands in v2+), or supranational grouping (for stored aggregates like an EU-wide TFR). When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time. Periods are half-open intervals (inclusive start, exclusive end); see the column comments for examples. Each row points at the `data_source_publication` it was captured from; when the source publishes a revision, the row is updated in place to point at the new publication.
 
 ```sql
 create table if not exists statistic_value (
-  id                       uuid                     not null primary key,
-  region_id                uuid                     not null references region (id),
-  statistic_id             uuid                     not null references statistic (id),
-  period_start             date                     not null,
-  period_end               date                     not null,
-  value                    double precision         not null,
-  data_source_id           uuid                     not null references data_source (id),
-  data_status              text                     not null,
-  retrieved                timestamp with time zone not null,
-  data_source_published    timestamp with time zone,
-  data_source_revision     text,
-  created                  timestamp with time zone not null default now(),
-  modified                 timestamp with time zone not null default now(),
+  id                         uuid                     not null primary key,
+  region_id                  uuid                     not null references region (id),
+  statistic_id               uuid                     not null references statistic (id),
+  period_start               date                     not null,
+  period_end                 date                     not null,
+  value                      double precision         not null,
+  data_source_id             uuid                     not null references data_source (id),
+  data_source_publication_id uuid                     not null references data_source_publication (id),
+  data_status                text                     not null,
+  created                    timestamp with time zone not null default now(),
+  modified                   timestamp with time zone not null default now(),
   unique (region_id, statistic_id, period_start, period_end, data_source_id)
 );
 
-comment on column statistic_value.region_id                is $$points at any level — country (common in v1), subnational (v2+ when subnational data lands), or supranational grouping (for stored aggregates)$$;
-comment on column statistic_value.period_start             is $$inclusive lower bound: calendar year 2024 → '2024-01-01'; Q1 2024 → '2024-01-01'; 2020-2025 cohort → '2020-01-01'$$;
-comment on column statistic_value.period_end               is $$exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'$$;
-comment on column statistic_value.data_status              is $$one of: final | provisional | preliminary | projection | imputed | interpolated$$;
-comment on column statistic_value.retrieved                is $$wall-clock instant our adapter fetched this row$$;
-comment on column statistic_value.data_source_published    is $$source's own publication timestamp where derivable (often only a year or version label, hence nullable)$$;
-comment on column statistic_value.data_source_revision     is $$the source's own revision label for the dataset captured by this row (WB WDI '2024-Q4', Eurostat '2026-w20', HFD '2025-12', WPP 'WPP-2024-rev1'); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter's read_last_seen_revision step for incremental fetches; aggregated per-source into the manifest's data_source_versions_jsonb at artifact-build time$$;
+comment on column statistic_value.region_id                  is $$points at any level — country (common in v1), subnational (v2+ when subnational data lands), or supranational grouping (for stored aggregates)$$;
+comment on column statistic_value.period_start               is $$inclusive lower bound: calendar year 2024 → '2024-01-01'; Q1 2024 → '2024-01-01'; 2020-2025 cohort → '2020-01-01'$$;
+comment on column statistic_value.period_end                 is $$exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'$$;
+comment on column statistic_value.data_source_id             is $$denormalized from data_source_publication.data_source_id for the natural-key unique constraint and fast filtering by source; the upsert path keeps the two in sync$$;
+comment on column statistic_value.data_source_publication_id is $$points at the publication event this row's value was captured from; updated in place when the source publishes a revision (the previous publication row stays in data_source_publication as audit trail)$$;
+comment on column statistic_value.data_status                is $$one of: final | provisional | preliminary | projection | imputed | interpolated$$;
 ```
 
 `data_status` values:
@@ -353,11 +373,11 @@ pub async fn fetch_and_store(
 
 Each helper is a separate named function inside the source's feature module; the orchestrator only sequences them. The helper contracts:
 
-- **`read_last_seen_revision(pool)`** → `Option<String>`. Queries `select max(data_source_revision) from statistic_value where data_source_id = $1` to decide between incremental and full fetch. `None` means "first run, fetch everything".
+- **`read_last_seen_revision(pool)`** → `Option<String>`. Queries `select revision_label from data_source_publication where data_source_id = $1 order by fetched desc limit 1` to find the most recent publication this adapter has captured. `None` means "first run, fetch everything".
 - **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
 - **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
 - **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `region` (via country.iso3 for country-level data) / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
-- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. Inserts new rows via `sqlx::query_as!`; updates existing rows matched on the natural key `(region_id, statistic_id, period_start, period_end, data_source_id)`. Returns counts of inserted / updated / unchanged `statistic_value` rows plus any non-fatal warnings.
+- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. First INSERTs the run's `(data_source_id, revision_label, fetched)` into `data_source_publication` (ON CONFLICT DO NOTHING; obtains the publication's id whether newly inserted or matched against an existing row). Then bulk-UPSERTs into `statistic_value` matched on the natural key `(region_id, statistic_id, period_start, period_end, data_source_id)`, setting `data_source_publication_id` to the publication's id. Returns counts of inserted / updated / unchanged `statistic_value` rows plus any non-fatal warnings.
 
 Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
 
@@ -679,7 +699,7 @@ Writes `manifest.json` + `geometry/` + `data/` under `./build-output/`. No uploa
 Per Constitution Principle VII, the ingestion-side TDD-required surfaces are:
 
 - **Per-source normalization** (`<source>_model.rs` parsing functions): every sample response → expected canonical-shape output, exhaustively.
-- **Source-preference merge** (`artifact/merge.rs` — the per-cell merge logic): all combinations of `(data_status, retrieved, preference_rank)` exercised against the merge rule.
+- **Source-preference merge** (`artifact/merge.rs` — the per-cell merge logic): all combinations of `(data_status, preference_rank, period_end)` exercised against the merge rule.
 - **Artifact diffing** (used by `build-artifacts` to decide whether a build is no-op): trivial cases (no canonical changes) and tricky cases (rows updated but resulting artifact bytes unchanged) covered.
 - **Error mapping** (per-source error → `AppError` → log line): each variant gets a test.
 
@@ -693,7 +713,7 @@ Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 
 ## Open questions
 
-1. **Revision detection granularity.** `data_source_revision` is stored per-row, but most sources publish a single version label that applies to the whole download. Should there be a `data_source_publication (data_source_id, revision_label, fetched)` table tracking publication-level metadata distinct from per-row metadata? Defer; first ingestion pass will reveal whether per-row revision tracking is overkill.
+(None for v1 — the doc has converged on concrete answers for everything previously parked here.)
 
 ## Things to verify
 
@@ -708,3 +728,4 @@ Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 - Per-platform client plans (`docs-architecture-client-{web,ios,android}`) — these depend on the manifest + shard format locked here.
 - A `docs-architecture-secrets` mini-plan documenting which secrets the ingestion binary needs (R2 credentials initially; nothing else through v2) and how `secr` integrates with the launchd entrypoint.
 - A `scripts/build-fallback.sh` script (referenced from the overview's §Workspace and crate layout) that consumes a real artifact build and downsamples it into the per-platform bundled-fallback resources. Defer until at least one client shell exists.
+
