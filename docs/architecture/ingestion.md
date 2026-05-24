@@ -104,18 +104,14 @@ Each country row points at its *deepest* applicable region (Brazil → South Ame
 
 ```sql
 create table if not exists region (
-  id               uuid                     not null,
-  code             text                     not null,
+  id               uuid                     not null constraint region_pk          primary key,
+  code             text                     not null constraint region_code_uk     unique,
   name_en          text                     not null,
   level            text                     not null,
-  parent_region_id uuid,
-  m49_code         text                     not null,
+  parent_region_id uuid                              constraint region_parent_fk   references region (id),
+  m49_code         text                     not null constraint region_m49_code_uk unique,
   created          timestamp with time zone not null default now(),
-  modified         timestamp with time zone not null default now(),
-  constraint region_pk          primary key (id),
-  constraint region_code_uk     unique (code),
-  constraint region_m49_code_uk unique (m49_code),
-  constraint region_parent_fk   foreign key (parent_region_id) references region (id)
+  modified         timestamp with time zone not null default now()
 );
 ```
 
@@ -146,17 +142,14 @@ Canonical country reference. Bootstrapped from ISO 3166-1 in a seed migration, w
 
 ```sql
 create table if not exists country (
-  id         uuid                     not null,
-  iso3       text                     not null,
+  id         uuid                     not null constraint country_pk        primary key,
+  iso3       text                     not null constraint country_iso3_uk   unique,
   iso2       text                     not null,
   name_en    text                     not null,
-  region_id  uuid                     not null,
+  region_id  uuid                     not null constraint country_region_fk references region (id),
   created    timestamp with time zone not null default now(),
   modified   timestamp with time zone not null default now(),
-  deleted_at timestamp with time zone,
-  constraint country_pk        primary key (id),
-  constraint country_iso3_uk   unique (iso3),
-  constraint country_region_fk foreign key (region_id) references region (id)
+  deleted_at timestamp with time zone
 );
 ```
 
@@ -166,15 +159,13 @@ Statistic definitions (TFR, CBR, CDR, ASFR, mean age at first birth, etc.).
 
 ```sql
 create table if not exists statistic (
-  id          uuid                     not null,
-  code        text                     not null,
+  id          uuid                     not null constraint statistic_pk      primary key,
+  code        text                     not null constraint statistic_code_uk unique,
   name_en     text                     not null,
   description text                     not null,
   units       text                     not null,
   created     timestamp with time zone not null default now(),
-  modified    timestamp with time zone not null default now(),
-  constraint statistic_pk primary key (id),
-  constraint statistic_code_uk unique (code)
+  modified    timestamp with time zone not null default now()
 );
 ```
 
@@ -186,8 +177,8 @@ Publishers of the data. Per Constitution Principle II, every datum traces back t
 
 ```sql
 create table if not exists source (
-  id               uuid                     not null,
-  code             text                     not null,
+  id               uuid                     not null constraint source_pk      primary key,
+  code             text                     not null constraint source_code_uk unique,
   name_en          text                     not null,
   homepage_url     text                     not null,
   license_tier     text                     not null,
@@ -196,9 +187,7 @@ create table if not exists source (
   attribution_text text                     not null,
   preference_rank  int                      not null,
   created          timestamp with time zone not null default now(),
-  modified         timestamp with time zone not null default now(),
-  constraint source_pk primary key (id),
-  constraint source_code_uk unique (code)
+  modified         timestamp with time zone not null default now()
 );
 ```
 
@@ -214,12 +203,12 @@ The fact table. One row per `(country_id, statistic_id, year, source_id)`. When 
 
 ```sql
 create table if not exists statistic_value (
-  id                  uuid                     not null,
-  country_id          uuid                     not null,
-  statistic_id        uuid                     not null,
+  id                  uuid                     not null constraint statistic_value_pk           primary key,
+  country_id          uuid                     not null constraint statistic_value_country_fk   references country (id),
+  statistic_id        uuid                     not null constraint statistic_value_statistic_fk references statistic (id),
   year                int                      not null,
   value               double precision         not null,
-  source_id           uuid                     not null,
+  source_id           uuid                     not null constraint statistic_value_source_fk    references source (id),
   data_status         text                     not null,
   retrieved_at        timestamp with time zone not null,
   source_published_at timestamp with time zone,
@@ -227,10 +216,6 @@ create table if not exists statistic_value (
   created             timestamp with time zone not null default now(),
   modified            timestamp with time zone not null default now(),
   deleted_at          timestamp with time zone,
-  constraint statistic_value_pk primary key (id),
-  constraint statistic_value_country_fk     foreign key (country_id)   references country (id),
-  constraint statistic_value_statistic_fk   foreign key (statistic_id) references statistic (id),
-  constraint statistic_value_source_fk      foreign key (source_id)    references source (id),
   constraint statistic_value_natural_key_uk unique (country_id, statistic_id, year, source_id)
 );
 ```
@@ -255,16 +240,14 @@ Records each build of CDN-published artifacts. Used for reproducibility ("what d
 
 ```sql
 create table if not exists artifact_version (
-  id                    uuid                     not null,
-  version_label         text                     not null,
+  id                    uuid                     not null constraint artifact_version_pk       primary key,
+  version_label         text                     not null constraint artifact_version_label_uk unique,
   built_at              timestamp with time zone not null default now(),
   manifest_sha256       text                     not null,
   manifest_url          text                     not null,
   source_versions_jsonb jsonb                    not null,
   notes                 text,
-  created               timestamp with time zone not null default now(),
-  constraint artifact_version_pk    primary key (id),
-  constraint artifact_version_label_uk unique (version_label)
+  created               timestamp with time zone not null default now()
 );
 ```
 
