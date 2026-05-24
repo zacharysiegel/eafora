@@ -207,7 +207,7 @@ create table if not exists statistic_value (
   data_status              text                     not null,                        -- one of: final | provisional | preliminary | projection | imputed | interpolated; see table below
   retrieved_at             timestamp with time zone not null,                        -- wall-clock instant our adapter fetched this row
   data_source_published_at timestamp with time zone,                                 -- source's own publication timestamp where derivable (often only a year or version label, hence nullable)
-  data_source_revision     text,                                                     -- source-specific revision identifier ('2024-Q4', 'WPP-2024-rev1'); used for upstream-change detection between ingestion runs
+  data_source_revision     text,                                                     -- the source's own revision label for the dataset captured by this row (WB WDI '2024-Q4', Eurostat '2026-w20', HFD '2025-12', WPP 'WPP-2024-rev1'); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter's read_last_seen_revision step for incremental fetches; aggregated per-source into the manifest's data_source_versions_jsonb at artifact-build time
   created                  timestamp with time zone not null default now(),
   modified                 timestamp with time zone not null default now(),
   unique (country_id, statistic_id, period_start, period_end, data_source_id)
