@@ -193,14 +193,15 @@ The license fields are denormalized onto `data_source` rather than a separate `l
 
 #### `statistic_value`
 
-The fact table. One row per `(country_id, statistic_id, year, data_source_id)`. When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time.
+The fact table. One row per `(country_id, statistic_id, period_start, period_end, data_source_id)`. When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time. Periods are half-open intervals (inclusive start, exclusive end); see the column comments for examples.
 
 ```sql
 create table if not exists statistic_value (
   id                       uuid                     not null primary key,
   country_id               uuid                     not null references country (id),
   statistic_id             uuid                     not null references statistic (id),
-  year                     int                      not null,
+  period_start             date                     not null,                        -- inclusive lower bound: calendar year 2024 → '2024-01-01'; Q1 2024 → '2024-01-01'; 2020-2025 cohort → '2020-01-01'
+  period_end               date                     not null,                        -- exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'
   value                    double precision         not null,
   data_source_id           uuid                     not null references data_source (id),
   data_status              text                     not null,                        -- one of: final | provisional | preliminary | flash_estimate | projection | imputed | interpolated; see table below
@@ -209,7 +210,7 @@ create table if not exists statistic_value (
   data_source_revision     text,                                                     -- source-specific revision identifier ('2024-Q4', 'WPP-2024-rev1'); used for upstream-change detection between ingestion runs
   created                  timestamp with time zone not null default now(),
   modified                 timestamp with time zone not null default now(),
-  unique (country_id, statistic_id, year, data_source_id)
+  unique (country_id, statistic_id, period_start, period_end, data_source_id)
 );
 ```
 
@@ -267,7 +268,7 @@ The function:
 2. Makes HTTP requests via reqwest to the source's API or static endpoint.
 3. Parses the response into intermediate types (source-specific, in `<source>_model.rs`).
 4. Normalizes to the canonical `statistic_value` shape (joins to `country`/`statistic` by code).
-5. Inserts new rows via `sqlx::query_as!`; updates existing rows where the source has revised them (matched on the `(country, statistic, year, data_source)` natural key).
+5. Inserts new rows via `sqlx::query_as!`; updates existing rows where the source has revised them (matched on the `(country, statistic, period_start, period_end, data_source)` natural key).
 6. Returns an `IngestReport`.
 
 Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
@@ -277,9 +278,9 @@ Adapters are independent of each other. Adding a new source is one new feature m
 ```rust
 #[derive(Debug, Clone)]
 pub struct AdapterOptions {
-    pub force_full_refetch: bool,                  // ignore last-seen revision; refetch everything
-    pub country_filter: Option<Vec<String>>,       // restrict to these ISO3 codes (dev/test)
-    pub year_range: Option<(i32, i32)>,            // restrict to these years (dev/test)
+    pub force_full_refetch: bool,                       // ignore last-seen revision; refetch everything
+    pub country_filter: Option<Vec<String>>,            // restrict to these ISO3 codes (dev/test)
+    pub period_filter: Option<(NaiveDate, NaiveDate)>,  // restrict to periods overlapping this half-open [start, end) (dev/test)
 }
 
 #[derive(Debug)]
@@ -347,16 +348,16 @@ The full implementation lives in the feature spec; this section documents only w
 
 ## Source-preference merge
 
-When multiple sources publish a value for the same `(country, statistic, year)`, all rows stay in `statistic_value`. The merge into a single "what does the user see?" value happens at **artifact-build time**, not at ingestion time. This keeps every source's contribution intact in the canonical store for reproducibility, license accounting, and rollback.
+When multiple sources publish a value for the same `(country, statistic, period_start, period_end)`, all rows stay in `statistic_value`. The merge into a single "what does the user see?" value happens at **artifact-build time**, not at ingestion time. This keeps every source's contribution intact in the canonical store for reproducibility, license accounting, and rollback.
 
 ### Merge rule
 
-For each `(country, statistic, year)` cell published into the artifact:
+For each `(country, statistic, period_start, period_end)` cell published into the artifact:
 
 1. Select all candidate rows from `statistic_value`.
 2. Filter by license-class eligibility (the base shard only considers rows whose `data_source.license_class` is `public_domain` or `attribution`; the `share_alike` shard adds rows of class `attribution_sa`; the `noncommercial` shard adds rows of class `noncommercial`).
 3. Among eligible candidates, pick the row with the lowest `data_source.preference_rank`. Ties (allowed — `preference_rank` is not unique) break by the lower `data_source.id`, which gives a stable arbitrary ordering when two sources sit at the same priority.
-4. If the picked source's `data_status` is `provisional`/`preliminary`/`flash_estimate` AND a lower-priority source has a `final` value for the same year that is fresher than 2 years old, prefer the `final` value. (Don't show stale "final" data when fresher "preliminary" data exists, and don't show preliminary data when a high-quality final value is available.)
+4. If the picked source's `data_status` is `provisional`/`preliminary`/`flash_estimate` AND a lower-priority source has a `final` value for the same `(period_start, period_end)` whose `period_end` is within the last 2 years, prefer the `final` value. (Don't show stale "final" data when fresher "preliminary" data exists, and don't show preliminary data when a high-quality final value is available.)
 
 ### Current preference ranking (v1+)
 
@@ -515,7 +516,7 @@ This runs all migrations (including the seed-data migrations for `country` and t
 ### Running an adapter locally
 
 ```sh
-cargo run -p ingestion -- ingest-source wb_wdi --country-filter USA,DEU,JPN --year-range 2000-2024
+cargo run -p ingestion -- ingest-source wb_wdi --country-filter USA,DEU,JPN --period 2000-01-01:2025-01-01
 ```
 
 The filters keep the run small enough to iterate quickly. Without filters, a full WB WDI run is ~200 countries × ~65 years × ~1 statistic ≈ 13k rows, which is still under a second.
