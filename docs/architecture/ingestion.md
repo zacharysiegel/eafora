@@ -363,6 +363,8 @@ The function never panics on upstream-data quirks; everything is either a recove
 
 Concrete enum variants are only justified when callers actually need to pattern-match on the error class — e.g. a retry layer that branches on transient-vs-permanent, or an FFI boundary that needs typed errors for Swift / Kotlin. Neither applies to ingestion adapters (which run server-side and either succeed or get logged-and-retried-on-next-schedule). If a concrete variant ever IS justified, promote it onto `AppError` itself rather than introducing a per-source enum hierarchy.
 
+When v3+ adds actix-web HTTP handlers to this binary (currently dormant), the error model gains an HTTP-response mapping layer: copy Singularity's `LobbyError` pattern (implements actix-web's `ResponseError` trait to convert `AppError` variants into HTTP status + JSON body). v1's CLI-only ingestion doesn't need this; flag for whichever spec introduces the HTTP server mode.
+
 ### Adding a new source
 
 The mechanical steps for any new source:
