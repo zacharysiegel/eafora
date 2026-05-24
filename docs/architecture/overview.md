@@ -108,11 +108,11 @@ eafora/
 ├── android/                # Compose shell + UniFFI consumer
 │   ├── build.gradle.kts
 │   └── app/
-└── data/                   # gitignored. Bundled-fallback artifacts generated at build time
-                            # by scripts/build-fallback.sh (downsamples the latest CDN
+└── data/                   # gitignored. Downsampled artifacts generated at build time
+                            # by scripts/build-downsampled.sh (downsamples the latest CDN
                             # artifact and copies into platform resources). Not committed —
                             # the CDN's content-hashed object store is the source of truth
-                            # for any historical bundled-fallback shape.
+                            # for any historical downsampled shape.
 ```
 
 Notes on this shape:
@@ -121,7 +121,7 @@ Notes on this shape:
 - `ingestion/` is a separate crate that depends on `core` and adds the actix-web router, sqlx queries, source adapters, and artifact builders. Splitting it from `core` means clients don't pull in actix-web or sqlx into their WASM/UniFFI builds.
 - `ios/` and `android/` are not Cargo crates — they're native projects that consume artifacts produced by `core`. The `core` crate's UniFFI build emits an `xcframework` and an AAR that these projects link against.
 - `web/` is a Cargo workspace member because cargo-leptos drives it. It depends on `core` directly and adds Leptos components, routing, and the wasm-bindgen adapter.
-- `data/` is gitignored. The bundled-fallback artifacts (small downsampled FlatGeobuf + SQLite shipped inside each app build for instant first-launch UX) are generated at build time by `scripts/build-fallback.sh`, which fetches the latest manifest from the CDN, downloads the latest full artifact, downsamples it (drop sub-national geometry, keep only the most recent year of statistic values), and stages the results into `data/` plus the per-platform resource directories (`ios/EaforaApp/Resources/`, `android/app/src/main/assets/`, `web/static/`). Reproducibility for any given commit comes from the CDN's content-addressed object store, not from `git`.
+- `data/` is gitignored. The downsampled artifacts (small downsampled FlatGeobuf + SQLite shipped inside each app build for instant first-launch UX) are generated at build time by `scripts/build-downsampled.sh`, which fetches the latest manifest from the CDN, downloads the latest full artifact, downsamples it (drop sub-national geometry, keep only the most recent year of statistic values), and stages the results into `data/` plus the per-platform resource directories (`ios/EaforaApp/Resources/`, `android/app/src/main/assets/`, `web/static/`). Reproducibility for any given commit comes from the CDN's content-addressed object store, not from `git`.
 - Per the constitution's Singularity convention parity (Principle IV), `dbmate.sh` / `secrets.yaml` mirror Singularity verbatim. `setup.sh` and the Postgres runtime differ: Eafora installs Postgres via Homebrew and manages it via `launchd` rather than Podman Compose — a Principle IV deviation justified by v1's personal-hardware scope (see Constitution v1.3.3 SYNC IMPACT note). Containerization may return for cloud deployment post-v2.
 
 ## Rust core
@@ -424,7 +424,7 @@ This is a working direction for v2+, not a v1 commitment. The first source with 
 
 - **Web**: IndexedDB. Mobile browsers allow 50+ MB per origin without prompts in 2026. First-launch download → IndexedDB → in-memory (Rust-side). Subsequent launches read IndexedDB without network unless `manifest.json` says a newer version exists.
 - **iOS / Android**: file-system cache in app sandbox. Same logic; `URLSession`/`OkHttp` already handle the HTTP cache headers.
-- **Embedded fallback**: a small "good enough for first paint" SQLite + smaller FlatGeobuf is bundled in each build. App opens instantly with stale-but-real data while the latest is fetched in the background.
+- **Embedded downsampled artifact**: a small "good enough for first paint" SQLite + smaller FlatGeobuf is bundled in each build. App opens instantly with stale-but-real data while the latest is fetched in the background.
 
 ## Map rendering details
 

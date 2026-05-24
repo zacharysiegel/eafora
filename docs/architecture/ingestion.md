@@ -726,5 +726,5 @@ Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 - First `/speckit-specify` feature spec: `specs/NNN-world-bank-wdi-ingestion/` — implements the WB WDI adapter against this plan's contract.
 - Per-platform client plans (`docs-architecture-client-{web,ios,android}`) — these depend on the manifest + shard format locked here.
 - A `docs-architecture-secrets` mini-plan documenting which secrets the ingestion binary needs (R2 credentials initially; nothing else through v2) and how `secr` integrates with the launchd entrypoint.
-- A `scripts/build-fallback.sh` script (referenced from the overview's §Workspace and crate layout) that consumes a real artifact build and downsamples it into the per-platform bundled-fallback resources. Defer until at least one client shell exists.
+- A `scripts/build-downsampled.sh` script (referenced from the overview's §Workspace and crate layout) that consumes a real artifact build and downsamples it into the per-platform bundled-downsampled resources. Defer until at least one client shell exists.
 
