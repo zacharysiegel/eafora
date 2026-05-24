@@ -251,23 +251,29 @@ Seed data (country list from ISO 3166, statistic definitions, source records) li
 
 ### Adapter contract
 
-Every source adapter exposes one entrypoint:
+Every source adapter exposes one entrypoint that orchestrates a fixed pipeline of named helper functions:
 
 ```rust
-pub async fn fetch_and_normalize(
+pub async fn fetch_and_store(
     pool: &PgPool,
     options: AdapterOptions,
-) -> Result<IngestReport, AppError>;
+) -> Result<IngestReport, AppError> {
+    let last_seen_revision: Option<String> = read_last_seen_revision(pool).await?;
+    let raw_response: RawResponse = fetch_upstream(&options, last_seen_revision.as_deref()).await?;
+    let parsed_rows: Vec<ParsedRow> = parse_response(raw_response)?;
+    let normalized_rows: Vec<NormalizedRow> = normalize(pool, parsed_rows).await?;
+    let report: IngestReport = upsert_rows(pool, normalized_rows).await?;
+    Ok(report)
+}
 ```
 
-The function:
+Each helper is a separate named function inside the source's feature module; the orchestrator only sequences them. The helper contracts:
 
-1. Reads the source's last-seen revision from the canonical store (max `statistic_value.data_source_revision` within this source) to decide what to fetch.
-2. Makes HTTP requests via reqwest to the source's API or static endpoint.
-3. Parses the response into intermediate types (source-specific, in `<source>_model.rs`).
-4. Normalizes to the canonical `statistic_value` shape (joins to `country`/`statistic` by code).
-5. Inserts new rows via `sqlx::query_as!`; updates existing rows where the source has revised them (matched on the `(country, statistic, period_start, period_end, data_source)` natural key).
-6. Returns an `IngestReport`.
+- **`read_last_seen_revision(pool)`** → `Option<String>`. Queries `select max(data_source_revision) from statistic_value where data_source_id = $1` to decide between incremental and full fetch. `None` means "first run, fetch everything".
+- **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.country_filter`, `options.period_filter`, `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
+- **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
+- **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `country` / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
+- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. Inserts new rows via `sqlx::query_as!`; updates existing rows matched on the natural key `(country_id, statistic_id, period_start, period_end, data_source_id)`. Returns counts of inserted / updated / unchanged rows plus any non-fatal warnings.
 
 Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
 
@@ -318,7 +324,7 @@ pub enum WorldBankWdiError {
 }
 ```
 
-These convert to `AppError` at the public boundary (`fetch_and_normalize`'s return). The function never panics on upstream-data quirks; everything is either a recoverable warning (continues), a per-row drop (warning + skip), or an `AppError` that aborts the run.
+These convert to `AppError` at the public boundary (`fetch_and_store`'s return). The function never panics on upstream-data quirks; everything is either a recoverable warning (continues), a per-row drop (warning + skip), or an `AppError` that aborts the run.
 
 ### Adding a new source
 
@@ -326,7 +332,7 @@ The mechanical steps for any new source:
 
 1. Add a migration inserting a row in `data_source` with the source's code, license, attribution string, and `preference_rank` (see §Source-preference merge for ranking).
 2. Create `ingestion/src/<source_code>/` with the three-file lobby triplet.
-3. Implement `fetch_and_normalize` in `<source_code>_api.rs`.
+3. Implement `fetch_and_store` (the orchestrator) and its five named helpers (`read_last_seen_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) in `<source_code>_api.rs`.
 4. Implement source-specific SQL in `<source_code>_db.rs`.
 5. Define source-specific types and parsing in `<source_code>_model.rs`.
 6. Register the adapter in `main.rs`'s `run-all` subcommand handler and `ingest-source` dispatch.
@@ -536,7 +542,7 @@ Per Constitution Principle VII, the ingestion-side TDD-required surfaces are:
 - **Artifact diffing** (used by `build-artifacts` to decide whether a build is no-op): trivial cases (no canonical changes) and tricky cases (rows updated but resulting artifact bytes unchanged) covered.
 - **Error mapping** (per-source error → `AppError` → log line): each variant gets a test.
 
-Integration tests use the seeded canonical store via `seed-samples`, exercise `fetch_and_normalize` against the sample responses (no live HTTP), and assert on the resulting `statistic_value` rows and on the artifact output.
+Integration tests use the seeded canonical store via `seed-samples`, exercise `fetch_and_store` against the sample responses (no live HTTP), and assert on the resulting `statistic_value` rows and on the artifact output.
 
 Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 

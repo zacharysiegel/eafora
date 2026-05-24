@@ -348,7 +348,7 @@ Detailed plan: `docs/architecture/client-android.md` (follow-up branch). Key con
 Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contracts:
 
 - **Stack**: actix-web binary, tokio runtime (`features = ["full"]`), sqlx with `query_as!` and offline cache, dbmate migrations, reqwest for outbound HTTP. Per Singularity's `lobby/` pattern: each feature module is `<feature>_api.rs`, `<feature>_db.rs`, `<feature>_model.rs` triplet inside a feature directory. Through v2 the binary doesn't actually serve HTTP requests — there's no live API. The actix-web dependency is forward-looking: if v3+ introduces a live API for user-submitted corrections (or any other online-only feature that emerges later), the same binary picks it up via a new `configurer` module.
-- **Per-source adapters**: one Rust module per source. Each adapter exposes a `pub async fn fetch_and_normalize(pool: &PgPool) -> Result<IngestReport, AppError>` that reqwest-fetches, parses, and writes to the canonical store. Sources are independent — adding a new one is one new module, not a refactor.
+- **Per-source adapters**: one Rust module per source. Each adapter exposes a `pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError>` that orchestrates a fixed pipeline of named helper functions (`read_last_seen_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) — reqwest-fetches, parses, normalizes, and upserts to the canonical store. Sources are independent — adding a new one is one new module, not a refactor.
 - **Canonical store**: PostgreSQL. Schema sketch:
   - `country (iso3, name, region, ...)`
   - `statistic (id, name, units, definition, ...)` — TFR, CBR, CDR, etc.
