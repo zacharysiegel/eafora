@@ -324,8 +324,8 @@ pub struct AdapterOptions {
 #[derive(Debug)]
 pub struct IngestReport {
     pub source_code: String,
-    pub started_at: DateTime<Utc>,
-    pub finished_at: DateTime<Utc>,
+    pub started: DateTime<Utc>,
+    pub finished: DateTime<Utc>,
     pub values_inserted: u64,
     pub values_updated: u64,
     pub values_unchanged: u64,
