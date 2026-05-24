@@ -105,17 +105,17 @@ Each country row points at its *deepest* applicable region (Brazil → South Ame
 ```sql
 create table if not exists region (
   id               uuid                     not null primary key,
-  code             text                     not null unique,
+  code             text                     not null unique,                  -- human-readable slug ('americas', 'south_america', 'sub_saharan_africa')
   name_en          text                     not null,
-  level            text                     not null,
-  parent_region_id uuid                              references region (id),
-  m49_code         text                     not null unique,
+  level            text                     not null,                         -- 'region' | 'subregion' | 'intermediate_region'
+  parent_region_id uuid                              references region (id),  -- null only for top-level region nodes (Africa, Americas, Asia, Europe, Oceania)
+  m49_code         text                     not null unique,                  -- UN M49 numeric code as text (preserves leading zeros like '021'); text vs int leaves room for a non-M49 taxonomy if §Boundary recognition's alt-taxonomy clause is exercised
   created          timestamp with time zone not null default now(),
   modified         timestamp with time zone not null default now()
 );
 ```
 
-`level` is one of `'region'`, `'subregion'`, `'intermediate_region'`. `m49_code` is the UN M49 numeric code as text (preserves leading zeros like `"021"` for Northern America); kept as text rather than `int` so that a future non-M49 taxonomy could coexist in the same column space if Constitution §Boundary recognition's alternate-taxonomy clause is ever exercised. Bootstrapped from M49 in a seed migration; not ingested per-cycle.
+Bootstrapped from M49 in a seed migration; not ingested per-cycle.
 
 Hierarchical descendant query:
 
@@ -160,7 +160,7 @@ Statistic definitions (TFR, CBR, CDR, ASFR, mean age at first birth, etc.).
 ```sql
 create table if not exists statistic (
   id          uuid                     not null primary key,
-  code        text                     not null unique,
+  code        text                     not null unique,                       -- short identifier used downstream ('tfr', 'cbr', 'asfr_15_19'); stable across versions, renaming is a migration event
   name_en     text                     not null,
   description text                     not null,
   units       text                     not null,
@@ -169,8 +169,6 @@ create table if not exists statistic (
 );
 ```
 
-`code` is the short identifier used everywhere downstream: `"tfr"`, `"cbr"`, `"asfr_15_19"`, `"mean_age_first_birth"`. Stable across versions; renaming is a migration event.
-
 #### `source`
 
 Publishers of the data. Per Constitution Principle II, every datum traces back to a row here.
@@ -178,22 +176,18 @@ Publishers of the data. Per Constitution Principle II, every datum traces back t
 ```sql
 create table if not exists source (
   id               uuid                     not null primary key,
-  code             text                     not null unique,
+  code             text                     not null unique,                  -- short identifier ('wb_wdi', 'eurostat_demo_fer', 'hfd')
   name_en          text                     not null,
   homepage_url     text                     not null,
-  license_tier     text                     not null,
-  license_name     text                     not null,
+  license_tier     text                     not null,                         -- one of: public_domain | attribution | attribution_sa | noncommercial; see §License-tier shard mapping
+  license_name     text                     not null,                         -- e.g. 'CC BY 4.0', 'Open Government Licence v3.0'
   license_url      text                     not null,
-  attribution_text text                     not null,
-  preference_rank  int                      not null,
+  attribution_text text                     not null,                         -- exact display string for UI citations
+  preference_rank  int                      not null,                         -- drives source-preference merge; lower wins; see §Source-preference merge
   created          timestamp with time zone not null default now(),
   modified         timestamp with time zone not null default now()
 );
 ```
-
-- `license_tier` is one of `public_domain`, `attribution`, `attribution_sa`, `noncommercial` (see §License-tier shard mapping below).
-- `attribution_text` is the exact display string for UI citations.
-- `preference_rank` drives the source-preference merge: lower wins. See §Source-preference merge.
 
 The license fields are denormalized onto `source` rather than a separate `license` table because a source's license is effectively a property of the source. If a source changes its license, that's a schema-and-data event documented in the relevant migration, not a runtime swap.
 
@@ -209,10 +203,10 @@ create table if not exists statistic_value (
   year                int                      not null,
   value               double precision         not null,
   source_id           uuid                     not null references source (id),
-  data_status         text                     not null,
-  retrieved_at        timestamp with time zone not null,
-  source_published_at timestamp with time zone,
-  source_revision     text,
+  data_status         text                     not null,                        -- one of: final | provisional | preliminary | flash_estimate | projection | imputed | interpolated; see table below
+  retrieved_at        timestamp with time zone not null,                        -- wall-clock instant our adapter fetched this row
+  source_published_at timestamp with time zone,                                 -- source's own publication timestamp where derivable (often only a year or version label, hence nullable)
+  source_revision     text,                                                     -- source-specific revision identifier ('2024-Q4', 'WPP-2024-rev1'); used for upstream-change detection between ingestion runs
   created             timestamp with time zone not null default now(),
   modified            timestamp with time zone not null default now(),
   deleted_at          timestamp with time zone,
@@ -220,7 +214,7 @@ create table if not exists statistic_value (
 );
 ```
 
-`data_status` is one of:
+`data_status` values:
 
 | Value             | Meaning |
 |-------------------|---------|
@@ -232,8 +226,6 @@ create table if not exists statistic_value (
 | `imputed`         | Filled in by Eafora's ingestion via a documented method (rare; flagged) |
 | `interpolated`    | Straight-line or model-based estimate between known years (Eafora-generated) |
 
-`retrieved_at` is the wall-clock instant our adapter fetched the row. `source_published_at` is the source's publication timestamp where derivable (often only as a year or version label, hence nullable). `source_revision` is a free-form source-specific identifier (`"2024-Q4"`, `"WPP-2024-rev1"`, etc.) used for upstream-change detection between ingestion runs.
-
 #### `artifact_version`
 
 Records each build of CDN-published artifacts. Used for reproducibility ("what data did the client see at version 2026-w21?") and rollback.
@@ -241,17 +233,15 @@ Records each build of CDN-published artifacts. Used for reproducibility ("what d
 ```sql
 create table if not exists artifact_version (
   id                    uuid                     not null primary key,
-  version_label         text                     not null unique,
+  version_label         text                     not null unique,              -- human-readable build label ('2026-w21')
   built_at              timestamp with time zone not null default now(),
-  manifest_sha256       text                     not null,
-  manifest_url          text                     not null,
-  source_versions_jsonb jsonb                    not null,
+  manifest_sha256       text                     not null,                     -- content hash of manifest.json
+  manifest_url          text                     not null,                     -- CDN URL of manifest.json
+  source_versions_jsonb jsonb                    not null,                     -- snapshot of every source's source_revision at build time: {"wb_wdi": "2024-Q4", "hfd": "2025-12"}; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile
   notes                 text,
   created               timestamp with time zone not null default now()
 );
 ```
-
-`source_versions_jsonb` is a snapshot of every source's `source_revision` at build time: `{"wb_wdi": "2024-Q4", "eurostat_demo_fer": "2026-w20", "hfd": "2025-12"}`. Used by clients to detect when re-fetching is worthwhile (manifest comparison) and by us to attribute artifact contents to upstream snapshots.
 
 ### Migrations
 
