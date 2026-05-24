@@ -346,19 +346,22 @@ pub struct IngestWarning {
 
 ### Error model
 
-`AppError` is `minimer::Error` parameterized for the ingestion binary. Per-feature modules define their own concrete variants where matching is useful:
+`AppError` is `minimer::Error` for the ingestion binary. Adapter code builds errors as formatted strings at the failure site rather than defining per-source concrete enum variants — matches Singularity's pattern, avoids variant boilerplate, and is sufficient because nothing in the ingestion pipeline pattern-matches on adapter errors (they only flow to logs and surface in the run-level outcome).
 
 ```rust
-// ingestion/src/world_bank_wdi/world_bank_wdi_model.rs
-#[derive(Debug)]
-pub enum WorldBankWdiError {
-    HttpFailed { url: String, status: u16 },
-    UnexpectedSchema { path: String, message: String },
-    UnknownIso3 { iso3: String, year: i32 },
+// ingestion/src/world_bank_wdi/world_bank_wdi_api.rs
+let url: &str = "https://api.worldbank.org/v2/country/all/indicator/SP.DYN.TFRT.IN?format=json&per_page=20000";
+let response: reqwest::Response = reqwest::get(url).await
+    .map_err(|err| AppError::from(format!("wb_wdi: HTTP GET {url} failed: {err}")))?;
+let status: reqwest::StatusCode = response.status();
+if !status.is_success() {
+    return Err(AppError::from(format!("wb_wdi: HTTP {status} from {url}")));
 }
 ```
 
-These convert to `AppError` at the public boundary (`fetch_and_store`'s return). The function never panics on upstream-data quirks; everything is either a recoverable warning (continues), a per-row drop (warning + skip), or an `AppError` that aborts the run.
+The function never panics on upstream-data quirks; everything is either a recoverable warning (continues; see `IngestWarning`), a per-row drop (warning + skip), or an `AppError` that aborts the run.
+
+Concrete enum variants are only justified when callers actually need to pattern-match on the error class — e.g. a retry layer that branches on transient-vs-permanent, or an FFI boundary that needs typed errors for Swift / Kotlin. Neither applies to ingestion adapters (which run server-side and either succeed or get logged-and-retried-on-next-schedule). If a concrete variant ever IS justified, promote it onto `AppError` itself rather than introducing a per-source enum hierarchy.
 
 ### Adding a new source
 
