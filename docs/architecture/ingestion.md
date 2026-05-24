@@ -34,7 +34,7 @@ From the constitution and `docs/architecture/overview.md`:
 - CDN-delivered immutable artifacts; FlatGeobuf geometry + SQLite statistics; content-hashed filenames; no live data API through v2. (Constitution VI as amended in v1.3.2)
 - License-segmented SQLite shards via additive `ATTACH DATABASE` composition, not mutually-exclusive variants. (Overview §License-segmented SQLite shards)
 - Mac mini M1 hosts Postgres + ingestion + artifact builder through v1; Cloudflare R2 + Pages for distribution; Cloudflare Tunnel dormant through v2. (Overview §Cost; project memory)
-- UUIDv7 primary keys named `id`; timestamps named `created` / `modified` (not `_at` suffix), all `timestamp with time zone`; soft-delete is `deleted_at`. (Memory: db schema conventions)
+- UUIDv7 primary keys named `id`; timestamps named `created` / `modified` / `deleted` (no `_at` suffix), all `timestamp with time zone`. (Memory: db schema conventions)
 - minimer for errors; secr for secrets; statics via `LazyLock`. (Constitution IV)
 
 ## Workspace placement
@@ -85,7 +85,7 @@ All tables follow the Singularity-inherited conventions:
 
 - Primary key column is named `id`, type `uuid`, populated by application code as UUIDv7 (lexicographic time ordering is useful for `order by id desc` scans).
 - Timestamps are named `created` / `modified` (not `_at` suffix); both are `timestamp with time zone not null default now()`.
-- Soft-delete is `deleted_at` (`timestamp with time zone`, nullable). The default query path filters `deleted_at is null`; hard deletes are reserved for migrations.
+- Soft-delete is `deleted` (`timestamp with time zone`, nullable; no `_at` suffix, matching the `created` / `modified` convention). The default query path filters `deleted is null`; hard deletes are reserved for migrations.
 - Foreign keys are stored as plain `uuid` references (e.g. `country_id uuid not null references country(id)`); no ORM relationship layer (constraint stays at the DB level; resolution stays in service code).
 - snake_case throughout; SQL keywords lowercase; trailing semicolons on their own line.
 - `IF NOT EXISTS` on all DDL where applicable for migration idempotency.
@@ -149,7 +149,7 @@ create table if not exists country (
   region_id  uuid                     not null references region (id),
   created    timestamp with time zone not null default now(),
   modified   timestamp with time zone not null default now(),
-  deleted_at timestamp with time zone
+  deleted    timestamp with time zone
 );
 ```
 
