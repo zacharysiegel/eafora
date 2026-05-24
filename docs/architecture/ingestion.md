@@ -92,8 +92,6 @@ fn build_cli() -> Command {
             Command::new("ingest-source")
                 .about("Run a single source adapter")
                 .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi)"))
-                .arg(Arg::new("country-filter").long("country-filter").value_delimiter(','))
-                .arg(Arg::new("period").long("period").help("YYYY-MM-DD:YYYY-MM-DD half-open interval"))
                 .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
         )
         .subcommand(Command::new("run-all").about("Run every registered source adapter"))
@@ -356,7 +354,7 @@ pub async fn fetch_and_store(
 Each helper is a separate named function inside the source's feature module; the orchestrator only sequences them. The helper contracts:
 
 - **`read_last_seen_revision(pool)`** → `Option<String>`. Queries `select max(data_source_revision) from statistic_value where data_source_id = $1` to decide between incremental and full fetch. `None` means "first run, fetch everything".
-- **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.country_filter`, `options.period_filter`, `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
+- **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
 - **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
 - **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `region` (via country.iso3 for country-level data) / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
 - **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. Inserts new rows via `sqlx::query_as!`; updates existing rows matched on the natural key `(region_id, statistic_id, period_start, period_end, data_source_id)`. Returns counts of inserted / updated / unchanged `statistic_value` rows plus any non-fatal warnings.
@@ -369,8 +367,6 @@ Adapters are independent of each other. Adding a new source is one new feature m
 #[derive(Debug, Clone)]
 pub struct AdapterOptions {
     pub force_full_refetch: bool,                       // ignore last-seen revision; refetch everything
-    pub country_filter: Option<Vec<String>>,            // restrict to these ISO3 codes (dev/test)
-    pub period_filter: Option<(NaiveDate, NaiveDate)>,  // restrict to periods overlapping this half-open [start, end) (dev/test)
 }
 
 #[derive(Debug)]
@@ -665,10 +661,10 @@ This loads sample responses from `ingestion/samples/<source_code>/` and replays 
 ### Running an adapter locally
 
 ```sh
-cargo run -p ingestion -- ingest-source wb_wdi --country-filter USA,DEU,JPN --period 2000-01-01:2025-01-01
+cargo run -p ingestion -- ingest-source wb_wdi
 ```
 
-The filters keep the run small enough to iterate quickly. Without filters, a full WB WDI run is ~200 countries × ~65 years × ~1 statistic ≈ 13k rows, which is still under a second.
+A full WB WDI run is ~200 countries × ~65 years × ~1 statistic ≈ 13k rows, which is under a second — fast enough to iterate without needing per-country or per-period filters.
 
 ### Producing artifacts locally
 
