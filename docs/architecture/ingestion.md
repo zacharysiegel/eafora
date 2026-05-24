@@ -86,7 +86,7 @@ All tables follow the Singularity-inherited conventions:
 - Primary key column is named `id`, type `uuid`, populated by application code as UUIDv7 (lexicographic time ordering is useful for `order by id desc` scans).
 - Timestamps are named `created` / `modified` (not `_at` suffix); both are `timestamp with time zone not null default now()`.
 - Soft-delete is `deleted` (`timestamp with time zone`, nullable; no `_at` suffix, matching the `created` / `modified` convention). The default query path filters `deleted is null`; hard deletes are reserved for migrations.
-- Foreign keys are stored as plain `uuid` references (e.g. `country_id uuid not null references country(id)`); no ORM relationship layer (constraint stays at the DB level; resolution stays in service code).
+- Foreign keys are stored as plain `uuid` references (e.g. `region_id uuid not null references region (id)`); no ORM relationship layer (constraint stays at the DB level; resolution stays in service code).
 - snake_case throughout; SQL keywords lowercase; trailing semicolons on their own line.
 - `IF NOT EXISTS` on all DDL where applicable for migration idempotency.
 
@@ -94,13 +94,18 @@ All tables follow the Singularity-inherited conventions:
 
 #### `region`
 
-UN M49 geographic taxonomy as a self-referential reference table. M49 has three levels (see [unstats.un.org/unsd/methodology/m49/](https://unstats.un.org/unsd/methodology/m49/)):
+The unified administrative-geographic hierarchy. Every geographic entity — supranational groupings, countries, and (in v2+) subnational divisions — is a row in this table, linked via `parent_region_id`. v1 ships UN M49 groupings plus countries; subnational levels are added when subnational data lands.
 
-- **Region** (5 nodes): Africa, Americas, Asia, Europe, Oceania.
-- **Subregion** (17 nodes): one or more per region (Northern Africa, Sub-Saharan Africa, Northern America, Latin America and the Caribbean, Central Asia, Eastern Asia, South-eastern Asia, Southern Asia, Western Asia, Eastern Europe, Northern Europe, Southern Europe, Western Europe, Australia and New Zealand, Melanesia, Micronesia, Polynesia).
-- **Intermediate region** (7 nodes; M49 uses this level only under two subregions): under **Sub-Saharan Africa** — Eastern Africa, Middle Africa, Southern Africa, Western Africa; under **Latin America and the Caribbean** — Caribbean, Central America, South America.
+UN M49 (see [unstats.un.org/unsd/methodology/m49/](https://unstats.un.org/unsd/methodology/m49/)) contributes four of the current levels:
 
-Each country row points at its *deepest* applicable region (Brazil → South America; France → Western Europe; USA → Northern America; Egypt → Northern Africa, which has no intermediate level). Hierarchical queries ("all countries in the Americas") use a recursive CTE; see below.
+- **`region`** (5 nodes): Africa, Americas, Asia, Europe, Oceania.
+- **`subregion`** (17 nodes): one or more per region (Northern Africa, Sub-Saharan Africa, Northern America, Latin America and the Caribbean, Central Asia, Eastern Asia, South-eastern Asia, Southern Asia, Western Asia, Eastern Europe, Northern Europe, Southern Europe, Western Europe, Australia and New Zealand, Melanesia, Micronesia, Polynesia).
+- **`intermediate_region`** (7 nodes; M49 uses this level only under two subregions): under **Sub-Saharan Africa** — Eastern Africa, Middle Africa, Southern Africa, Western Africa; under **Latin America and the Caribbean** — Caribbean, Central America, South America.
+- **`country`** (~200 nodes): ISO 3166-1 entities; M49 also numbers these (USA='840', DEU='276'). Each country row's `parent_region_id` points at its *deepest* applicable M49 region (Brazil → South America; France → Western Europe; USA → Northern America; Egypt → Northern Africa, which has no intermediate level).
+
+Future levels (`subnational_1`, `subnational_2`, etc.) attach via the same `parent_region_id` mechanism when subnational data is introduced.
+
+Country-specific metadata (ISO 3166 codes) lives in a 1:1 extension table `country` keyed on `region.id`; see below.
 
 ```sql
 create table if not exists region (
@@ -109,20 +114,18 @@ create table if not exists region (
   name_en          text                     not null,
   level            text                     not null,
   parent_region_id uuid                              references region (id),
-  m49_code         text                     not null unique,  -- text vs int leaves room for a non-M49 taxonomy if §Boundary recognition's alt-taxonomy clause is exercised
+  m49_code         text                              unique,  -- text vs int leaves room for a non-M49 taxonomy if §Boundary recognition's alt-taxonomy clause is exercised; nullable to accommodate future subnational levels that have no M49 equivalent
   created          timestamp with time zone not null default now(),
   modified         timestamp with time zone not null default now()
 );
 
-comment on column region.code             is $$human-readable slug ('americas', 'south_america', 'sub_saharan_africa')$$;
-comment on column region.level            is $$'region' | 'subregion' | 'intermediate_region'$$;
-comment on column region.parent_region_id is $$null only for top-level region nodes (Africa, Americas, Asia, Europe, Oceania)$$;
-comment on column region.m49_code         is $$UN M49 numeric code as text (preserves leading zeros like '021')$$;
+comment on column region.code             is $$human-readable slug ('americas', 'south_america', 'sub_saharan_africa', 'usa', 'germany')$$;
+comment on column region.level            is $$'region' | 'subregion' | 'intermediate_region' | 'country' | (future subnational levels: 'subnational_1', 'subnational_2', ...)$$;
+comment on column region.parent_region_id is $$null only for top-level region nodes (Africa, Americas, Asia, Europe, Oceania); every other row including countries has a parent$$;
+comment on column region.m49_code         is $$UN M49 numeric code as text (preserves leading zeros like '021'); also populated for country-level rows (USA='840', DEU='276'); nullable for future non-M49 levels (subnational) that have no M49 equivalent$$;
 ```
 
-Bootstrapped from M49 in a seed migration; not ingested per-cycle.
-
-Hierarchical descendant query:
+Bootstrapped from M49 (groupings + countries) in seed migrations; not ingested per-cycle. Hierarchical queries ("all countries in the Americas") use a recursive CTE:
 
 ```sql
 with recursive region_descendants as (
@@ -134,28 +137,33 @@ with recursive region_descendants as (
         from region
         join region_descendants on region.parent_region_id = region_descendants.id
 )
-select country.*
-    from country
-    join region_descendants on country.region_id = region_descendants.id
+select region.id, region.code, region.name_en, country.iso3
+    from region
+    join region_descendants on region.id = region_descendants.id
+    join country            on country.region_id = region.id
 order by country.iso3 asc
 ;
 ```
 
-#### `country`
+The inner join to `country` acts as the filter — only country-level region rows have a corresponding country extension, so the result is "all countries in the Americas." To get all regions at every level under Americas (countries, intermediate regions, subregions), drop the country join.
 
-Canonical country reference. Bootstrapped from ISO 3166-1 in a seed migration, with each row joined to its deepest M49 region; not ingested per-cycle.
+#### `country` (1:1 extension of `region` at `level = 'country'`)
+
+Country-specific metadata. Strictly 1:1 with `region` rows where `level = 'country'`: the PK and the FK are the same column (`region_id`). `name_en` lives on `region` (covers all levels); only the ISO codes are country-specific. Bootstrapped from ISO 3166-1 in the same seed migration that inserts the country-level region rows; not ingested per-cycle.
 
 ```sql
 create table if not exists country (
-  id         uuid                     not null primary key,
-  iso3       text                     not null unique,
-  iso2       text                     not null,
-  name_en    text                     not null,
-  region_id  uuid                     not null references region (id),
-  created    timestamp with time zone not null default now(),
-  modified   timestamp with time zone not null default now(),
-  deleted    timestamp with time zone
+  region_id uuid                     not null primary key references region (id),
+  iso3      text                     not null unique,
+  iso2      text                     not null unique,
+  created   timestamp with time zone not null default now(),
+  modified  timestamp with time zone not null default now(),
+  deleted   timestamp with time zone
 );
+
+comment on column country.region_id is $$both PK and FK to region.id; enforces the strict 1:1 extension shape (every country row corresponds to exactly one region row at level='country', and vice versa)$$;
+comment on column country.iso3      is $$ISO 3166-1 alpha-3 ('USA', 'DEU', 'JPN')$$;
+comment on column country.iso2      is $$ISO 3166-1 alpha-2 ('US', 'DE', 'JP')$$;
 ```
 
 #### `statistic`
@@ -206,12 +214,12 @@ The license fields are denormalized onto `data_source` rather than a separate `l
 
 #### `statistic_value`
 
-The fact table. One row per `(country_id, statistic_id, period_start, period_end, data_source_id)`. When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time. Periods are half-open intervals (inclusive start, exclusive end); see the column comments for examples.
+The fact table. One row per `(region_id, statistic_id, period_start, period_end, data_source_id)`. `region_id` can point at any level — country (the common case for v1), subnational region (when subnational data lands in v2+), or supranational grouping (for stored aggregates like an EU-wide TFR). When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time. Periods are half-open intervals (inclusive start, exclusive end); see the column comments for examples.
 
 ```sql
 create table if not exists statistic_value (
   id                       uuid                     not null primary key,
-  country_id               uuid                     not null references country (id),
+  region_id                uuid                     not null references region (id),
   statistic_id             uuid                     not null references statistic (id),
   period_start             date                     not null,
   period_end               date                     not null,
@@ -223,9 +231,10 @@ create table if not exists statistic_value (
   data_source_revision     text,
   created                  timestamp with time zone not null default now(),
   modified                 timestamp with time zone not null default now(),
-  unique (country_id, statistic_id, period_start, period_end, data_source_id)
+  unique (region_id, statistic_id, period_start, period_end, data_source_id)
 );
 
+comment on column statistic_value.region_id                is $$points at any level — country (common in v1), subnational (v2+ when subnational data lands), or supranational grouping (for stored aggregates)$$;
 comment on column statistic_value.period_start             is $$inclusive lower bound: calendar year 2024 → '2024-01-01'; Q1 2024 → '2024-01-01'; 2020-2025 cohort → '2020-01-01'$$;
 comment on column statistic_value.period_end               is $$exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'$$;
 comment on column statistic_value.data_status              is $$one of: final | provisional | preliminary | projection | imputed | interpolated$$;
@@ -297,8 +306,8 @@ Each helper is a separate named function inside the source's feature module; the
 - **`read_last_seen_revision(pool)`** → `Option<String>`. Queries `select max(data_source_revision) from statistic_value where data_source_id = $1` to decide between incremental and full fetch. `None` means "first run, fetch everything".
 - **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.country_filter`, `options.period_filter`, `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
 - **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
-- **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `country` / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
-- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. Inserts new rows via `sqlx::query_as!`; updates existing rows matched on the natural key `(country_id, statistic_id, period_start, period_end, data_source_id)`. Returns counts of inserted / updated / unchanged `statistic_value` rows plus any non-fatal warnings.
+- **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `region` (via country.iso3 for country-level data) / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
+- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. Inserts new rows via `sqlx::query_as!`; updates existing rows matched on the natural key `(region_id, statistic_id, period_start, period_end, data_source_id)`. Returns counts of inserted / updated / unchanged `statistic_value` rows plus any non-fatal warnings.
 
 Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
 
@@ -326,7 +335,7 @@ pub struct IngestReport {
 
 #[derive(Debug)]
 pub struct IngestWarning {
-    pub country_iso3: Option<String>,
+    pub region_code: Option<String>,
     pub statistic_code: Option<String>,
     pub period_start: Option<NaiveDate>,
     pub message: String,

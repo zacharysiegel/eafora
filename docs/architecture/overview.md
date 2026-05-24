@@ -353,7 +353,7 @@ Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contract
   - `country (iso3, name, region, ...)`
   - `statistic (id, name, units, definition, ...)` — TFR, CBR, CDR, etc.
   - `source (id, name, url, license, license_url, ...)` — every row in the licensing matrix from `docs/research/data-source-licensing.md` is one record here
-  - `statistic_value (country_iso3, statistic_id, year, value, source_id, retrieved_at, data_status)` — the fact table; one row per (country, statistic, year, source). When multiple sources publish the same datum, all rows are kept; the merge is done at artifact-build time per a documented preference order.
+  - `statistic_value (region_id, statistic_id, period_start, period_end, value, data_source_id, retrieved_at, data_status, ...)` — the fact table; one row per (region, statistic, period, source). `region_id` can point at any level (country, subnational, supranational). When multiple sources publish the same datum, all rows are kept; the merge is done at artifact-build time per a documented preference order.
   - `data_status` is an enum: `final`, `provisional`, `preliminary`, `projection`, `imputed`, `interpolated` (matches the `docs/data/sources-survey.md` Preliminary section).
   - `artifact_version (id, manifest_url, artifact_created, source_versions_jsonb)` for reproducibility.
 - **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `flatgeobuf` file (geometry) + a `sqlite` file (statistic data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
