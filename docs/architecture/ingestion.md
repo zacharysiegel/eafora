@@ -237,8 +237,7 @@ create table if not exists artifact_version (
   manifest_sha256            text                     not null,                     -- content hash of manifest.json
   manifest_url               text                     not null,                     -- CDN URL of manifest.json
   data_source_versions_jsonb jsonb                    not null,                     -- snapshot of every data_source's data_source_revision at build time: {"wb_wdi": "2024-Q4", "hfd": "2025-12"}; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile
-  notes                      text,
-  created                    timestamp with time zone not null default now()
+  notes                      text
 );
 ```
 
