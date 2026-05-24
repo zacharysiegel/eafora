@@ -355,7 +355,7 @@ Detailed plan: `docs/architecture/ingestion.md` (follow-up branch). Key contract
   - `source (id, name, url, license, license_url, ...)` — every row in the licensing matrix from `docs/research/data-source-licensing.md` is one record here
   - `statistic_value (country_iso3, statistic_id, year, value, source_id, retrieved_at, data_status)` — the fact table; one row per (country, statistic, year, source). When multiple sources publish the same datum, all rows are kept; the merge is done at artifact-build time per a documented preference order.
   - `data_status` is an enum: `final`, `provisional`, `preliminary`, `projection`, `imputed`, `interpolated` (matches the `docs/data/sources-survey.md` Preliminary section).
-  - `artifact_version (id, manifest_url, built_at, source_versions_jsonb)` for reproducibility.
+  - `artifact_version (id, manifest_url, artifact_created, source_versions_jsonb)` for reproducibility.
 - **Artifact builders**: a `pub async fn build_artifacts(pool: &PgPool, output: &Path)` function reads the canonical store, applies the source-preference merge rules, and emits a `flatgeobuf` file (geometry) + a `sqlite` file (statistic data) + a `manifest.json`. The output is content-hashed and uploaded to the CDN.
 - **Schedule**: **v1 runs on the owner's Mac mini M1 server** (already owned, runs continuously). The ingestion binary is triggered via `launchd` (macOS's cron equivalent) on a schedule — likely weekly Mondays for v1, more often as the source-update cadence grows. The same machine hosts the canonical Postgres. Through v1, manual invocation is also fine. **Cloudflare Tunnel** is already provisioned on the Mac mini, so when v3+ adds a live API the inbound path is in place; the Tunnel is dormant through v1–v2 because clients never call origin. Migration to managed compute (Fly.io / Render / Lambda / a VPS) is a v2+ concern, deferred until traffic or reliability needs force it.
 
@@ -381,7 +381,7 @@ Comparison (concrete numbers approximate; see §Things to verify):
 manifest.json:
 {
   "version": "2026-w21",
-  "built_at": "2026-05-21T14:00:00Z",
+  "artifact_created": "2026-05-21T14:00:00Z",
   "geometry": {
     "url": "/geometry/world-1.50m-ab12cd34.fgb",
     "size_bytes": 4380000,

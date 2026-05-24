@@ -233,7 +233,7 @@ Records each build of CDN-published artifacts. Used for reproducibility ("what d
 create table if not exists artifact_version (
   id                         uuid                     not null primary key,
   version_label              text                     not null unique,              -- human-readable build label ('2026-w21')
-  built_at                   timestamp with time zone not null default now(),
+  artifact_created           timestamp with time zone not null default now(),
   manifest_sha256            text                     not null,                     -- content hash of manifest.json
   manifest_url               text                     not null,                     -- CDN URL of manifest.json
   data_source_versions_jsonb jsonb                    not null,                     -- snapshot of every data_source's data_source_revision at build time: {"wb_wdi": "2024-Q4", "hfd": "2025-12"}; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile
@@ -424,7 +424,7 @@ Filenames are `<statistic_code>-<license_class>-<sha8>.sqlite` (with `base` cove
 ```json
 {
   "version": "2026-w21",
-  "built_at": "2026-05-21T14:00:00Z",
+  "artifact_created": "2026-05-21T14:00:00Z",
   "geometry": {
     "url": "geometry/world-50m-ab12cd34.fgb",
     "size_bytes": 4380000,
