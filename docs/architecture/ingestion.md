@@ -485,19 +485,29 @@ pub async fn build_artifacts(
     pool: &PgPool,
     output_dir: &Path,
     version_label: &str,
-) -> Result<ArtifactVersion, AppError>;
+) -> Result<ArtifactVersion, AppError> {
+    let candidate_values: Vec<CandidateValue> = read_candidate_values(pool).await?;
+    let merged_values: Vec<MergedValue> = apply_source_preference_merge(candidate_values);
+    let sqlite_shards: Vec<ShardOutput> = emit_sqlite_shards(&merged_values, output_dir).await?;
+    let geometry_shard: ShardOutput = emit_geometry_flatgeobuf(output_dir).await?;
+    let hashed_outputs: HashedOutputs = compute_content_hashes(sqlite_shards, geometry_shard).await?;
+    let manifest_output: ShardOutput = emit_manifest(&hashed_outputs, version_label, output_dir).await?;
+    let artifact_version: ArtifactVersion = insert_artifact_version(pool, version_label, &manifest_output, &hashed_outputs).await?;
+    Ok(artifact_version)
+}
 ```
 
-Steps:
+Each helper is a separate named function inside the `artifact` module; the orchestrator only sequences them. The helper contracts:
 
-1. Read `statistic_value` from the canonical store grouped by `(statistic_code, license_class)`.
-2. Apply the source-preference merge per cell (see §Source-preference merge).
-3. For each `(statistic_code, license_class)` group, emit a SQLite shard via `sqlite_writer`.
-4. Emit the geometry FlatGeobuf via `flatgeobuf_writer` (single file, no tier split).
-5. Compute content hashes (SHA-256) for every output file.
-6. Emit `manifest.json` via `manifest_writer`.
-7. Insert an `artifact_version` row recording the build.
-8. Return the `ArtifactVersion` for the caller to upload via the R2 client (separate `upload-artifacts` CLI step or chained in `build-artifacts --upload`).
+- **`read_candidate_values(pool)`** → `Vec<CandidateValue>`. SELECTs from `statistic_value` with joins to `data_source` (for `license_class` and `preference_rank`) and `statistic` (for `code`). Returns every candidate row that could appear in some shard. For v1's data volume (~tens of thousands of rows) the whole set fits in memory; if it grows substantially, stream into a chunked merge.
+- **`apply_source_preference_merge(candidates)`** → `Vec<MergedValue>`. Groups candidates by `(region_id, statistic_id, period_start, period_end, license_class)` and applies the merge rule from §Source-preference merge (lowest `preference_rank` wins; data-status overrides where applicable). Pure function — no I/O.
+- **`emit_sqlite_shards(merged, output_dir)`** → `Vec<ShardOutput>`. Groups merged values by `(statistic_code, license_class)`, opens a SQLite file per group under `output_dir/data/`, writes rows, returns metadata for each file (path + size; not yet content-hashed).
+- **`emit_geometry_flatgeobuf(output_dir)`** → `ShardOutput`. Reads geometry from the in-repo Natural Earth bundle (`ingestion/data/world-50m.fgb` per the §Geometry ingestion lean), writes to `output_dir/geometry/`. Single file, no license-class split — Natural Earth is `public_domain`.
+- **`compute_content_hashes(shards, geometry)`** → `HashedOutputs`. SHA-256 every output file, rename from `*.tmp-<uuid>` to `*-<sha8>.<ext>` only after hashing succeeds, returns paths + full hashes for the manifest. The manifest itself is excluded — it has a stable filename (`manifest.json`).
+- **`emit_manifest(hashed, version_label, output_dir)`** → `ShardOutput`. Builds `manifest.json` from `hashed` plus the `version_label`, writes to `output_dir/manifest.json`, computes its own SHA-256 (for the `artifact_version.manifest_sha256` column). Filename is NOT content-hashed because clients fetch by stable URL with a short cache.
+- **`insert_artifact_version(pool, version_label, manifest_output, hashed)`** → `ArtifactVersion`. INSERTs into `artifact_version` with `version_label`, `manifest_sha256`, `manifest_url`, and `data_source_versions_jsonb` (derived from the latest `data_source_revision` per source in `read_candidate_values`'s output). Returns the inserted row.
+
+Upload is intentionally outside `build_artifacts` so the build can be inspected locally before publishing. The caller can either run `upload-artifacts <version_label>` as a separate CLI step, or chain inline via `build-artifacts --upload` (which calls `upload_artifacts_to_r2(hashed_outputs, manifest_output)` after the orchestrator returns).
 
 ### Output directory layout
 
