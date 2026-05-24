@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# scripts/pr-merge.sh — merge a feature branch into master via the manual rebase
-# flow that preserves `>>> branch: <name>` marker commits.
+# scripts/pr-integrate.sh — integrate a feature branch into master via the manual
+# rebase flow that preserves `>>> branch: <name>` marker commits. Named "integrate"
+# rather than "merge" because it rebases (not merges) the branch onto master.
 #
 # The GitHub "rebase and merge" UI button drops empty commits and would lose
 # the markers, so this script encodes the canonical local-rebase + push + cleanup
 # sequence per Governance §Git workflow §Merge strategy.
 #
 # Usage:
-#   ./scripts/pr-merge.sh <branch>
-#   ./scripts/pr-merge.sh <branch> --onto <former-parent-branch>     (for a stacked branch
-#                                                                     whose parent already merged)
+#   ./scripts/pr-integrate.sh <branch>
+#   ./scripts/pr-integrate.sh <branch> --onto <former-parent-branch>     (for a stacked branch
+#                                                                         whose parent already merged)
 #
 # Behavior:
 #   1. Validate: working tree is clean; <branch> exists locally and on origin.
