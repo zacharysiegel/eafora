@@ -204,7 +204,7 @@ create table if not exists statistic_value (
   period_end               date                     not null,                        -- exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'
   value                    double precision         not null,
   data_source_id           uuid                     not null references data_source (id),
-  data_status              text                     not null,                        -- one of: final | provisional | preliminary | flash_estimate | projection | imputed | interpolated; see table below
+  data_status              text                     not null,                        -- one of: final | provisional | preliminary | projection | imputed | interpolated; see table below
   retrieved_at             timestamp with time zone not null,                        -- wall-clock instant our adapter fetched this row
   data_source_published_at timestamp with time zone,                                 -- source's own publication timestamp where derivable (often only a year or version label, hence nullable)
   data_source_revision     text,                                                     -- source-specific revision identifier ('2024-Q4', 'WPP-2024-rev1'); used for upstream-change detection between ingestion runs
@@ -220,8 +220,7 @@ create table if not exists statistic_value (
 |-------------------|---------|
 | `final`           | Source's authoritative value; not expected to revise |
 | `provisional`     | Published as preliminary; subject to revision in a future publication cycle |
-| `preliminary`     | First-cut estimate from a national source (e.g. CDC NCHS pre-final) |
-| `flash_estimate`  | Eurostat-style flash estimate for the most recent year |
+| `preliminary`     | Early estimate published before the final value — covers both rapid Eurostat-style flash releases (T+1 month) and national statistical offices' first publications (T+3 months) |
 | `projection`      | Model output for future years (UN WPP projections, scenario forecasts) |
 | `imputed`         | Filled in by Eafora's ingestion via a documented method (rare; flagged) |
 | `interpolated`    | Straight-line or model-based estimate between known years (Eafora-generated) |
@@ -357,7 +356,7 @@ For each `(country, statistic, period_start, period_end)` cell published into th
 1. Select all candidate rows from `statistic_value`.
 2. Filter by license-class eligibility (the base shard only considers rows whose `data_source.license_class` is `public_domain` or `attribution`; the `share_alike` shard adds rows of class `attribution_sa`; the `noncommercial` shard adds rows of class `noncommercial`).
 3. Among eligible candidates, pick the row with the lowest `data_source.preference_rank`. Ties (allowed — `preference_rank` is not unique) break by the lower `data_source.id`, which gives a stable arbitrary ordering when two sources sit at the same priority.
-4. If the picked source's `data_status` is `provisional`/`preliminary`/`flash_estimate` AND a lower-priority source has a `final` value for the same `(period_start, period_end)` whose `period_end` is within the last 2 years, prefer the `final` value. (Don't show stale "final" data when fresher "preliminary" data exists, and don't show preliminary data when a high-quality final value is available.)
+4. If the picked source's `data_status` is `provisional`/`preliminary` AND a lower-priority source has a `final` value for the same `(period_start, period_end)` whose `period_end` is within the last 2 years, prefer the `final` value. (Don't show stale "final" data when fresher "preliminary" data exists, and don't show preliminary data when a high-quality final value is available.)
 
 ### Current preference ranking (v1+)
 
