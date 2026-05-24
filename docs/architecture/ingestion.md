@@ -694,7 +694,6 @@ Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 ## Open questions
 
 1. **Revision detection granularity.** `data_source_revision` is stored per-row, but most sources publish a single version label that applies to the whole download. Should there be a `data_source_publication (data_source_id, revision_label, fetched)` table tracking publication-level metadata distinct from per-row metadata? Defer; first ingestion pass will reveal whether per-row revision tracking is overkill.
-2. **Artifact build cadence vs. ingestion cadence.** Currently `run-all` calls `build-artifacts` if any adapter reported changes. Should artifact builds be debounced (e.g. only build at most once per day even if multiple ingestion runs report changes)? Probably yes once the cost of an artifact build becomes non-trivial; not a v1 concern.
 
 ## Things to verify
 
