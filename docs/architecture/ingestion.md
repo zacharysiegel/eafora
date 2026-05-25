@@ -283,11 +283,13 @@ comment on column data_source_publication.published      is $$source's own publi
 comment on column data_source_publication.fetched        is $$wall-clock instant our adapter captured this publication$$;
 ```
 
-Publications are append-only — once captured, the row stays as an audit trail. If a source republishes under the same `revision_label` (a re-fetch with no upstream change), the existing row is matched on `(data_source_id, revision_label)` and no insert happens. If the source publishes a new revision, a new row is inserted, and `statistic_value` rows are updated to point at it (the old publication row stays in this table).
+Publications are append-only — once captured, the row stays as an audit trail. If a source republishes under the same `revision_label` (a re-fetch with no upstream change), the existing row is matched on `(data_source_id, revision_label)` and no insert happens. If the source publishes a new revision, a new row is inserted; the old publication row stays in this table indefinitely.
 
 #### `statistic_value`
 
-The fact table. One row per `(region_id, statistic_id, period_start, period_end, data_source_id)`. `region_id` can point at any level — country (the common case for v1), subnational region (when subnational data lands in v2+), or supranational grouping (for stored aggregates like an EU-wide TFR). When multiple sources publish the same datum, all rows are kept; the merge happens at artifact-build time. Periods are half-open intervals (inclusive start, exclusive end); see the column comments for examples. Each row points at the `data_source_publication` it was captured from; when the source publishes a revision, the row is updated in place to point at the new publication.
+The fact table, **append-only** with respect to source revisions. Each row is "what publication X said about cell (region, statistic, period)." When a source publishes a revision of a previously-captured value, a new row is inserted for the new publication's view; the previous row's `superseded` timestamp is set to mark it as no longer current. Both rows stay in the table — `superseded is null` filters to the current view; the full set is the revision history.
+
+`region_id` can point at any level — country (the common case for v1), subnational region (when subnational data lands in v2+), or supranational grouping (for stored aggregates like an EU-wide TFR). Periods are half-open intervals (inclusive start, exclusive end); see the column comments for examples.
 
 ```sql
 create table if not exists statistic_value (
@@ -300,18 +302,28 @@ create table if not exists statistic_value (
   data_source_id             uuid                     not null references data_source (id),
   data_source_publication_id uuid                     not null references data_source_publication (id),
   data_status                text                     not null,
+  superseded                 timestamp with time zone,
   created                    timestamp with time zone not null default now(),
   modified                   timestamp with time zone not null default now(),
-  unique (region_id, statistic_id, period_start, period_end, data_source_id)
+  unique (region_id, statistic_id, period_start, period_end, data_source_publication_id)
 );
+
+create unique index if not exists statistic_value_current_per_source
+  on statistic_value (region_id, statistic_id, period_start, period_end, data_source_id)
+  where superseded is null;
 
 comment on column statistic_value.region_id                  is $$points at any level — country (common in v1), subnational (v2+ when subnational data lands), or supranational grouping (for stored aggregates)$$;
 comment on column statistic_value.period_start               is $$inclusive lower bound: calendar year 2024 → '2024-01-01'; Q1 2024 → '2024-01-01'; 2020-2025 cohort → '2020-01-01'$$;
 comment on column statistic_value.period_end                 is $$exclusive upper bound: calendar year 2024 → '2025-01-01'; Q1 2024 → '2024-04-01'; 2020-2025 cohort → '2025-01-01'$$;
-comment on column statistic_value.data_source_id             is $$denormalized from data_source_publication.data_source_id for the natural-key unique constraint and fast filtering by source; the upsert path keeps the two in sync$$;
-comment on column statistic_value.data_source_publication_id is $$points at the publication event this row's value was captured from; updated in place when the source publishes a revision (the previous publication row stays in data_source_publication as audit trail)$$;
+comment on column statistic_value.data_source_id             is $$denormalized from data_source_publication.data_source_id; needed for the partial unique index that enforces 'at most one current row per cell per source'; the upsert path keeps the two in sync$$;
+comment on column statistic_value.data_source_publication_id is $$points at the publication event this row's value was captured from; the row is never updated to point elsewhere — when the source revises, a NEW row is inserted with the new publication, and this row's superseded timestamp is set$$;
 comment on column statistic_value.data_status                is $$one of: final | provisional | preliminary | projection | imputed | interpolated$$;
+comment on column statistic_value.superseded                 is $$wall-clock instant when this row stopped being the current view of its (region, statistic, period, data_source_id) cell — i.e., when a newer publication for the same source produced a different value, this row got marked as historical. NULL means current (the row reflects the latest publication's view of the cell)$$;
 ```
+
+Two unique constraints together encode the model:
+- **Full unique on `(region, statistic, period, publication)`** — at most one row per "what this publication said about this cell" (prevents accidental duplicate inserts on re-fetch of the same publication).
+- **Partial unique on `(region, statistic, period, source) where superseded is null`** — at most one CURRENT row per cell per source (the supersede flow maintains this invariant).
 
 `data_status` values:
 
@@ -377,7 +389,7 @@ Each helper is a separate named function inside the source's feature module; the
 - **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
 - **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
 - **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `region` (via country.iso3 for country-level data) / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
-- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. First INSERTs the run's `(data_source_id, revision_label, fetched)` into `data_source_publication` (ON CONFLICT DO NOTHING; obtains the publication's id whether newly inserted or matched against an existing row). Then bulk-UPSERTs into `statistic_value` matched on the natural key `(region_id, statistic_id, period_start, period_end, data_source_id)`, setting `data_source_publication_id` to the publication's id. Returns counts of inserted / updated / unchanged `statistic_value` rows plus any non-fatal warnings.
+- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. First INSERTs the run's `(data_source_id, revision_label, fetched)` into `data_source_publication` (ON CONFLICT DO NOTHING; obtains the publication's id whether newly inserted or matched against an existing row). Then for each normalized row: looks up the current `superseded is null` row in `statistic_value` matching `(region_id, statistic_id, period_start, period_end, data_source_id)`. If none → INSERT the new row pointing at the publication. If a current row exists with the same `value` and `data_status` → no writes (no revision happened). If a current row exists with different `value` or `data_status` → UPDATE the old row's `superseded = now()`, then INSERT a new row pointing at the new publication. Returns `IngestReport` counts: `values_inserted` (new cells, no prior row), `values_revised` (revisions, each one supersede + insert pair), `values_unchanged` (existing current row already matched).
 
 Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
 
@@ -395,7 +407,7 @@ pub struct IngestReport {
     pub started: DateTime<Utc>,
     pub finished: DateTime<Utc>,
     pub values_inserted: u64,
-    pub values_updated: u64,
+    pub values_revised: u64,
     pub values_unchanged: u64,
     pub upstream_revision: String,
     pub warnings: Vec<IngestWarning>,
@@ -465,7 +477,7 @@ When multiple sources publish a value for the same `(region, statistic, period_s
 
 For each `(region, statistic, period_start, period_end)` cell published into the artifact:
 
-1. Select all candidate rows from `statistic_value`.
+1. Select all candidate rows from `statistic_value` where `superseded is null`.
 2. Filter by license-class eligibility (the base shard only considers rows whose `data_source.license_class` is `public_domain` or `attribution`; the `share_alike` shard adds rows of class `attribution_sa`; the `noncommercial` shard adds rows of class `noncommercial`).
 3. Among eligible candidates, pick the row with the lowest `data_source.preference_rank`. Ties (allowed — `preference_rank` is not unique) break by the lower `data_source.id`, which gives a stable arbitrary ordering when two sources sit at the same priority.
 4. If the picked source's `data_status` is `provisional`/`preliminary` AND a lower-priority source has a `final` value for the same `(period_start, period_end)` whose `period_end` is within the last 2 years, prefer the `final` value. (Don't show stale "final" data when fresher "preliminary" data exists, and don't show preliminary data when a high-quality final value is available.)
@@ -656,7 +668,7 @@ A `launchd` plist (template at `scripts/eafora-ingestion.plist.template`, instal
 </dict>
 ```
 
-`ingestion run-all` invokes every registered adapter sequentially (parallelism is unnecessary at v1's source count; cross-adapter dependencies are nil). It then calls `build-artifacts` if any adapter reported rows changed, and `upload-artifacts` if the build succeeded.
+`ingestion run-all` invokes every registered adapter sequentially (parallelism is unnecessary at v1's source count; cross-adapter dependencies are nil). **An error from one adapter does NOT block subsequent adapters** — the orchestrator catches the `AppError`, logs it as the failed adapter's outcome, and continues with the next adapter. After all adapters have been attempted, `run-all` calls `build-artifacts` if any adapter reported rows changed, and `upload-artifacts` if the build succeeded. The process exit status reflects whether any adapter failed (non-zero if at least one returned `AppError`, zero if all succeeded).
 
 Manual invocation is always supported: `ingestion ingest-source wb_wdi --force-full-refetch` re-runs a single adapter ignoring incremental state. Per Constitution §Tooling discipline, both the scheduled path and the manual path go through the same CLI subcommands; `launchd` calls the same binary the developer calls.
 
