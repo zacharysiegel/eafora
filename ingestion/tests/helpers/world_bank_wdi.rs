@@ -1,6 +1,7 @@
 //! WB-WDI-specific test helpers (sample loading; assertion utilities can be
 //! added here as Phase 3 lands). Loads checked-in sample responses from
 //! `ingestion/samples/wb_wdi/` without live HTTP.
+#![allow(dead_code)]
 
 use std::fs;
 use std::path::PathBuf;

@@ -3,6 +3,7 @@
 //! `PgPool` (so we don't pay per-test connection setup), then run their
 //! bodies inside a transaction that is rolled back at the end so each test
 //! starts from the seeded baseline.
+#![allow(dead_code)]
 
 use sqlx::Postgres;
 use sqlx::Transaction;
