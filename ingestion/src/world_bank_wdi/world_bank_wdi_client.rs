@@ -12,7 +12,9 @@
 use chrono::Utc;
 use sqlx::{PgConnection, PgPool};
 
-use crate::adapter::{AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedRow, year_to_period};
+use crate::adapter::{
+    AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedRow, year_to_period,
+};
 use crate::canonical::canonical_db;
 use crate::error::AppError;
 use crate::ingest;
@@ -69,14 +71,14 @@ pub async fn normalize(
     connection: &mut PgConnection,
     parsed_rows: Vec<ParsedRow>,
 ) -> Result<(Vec<NormalizedRow>, Vec<IngestWarning>), AppError> {
-    let statistic = canonical_db::find_statistic_by_code(&mut *connection, WB_WDI_STATISTIC_CODE)
-        .await?
-        .ok_or_else(|| {
-            AppError::from(format!(
-                "wb_wdi: statistic {:?} missing from canonical store (run dbmate up)",
-                WB_WDI_STATISTIC_CODE,
-            ))
-        })?;
+    let statistic =
+        canonical_db::find_statistic_by_code(&mut *connection, WB_WDI_STATISTIC_CODE)
+            .await?
+            .ok_or_else(|| {
+                AppError::from(format!(
+                    "wb_wdi: statistic {WB_WDI_STATISTIC_CODE:?} missing from canonical store (run dbmate up)",
+                ))
+            })?;
     let mut normalized_rows: Vec<NormalizedRow> = Vec::with_capacity(parsed_rows.len());
     let mut warnings: Vec<IngestWarning> = Vec::new();
     for parsed_row in parsed_rows {
@@ -99,8 +101,7 @@ async fn normalize_row(
             message: format!("wb_wdi: NA value for {} {}", parsed_row.iso3, parsed_row.year),
         }));
     };
-    let Some(country) = canonical_db::find_country_by_iso3(&mut *connection, &parsed_row.iso3).await?
-    else {
+    let Some(country) = canonical_db::find_country_by_iso3(&mut *connection, &parsed_row.iso3).await? else {
         return Ok(NormalizeOutcome::Warned(IngestWarning {
             kind: IngestWarningKind::UnknownCountry,
             message: format!(
@@ -143,23 +144,18 @@ pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, App
 /// normalize → ingest::upsert_rows — inside that transaction. The whole
 /// batch commits atomically or rolls back together, so a mid-run failure
 /// can't leave the canonical store with partial publication state.
-pub async fn fetch_and_store(
-    pool: &PgPool,
-    options: AdapterOptions,
-) -> Result<IngestReport, AppError> {
+pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
     let mut transaction: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
-    let data_source =
-        canonical_db::find_data_source_by_code(&mut *transaction, WB_WDI_DATA_SOURCE_CODE)
-            .await?
-            .ok_or_else(|| {
-                AppError::from(format!(
-                    "wb_wdi: data_source {:?} missing from canonical store",
-                    WB_WDI_DATA_SOURCE_CODE,
-                ))
-            })?;
+    let data_source = canonical_db::find_data_source_by_code(&mut *transaction, WB_WDI_DATA_SOURCE_CODE)
+        .await?
+        .ok_or_else(|| {
+            AppError::from(format!(
+                "wb_wdi: data_source {:?} missing from canonical store",
+                WB_WDI_DATA_SOURCE_CODE,
+            ))
+        })?;
     let _last_seen: Option<String> =
-        ingest::ingest_db::read_latest_publication_revision(&mut *transaction, data_source.id)
-            .await?;
+        ingest::ingest_db::read_latest_publication_revision(&mut *transaction, data_source.id).await?;
     let raw: WdiResponse = fetch_upstream(options).await?;
     let revision_label: String = raw.0.lastupdated.clone();
     let parsed_rows: Vec<ParsedRow> = parse_response(raw)?;
@@ -181,9 +177,7 @@ pub async fn fetch_and_store(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world_bank_wdi::world_bank_wdi_model::{
-        WdiCountry, WdiIndicator, WdiPagingMetadata, WdiRow,
-    };
+    use crate::world_bank_wdi::world_bank_wdi_model::{WdiCountry, WdiIndicator, WdiPagingMetadata, WdiRow};
 
     fn metadata() -> WdiPagingMetadata {
         WdiPagingMetadata {
@@ -220,10 +214,7 @@ mod tests {
     fn parse_response_happy_path() {
         let raw: WdiResponse = WdiResponse(
             metadata(),
-            vec![
-                row("USA", "2024", Some(1.66)),
-                row("DEU", "2023", Some(1.36)),
-            ],
+            vec![row("USA", "2024", Some(1.66)), row("DEU", "2023", Some(1.36))],
         );
         let parsed_rows: Vec<ParsedRow> = parse_response(raw).expect("parse_response succeeds");
         assert_eq!(parsed_rows.len(), 2);
@@ -236,10 +227,7 @@ mod tests {
 
     #[test]
     fn parse_response_preserves_null_value() {
-        let raw: WdiResponse = WdiResponse(
-            metadata(),
-            vec![row("USA", "2025", None)],
-        );
+        let raw: WdiResponse = WdiResponse(metadata(), vec![row("USA", "2025", None)]);
         let parsed_rows: Vec<ParsedRow> = parse_response(raw).expect("parse_response succeeds");
         assert_eq!(parsed_rows.len(), 1);
         assert_eq!(parsed_rows[0].value, None);
@@ -247,20 +235,14 @@ mod tests {
 
     #[test]
     fn parse_response_rejects_non_numeric_date() {
-        let raw: WdiResponse = WdiResponse(
-            metadata(),
-            vec![row("USA", "twenty-twenty-four", Some(1.66))],
-        );
+        let raw: WdiResponse = WdiResponse(metadata(), vec![row("USA", "twenty-twenty-four", Some(1.66))]);
         let result: Result<Vec<ParsedRow>, AppError> = parse_response(raw);
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_response_rejects_empty_iso3() {
-        let raw: WdiResponse = WdiResponse(
-            metadata(),
-            vec![row("", "2024", Some(1.66))],
-        );
+        let raw: WdiResponse = WdiResponse(metadata(), vec![row("", "2024", Some(1.66))]);
         let result: Result<Vec<ParsedRow>, AppError> = parse_response(raw);
         assert!(result.is_err());
     }
