@@ -28,8 +28,8 @@ Blocks all subsequent phases.
 ### Application scaffolding
 
 - [ ] T008 [Foundational] Write `ingestion/src/error.rs` — `pub type AppError = minimer::Error` (or equivalent wrapper); `impl From<String> for AppError`; `impl From<reqwest::Error> for AppError` etc. as needed for ergonomic format-string error construction at failure sites per `feedback_error_strings_not_enums.md`.
-- [ ] T009 [Foundational] Write `ingestion/src/db.rs` — `pub async fn build_pool() -> Result<PgPool, AppError>` reading `DATABASE_URL` from env via `dotenvy`, configuring `PgPoolOptions` (max_connections, timeouts), returning the pool.
-- [ ] T010 [Foundational] Write `ingestion/src/main.rs` clap-builder CLI scaffolding: subcommand tree per plan §CLI structure (ingest-source, run-all, build-artifacts, seed-samples, upload-artifacts); each dispatch helper is a stub returning `Err(AppError::from("not yet implemented"))` except the ones we wire in Phase 4. The `run-all` subcommand iterates over a hand-written list of registered adapters (just `wb_wdi` for now); each adapter's `AppError` is caught + logged, the loop continues.
+- [ ] T009 [Foundational] Write `ingestion/src/db.rs` — `pub async fn create_pool() -> Result<PgPool, AppError>` reading `DATABASE_URL` from env via `dotenvy`, configuring `PgPoolOptions` (max_connections, timeouts), returning the pool.
+- [ ] T010 [Foundational] Write `ingestion/src/main.rs` clap-builder CLI scaffolding: subcommand tree per plan §CLI structure (source, all, build, seed, publish); each dispatch helper is a stub returning `Err(AppError::from("not yet implemented"))` except the ones we wire in Phase 4. The `all` subcommand iterates over a hand-written list of registered adapters (just `wb_wdi` for now); each adapter's `AppError` is caught + logged, the loop continues.
 - [ ] T011 [Foundational] Write `ingestion/src/lib.rs` — re-exports for tests (`pub mod world_bank_wdi`, `pub mod canonical`, `pub mod error`, `pub mod db`).
 
 ### Test harness
@@ -103,13 +103,13 @@ All tasks in this phase contribute to **[US1, US2, US3]** — the adapter is the
 
 ### Manual run path **[US2]**
 
-- [ ] T034 [US2] Replace the `ingest-source wb_wdi` stub in `main.rs` with a dispatch that calls `world_bank_wdi::fetch_and_store(&pool, AdapterOptions { force_full_refetch })`. Log the IngestReport via `log::info!`.
-- [ ] T035 [US2] Manual verification: `cargo run -p ingestion -- ingest-source wb_wdi` against a freshly-migrated `eafora` populates approximately 13,000 rows in `statistic_value`. Re-run shows zero writes.
+- [ ] T034 [US2] Replace the `source wb_wdi` stub in `main.rs` with a dispatch that calls `world_bank_wdi::fetch_and_store(&pool, AdapterOptions { force_full_refetch })`. Log the IngestReport via `log::info!`.
+- [ ] T035 [US2] Manual verification: `cargo run -p ingestion -- source wb_wdi` against a freshly-migrated `eafora` populates approximately 13,000 rows in `statistic_value`. Re-run shows zero writes.
 
 ### Scheduled run path **[US1]**
 
-- [ ] T036 [US1] Replace the `run-all` stub in `main.rs` with the orchestration loop per plan §Implementation phases step 5: iterate `[wb_wdi]` (just one adapter for now); call each adapter's `fetch_and_store`; catch and log any `AppError`; continue to the next adapter on failure (per architecture doc §Scheduling error-isolation rule); after all adapters, log an aggregate report with per-adapter outcomes.
-- [ ] T037 [P] [US1] Author `scripts/eafora-ingestion.plist.template` — launchd plist matching the architecture doc's `StartCalendarInterval` block (Mondays 03:00 local) with `ProgramArguments` invoking the ingestion binary's `run-all` subcommand.
+- [ ] T036 [US1] Replace the `all` stub in `main.rs` with the orchestration loop per plan §Implementation phases step 5: iterate `[wb_wdi]` (just one adapter for now); call each adapter's `fetch_and_store`; catch and log any `AppError`; continue to the next adapter on failure (per architecture doc §Scheduling error-isolation rule); after all adapters, log an aggregate report with per-adapter outcomes.
+- [ ] T037 [P] [US1] Author `scripts/eafora-ingestion.plist.template` — launchd plist matching the architecture doc's `StartCalendarInterval` block (Mondays 03:00 local) with `ProgramArguments` invoking the ingestion binary's `all` subcommand.
 - [ ] T038 [US1] Update `setup.sh` to render `eafora-ingestion.plist.template` into `~/Library/LaunchAgents/org.eafora.ingestion.plist` and load via `launchctl bootstrap gui/$(id -u)`. Per Constitution Principle VIII (workflow discipline), commit setup.sh changes alongside the plist template so the install is reproducible.
 
 **Checkpoint**: After Phase 4, both manual and scheduled paths work end-to-end. **[US1]** + **[US2]** acceptance scenarios pass; **[US3]** is satisfied transitively because `upsert_rows` includes the supersede logic (validated by T027/T028/T029 + T032/T033).

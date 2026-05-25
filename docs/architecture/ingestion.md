@@ -51,7 +51,7 @@ eafora/
 │   │   └── schema.sql          # dbmate-generated cumulative schema
 │   ├── samples/                # checked-in sample data for tests + local dev seeding
 │   └── src/
-│       ├── main.rs             # tokio CLI entrypoint; dispatches subcommands (ingest-source, run-all, build-artifacts, seed-samples, upload-artifacts); the run-all subcommand loops over the registered adapters inline
+│       ├── main.rs             # tokio CLI entrypoint; dispatches subcommands (source, all, build, seed, publish); the all subcommand loops over the registered adapters inline
 │       ├── lib.rs              # re-exports for tests
 │       ├── error.rs            # minimer wiring + per-feature variant aggregation
 │       ├── world_bank_wdi/     # one source = one feature module (the lobby/ triplet pattern)
@@ -75,7 +75,7 @@ eafora/
 │       └── geometry_ingest/                # Natural Earth ingestion (separate from statistic adapters)
 ```
 
-Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `ingest-source <code>`, `build-artifacts`, `seed-samples`, `upload-artifacts`, etc. Used for manual invocation, `launchd` triggers, and local dev. The `_api.rs` filename in each feature triplet matches the Singularity `lobby/` convention and reserves the position for actix-web route configurers if v3+ introduces an HTTP server mode; no actix-web dependency is taken until that mode actually lands.
+Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `source <code>`, `build`, `seed`, `publish`, etc. Used for manual invocation, `launchd` triggers, and local dev. The `_api.rs` filename in each feature triplet matches the Singularity `lobby/` convention and reserves the position for actix-web route configurers if v3+ introduces an HTTP server mode; no actix-web dependency is taken until that mode actually lands.
 
 ### CLI structure (clap builder API)
 
@@ -89,21 +89,21 @@ fn build_cli() -> Command {
     Command::new("ingestion")
         .subcommand_required(true)
         .subcommand(
-            Command::new("ingest-source")
+            Command::new("source")
                 .about("Run a single source adapter")
                 .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi)"))
                 .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
         )
-        .subcommand(Command::new("run-all").about("Run every registered source adapter"))
+        .subcommand(Command::new("all").about("Run every registered source adapter"))
         .subcommand(
-            Command::new("build-artifacts")
+            Command::new("build")
                 .about("Build CDN artifacts from the current canonical store")
                 .arg(Arg::new("output-dir").required(true))
                 .arg(Arg::new("version-label").required(true)),
         )
-        .subcommand(Command::new("seed-samples").about("Load checked-in sample responses into the canonical store"))
+        .subcommand(Command::new("seed").about("Load checked-in sample responses into the canonical store"))
         .subcommand(
-            Command::new("upload-artifacts")
+            Command::new("publish")
                 .about("Upload a previously-built artifact set to R2")
                 .arg(Arg::new("version-label").required(true)),
         )
@@ -113,17 +113,17 @@ fn build_cli() -> Command {
 async fn main() -> Result<(), AppError> {
     let matches: ArgMatches = build_cli().get_matches();
     match matches.subcommand() {
-        Some(("ingest-source",    sub_matches)) => dispatch_ingest_source(sub_matches).await,
-        Some(("run-all",          _))           => dispatch_run_all().await,
-        Some(("build-artifacts",  sub_matches)) => dispatch_build_artifacts(sub_matches).await,
-        Some(("seed-samples",     _))           => dispatch_seed_samples().await,
-        Some(("upload-artifacts", sub_matches)) => dispatch_upload_artifacts(sub_matches).await,
+        Some(("source",    sub_matches)) => dispatch_source(sub_matches).await,
+        Some(("all",          _))           => dispatch_all().await,
+        Some(("build",  sub_matches)) => dispatch_build(sub_matches).await,
+        Some(("seed",     _))           => dispatch_seed().await,
+        Some(("publish", sub_matches)) => dispatch_publish(sub_matches).await,
         _                                        => unreachable!("subcommand_required guarantees a match"),
     }
 }
 ```
 
-Each subcommand has a `dispatch_*` helper that reads its specific arguments from `ArgMatches` and calls into the relevant feature module (`world_bank_wdi::fetch_and_store(...)`, `artifact::build_artifacts(...)`, etc.). The `dispatch_*` helpers live alongside `main` in `main.rs` for the run-all orchestration case, or — if a dispatch grows non-trivial — in the relevant feature module's `_api.rs`.
+Each subcommand has a `dispatch_*` helper that reads its specific arguments from `ArgMatches` and calls into the relevant feature module (`world_bank_wdi::fetch_and_store(...)`, `artifact::build_artifacts(...)`, etc.). The `dispatch_*` helpers live alongside `main` in `main.rs` for the all orchestration case, or — if a dispatch grows non-trivial — in the relevant feature module's `_api.rs`.
 
 Do not introduce `#[derive(Parser)]`, `#[derive(Subcommand)]`, or any clap derive macro. If a clap helper accepts both forms, pick the builder variant.
 
@@ -454,7 +454,7 @@ The mechanical steps for any new source:
 3. Implement `fetch_and_store` (the orchestrator) and its five named helpers (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) in `<source_code>_api.rs`.
 4. Implement source-specific SQL in `<source_code>_db.rs`.
 5. Define source-specific types and parsing in `<source_code>_model.rs`.
-6. Register the adapter in `main.rs`'s `run-all` subcommand handler and `ingest-source` dispatch.
+6. Register the adapter in `main.rs`'s `all` subcommand handler and `source` dispatch.
 7. Write tests against checked-in sample responses in `ingestion/samples/<source_code>/`.
 
 ### First source: World Bank WDI
@@ -619,7 +619,7 @@ CDN cache headers (set at upload time, not in the artifact itself):
 
 ### R2 upload
 
-Uploads happen via a separate CLI step (`ingestion upload-artifacts <version_label>`) so the build can be inspected locally before publishing, or chained inline via `build-artifacts --upload`. The upload orchestrator is responsible for both publishing the files AND inserting the `artifact_version` row — the row's existence means "fetchable from the CDN," so it MUST follow a successful upload:
+Uploads happen via a separate CLI step (`ingestion publish <version_label>`) so the build can be inspected locally before publishing, or chained inline via `build --upload`. The upload orchestrator is responsible for both publishing the files AND inserting the `artifact_version` row — the row's existence means "fetchable from the CDN," so it MUST follow a successful upload:
 
 ```rust
 pub async fn upload_artifacts_to_r2(
@@ -657,7 +657,7 @@ This is a deviation from Singularity's Podman Compose setup (Constitution Princi
 
 ### v1: Mac mini M1 + `launchd`
 
-A `launchd` plist (template at `scripts/eafora-ingestion.plist.template`, installed by `setup.sh` to `~/Library/LaunchAgents/org.eafora.ingestion.plist` on the Mac mini) triggers `ingestion run-all` on a schedule:
+A `launchd` plist (template at `scripts/eafora-ingestion.plist.template`, installed by `setup.sh` to `~/Library/LaunchAgents/org.eafora.ingestion.plist` on the Mac mini) triggers `ingestion all` on a schedule:
 
 ```xml
 <key>StartCalendarInterval</key>
@@ -668,9 +668,9 @@ A `launchd` plist (template at `scripts/eafora-ingestion.plist.template`, instal
 </dict>
 ```
 
-`ingestion run-all` invokes every registered adapter sequentially (parallelism is unnecessary at v1's source count; cross-adapter dependencies are nil). **An error from one adapter does NOT block subsequent adapters** — the orchestrator catches the `AppError`, logs it as the failed adapter's outcome, and continues with the next adapter. After all adapters have been attempted, `run-all` calls `build-artifacts` if any adapter reported rows changed, and `upload-artifacts` if the build succeeded. The process exit status reflects whether any adapter failed (non-zero if at least one returned `AppError`, zero if all succeeded).
+`ingestion all` invokes every registered adapter sequentially (parallelism is unnecessary at v1's source count; cross-adapter dependencies are nil). **An error from one adapter does NOT block subsequent adapters** — the orchestrator catches the `AppError`, logs it as the failed adapter's outcome, and continues with the next adapter. After all adapters have been attempted, `all` calls `build` if any adapter reported rows changed, and `publish` if the build succeeded. The process exit status reflects whether any adapter failed (non-zero if at least one returned `AppError`, zero if all succeeded).
 
-Manual invocation is always supported: `ingestion ingest-source wb_wdi --force-full-refetch` re-runs a single adapter ignoring incremental state. Per Constitution §Tooling discipline, both the scheduled path and the manual path go through the same CLI subcommands; `launchd` calls the same binary the developer calls.
+Manual invocation is always supported: `ingestion source wb_wdi --force-full-refetch` re-runs a single adapter ignoring incremental state. Per Constitution §Tooling discipline, both the scheduled path and the manual path go through the same CLI subcommands; `launchd` calls the same binary the developer calls.
 
 ### v2+: managed compute
 
@@ -680,20 +680,20 @@ When the Mac mini becomes insufficient (HA, geographic distribution, or v3+ live
 
 ### Seeding the canonical store
 
-A `seed-samples` CLI subcommand populates the canonical store with checked-in sample data:
+A `seed` CLI subcommand populates the canonical store with checked-in sample data:
 
 ```sh
-cargo run -p ingestion -- seed-samples
+cargo run -p ingestion -- seed
 ```
 
 This loads sample responses from `ingestion/samples/<source_code>/` and replays them through each adapter's normalize-and-insert path. The result is a fully-populated canonical store with the same shape production would have, but with fixed test data.
 
-`seed-samples` does NOT run migrations — that's dbmate's job. The expected workflow is `./dbmate.sh up` first (which applies schema migrations including the seed-data migrations for `country`, `statistic`, and `data_source` reference rows), then `cargo run -p ingestion -- seed-samples` to fill in the sample `statistic_value` rows on top of that schema. `setup.sh` chains them on first-time setup; manual re-seeding after a schema change runs them in that order.
+`seed` does NOT run migrations — that's dbmate's job. The expected workflow is `./dbmate.sh up` first (which applies schema migrations including the seed-data migrations for `country`, `statistic`, and `data_source` reference rows), then `cargo run -p ingestion -- seed` to fill in the sample `statistic_value` rows on top of that schema. `setup.sh` chains them on first-time setup; manual re-seeding after a schema change runs them in that order.
 
 ### Running an adapter locally
 
 ```sh
-cargo run -p ingestion -- ingest-source wb_wdi
+cargo run -p ingestion -- source wb_wdi
 ```
 
 A full WB WDI run is ~200 countries × ~65 years × ~1 statistic ≈ 13k rows, which is under a second — fast enough to iterate without needing per-country or per-period filters.
@@ -701,7 +701,7 @@ A full WB WDI run is ~200 countries × ~65 years × ~1 statistic ≈ 13k rows, w
 ### Producing artifacts locally
 
 ```sh
-cargo run -p ingestion -- build-artifacts ./build-output 2026-05-18
+cargo run -p ingestion -- build ./build-output 2026-05-18
 ```
 
 Writes `manifest.json` + `geometry/` + `data/` under `./build-output/`. No upload. The artifacts can be served via `python -m http.server` in a pinch (with `Content-Encoding: br` headers ad-hoc'd in front of `nginx` or `caddy` if compression-aware testing is wanted), or pointed at directly from the web client via a local file URL.
@@ -712,10 +712,10 @@ Per Constitution Principle VII, the ingestion-side TDD-required surfaces are:
 
 - **Per-source normalization** (`<source>_model.rs` parsing functions): every sample response → expected canonical-shape output, exhaustively.
 - **Source-preference merge** (`artifact/merge.rs` — the per-cell merge logic): all combinations of `(data_status, preference_rank, period_end)` exercised against the merge rule.
-- **Artifact diffing** (used by `build-artifacts` to decide whether a build is no-op): trivial cases (no canonical changes) and tricky cases (rows updated but resulting artifact bytes unchanged) covered.
+- **Artifact diffing** (used by `build` to decide whether a build is no-op): trivial cases (no canonical changes) and tricky cases (rows updated but resulting artifact bytes unchanged) covered.
 - **Error mapping** (per-source error → `AppError` → log line): each variant gets a test.
 
-Integration tests use the seeded canonical store via `seed-samples`, exercise `fetch_and_store` against the sample responses (no live HTTP), and assert on the resulting `statistic_value` rows and on the artifact output.
+Integration tests use the seeded canonical store via `seed`, exercise `fetch_and_store` against the sample responses (no live HTTP), and assert on the resulting `statistic_value` rows and on the artifact output.
 
 Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 

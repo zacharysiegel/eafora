@@ -12,7 +12,7 @@
 
 ### Scheduled weekly capture (P1)
 
-The launchd-managed weekly schedule on the Mac mini invokes `ingestion run-all`, which dispatches the WB WDI adapter as one of its registered sources. The adapter fetches the latest TFR (Total Fertility Rate) values for every country WB WDI covers, identifies which are new vs. revised vs. unchanged relative to the canonical store, and persists changes. An IngestReport summarises the run for the operator. This is the entire reason the feature exists — without it, the canonical store goes stale and downstream artifacts freeze at v1's first manual seed.
+The launchd-managed weekly schedule on the Mac mini invokes `ingestion all`, which dispatches the WB WDI adapter as one of its registered sources. The adapter fetches the latest TFR (Total Fertility Rate) values for every country WB WDI covers, identifies which are new vs. revised vs. unchanged relative to the canonical store, and persists changes. An IngestReport summarises the run for the operator. This is the entire reason the feature exists — without it, the canonical store goes stale and downstream artifacts freeze at v1's first manual seed.
 
 **Acceptance Scenarios**:
 
@@ -24,11 +24,11 @@ The launchd-managed weekly schedule on the Mac mini invokes `ingestion run-all`,
 
 ### Manual run for development and operational debugging (P2)
 
-A developer or operator runs `ingestion ingest-source wb_wdi` from a shell to capture WB WDI data outside the scheduled cycle. The behaviour is identical to the scheduled path; the IngestReport prints to stdout/stderr for direct review. Used during dev iteration (you can't iterate on an adapter you can only run weekly via launchd) and for operational catch-up after a failed scheduled run.
+A developer or operator runs `ingestion source wb_wdi` from a shell to capture WB WDI data outside the scheduled cycle. The behaviour is identical to the scheduled path; the IngestReport prints to stdout/stderr for direct review. Used during dev iteration (you can't iterate on an adapter you can only run weekly via launchd) and for operational catch-up after a failed scheduled run.
 
 **Acceptance Scenarios**:
 
-1. **Given** a developer machine with the canonical schema applied and the `data_source` row for wb_wdi seeded, **When** the developer runs `cargo run -p ingestion -- ingest-source wb_wdi`, **Then** the WB WDI API is fetched, rows are upserted, and the IngestReport prints to the terminal.
+1. **Given** a developer machine with the canonical schema applied and the `data_source` row for wb_wdi seeded, **When** the developer runs `cargo run -p ingestion -- source wb_wdi`, **Then** the WB WDI API is fetched, rows are upserted, and the IngestReport prints to the terminal.
 2. **Given** a previously-captured publication is the latest WB has, **When** the developer re-runs the same command, **Then** the IngestReport shows `values_skipped` only and no DB writes occur.
 3. **Given** the `--force-full-refetch` flag is passed, **When** the adapter runs, **Then** it re-fetches without consulting `read_latest_publication_revision` and re-evaluates every row against the natural key.
 
@@ -69,8 +69,8 @@ When WB WDI revises a previously-published value (the same `(country, statistic,
 - **FR-008**: System MUST surface non-fatal data quirks (NA values, unknown country codes, null TFR for a known country, etc.) as `IngestWarning` instances appended to the report — not as `AppError` returns. The run continues past each warning.
 - **FR-009**: System MUST register WB WDI in `data_source` via a seed migration with `code='wb_wdi'`, `name_en='World Bank World Development Indicators'`, `homepage_url='https://datatopics.worldbank.org/world-development-indicators/'`, `license_class='attribution'`, `license_name='CC BY 4.0'`, `attribution_text='The World Bank: World Development Indicators'`, and `preference_rank=90`.
 - **FR-010**: System MUST register the `tfr` statistic in the `statistic` table via a seed migration with `code='tfr'`, `name_en='Total fertility rate'`, `description` referencing the standard demographic definition, and `units='births per woman'`.
-- **FR-011**: System MUST wire the WB WDI adapter into `main.rs`'s `ingest-source` subcommand dispatch (so `ingestion ingest-source wb_wdi` calls `world_bank_wdi::fetch_and_store(...)`) and into the `run-all` orchestration loop (so the weekly launchd trigger includes WB WDI).
-- **FR-012**: System MUST provide checked-in sample WB WDI API responses under `ingestion/samples/wb_wdi/` covering at minimum: a happy-path response, an NA-value case, and an unknown-country-code case. Sample responses MUST be replayable by `seed-samples` and by integration tests without live HTTP.
+- **FR-011**: System MUST wire the WB WDI adapter into `main.rs`'s `source` subcommand dispatch (so `ingestion source wb_wdi` calls `world_bank_wdi::fetch_and_store(...)`) and into the `all` orchestration loop (so the weekly launchd trigger includes WB WDI).
+- **FR-012**: System MUST provide checked-in sample WB WDI API responses under `ingestion/samples/wb_wdi/` covering at minimum: a happy-path response, an NA-value case, and an unknown-country-code case. Sample responses MUST be replayable by `seed` and by integration tests without live HTTP.
 - **FR-013**: System MUST cover `parse_response` and `normalize` with TDD unit tests per Constitution Principle VII. Tests MUST be authored before implementation; the Red-Green-Refactor cycle MUST be respected.
 - **FR-014**: System MUST treat WB WDI's JSON response as the source of truth for the run's revision label; if no native revision label is exposed, system MUST synthesize one (response payload SHA-256 truncated to 8-12 hex chars) so that the publication-table invariant — every captured publication has a label — is maintained.
 
@@ -99,7 +99,7 @@ When WB WDI revises a previously-published value (the same `(country, statistic,
 - The CC BY 4.0 license terms documented in `docs/research/data-source-licensing.md` Part 1 remain stable; the attribution text used in the seed migration matches WB's published terms.
 - The WB API's `lastupdated` field — present per the 2026-05-21 research — is what the adapter parses for the publication's `revision_label`. If `lastupdated` is missing or unstable, the adapter falls back to a synthetic label (response-payload SHA-256, truncated). The fallback is the third item under FR-014.
 - The seed migrations registering `wb_wdi` and `tfr` are part of this feature's deliverable; they're not assumed to exist beforehand.
-- This feature does NOT include the artifact-build path or R2 upload — those land separately via `build-artifacts` / `upload-artifacts` (which are out of scope here). This feature only populates the canonical store.
+- This feature does NOT include the artifact-build path or R2 upload — those land separately via `build` / `publish` (which are out of scope here). This feature only populates the canonical store.
 
 ## Constitution Check
 

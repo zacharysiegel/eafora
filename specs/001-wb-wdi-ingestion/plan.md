@@ -83,7 +83,7 @@ ingestion/                              # workspace member; new in this feature
 │       ├── na_value.json               # subset including a (USA, 2024, value=null) row to exercise the NA-value warning
 │       └── unknown_country.json        # subset including a country code we don't have in our country table to exercise the unknown-code warning
 ├── src/
-│   ├── main.rs                         # tokio CLI entrypoint; clap builder; dispatches ingest-source / run-all / build-artifacts / seed-samples / upload-artifacts; the run-all subcommand loops over registered adapters inline (one adapter's AppError does not block others — caught/logged/continue); calls db::build_pool() to obtain the PgPool that gets threaded through to every dispatch
+│   ├── main.rs                         # tokio CLI entrypoint; clap builder; dispatches source / all / build / seed / publish; the all subcommand loops over registered adapters inline (one adapter's AppError does not block others — caught/logged/continue); calls db::create_pool() to obtain the PgPool that gets threaded through to every dispatch
 │   ├── lib.rs                          # re-exports for tests
 │   ├── error.rs                        # AppError = minimer::Error; format-string error construction at failure sites
 │   ├── db.rs                           # PgPool bootstrap: reads DATABASE_URL from env, builds a PgPool with the project's pool-config defaults, returns it; symmetric with tests/helpers/test_db.rs but for the production binary
@@ -111,16 +111,16 @@ ingestion/                              # workspace member; new in this feature
 Sequential — each phase's output is depended on by the next:
 
 1. **Schema + reference-data migrations** (`ingestion/db/migrations/`). Two migrations: `create_initial_schema.sql` (all 7 tables with CREATE INDEX for the partial-unique statistic_value index and all COMMENT ON COLUMN statements) and `seed_initial_data.sql` (UN M49 hierarchy + ISO 3166 country extension rows + the `tfr` statistic + the `wb_wdi` data_source). Validated via `./dbmate.sh up && ./dbmate.sh status` against a clean local DB.
-2. **AppError + db bootstrap + main.rs CLI scaffolding** (`src/error.rs`, `src/db.rs`, `src/main.rs`). `db::build_pool()` reads `DATABASE_URL` and returns a configured `PgPool` (`max_connections`, timeouts as needed). Build the clap subcommand tree, dispatch shells for `ingest-source <code>` / `run-all` / `seed-samples` / `build-artifacts` / `upload-artifacts` (the latter two stubbed since they're separate features), the run-all loop with per-adapter error isolation. No business logic yet; commands print "not yet implemented" except where they delegate.
+2. **AppError + db bootstrap + main.rs CLI scaffolding** (`src/error.rs`, `src/db.rs`, `src/main.rs`). `db::create_pool()` reads `DATABASE_URL` and returns a configured `PgPool` (`max_connections`, timeouts as needed). Build the clap subcommand tree, dispatch shells for `source <code>` / `all` / `seed` / `build` / `publish` (the latter two stubbed since they're separate features), the all loop with per-adapter error isolation. No business logic yet; commands print "not yet implemented" except where they delegate.
 3. **WB WDI types** (`src/world_bank_wdi/world_bank_wdi_model.rs`). Define the WB API response types (`WdiResponse`, `WdiPagingMetadata`, `WdiRow`), `ParsedRow`, `NormalizedRow`. Pure type definitions, no logic. Authored alongside the parse_response tests.
 4. **WB WDI helper implementations** in TDD order per Constitution Principle VII:
    - `parse_response`: tests first (covering happy-path response, NA values, malformed shapes), then implementation.
    - `normalize`: tests first (covering known-country resolution, unknown-country warnings, period_start/period_end calculation, data_status assignment), then implementation. Reads `region`, `country`, `statistic` for FK resolution.
    - `read_latest_publication_revision`: tests first (covering empty store → `None`, populated store → max revision), then implementation. One sqlx query.
-   - `upsert_rows`: tests first (covering insert-new, skip-unchanged, supersede+insert-revised, run-all-error-isolation behavior), then implementation. Drives both `data_source_publication` and `statistic_value`.
+   - `upsert_rows`: tests first (covering insert-new, skip-unchanged, supersede+insert-revised, all-error-isolation behavior), then implementation. Drives both `data_source_publication` and `statistic_value`.
    - `fetch_upstream`: lighter testing (this is the I/O surface; we test the URL/header construction with a fixture-replay approach, but real HTTP timing tests are deferred). Reqwest call to the WB API with the pinned series code.
    - `fetch_and_store` orchestrator: integration test that wires all five helpers against a test DB and the happy-path sample, asserts on the resulting `statistic_value` rows + the IngestReport.
-5. **Wire into main.rs**. Add `ingest-source wb_wdi` dispatch to `world_bank_wdi::fetch_and_store`. Add wb_wdi to the run-all loop. Verify by running both manually against a local Postgres seeded with sample data.
+5. **Wire into main.rs**. Add `source wb_wdi` dispatch to `world_bank_wdi::fetch_and_store`. Add wb_wdi to the all loop. Verify by running both manually against a local Postgres seeded with sample data.
 6. **Sample files**. Author the three sample JSON files described in §Project Structure. Verify each one drives the appropriate path through the parser + normalizer + upsert (happy → all rows captured; NA → warning + skip; unknown country → warning + skip).
 7. **Integration tests** that exercise the full pipeline against the test DB. Per spec SC-005, ≥90% line coverage on `parse_response` and `normalize`.
 
@@ -144,9 +144,9 @@ Developer setup, in order:
 2. **Migrations**: `./dbmate.sh up` applies schema + seed migrations to `eafora` and regenerates `ingestion/db/schema.sql`.
 3. **Test database**: `./scripts/setup-test-db.sh` creates `eafora_test` and applies the same migrations.
 4. **Build**: `cargo build -p ingestion`.
-5. **Run a manual ingestion**: `cargo run -p ingestion -- ingest-source wb_wdi`. Reads `DATABASE_URL` from `.env` (which `setup.sh` generated), hits the WB API, populates `statistic_value`. Logs the IngestReport.
+5. **Run a manual ingestion**: `cargo run -p ingestion -- source wb_wdi`. Reads `DATABASE_URL` from `.env` (which `setup.sh` generated), hits the WB API, populates `statistic_value`. Logs the IngestReport.
 6. **Run tests**: `cargo test -p ingestion`. Unit tests are pure-function; integration tests use the test DB.
-7. **Run all adapters** (currently just wb_wdi): `cargo run -p ingestion -- run-all`.
+7. **Run all adapters** (currently just wb_wdi): `cargo run -p ingestion -- all`.
 
 ## Complexity Tracking
 
