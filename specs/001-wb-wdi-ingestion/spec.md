@@ -30,7 +30,7 @@ A developer or operator runs `ingestion ingest-source wb_wdi` from a shell to ca
 
 1. **Given** a developer machine with the canonical schema applied and the `data_source` row for wb_wdi seeded, **When** the developer runs `cargo run -p ingestion -- ingest-source wb_wdi`, **Then** the WB WDI API is fetched, rows are upserted, and the IngestReport prints to the terminal.
 2. **Given** a previously-captured publication is the latest WB has, **When** the developer re-runs the same command, **Then** the IngestReport shows `values_unchanged` only and no DB writes occur.
-3. **Given** the `--force-full-refetch` flag is passed, **When** the adapter runs, **Then** it re-fetches without consulting `read_last_seen_revision` and re-evaluates every row against the natural key.
+3. **Given** the `--force-full-refetch` flag is passed, **When** the adapter runs, **Then** it re-fetches without consulting `read_latest_publication_revision` and re-evaluates every row against the natural key.
 
 ---
 
@@ -52,14 +52,14 @@ When WB WDI revises a previously-published value (the same `(country, statistic,
 - **Source returns a country code we don't have in our `country` extension table** (e.g. Kosovo's `XKX`, historical codes like `YUG`) — adapter logs an `IngestWarning` identifying the raw code, skips the row, continues.
 - **HTTP failure** — DNS resolution failure, TCP timeout, TLS error, or 5xx response: adapter returns `AppError`; no partial DB writes; canonical store stays consistent. The next scheduled run retries the full fetch.
 - **Schema drift in WB WDI's response** — JSON shape doesn't match the parser's expectations (renamed field, removed metadata block): adapter returns `AppError` with a descriptive message identifying the path that failed to parse; canonical store stays consistent.
-- **Same revision label, no upstream change** — `read_last_seen_revision` finds the publication already exists; `fetch_upstream` is invoked anyway (WB WDI doesn't expose a cheap-poll endpoint); the response matches what's already stored; `upsert_rows` produces zero writes; `IngestReport.values_unchanged` equals the row count.
+- **Same revision label, no upstream change** — `read_latest_publication_revision` finds the publication already exists; `fetch_upstream` is invoked anyway (WB WDI doesn't expose a cheap-poll endpoint); the response matches what's already stored; `upsert_rows` produces zero writes; `IngestReport.values_unchanged` equals the row count.
 - **Revision label format change** — WB changes how it labels publications (e.g., from `2024-Q4` to `2024-12`): the adapter's revision-label extraction logic needs updating; until then, a synthetic label (response payload hash) is used as a fallback so ingestion doesn't break.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST implement the `fetch_and_store(pool, options) -> Result<IngestReport, AppError>` adapter contract for the World Bank WDI source, exactly as specified in `docs/architecture/ingestion.md` §Adapter contract, including all five named helpers (`read_last_seen_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`).
+- **FR-001**: System MUST implement the `fetch_and_store(pool, options) -> Result<IngestReport, AppError>` adapter contract for the World Bank WDI source, exactly as specified in `docs/architecture/ingestion.md` §Adapter contract, including all five named helpers (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`).
 - **FR-002**: System MUST fetch TFR data from WB WDI's API, specifically the `SP.DYN.TFRT.IN` series, in JSON format. The endpoint URL is the documented WB WDI API path and includes a `per_page` parameter sized to retrieve all rows in a single request.
 - **FR-003**: System MUST parse the WB WDI JSON response (a paging-metadata-plus-rows structure) into intermediate types defined in `world_bank_wdi_model.rs`. Parsing MUST be a pure function (no I/O, no DB access).
 - **FR-004**: For each parsed row, system MUST resolve the country via ISO 3166 alpha-3 lookup against the `country` extension table (joined to `region` for the `region_id`), resolve the statistic ID via `statistic.code = 'tfr'`, and compute `period_start` / `period_end` as full calendar year `[YYYY-01-01, YYYY+1-01-01)`.
