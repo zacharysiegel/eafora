@@ -9,3 +9,6 @@ target/
 
 # macOS
 .DS_Store
+
+# Per-developer environment overrides (template.env is committed)
+.env
