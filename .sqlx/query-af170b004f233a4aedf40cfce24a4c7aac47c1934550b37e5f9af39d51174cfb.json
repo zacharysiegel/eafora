@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        update statistic_value\n        set superseded = $2,\n            modified = now()\n        where id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af170b004f233a4aedf40cfce24a4c7aac47c1934550b37e5f9af39d51174cfb"
+}
