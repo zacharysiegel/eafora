@@ -3,7 +3,7 @@
 //! and the warnings adapters attach to rows they couldn't normalize.
 //! Per-source intermediate types (response shapes, parser outputs) live in
 //! `<source>_model.rs`. Aggregate ingest-layer types (IngestReport,
-//! UpsertOutcome) live in `ingest::ingest_model`.
+//! RecordOutcome) live in `ingest::ingest_model`.
 
 use chrono::NaiveDate;
 use uuid::Uuid;
@@ -20,39 +20,39 @@ pub struct AdapterOptions {
 /// having a struct here prevents the two-NaiveDate-arg-inversion class of
 /// bugs and gives us one place to hang constructors like `from_year`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Period {
+pub struct NaiveDatePeriod {
     pub start: NaiveDate,
     pub end: NaiveDate,
 }
 
-impl Period {
+impl NaiveDatePeriod {
     /// Builds the calendar-year period `[YYYY-01-01, YYYY+1-01-01)` for an
     /// integer year. Used by adapters whose sources publish annual values.
-    pub fn from_year(year: i32) -> Result<Period, AppError> {
+    pub fn from_year(year: i32) -> Result<NaiveDatePeriod, AppError> {
         let start: NaiveDate = NaiveDate::from_ymd_opt(year, 1, 1)
-            .ok_or_else(|| AppError::from(format!("Period::from_year: invalid year {}", year)))?;
+            .ok_or_else(|| AppError::from(format!("NaiveDatePeriod::from_year: invalid year {}", year)))?;
         let end: NaiveDate = NaiveDate::from_ymd_opt(year + 1, 1, 1).ok_or_else(|| {
-            AppError::from(format!("Period::from_year: invalid year+1 from {}", year))
+            AppError::from(format!("NaiveDatePeriod::from_year: invalid year+1 from {}", year))
         })?;
-        Ok(Period { start, end })
+        Ok(NaiveDatePeriod { start, end })
     }
 }
 
 #[derive(Debug)]
-pub struct NormalizedRow {
+pub struct NormalizedStatisticValue {
     pub region_id: Uuid,
     pub statistic_id: Uuid,
-    pub period: Period,
+    pub period: NaiveDatePeriod,
     pub value: f64,
     pub data_status: String,
 }
 
 /// Per-row result of an adapter's normalize step. Every adapter accumulates
-/// these into `(Vec<NormalizedRow>, Vec<IngestWarning>)` for the ingest
+/// these into `(Vec<NormalizedStatisticValue>, Vec<IngestWarning>)` for the ingest
 /// layer to consume.
 #[derive(Debug)]
 pub enum NormalizeOutcome {
-    Normalized(NormalizedRow),
+    Normalized(NormalizedStatisticValue),
     Warned(IngestWarning),
 }
 
@@ -65,6 +65,6 @@ pub struct IngestWarning {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IngestWarningKind {
     UnknownCountry,
-    NaValue,
+    NotApplicableValue,
     UnparsableRow,
 }

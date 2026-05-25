@@ -40,11 +40,11 @@ async fn get_tfr_statistic_id(transaction: &mut Transaction<'static, Postgres>) 
         .id
 }
 
-fn usa_2024(region_id: Uuid, statistic_id: Uuid, value: f64) -> NormalizedRow {
-    NormalizedRow {
+fn usa_2024(region_id: Uuid, statistic_id: Uuid, value: f64) -> NormalizedStatisticValue {
+    NormalizedStatisticValue {
         region_id,
         statistic_id,
-        period: Period::from_year(2024).unwrap(),
+        period: NaiveDatePeriod::from_year(2024).unwrap(),
         value,
         data_status: "final".to_string(),
     }
@@ -59,13 +59,13 @@ async fn normalize_known_country_resolves_region_id() {
         year: 2024,
         value: Some(1.66),
     }];
-    let (normalized_rows, warnings) =
+    let (normalized_statistic_values, warnings) =
         world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
             .await
             .expect("normalize succeeds");
-    assert_eq!(normalized_rows.len(), 1);
+    assert_eq!(normalized_statistic_values.len(), 1);
     assert!(warnings.is_empty());
-    let row: &NormalizedRow = &normalized_rows[0];
+    let row: &NormalizedStatisticValue = &normalized_statistic_values[0];
     assert_eq!(row.period.start, NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
     assert_eq!(row.period.end, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
     assert_eq!(row.value, 1.66);
@@ -82,11 +82,11 @@ async fn normalize_unknown_country_warns_and_skips() {
         year: 2024,
         value: Some(1.5),
     }];
-    let (normalized_rows, warnings) =
+    let (normalized_statistic_values, warnings) =
         world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
             .await
             .expect("normalize succeeds");
-    assert!(normalized_rows.is_empty());
+    assert!(normalized_statistic_values.is_empty());
     assert_eq!(warnings.len(), 1);
     assert_eq!(warnings[0].kind, IngestWarningKind::UnknownCountry);
     assert!(warnings[0].message.contains("XKX"));
@@ -102,32 +102,32 @@ async fn normalize_null_value_warns_and_skips() {
         year: 2025,
         value: None,
     }];
-    let (normalized_rows, warnings) =
+    let (normalized_statistic_values, warnings) =
         world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
             .await
             .expect("normalize succeeds");
-    assert!(normalized_rows.is_empty());
+    assert!(normalized_statistic_values.is_empty());
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].kind, IngestWarningKind::NaValue);
+    assert_eq!(warnings[0].kind, IngestWarningKind::NotApplicableValue);
     transaction.rollback().await.unwrap();
 }
 
 #[tokio::test]
-async fn upsert_inserts_new_publication_and_value() {
+async fn record_inserts_new_publication_and_value() {
     let pool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
-    let report: IngestReport = ingest::upsert_statistic_values(
+    let report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-upsert_inserts_new",
+        "test-record_inserts_new",
         Utc::now(),
         vec![usa_2024(region_id, statistic_id, 1.66)],
     )
     .await
-    .expect("upsert_statistic_values succeeds");
+    .expect("record_statistic_values succeeds");
     assert_eq!(report.values_added, 1);
     assert_eq!(report.values_revised, 0);
     assert_eq!(report.values_skipped, 0);
@@ -135,61 +135,61 @@ async fn upsert_inserts_new_publication_and_value() {
 }
 
 #[tokio::test]
-async fn upsert_re_fetch_same_revision_matches_publication_and_skips() {
+async fn record_re_fetch_same_revision_matches_publication_and_skips() {
     let pool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
     let row = || usa_2024(region_id, statistic_id, 1.66);
-    ingest::upsert_statistic_values(
+    ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-upsert_refetch",
+        "test-record_refetch",
         Utc::now(),
         vec![row()],
     )
     .await
-    .expect("first upsert");
-    let report: IngestReport = ingest::upsert_statistic_values(
+    .expect("first record");
+    let report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-upsert_refetch",
+        "test-record_refetch",
         Utc::now(),
         vec![row()],
     )
     .await
-    .expect("second upsert");
+    .expect("second record");
     assert_eq!(report.values_added, 0);
     assert_eq!(report.values_skipped, 1);
     transaction.rollback().await.unwrap();
 }
 
 #[tokio::test]
-async fn upsert_revised_value_supersedes_old_and_inserts_new() {
+async fn record_revised_value_supersedes_old_and_inserts_new() {
     let pool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
-    ingest::upsert_statistic_values(
+    ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-upsert_revised-rev1",
+        "test-record_revised-rev1",
         Utc::now(),
         vec![usa_2024(region_id, statistic_id, 1.66)],
     )
     .await
-    .expect("first upsert");
-    let report: IngestReport = ingest::upsert_statistic_values(
+    .expect("first record");
+    let report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-upsert_revised-rev2",
+        "test-record_revised-rev2",
         Utc::now(),
         vec![usa_2024(region_id, statistic_id, 1.62)],
     )
     .await
-    .expect("revised upsert");
+    .expect("revised record");
     assert_eq!(report.values_revised, 1);
     assert_eq!(report.values_added, 0);
     assert_eq!(report.values_skipped, 0);

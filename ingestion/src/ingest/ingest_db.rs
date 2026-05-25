@@ -3,7 +3,7 @@
 //! append-with-supersede semantics, and `read_latest_publication_revision`.
 //!
 //! These are NOT part of the adapter layer — adapters end with
-//! `NormalizedRow` in memory. The ingest layer takes those normalized rows
+//! `NormalizedStatisticValue` in memory. The ingest layer takes those normalized rows
 //! and persists them to the canonical store. Source-specific SQL (e.g. an
 //! adapter's own staging table) belongs in `<source>/<source>_db.rs`.
 //!
@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
-use crate::adapter::NormalizedRow;
+use crate::adapter::NormalizedStatisticValue;
 use crate::canonical::canonical_model::StatisticValue;
 use crate::error::AppError;
 
@@ -63,7 +63,7 @@ pub async fn insert_publication_or_match<'e>(
 
 pub async fn find_current_value<'e>(
     executor: impl PgExecutor<'e>,
-    row: &NormalizedRow,
+    normalized_statistic_value: &NormalizedStatisticValue,
     data_source_id: Uuid,
 ) -> Result<Option<StatisticValue>, AppError> {
     let current: Option<StatisticValue> = sqlx::query_as!(
@@ -78,10 +78,10 @@ pub async fn find_current_value<'e>(
           and data_source_id = $5
           and superseded is null
         "#,
-        row.region_id,
-        row.statistic_id,
-        row.period.start,
-        row.period.end,
+        normalized_statistic_value.region_id,
+        normalized_statistic_value.statistic_id,
+        normalized_statistic_value.period.start,
+        normalized_statistic_value.period.end,
         data_source_id,
     )
     .fetch_optional(executor)
@@ -91,7 +91,7 @@ pub async fn find_current_value<'e>(
 
 pub async fn insert_statistic_value<'e>(
     executor: impl PgExecutor<'e>,
-    row: &NormalizedRow,
+    normalized_statistic_value: &NormalizedStatisticValue,
     data_source_id: Uuid,
     data_source_publication_id: Uuid,
 ) -> Result<Uuid, AppError> {
@@ -101,14 +101,14 @@ pub async fn insert_statistic_value<'e>(
         values ($1, $2, $3, $4, $5, $6, $7, $8)
         returning id
         "#,
-        row.region_id,
-        row.statistic_id,
-        row.period.start,
-        row.period.end,
-        row.value,
+        normalized_statistic_value.region_id,
+        normalized_statistic_value.statistic_id,
+        normalized_statistic_value.period.start,
+        normalized_statistic_value.period.end,
+        normalized_statistic_value.value,
         data_source_id,
         data_source_publication_id,
-        row.data_status,
+        normalized_statistic_value.data_status,
     )
     .fetch_one(executor)
     .await?;

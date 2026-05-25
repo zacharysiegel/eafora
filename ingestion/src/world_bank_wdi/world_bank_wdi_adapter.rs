@@ -1,5 +1,5 @@
 //! WB WDI adapter: normalizes parsed WB rows into the canonical
-//! `NormalizedRow` shape and orchestrates the full pipeline
+//! `NormalizedStatisticValue` shape and orchestrates the full pipeline
 //! (client → adapter → ingest) under one transaction. The fetch + parse
 //! steps live in `world_bank_wdi_client`; the persistence step lives in
 //! `crate::ingest`.
@@ -9,7 +9,7 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::adapter::{
-    AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedRow, Period,
+    AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue, NaiveDatePeriod,
 };
 use crate::canonical::canonical_db;
 use crate::error::AppError;
@@ -30,7 +30,7 @@ const WB_WDI_DATA_STATUS_FINAL: &str = "final";
 pub async fn normalize(
     connection: &mut PgConnection,
     parsed_rows: Vec<ParsedRow>,
-) -> Result<(Vec<NormalizedRow>, Vec<IngestWarning>), AppError> {
+) -> Result<(Vec<NormalizedStatisticValue>, Vec<IngestWarning>), AppError> {
     let statistic =
         canonical_db::find_statistic_by_code(&mut *connection, WB_WDI_STATISTIC_CODE)
             .await?
@@ -39,15 +39,15 @@ pub async fn normalize(
                     "wb_wdi: statistic {WB_WDI_STATISTIC_CODE:?} missing from canonical store (run dbmate up)",
                 ))
             })?;
-    let mut normalized_rows: Vec<NormalizedRow> = Vec::with_capacity(parsed_rows.len());
+    let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::with_capacity(parsed_rows.len());
     let mut warnings: Vec<IngestWarning> = Vec::new();
     for parsed_row in parsed_rows {
         match normalize_row(&mut *connection, &parsed_row, statistic.id).await? {
-            NormalizeOutcome::Normalized(row) => normalized_rows.push(row),
+            NormalizeOutcome::Normalized(row) => normalized_statistic_values.push(row),
             NormalizeOutcome::Warned(warning) => warnings.push(warning),
         }
     }
-    Ok((normalized_rows, warnings))
+    Ok((normalized_statistic_values, warnings))
 }
 
 async fn normalize_row(
@@ -57,7 +57,7 @@ async fn normalize_row(
 ) -> Result<NormalizeOutcome, AppError> {
     let Some(value) = parsed_row.value else {
         return Ok(NormalizeOutcome::Warned(IngestWarning {
-            kind: IngestWarningKind::NaValue,
+            kind: IngestWarningKind::NotApplicableValue,
             message: format!("wb_wdi: NA value for {} {}", parsed_row.iso3, parsed_row.year),
         }));
     };
@@ -70,10 +70,10 @@ async fn normalize_row(
             ),
         }));
     };
-    Ok(NormalizeOutcome::Normalized(NormalizedRow {
+    Ok(NormalizeOutcome::Normalized(NormalizedStatisticValue {
         region_id: country.region_id,
         statistic_id,
-        period: Period::from_year(parsed_row.year)?,
+        period: NaiveDatePeriod::from_year(parsed_row.year)?,
         value,
         data_status: WB_WDI_DATA_STATUS_FINAL.to_string(),
     }))
@@ -82,7 +82,7 @@ async fn normalize_row(
 /// Adapter orchestrator. Opens a single transaction, then chains
 /// `read_latest_publication_revision` (informational only; WB has no
 /// native incremental query) → client::fetch_upstream → client::parse_response
-/// → normalize → ingest::upsert_statistic_values under that transaction. The whole
+/// → normalize → ingest::record_statistic_values under that transaction. The whole
 /// batch commits atomically or rolls back together, so a mid-run failure
 /// can't leave the canonical store with partial publication state.
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
@@ -100,14 +100,14 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     let raw: WdiResponse = world_bank_wdi_client::fetch_upstream(options).await?;
     let revision_label: String = raw.0.lastupdated.clone();
     let parsed_rows: Vec<ParsedRow> = world_bank_wdi_client::parse_response(raw)?;
-    let (normalized_rows, warnings): (Vec<NormalizedRow>, Vec<IngestWarning>) =
+    let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
         normalize(&mut *transaction, parsed_rows).await?;
-    let mut report: IngestReport = ingest::upsert_statistic_values(
+    let mut report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source.id,
         &revision_label,
         Utc::now(),
-        normalized_rows,
+        normalized_statistic_values,
     )
     .await?;
     report.warnings = warnings;
