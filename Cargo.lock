@@ -1084,6 +1084,8 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 [[package]]
 name = "minimer"
 version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b39cf5bfa4290451d216fbf8f9602feca2869fbbcba8b5ad31eb6fbb2fee86fa"
 
 [[package]]
 name = "mio"
