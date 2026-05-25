@@ -115,3 +115,4 @@ Per Constitution §Compliance review, this spec honors the binding principles as
 - **Principle VIII (Workflow discipline)**: this feature is the first `/speckit-specify` use; the spec lives at `specs/001-wb-wdi-ingestion/spec.md` per the convention.
 
 No principle violations identified; no constitution amendments proposed.
+

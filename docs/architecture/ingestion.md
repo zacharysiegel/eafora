@@ -278,7 +278,7 @@ create table if not exists data_source_publication (
   unique (data_source_id, revision_label)
 );
 
-comment on column data_source_publication.revision_label is $$the source's own revision label for this publication event (WB WDI '2024-Q4', Eurostat '2026-w20', HFD '2025-12', WPP 'WPP-2024-rev1'); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter's read_last_seen_revision step for incremental fetches; aggregated per-source into the manifest's data_source_versions_jsonb at artifact-build time$$;
+comment on column data_source_publication.revision_label is $$the source's own revision label for this publication event (WB WDI '2024-Q4', Eurostat '2026-w20', HFD '2025-12', WPP 'WPP-2024-rev1'); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter's read_latest_publication_revision step for incremental fetches; aggregated per-source into the manifest's data_source_versions_jsonb at artifact-build time$$;
 comment on column data_source_publication.published      is $$source's own publication timestamp where derivable (often only a year or version label, hence nullable)$$;
 comment on column data_source_publication.fetched        is $$wall-clock instant our adapter captured this publication$$;
 ```
@@ -374,7 +374,7 @@ pub async fn fetch_and_store(
     pool: &PgPool,
     options: AdapterOptions,
 ) -> Result<IngestReport, AppError> {
-    let last_seen_revision: Option<String> = read_last_seen_revision(pool).await?;
+    let last_seen_revision: Option<String> = read_latest_publication_revision(pool).await?;
     let raw_response: RawResponse = fetch_upstream(&options, last_seen_revision.as_deref()).await?;
     let parsed_rows: Vec<ParsedRow> = parse_response(raw_response)?;
     let normalized_rows: Vec<NormalizedRow> = normalize(pool, parsed_rows).await?;
@@ -385,7 +385,7 @@ pub async fn fetch_and_store(
 
 Each helper is a separate named function inside the source's feature module; the orchestrator only sequences them. The helper contracts:
 
-- **`read_last_seen_revision(pool)`** → `Option<String>`. Queries `select revision_label from data_source_publication where data_source_id = $1 order by fetched desc limit 1` to find the most recent publication this adapter has captured. `None` means "first run, fetch everything".
+- **`read_latest_publication_revision(pool)`** → `Option<String>`. Queries `select revision_label from data_source_publication where data_source_id = $1 order by fetched desc limit 1` to find the most recent publication this adapter has captured. `None` means "first run, fetch everything".
 - **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
 - **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
 - **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `region` (via country.iso3 for country-level data) / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
@@ -451,7 +451,7 @@ The mechanical steps for any new source:
 
 1. Add a migration inserting a row in `data_source` with the source's code, license, attribution string, and `preference_rank` (see §Source-preference merge for ranking).
 2. Create `ingestion/src/<source_code>/` with the three-file lobby triplet.
-3. Implement `fetch_and_store` (the orchestrator) and its five named helpers (`read_last_seen_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) in `<source_code>_api.rs`.
+3. Implement `fetch_and_store` (the orchestrator) and its five named helpers (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) in `<source_code>_api.rs`.
 4. Implement source-specific SQL in `<source_code>_db.rs`.
 5. Define source-specific types and parsing in `<source_code>_model.rs`.
 6. Register the adapter in `main.rs`'s `run-all` subcommand handler and `ingest-source` dispatch.
