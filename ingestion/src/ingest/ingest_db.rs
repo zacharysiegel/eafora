@@ -11,10 +11,11 @@
 //! production (`&pool`) and tests (`&mut *tx` re-borrow against a per-test
 //! transaction that gets rolled back).
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
+use crate::adapter::NormalizedRow;
 use crate::canonical::canonical_model::StatisticValue;
 use crate::error::AppError;
 
@@ -62,10 +63,7 @@ pub async fn insert_publication_or_match<'e>(
 
 pub async fn find_current_value<'e>(
     executor: impl PgExecutor<'e>,
-    region_id: Uuid,
-    statistic_id: Uuid,
-    period_start: NaiveDate,
-    period_end: NaiveDate,
+    cell: &NormalizedRow,
     data_source_id: Uuid,
 ) -> Result<Option<StatisticValue>, AppError> {
     let current: Option<StatisticValue> = sqlx::query_as!(
@@ -80,10 +78,10 @@ pub async fn find_current_value<'e>(
           and data_source_id = $5
           and superseded is null
         "#,
-        region_id,
-        statistic_id,
-        period_start,
-        period_end,
+        cell.region_id,
+        cell.statistic_id,
+        cell.period_start,
+        cell.period_end,
         data_source_id,
     )
     .fetch_optional(executor)
@@ -93,14 +91,9 @@ pub async fn find_current_value<'e>(
 
 pub async fn insert_statistic_value<'e>(
     executor: impl PgExecutor<'e>,
-    region_id: Uuid,
-    statistic_id: Uuid,
-    period_start: NaiveDate,
-    period_end: NaiveDate,
-    value: f64,
+    row: &NormalizedRow,
     data_source_id: Uuid,
     data_source_publication_id: Uuid,
-    data_status: &str,
 ) -> Result<Uuid, AppError> {
     let inserted_id: Uuid = sqlx::query_scalar!(
         r#"
@@ -108,14 +101,14 @@ pub async fn insert_statistic_value<'e>(
         values ($1, $2, $3, $4, $5, $6, $7, $8)
         returning id
         "#,
-        region_id,
-        statistic_id,
-        period_start,
-        period_end,
-        value,
+        row.region_id,
+        row.statistic_id,
+        row.period_start,
+        row.period_end,
+        row.value,
         data_source_id,
         data_source_publication_id,
-        data_status,
+        row.data_status,
     )
     .fetch_one(executor)
     .await?;

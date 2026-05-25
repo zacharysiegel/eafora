@@ -56,15 +56,8 @@ pub async fn upsert_row(
     publication_id: Uuid,
     normalized_row: &NormalizedRow,
 ) -> Result<UpsertOutcome, AppError> {
-    let current = ingest_db::find_current_value(
-        &mut *connection,
-        normalized_row.region_id,
-        normalized_row.statistic_id,
-        normalized_row.period_start,
-        normalized_row.period_end,
-        data_source_id,
-    )
-    .await?;
+    let current =
+        ingest_db::find_current_value(&mut *connection, normalized_row, data_source_id).await?;
     if let Some(current_row) = current {
         if current_row.value == normalized_row.value
             && current_row.data_status == normalized_row.data_status
@@ -74,28 +67,18 @@ pub async fn upsert_row(
         ingest_db::set_superseded(&mut *connection, current_row.id, Utc::now()).await?;
         ingest_db::insert_statistic_value(
             &mut *connection,
-            normalized_row.region_id,
-            normalized_row.statistic_id,
-            normalized_row.period_start,
-            normalized_row.period_end,
-            normalized_row.value,
+            normalized_row,
             data_source_id,
             publication_id,
-            &normalized_row.data_status,
         )
         .await?;
         return Ok(UpsertOutcome::Revised);
     }
     ingest_db::insert_statistic_value(
         &mut *connection,
-        normalized_row.region_id,
-        normalized_row.statistic_id,
-        normalized_row.period_start,
-        normalized_row.period_end,
-        normalized_row.value,
+        normalized_row,
         data_source_id,
         publication_id,
-        &normalized_row.data_status,
     )
     .await?;
     Ok(UpsertOutcome::Added)

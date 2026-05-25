@@ -13,7 +13,7 @@ use ingestion::adapter::*;
 use ingestion::canonical::canonical_db;
 use ingestion::ingest;
 use ingestion::ingest::*;
-use ingestion::world_bank_wdi::world_bank_wdi_client;
+use ingestion::world_bank_wdi::world_bank_wdi_adapter;
 use ingestion::world_bank_wdi::world_bank_wdi_model::ParsedRow;
 
 async fn get_wb_wdi_data_source_id(transaction: &mut Transaction<'static, Postgres>) -> Uuid {
@@ -61,7 +61,7 @@ async fn normalize_known_country_resolves_region_id() {
         value: Some(1.66),
     }];
     let (normalized_rows, warnings) =
-        world_bank_wdi_client::normalize(&mut *transaction, parsed_rows)
+        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
             .await
             .expect("normalize succeeds");
     assert_eq!(normalized_rows.len(), 1);
@@ -84,7 +84,7 @@ async fn normalize_unknown_country_warns_and_skips() {
         value: Some(1.5),
     }];
     let (normalized_rows, warnings) =
-        world_bank_wdi_client::normalize(&mut *transaction, parsed_rows)
+        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
             .await
             .expect("normalize succeeds");
     assert!(normalized_rows.is_empty());
@@ -104,7 +104,7 @@ async fn normalize_null_value_warns_and_skips() {
         value: None,
     }];
     let (normalized_rows, warnings) =
-        world_bank_wdi_client::normalize(&mut *transaction, parsed_rows)
+        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
             .await
             .expect("normalize succeeds");
     assert!(normalized_rows.is_empty());
@@ -196,10 +196,7 @@ async fn upsert_revised_value_supersedes_old_and_inserts_new() {
     assert_eq!(report.values_skipped, 0);
     let current = ingest::ingest_db::find_current_value(
         &mut *transaction,
-        region_id,
-        statistic_id,
-        NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        &usa_2024(region_id, statistic_id, 0.0),
         data_source_id,
     )
     .await
