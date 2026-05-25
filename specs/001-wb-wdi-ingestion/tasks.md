@@ -62,7 +62,7 @@ All tasks in this phase contribute to **[US1, US2, US3]** — the adapter is the
 
 ### `parse_response` (pure function; FR-003, FR-013)
 
-- [ ] T021 [Tests-first] Write unit tests for `parse_response` in `ingestion/src/world_bank_wdi/world_bank_wdi_api.rs`'s `#[cfg(test)] mod tests` block: happy-path response → expected `Vec<ParsedRow>` length and content; null `value` → row preserved with `value: None`; malformed shape (missing rows array) → `AppError`.
+- [ ] T021 [Tests-first] Write unit tests for `parse_response` in `ingestion/src/world_bank_wdi/world_bank_wdi_client.rs`'s `#[cfg(test)] mod tests` block: happy-path response → expected `Vec<ParsedRow>` length and content; null `value` → row preserved with `value: None`; malformed shape (missing rows array) → `AppError`.
 - [ ] T022 Implement `parse_response(raw: WdiResponse) -> Result<Vec<ParsedRow>, AppError>` to make T021 pass.
 
 ### `normalize` (DB-reading transform; FR-004, FR-008, FR-013)

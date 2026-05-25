@@ -46,7 +46,7 @@ Implements the `fetch_and_store` adapter contract from `docs/architecture/ingest
 
 The spec's Constitution Check (`spec.md` §Constitution Check) enumerates all eight principles and confirms no violations. The plan adds no new violations. The non-trivial points worth re-affirming at planning time:
 
-- **Principle V (Explicit over implicit)**: clap builder API only, hand-written `sqlx::query_as!`, no ORM, no derive macros, imperative subcommand dispatch. The lobby/-triplet `world_bank_wdi_api.rs` file holds CLI handlers with no actix-web routes wired up; routes can land later if a v3+ HTTP server mode arrives.
+- **Principle V (Explicit over implicit)**: clap builder API only, hand-written `sqlx::query_as!`, no ORM, no derive macros, imperative subcommand dispatch. The lobby/-triplet `world_bank_wdi_client.rs` file holds the external HTTP client and adapter orchestrator with no actix-web routes wired up; an `<feature>_api.rs` file could land later if a v3+ HTTP server mode arrives.
 - **Principle VII (Test-first for core logic)**: `parse_response` and `normalize` are core logic surfaces and follow Red-Green-Refactor. Tests authored before implementation; coverage measured against the spec's SC-005 (≥90% line coverage on those helpers).
 - **Principle IV (Singularity convention parity)**: every dependency listed above is in Singularity's set or is `clap` (newly registered with the user's preference for the builder API; will be added to Constitution IV's locked-picks list in a follow-up amendment).
 
@@ -89,7 +89,7 @@ ingestion/                              # workspace member; new in this feature
 │   ├── db.rs                           # PgPool bootstrap: reads DATABASE_URL from env, builds a PgPool with the project's pool-config defaults, returns it; symmetric with tests/helpers/test_db.rs but for the production binary
 │   ├── world_bank_wdi/                 # the lobby/-triplet for this source
 │   │   ├── mod.rs
-│   │   ├── world_bank_wdi_api.rs       # CLI handler + fetch_and_store orchestrator + the five named helpers (read_latest_publication_revision, fetch_upstream, parse_response, normalize, upsert_rows)
+│   │   ├── world_bank_wdi_client.rs       # CLI handler + fetch_and_store orchestrator + the five named helpers (read_latest_publication_revision, fetch_upstream, parse_response, normalize, upsert_rows)
 │   │   ├── world_bank_wdi_db.rs        # sqlx queries scoped to this source's ingestion (publication INSERT, statistic_value lookup-current/INSERT/UPDATE-superseded)
 │   │   └── world_bank_wdi_model.rs     # WB WDI response types (paging metadata, row shape), ParsedRow, NormalizedRow
 │   └── canonical/                      # cross-cutting reads of the canonical store (used by future adapters too)
@@ -103,7 +103,7 @@ ingestion/                              # workspace member; new in this feature
         └── world_bank_wdi.rs           # WB-WDI-specific test helpers (sample loading, assertions)
 ```
 
-**Structure Decision**: Single-project layout (Cargo workspace with `ingestion/` as one of multiple workspace members; `core/` and the per-platform clients land in later features). The `ingestion/` member is a CLI binary, not a library. The lobby/-triplet pattern within `src/world_bank_wdi/` follows the convention from `docs/architecture/ingestion.md` §Workspace placement: every per-source feature module is exactly three files (`<name>_api.rs`, `<name>_db.rs`, `<name>_model.rs`), each a feature concern, sharing nothing with sibling sources except the `AppError` and `IngestReport` types in `error.rs` / `world_bank_wdi/world_bank_wdi_api.rs`.
+**Structure Decision**: Single-project layout (Cargo workspace with `ingestion/` as one of multiple workspace members; `core/` and the per-platform clients land in later features). The `ingestion/` member is a CLI binary, not a library. The lobby/-triplet pattern within `src/world_bank_wdi/` follows the convention from `docs/architecture/ingestion.md` §Workspace placement: every per-source feature module is exactly three files (`<name>_client.rs`, `<name>_db.rs`, `<name>_model.rs`), each a feature concern, sharing nothing with sibling sources except the `AppError` and `IngestReport` types in `error.rs` / `world_bank_wdi/world_bank_wdi_client.rs`.
 
 ## Implementation phases
 

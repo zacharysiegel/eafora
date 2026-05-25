@@ -1,7 +1,7 @@
-//! Types for the WB WDI HTTP response shape and the per-pipeline-stage
-//! intermediate representations. The HTTP response is a heterogeneous JSON
-//! array `[paging_metadata_object, [row_objects...]]` — modeled here as a
-//! tuple via serde so we can deserialize without a custom visitor.
+//! Types for the WB WDI HTTP response shape and the WB-specific intermediate
+//! representation used between `parse_response` and `normalize`. Cross-adapter
+//! types (`AdapterOptions`, `IngestReport`, `NormalizedRow`, etc.) live in
+//! `adapter::adapter_model`.
 
 use serde::Deserialize;
 
@@ -47,40 +47,4 @@ pub struct ParsedRow {
     pub iso3: String,
     pub year: i32,
     pub value: Option<f64>,
-}
-
-#[derive(Debug)]
-pub struct NormalizedRow {
-    pub region_id: uuid::Uuid,
-    pub statistic_id: uuid::Uuid,
-    pub period_start: chrono::NaiveDate,
-    pub period_end: chrono::NaiveDate,
-    pub value: f64,
-    pub data_status: String,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct AdapterOptions {
-    pub force_full_refetch: bool,
-}
-
-#[derive(Debug, Default)]
-pub struct IngestReport {
-    pub values_added: u64,
-    pub values_revised: u64,
-    pub values_skipped: u64,
-    pub warnings: Vec<IngestWarning>,
-}
-
-#[derive(Debug, Clone)]
-pub struct IngestWarning {
-    pub kind: IngestWarningKind,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IngestWarningKind {
-    UnknownCountry,
-    NaValue,
-    UnparsableRow,
 }

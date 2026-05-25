@@ -9,13 +9,13 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
+use crate::adapter::adapter_model::{
+    AdapterOptions, IngestReport, IngestWarning, IngestWarningKind, NormalizedRow,
+};
 use crate::canonical::canonical_db;
 use crate::error::AppError;
 use crate::world_bank_wdi::world_bank_wdi_db;
-use crate::world_bank_wdi::world_bank_wdi_model::{
-    AdapterOptions, IngestReport, IngestWarning, IngestWarningKind, NormalizedRow, ParsedRow,
-    WdiResponse,
-};
+use crate::world_bank_wdi::world_bank_wdi_model::{ParsedRow, WdiResponse};
 
 const WB_WDI_DATA_SOURCE_CODE: &str = "wb_wdi";
 const WB_WDI_STATISTIC_CODE: &str = "tfr";

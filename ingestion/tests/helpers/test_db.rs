@@ -3,6 +3,10 @@
 //! runtime per test — a process-wide OnceCell-cached pool's background
 //! tasks would be bound to the first runtime and time out on subsequent
 //! tests. Pool creation is fast enough that per-test cost is negligible.
+
+// The integration test binary that uses this helper imports only `test_pool`;
+// future test binaries are expected to reuse it via the same `mod helpers;`
+// pattern. Keep the module-level allow until a second consumer arrives.
 #![allow(dead_code)]
 
 use sqlx::postgres::{PgPool, PgPoolOptions};

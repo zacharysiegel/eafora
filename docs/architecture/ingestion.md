@@ -27,7 +27,7 @@ Client-side artifact consumption (parsing, caching, querying) is **not** in scop
 From the constitution and `docs/architecture/overview.md`:
 
 - Rust core + actix-web binary; tokio with `features = ["full"]`; sqlx `query_as!` with offline cache; dbmate migrations; reqwest for outbound HTTP. (Constitution IV; overview §Ingestion)
-- Singularity `lobby/` feature-triplet pattern: each feature module is `<feature>_api.rs` + `<feature>_db.rs` + `<feature>_model.rs`. (Constitution IV)
+- Singularity `lobby/` feature-triplet pattern: each feature module is `<feature>_db.rs` + `<feature>_model.rs` plus either `<feature>_api.rs` (if it hosts HTTP routes) or `<feature>_client.rs` (if it consumes an external HTTP API). (Constitution IV)
 - Imperative actix-web routing via cascading `configurer` functions; no `#[get]`/`#[post]` macros. (Constitution V)
 - Hand-written `sqlx::query_as!`; no ORM. (Constitution V)
 - HTTP+JSON for any future client/API path; no RPC frameworks without explicit approval. (Constitution V)
@@ -56,7 +56,7 @@ eafora/
 │       ├── error.rs            # minimer wiring + per-feature variant aggregation
 │       ├── world_bank_wdi/     # one source = one feature module (the lobby/ triplet pattern)
 │       │   ├── mod.rs
-│       │   ├── world_bank_wdi_api.rs       # CLI handlers (lobby/-triplet position; actix-web route configurer would go here if/when an HTTP server mode is added post-v2)
+│       │   ├── world_bank_wdi_client.rs    # external HTTP client + adapter orchestrator (fetch_and_store + the five named helpers)
 │       │   ├── world_bank_wdi_db.rs        # sqlx queries scoped to this source's ingestion
 │       │   └── world_bank_wdi_model.rs     # types (WDI API response shapes, normalization helpers)
 │       ├── eurostat/                       # same shape per added source
@@ -74,7 +74,7 @@ eafora/
 │       └── geometry_ingest/                # Natural Earth ingestion (separate from statistic adapters)
 ```
 
-Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `source <code>`, `build`, `seed`, `publish`, etc. Used for manual invocation, `launchd` triggers, and local dev. Per-feature module layout follows the Singularity `lobby/` convention — `<feature>_api.rs` + `<feature>_db.rs` + `<feature>_model.rs` — but the `_api.rs` slot is only created when it has real content (a CLI dispatch helper or, post-v2, an actix-web route configurer). Features with no API surface yet ship as the two-file (`_db.rs` + `_model.rs`) reduction.
+Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `source <code>`, `build`, `seed`, `publish`, etc. Used for manual invocation, `launchd` triggers, and local dev. Per-feature module layout follows the Singularity `lobby/` convention with two suffix variants — `<feature>_api.rs` for HTTP routes Eafora HOSTS (none in v1; reserved for v3+ HTTP server mode) and `<feature>_client.rs` for code that calls OUT to an external HTTP API (every source adapter). Both share the `<feature>_db.rs` + `<feature>_model.rs` slots. Features without HTTP surface (incoming or outgoing) ship as the two-file (`_db.rs` + `_model.rs`) reduction.
 
 ### CLI structure (clap builder API)
 
@@ -122,7 +122,7 @@ async fn main() -> Result<(), AppError> {
 }
 ```
 
-Each subcommand has a `dispatch_*` helper that reads its specific arguments from `ArgMatches` and calls into the relevant feature module (`world_bank_wdi::fetch_and_store(...)`, `artifact::build_artifacts(...)`, etc.). The `dispatch_*` helpers live alongside `main` in `main.rs` for the all orchestration case, or — if a dispatch grows non-trivial — in the relevant feature module's `_api.rs`.
+Each subcommand has a `dispatch_*` helper that reads its specific arguments from `ArgMatches` and calls into the relevant feature module (`world_bank_wdi::fetch_and_store(...)`, `artifact::build_artifacts(...)`, etc.). The `dispatch_*` helpers live alongside `main` in `main.rs` for the all orchestration case, or — if a dispatch grows non-trivial — in the relevant feature module's `_api.rs` (when the feature hosts routes) or `_client.rs` (when it consumes an external API).
 
 Do not introduce `#[derive(Parser)]`, `#[derive(Subcommand)]`, or any clap derive macro. If a clap helper accepts both forms, pick the builder variant.
 
@@ -390,7 +390,9 @@ Each helper is a separate named function inside the source's feature module; the
 - **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `region` (via country.iso3 for country-level data) / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
 - **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. First INSERTs the run's `(data_source_id, revision_label, fetched)` into `data_source_publication` (ON CONFLICT DO NOTHING; obtains the publication's id whether newly inserted or matched against an existing row). Then for each normalized row: looks up the current `superseded is null` row in `statistic_value` matching `(region_id, statistic_id, period_start, period_end, data_source_id)`. If none → INSERT the new row pointing at the publication. If a current row exists with the same `value` and `data_status` → no writes (no revision happened). If a current row exists with different `value` or `data_status` → UPDATE the old row's `superseded = now()`, then INSERT a new row pointing at the new publication. Returns `IngestReport` counts: `values_added` (new cells, no prior row), `values_revised` (revisions, each one supersede + insert pair), `values_skipped` (existing current row already matched, no writes needed).
 
-Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
+Adapters are independent of each other. Adding a new source is one new feature module (`<source>_client.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
+
+**Maintain a consistent adapter shape across sources.** Every adapter exposes the same five named helpers (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) with the same return shapes, even when a given source could in principle be simpler. The discipline is intentional: when source #2 lands and the shape proves stable across two real examples, the orchestrator becomes a one-time refactor into a shared `Adapter` trait (the public surface is already trait-ready by convention). Premature trait extraction with only one example would risk locking in a shape that's wrong for source #2; deferring requires every new source to mirror WB WDI's shape so we keep the option open.
 
 ### `AdapterOptions` and `IngestReport`
 
@@ -428,7 +430,7 @@ pub struct IngestWarning {
 `AppError` is `minimer::Error` for the ingestion binary. Adapter code builds errors as formatted strings at the failure site rather than defining per-source concrete enum variants — matches Singularity's pattern, avoids variant boilerplate, and is sufficient because nothing in the ingestion pipeline pattern-matches on adapter errors (they only flow to logs and surface in the run-level outcome).
 
 ```rust
-// ingestion/src/world_bank_wdi/world_bank_wdi_api.rs
+// ingestion/src/world_bank_wdi/world_bank_wdi_client.rs
 let url: &str = "https://api.worldbank.org/v2/country/all/indicator/SP.DYN.TFRT.IN?format=json&per_page=20000";
 let response: reqwest::Response = reqwest::get(url).await
     .map_err(|err| AppError::from(format!("wb_wdi: HTTP GET {url} failed: {err}")))?;
@@ -450,7 +452,7 @@ The mechanical steps for any new source:
 
 1. Add a migration inserting a row in `data_source` with the source's code, license, attribution string, and `preference_rank` (see §Source-preference merge for ranking).
 2. Create `ingestion/src/<source_code>/` with the three-file lobby triplet.
-3. Implement `fetch_and_store` (the orchestrator) and its five named helpers (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) in `<source_code>_api.rs`.
+3. Implement `fetch_and_store` (the orchestrator) and its five named helpers (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) in `<source_code>_client.rs`.
 4. Implement source-specific SQL in `<source_code>_db.rs`.
 5. Define source-specific types and parsing in `<source_code>_model.rs`.
 6. Register the adapter in `main.rs`'s `all` subcommand handler and `source` dispatch.

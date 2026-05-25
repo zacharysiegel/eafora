@@ -1,6 +1,11 @@
 //! WB-WDI-specific test helpers (sample loading; assertion utilities can be
 //! added here as Phase 3 lands). Loads checked-in sample responses from
 //! `ingestion/samples/wb_wdi/` without live HTTP.
+
+// `load_sample` is consumed by the sample-replay integration tests (T032/T033)
+// that haven't landed yet; the helper module is shared across test binaries
+// which prevents adding the attribute per-function, so it stays here at the
+// module level until the first caller wires in.
 #![allow(dead_code)]
 
 use std::fs;
