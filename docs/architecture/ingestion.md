@@ -389,7 +389,7 @@ Each helper is a separate named function inside the source's feature module; the
 - **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
 - **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
 - **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `region` (via country.iso3 for country-level data) / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
-- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. First INSERTs the run's `(data_source_id, revision_label, fetched)` into `data_source_publication` (ON CONFLICT DO NOTHING; obtains the publication's id whether newly inserted or matched against an existing row). Then for each normalized row: looks up the current `superseded is null` row in `statistic_value` matching `(region_id, statistic_id, period_start, period_end, data_source_id)`. If none → INSERT the new row pointing at the publication. If a current row exists with the same `value` and `data_status` → no writes (no revision happened). If a current row exists with different `value` or `data_status` → UPDATE the old row's `superseded = now()`, then INSERT a new row pointing at the new publication. Returns `IngestReport` counts: `values_inserted` (new cells, no prior row), `values_revised` (revisions, each one supersede + insert pair), `values_unchanged` (existing current row already matched).
+- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. First INSERTs the run's `(data_source_id, revision_label, fetched)` into `data_source_publication` (ON CONFLICT DO NOTHING; obtains the publication's id whether newly inserted or matched against an existing row). Then for each normalized row: looks up the current `superseded is null` row in `statistic_value` matching `(region_id, statistic_id, period_start, period_end, data_source_id)`. If none → INSERT the new row pointing at the publication. If a current row exists with the same `value` and `data_status` → no writes (no revision happened). If a current row exists with different `value` or `data_status` → UPDATE the old row's `superseded = now()`, then INSERT a new row pointing at the new publication. Returns `IngestReport` counts: `values_added` (new cells, no prior row), `values_revised` (revisions, each one supersede + insert pair), `values_skipped` (existing current row already matched, no writes needed).
 
 Adapters are independent of each other. Adding a new source is one new feature module (`<source>_api.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
 
@@ -406,9 +406,9 @@ pub struct IngestReport {
     pub source_code: String,
     pub started: DateTime<Utc>,
     pub finished: DateTime<Utc>,
-    pub values_inserted: u64,
+    pub values_added: u64,
     pub values_revised: u64,
-    pub values_unchanged: u64,
+    pub values_skipped: u64,
     pub upstream_revision: String,
     pub warnings: Vec<IngestWarning>,
 }
