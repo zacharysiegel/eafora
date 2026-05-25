@@ -1,6 +1,6 @@
 //! WB WDI external HTTP client + response deserialization. This file's only
 //! responsibility is talking to the World Bank API and turning the response
-//! into the parser's intermediate `ParsedRow` shape. Canonical-store
+//! into the parser's intermediate `ParsedWdiStatisticValue` shape. Canonical-store
 //! normalization lives in `world_bank_wdi_adapter`; persistence lives in
 //! `crate::ingest`.
 //!
@@ -9,7 +9,7 @@
 
 use crate::adapter::AdapterOptions;
 use crate::error::AppError;
-use crate::world_bank_wdi::world_bank_wdi_model::{ParsedRow, WdiResponse, WdiRow};
+use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse, WdiStatisticValue};
 
 const WB_WDI_API_URL: &str =
     "https://api.worldbank.org/v2/country/all/indicator/SP.DYN.TFRT.IN?format=json&per_page=20000";
@@ -36,40 +36,40 @@ pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, App
 /// `date`, missing iso3) become `AppError`s rather than silent skips so
 /// the caller can decide how to handle them; today the pipeline aborts on
 /// any parse error, but a future relaxation could treat them as warnings.
-pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedRow>, AppError> {
-    let WdiResponse(_metadata, raw_rows) = raw;
-    let mut parsed_rows: Vec<ParsedRow> = Vec::with_capacity(raw_rows.len());
-    for raw_row in raw_rows {
-        let parsed_row: ParsedRow = parse_row(&raw_row)?;
-        parsed_rows.push(parsed_row);
+pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, AppError> {
+    let WdiResponse(_metadata, raw_wdi_statistic_values) = raw;
+    let mut parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = Vec::with_capacity(raw_wdi_statistic_values.len());
+    for raw_wdi_statistic_value in raw_wdi_statistic_values {
+        let parsed_wdi_statistic_value: ParsedWdiStatisticValue = parse_row(&raw_wdi_statistic_value)?;
+        parsed_wdi_statistic_values.push(parsed_wdi_statistic_value);
     }
-    Ok(parsed_rows)
+    Ok(parsed_wdi_statistic_values)
 }
 
-fn parse_row(raw_row: &WdiRow) -> Result<ParsedRow, AppError> {
-    if raw_row.countryiso3code.is_empty() {
+fn parse_row(raw_wdi_statistic_value: &WdiStatisticValue) -> Result<ParsedWdiStatisticValue, AppError> {
+    if raw_wdi_statistic_value.countryiso3code.is_empty() {
         return Err(AppError::from(format!(
             "wb_wdi: parse_row: empty countryiso3code (country.id={}, date={})",
-            raw_row.country.id, raw_row.date,
+            raw_wdi_statistic_value.country.id, raw_wdi_statistic_value.date,
         )));
     }
-    let year: i32 = raw_row.date.parse::<i32>().map_err(|err| {
+    let year: i32 = raw_wdi_statistic_value.date.parse::<i32>().map_err(|err| {
         AppError::from(format!(
             "wb_wdi: parse_row: non-numeric date {:?} for {}: {}",
-            raw_row.date, raw_row.countryiso3code, err,
+            raw_wdi_statistic_value.date, raw_wdi_statistic_value.countryiso3code, err,
         ))
     })?;
-    Ok(ParsedRow {
-        iso3: raw_row.countryiso3code.clone(),
+    Ok(ParsedWdiStatisticValue {
+        iso3: raw_wdi_statistic_value.countryiso3code.clone(),
         year,
-        value: raw_row.value,
+        value: raw_wdi_statistic_value.value,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::world_bank_wdi::world_bank_wdi_model::{WdiCountry, WdiIndicator, WdiPagingMetadata, WdiRow};
+    use crate::world_bank_wdi::world_bank_wdi_model::{WdiCountry, WdiIndicator, WdiPagingMetadata, WdiStatisticValue};
 
     fn metadata() -> WdiPagingMetadata {
         WdiPagingMetadata {
@@ -82,9 +82,9 @@ mod tests {
         }
     }
 
-    fn row(iso3: &str, date: &str, value: Option<f64>) -> WdiRow {
+    fn row(iso3: &str, date: &str, value: Option<f64>) -> WdiStatisticValue {
         let country_id: String = iso3.chars().take(2).collect();
-        WdiRow {
+        WdiStatisticValue {
             indicator: WdiIndicator {
                 id: "SP.DYN.TFRT.IN".to_string(),
                 value: "Fertility rate, total (births per woman)".to_string(),
@@ -108,34 +108,34 @@ mod tests {
             metadata(),
             vec![row("USA", "2024", Some(1.66)), row("DEU", "2023", Some(1.36))],
         );
-        let parsed_rows: Vec<ParsedRow> = parse_response(raw).expect("parse_response succeeds");
-        assert_eq!(parsed_rows.len(), 2);
-        assert_eq!(parsed_rows[0].iso3, "USA");
-        assert_eq!(parsed_rows[0].year, 2024);
-        assert_eq!(parsed_rows[0].value, Some(1.66));
-        assert_eq!(parsed_rows[1].iso3, "DEU");
-        assert_eq!(parsed_rows[1].year, 2023);
+        let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = parse_response(raw).expect("parse_response succeeds");
+        assert_eq!(parsed_wdi_statistic_values.len(), 2);
+        assert_eq!(parsed_wdi_statistic_values[0].iso3, "USA");
+        assert_eq!(parsed_wdi_statistic_values[0].year, 2024);
+        assert_eq!(parsed_wdi_statistic_values[0].value, Some(1.66));
+        assert_eq!(parsed_wdi_statistic_values[1].iso3, "DEU");
+        assert_eq!(parsed_wdi_statistic_values[1].year, 2023);
     }
 
     #[test]
     fn parse_response_preserves_null_value() {
         let raw: WdiResponse = WdiResponse(metadata(), vec![row("USA", "2025", None)]);
-        let parsed_rows: Vec<ParsedRow> = parse_response(raw).expect("parse_response succeeds");
-        assert_eq!(parsed_rows.len(), 1);
-        assert_eq!(parsed_rows[0].value, None);
+        let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = parse_response(raw).expect("parse_response succeeds");
+        assert_eq!(parsed_wdi_statistic_values.len(), 1);
+        assert_eq!(parsed_wdi_statistic_values[0].value, None);
     }
 
     #[test]
     fn parse_response_rejects_non_numeric_date() {
         let raw: WdiResponse = WdiResponse(metadata(), vec![row("USA", "twenty-twenty-four", Some(1.66))]);
-        let result: Result<Vec<ParsedRow>, AppError> = parse_response(raw);
+        let result: Result<Vec<ParsedWdiStatisticValue>, AppError> = parse_response(raw);
         assert!(result.is_err());
     }
 
     #[test]
     fn parse_response_rejects_empty_iso3() {
         let raw: WdiResponse = WdiResponse(metadata(), vec![row("", "2024", Some(1.66))]);
-        let result: Result<Vec<ParsedRow>, AppError> = parse_response(raw);
+        let result: Result<Vec<ParsedWdiStatisticValue>, AppError> = parse_response(raw);
         assert!(result.is_err());
     }
 }

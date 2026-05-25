@@ -16,7 +16,7 @@ use crate::error::AppError;
 use crate::ingest;
 use crate::ingest::IngestReport;
 use crate::world_bank_wdi::world_bank_wdi_client;
-use crate::world_bank_wdi::world_bank_wdi_model::{ParsedRow, WdiResponse};
+use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse};
 
 const WB_WDI_DATA_SOURCE_CODE: &str = "wb_wdi";
 const WB_WDI_STATISTIC_CODE: &str = "tfr";
@@ -29,7 +29,7 @@ const WB_WDI_DATA_STATUS_FINAL: &str = "final";
 /// values; `None` means the source has no figure to publish for that cell).
 pub async fn normalize(
     connection: &mut PgConnection,
-    parsed_rows: Vec<ParsedRow>,
+    parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue>,
 ) -> Result<(Vec<NormalizedStatisticValue>, Vec<IngestWarning>), AppError> {
     let statistic =
         canonical_db::find_statistic_by_code(&mut *connection, WB_WDI_STATISTIC_CODE)
@@ -39,10 +39,10 @@ pub async fn normalize(
                     "wb_wdi: statistic {WB_WDI_STATISTIC_CODE:?} missing from canonical store (run dbmate up)",
                 ))
             })?;
-    let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::with_capacity(parsed_rows.len());
+    let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::with_capacity(parsed_wdi_statistic_values.len());
     let mut warnings: Vec<IngestWarning> = Vec::new();
-    for parsed_row in parsed_rows {
-        match normalize_row(&mut *connection, &parsed_row, statistic.id).await? {
+    for parsed_wdi_statistic_value in parsed_wdi_statistic_values {
+        match normalize_row(&mut *connection, &parsed_wdi_statistic_value, statistic.id).await? {
             NormalizeOutcome::Normalized(row) => normalized_statistic_values.push(row),
             NormalizeOutcome::Warned(warning) => warnings.push(warning),
         }
@@ -52,28 +52,28 @@ pub async fn normalize(
 
 async fn normalize_row(
     connection: &mut PgConnection,
-    parsed_row: &ParsedRow,
+    parsed_wdi_statistic_value: &ParsedWdiStatisticValue,
     statistic_id: Uuid,
 ) -> Result<NormalizeOutcome, AppError> {
-    let Some(value) = parsed_row.value else {
+    let Some(value) = parsed_wdi_statistic_value.value else {
         return Ok(NormalizeOutcome::Warned(IngestWarning {
             kind: IngestWarningKind::NotApplicableValue,
-            message: format!("wb_wdi: NA value for {} {}", parsed_row.iso3, parsed_row.year),
+            message: format!("wb_wdi: NA value for {} {}", parsed_wdi_statistic_value.iso3, parsed_wdi_statistic_value.year),
         }));
     };
-    let Some(country) = canonical_db::find_country_by_iso3(&mut *connection, &parsed_row.iso3).await? else {
+    let Some(country) = canonical_db::find_country_by_iso3(&mut *connection, &parsed_wdi_statistic_value.iso3).await? else {
         return Ok(NormalizeOutcome::Warned(IngestWarning {
             kind: IngestWarningKind::UnknownCountry,
             message: format!(
                 "wb_wdi: unknown countryiso3code {:?} for year {}",
-                parsed_row.iso3, parsed_row.year,
+                parsed_wdi_statistic_value.iso3, parsed_wdi_statistic_value.year,
             ),
         }));
     };
     Ok(NormalizeOutcome::Normalized(NormalizedStatisticValue {
         region_id: country.region_id,
         statistic_id,
-        period: NaiveDatePeriod::from_year(parsed_row.year)?,
+        period: NaiveDatePeriod::from_year(parsed_wdi_statistic_value.year)?,
         value,
         data_status: WB_WDI_DATA_STATUS_FINAL.to_string(),
     }))
@@ -99,9 +99,9 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         ingest::ingest_db::read_latest_publication_revision(&mut *transaction, data_source.id).await?;
     let raw: WdiResponse = world_bank_wdi_client::fetch_upstream(options).await?;
     let revision_label: String = raw.0.lastupdated.clone();
-    let parsed_rows: Vec<ParsedRow> = world_bank_wdi_client::parse_response(raw)?;
+    let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = world_bank_wdi_client::parse_response(raw)?;
     let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
-        normalize(&mut *transaction, parsed_rows).await?;
+        normalize(&mut *transaction, parsed_wdi_statistic_values).await?;
     let mut report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source.id,

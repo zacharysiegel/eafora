@@ -6,7 +6,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub struct WdiResponse(pub WdiPagingMetadata, pub Vec<WdiRow>);
+pub struct WdiResponse(pub WdiPagingMetadata, pub Vec<WdiStatisticValue>);
 
 #[derive(Debug, Deserialize)]
 pub struct WdiPagingMetadata {
@@ -19,7 +19,7 @@ pub struct WdiPagingMetadata {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct WdiRow {
+pub struct WdiStatisticValue {
     pub indicator: WdiIndicator,
     pub country: WdiCountry,
     pub countryiso3code: String,
@@ -43,7 +43,7 @@ pub struct WdiCountry {
 }
 
 #[derive(Debug)]
-pub struct ParsedRow {
+pub struct ParsedWdiStatisticValue {
     pub iso3: String,
     pub year: i32,
     pub value: Option<f64>,

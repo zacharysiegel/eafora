@@ -14,7 +14,7 @@ use ingestion::canonical::canonical_db;
 use ingestion::ingest;
 use ingestion::ingest::*;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;
-use ingestion::world_bank_wdi::world_bank_wdi_model::ParsedRow;
+use ingestion::world_bank_wdi::world_bank_wdi_model::ParsedWdiStatisticValue;
 
 async fn get_wb_wdi_data_source_id(transaction: &mut Transaction<'static, Postgres>) -> Uuid {
     canonical_db::find_data_source_by_code(&mut **transaction, "wb_wdi")
@@ -54,13 +54,13 @@ fn usa_2024(region_id: Uuid, statistic_id: Uuid, value: f64) -> NormalizedStatis
 async fn normalize_known_country_resolves_region_id() {
     let pool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
-    let parsed_rows: Vec<ParsedRow> = vec![ParsedRow {
+    let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = vec![ParsedWdiStatisticValue {
         iso3: "USA".to_string(),
         year: 2024,
         value: Some(1.66),
     }];
     let (normalized_statistic_values, warnings) =
-        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
+        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_wdi_statistic_values)
             .await
             .expect("normalize succeeds");
     assert_eq!(normalized_statistic_values.len(), 1);
@@ -77,13 +77,13 @@ async fn normalize_known_country_resolves_region_id() {
 async fn normalize_unknown_country_warns_and_skips() {
     let pool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
-    let parsed_rows: Vec<ParsedRow> = vec![ParsedRow {
+    let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = vec![ParsedWdiStatisticValue {
         iso3: "XKX".to_string(),
         year: 2024,
         value: Some(1.5),
     }];
     let (normalized_statistic_values, warnings) =
-        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
+        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_wdi_statistic_values)
             .await
             .expect("normalize succeeds");
     assert!(normalized_statistic_values.is_empty());
@@ -97,13 +97,13 @@ async fn normalize_unknown_country_warns_and_skips() {
 async fn normalize_null_value_warns_and_skips() {
     let pool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
-    let parsed_rows: Vec<ParsedRow> = vec![ParsedRow {
+    let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = vec![ParsedWdiStatisticValue {
         iso3: "USA".to_string(),
         year: 2025,
         value: None,
     }];
     let (normalized_statistic_values, warnings) =
-        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_rows)
+        world_bank_wdi_adapter::normalize(&mut *transaction, parsed_wdi_statistic_values)
             .await
             .expect("normalize succeeds");
     assert!(normalized_statistic_values.is_empty());
