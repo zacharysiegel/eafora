@@ -44,3 +44,18 @@ pub struct DataSource {
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
 }
+
+pub struct StatisticValue {
+    pub id: Uuid,
+    pub region_id: Uuid,
+    pub statistic_id: Uuid,
+    pub period_start: chrono::NaiveDate,
+    pub period_end: chrono::NaiveDate,
+    pub value: f64,
+    pub data_source_id: Uuid,
+    pub data_source_publication_id: Uuid,
+    pub data_status: String,
+    pub superseded: Option<DateTime<Utc>>,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
