@@ -10,7 +10,6 @@
 
 minimer::define_app_error!(pub AppError);
 
-minimer::impl_from_error!(AppError, std::env::VarError);
 minimer::impl_from_error!(AppError, sqlx::Error);
 minimer::impl_from_error!(AppError, reqwest::Error);
 minimer::impl_from_error!(AppError, serde_json::Error);
