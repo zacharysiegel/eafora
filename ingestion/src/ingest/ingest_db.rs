@@ -1,6 +1,11 @@
-//! WB WDI sqlx queries: publication insert/match, the find/insert/supersede
-//! triplet that drives `upsert_rows`'s append-with-supersede semantics, and
-//! the `read_latest_publication_revision` lookup used by incremental fetches.
+//! Canonical-store writes shared across every source adapter: publication
+//! insert-or-match, the find/insert/supersede triplet that drives the
+//! append-with-supersede semantics, and `read_latest_publication_revision`.
+//!
+//! These are NOT part of the adapter layer — adapters end with
+//! `NormalizedRow` in memory. The ingest layer takes those normalized rows
+//! and persists them to the canonical store. Source-specific SQL (e.g. an
+//! adapter's own staging table) belongs in `<source>/<source>_db.rs`.
 //!
 //! Every function takes `impl PgExecutor<'_>` so the same code paths handle
 //! production (`&pool`) and tests (`&mut *tx` re-borrow against a per-test

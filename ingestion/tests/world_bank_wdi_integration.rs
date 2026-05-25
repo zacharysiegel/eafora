@@ -9,10 +9,11 @@ use chrono::{NaiveDate, Utc};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
-use ingestion::adapter::adapter_model::{IngestReport, IngestWarningKind, NormalizedRow};
+use ingestion::adapter::*;
 use ingestion::canonical::canonical_db;
+use ingestion::ingest;
+use ingestion::ingest::*;
 use ingestion::world_bank_wdi::world_bank_wdi_client;
-use ingestion::world_bank_wdi::world_bank_wdi_db;
 use ingestion::world_bank_wdi::world_bank_wdi_model::ParsedRow;
 
 async fn get_wb_wdi_data_source_id(transaction: &mut Transaction<'static, Postgres>) -> Uuid {
@@ -119,7 +120,7 @@ async fn upsert_inserts_new_publication_and_value() {
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
-    let report: IngestReport = world_bank_wdi_client::upsert_rows(
+    let report: IngestReport = ingest::upsert_rows(
         &mut *transaction,
         data_source_id,
         "test-upsert_inserts_new",
@@ -142,7 +143,7 @@ async fn upsert_re_fetch_same_revision_matches_publication_and_skips() {
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
     let row = || usa_2024(region_id, statistic_id, 1.66);
-    world_bank_wdi_client::upsert_rows(
+    ingest::upsert_rows(
         &mut *transaction,
         data_source_id,
         "test-upsert_refetch",
@@ -151,7 +152,7 @@ async fn upsert_re_fetch_same_revision_matches_publication_and_skips() {
     )
     .await
     .expect("first upsert");
-    let report: IngestReport = world_bank_wdi_client::upsert_rows(
+    let report: IngestReport = ingest::upsert_rows(
         &mut *transaction,
         data_source_id,
         "test-upsert_refetch",
@@ -172,7 +173,7 @@ async fn upsert_revised_value_supersedes_old_and_inserts_new() {
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
-    world_bank_wdi_client::upsert_rows(
+    ingest::upsert_rows(
         &mut *transaction,
         data_source_id,
         "test-upsert_revised-rev1",
@@ -181,7 +182,7 @@ async fn upsert_revised_value_supersedes_old_and_inserts_new() {
     )
     .await
     .expect("first upsert");
-    let report: IngestReport = world_bank_wdi_client::upsert_rows(
+    let report: IngestReport = ingest::upsert_rows(
         &mut *transaction,
         data_source_id,
         "test-upsert_revised-rev2",
@@ -193,7 +194,7 @@ async fn upsert_revised_value_supersedes_old_and_inserts_new() {
     assert_eq!(report.values_revised, 1);
     assert_eq!(report.values_added, 0);
     assert_eq!(report.values_skipped, 0);
-    let current = world_bank_wdi_db::find_current_value(
+    let current = ingest::ingest_db::find_current_value(
         &mut *transaction,
         region_id,
         statistic_id,
