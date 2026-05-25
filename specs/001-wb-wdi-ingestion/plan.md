@@ -75,17 +75,8 @@ ingestion/                              # workspace member; new in this feature
 ├── db/
 │   ├── schema.sql                      # dbmate-generated cumulative schema (regenerated after each migration)
 │   └── migrations/
-│       ├── YYYYMMDDHHMMSS_create_region.sql
-│       ├── YYYYMMDDHHMMSS_create_country.sql
-│       ├── YYYYMMDDHHMMSS_create_statistic.sql
-│       ├── YYYYMMDDHHMMSS_create_data_source.sql
-│       ├── YYYYMMDDHHMMSS_create_data_source_publication.sql
-│       ├── YYYYMMDDHHMMSS_create_statistic_value.sql
-│       ├── YYYYMMDDHHMMSS_create_artifact_version.sql
-│       ├── YYYYMMDDHHMMSS_seed_region.sql              # M49 hierarchy + ISO 3166 country-level region rows
-│       ├── YYYYMMDDHHMMSS_seed_country.sql             # ISO 3166 country extension rows
-│       ├── YYYYMMDDHHMMSS_seed_statistic.sql           # 'tfr' (and any other v1 statistic codes)
-│       └── YYYYMMDDHHMMSS_seed_data_source.sql         # 'wb_wdi'
+│       ├── YYYYMMDDHHMMSS_create_initial_schema.sql    # all 7 tables: region, country, statistic, data_source, data_source_publication, statistic_value, artifact_version (with CREATE INDEX for the partial unique on statistic_value's superseded-NULL rows, and all COMMENT ON COLUMN statements)
+│       └── YYYYMMDDHHMMSS_seed_initial_data.sql        # all reference data: UN M49 region hierarchy + ISO 3166 country extension rows + 'tfr' statistic + 'wb_wdi' data_source
 ├── samples/
 │   └── wb_wdi/
 │       ├── happy_path.json             # full WB WDI TFR response, ~200 countries × ~65 years
@@ -118,7 +109,7 @@ ingestion/                              # workspace member; new in this feature
 
 Sequential — each phase's output is depended on by the next:
 
-1. **Schema + reference-data migrations** (`ingestion/db/migrations/`). Seven CREATE TABLE migrations (one per architecture-doc table), four seed migrations (region from M49, country from ISO 3166, statistic with the `tfr` row, data_source with the `wb_wdi` row). Validated via `./dbmate.sh up && ./dbmate.sh status` against a clean local DB.
+1. **Schema + reference-data migrations** (`ingestion/db/migrations/`). Two migrations: `create_initial_schema.sql` (all 7 tables with CREATE INDEX for the partial-unique statistic_value index and all COMMENT ON COLUMN statements) and `seed_initial_data.sql` (UN M49 hierarchy + ISO 3166 country extension rows + the `tfr` statistic + the `wb_wdi` data_source). Validated via `./dbmate.sh up && ./dbmate.sh status` against a clean local DB.
 2. **AppError + main.rs CLI scaffolding** (`src/error.rs`, `src/main.rs`). Build the clap subcommand tree, dispatch shells for `ingest-source <code>` / `run-all` / `seed-samples` / `build-artifacts` / `upload-artifacts` (the latter two stubbed since they're separate features), the run-all loop with per-adapter error isolation. No business logic yet; commands print "not yet implemented" except where they delegate.
 3. **WB WDI types** (`src/world_bank_wdi/world_bank_wdi_model.rs`). Define the WB API response types (`WdiResponse`, `WdiPagingMetadata`, `WdiRow`), `ParsedRow`, `NormalizedRow`. Pure type definitions, no logic. Authored alongside the parse_response tests.
 4. **WB WDI helper implementations** in TDD order per Constitution Principle VII:
