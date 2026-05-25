@@ -1,4 +1,4 @@
-//! PgPool bootstrap. Reads `DATABASE_URL` from the environment, builds a
+//! PgPool bootstrap. Reads `DATABASE_URL` from the environment, creates a
 //! configured pool, returns it.
 
 use std::env;
@@ -7,7 +7,7 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 
 use crate::error::AppError;
 
-pub async fn build_pool() -> Result<PgPool, AppError> {
+pub async fn create_pool() -> Result<PgPool, AppError> {
     let database_url: String = env::var("DATABASE_URL")?;
     let pool: PgPool = PgPoolOptions::new()
         .max_connections(8)
