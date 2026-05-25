@@ -83,9 +83,10 @@ ingestion/                              # workspace member; new in this feature
 │       ├── na_value.json               # subset including a (USA, 2024, value=null) row to exercise the NA-value warning
 │       └── unknown_country.json        # subset including a country code we don't have in our country table to exercise the unknown-code warning
 ├── src/
-│   ├── main.rs                         # tokio CLI entrypoint; clap builder; dispatches ingest-source / run-all / build-artifacts / seed-samples / upload-artifacts; the run-all subcommand loops over registered adapters inline (one adapter's AppError does not block others — caught/logged/continue)
+│   ├── main.rs                         # tokio CLI entrypoint; clap builder; dispatches ingest-source / run-all / build-artifacts / seed-samples / upload-artifacts; the run-all subcommand loops over registered adapters inline (one adapter's AppError does not block others — caught/logged/continue); calls db::build_pool() to obtain the PgPool that gets threaded through to every dispatch
 │   ├── lib.rs                          # re-exports for tests
 │   ├── error.rs                        # AppError = minimer::Error; format-string error construction at failure sites
+│   ├── db.rs                           # PgPool bootstrap: reads DATABASE_URL from env, builds a PgPool with the project's pool-config defaults, returns it; symmetric with tests/helpers/test_db.rs but for the production binary
 │   ├── world_bank_wdi/                 # the lobby/-triplet for this source
 │   │   ├── mod.rs
 │   │   ├── world_bank_wdi_api.rs       # CLI handler + fetch_and_store orchestrator + the five named helpers (read_latest_publication_revision, fetch_upstream, parse_response, normalize, upsert_rows)
@@ -110,7 +111,7 @@ ingestion/                              # workspace member; new in this feature
 Sequential — each phase's output is depended on by the next:
 
 1. **Schema + reference-data migrations** (`ingestion/db/migrations/`). Two migrations: `create_initial_schema.sql` (all 7 tables with CREATE INDEX for the partial-unique statistic_value index and all COMMENT ON COLUMN statements) and `seed_initial_data.sql` (UN M49 hierarchy + ISO 3166 country extension rows + the `tfr` statistic + the `wb_wdi` data_source). Validated via `./dbmate.sh up && ./dbmate.sh status` against a clean local DB.
-2. **AppError + main.rs CLI scaffolding** (`src/error.rs`, `src/main.rs`). Build the clap subcommand tree, dispatch shells for `ingest-source <code>` / `run-all` / `seed-samples` / `build-artifacts` / `upload-artifacts` (the latter two stubbed since they're separate features), the run-all loop with per-adapter error isolation. No business logic yet; commands print "not yet implemented" except where they delegate.
+2. **AppError + db bootstrap + main.rs CLI scaffolding** (`src/error.rs`, `src/db.rs`, `src/main.rs`). `db::build_pool()` reads `DATABASE_URL` and returns a configured `PgPool` (`max_connections`, timeouts as needed). Build the clap subcommand tree, dispatch shells for `ingest-source <code>` / `run-all` / `seed-samples` / `build-artifacts` / `upload-artifacts` (the latter two stubbed since they're separate features), the run-all loop with per-adapter error isolation. No business logic yet; commands print "not yet implemented" except where they delegate.
 3. **WB WDI types** (`src/world_bank_wdi/world_bank_wdi_model.rs`). Define the WB API response types (`WdiResponse`, `WdiPagingMetadata`, `WdiRow`), `ParsedRow`, `NormalizedRow`. Pure type definitions, no logic. Authored alongside the parse_response tests.
 4. **WB WDI helper implementations** in TDD order per Constitution Principle VII:
    - `parse_response`: tests first (covering happy-path response, NA values, malformed shapes), then implementation.
