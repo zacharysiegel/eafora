@@ -51,21 +51,21 @@ fn build_cli() -> Command {
 }
 
 async fn dispatch_ingest_source(_matches: &ArgMatches) -> Result<(), AppError> {
-    Err(AppError::from("ingest-source: not yet implemented"))
+    Err(AppError::new("ingest-source: not yet implemented"))
 }
 
 async fn dispatch_run_all() -> Result<(), AppError> {
-    Err(AppError::from("run-all: not yet implemented"))
+    Err(AppError::new("run-all: not yet implemented"))
 }
 
 async fn dispatch_build_artifacts(_matches: &ArgMatches) -> Result<(), AppError> {
-    Err(AppError::from("build-artifacts: not yet implemented"))
+    Err(AppError::new("build-artifacts: not yet implemented"))
 }
 
 async fn dispatch_seed_samples() -> Result<(), AppError> {
-    Err(AppError::from("seed-samples: not yet implemented"))
+    Err(AppError::new("seed-samples: not yet implemented"))
 }
 
 async fn dispatch_upload_artifacts(_matches: &ArgMatches) -> Result<(), AppError> {
-    Err(AppError::from("upload-artifacts: not yet implemented"))
+    Err(AppError::new("upload-artifacts: not yet implemented"))
 }

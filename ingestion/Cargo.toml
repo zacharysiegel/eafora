@@ -19,7 +19,5 @@ clap = "4"
 log = "0.4"
 env_logger = "0.11"
 dotenvy = "0.15"
-
-# Owner's crates — dep spec TBD (path / git / published). Wire when ready:
-# secr      — used by upload-artifacts for R2 credentials (Phase 4+)
-# minimer   — replaces the local AppError type currently defined in src/error.rs
+minimer = "1.0.0"
+secr = "1.2.2"

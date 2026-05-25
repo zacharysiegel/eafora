@@ -1,31 +1,11 @@
-//! Project-level error type.
+//! Project-level error type — re-exports `minimer::AppError`. Construct via
+//! `AppError::new(&format!("module: ..."))` for plain messages, or
+//! `AppError::from_error("module: ...", Box::new(err))` to wrap a source error.
 //!
-//! Currently a thin string-wrapper. Will be replaced with `minimer::Error`
-//! once the minimer crate is wired into `ingestion/Cargo.toml`. The public
-//! surface (`AppError`, `From<String>`, `From<&str>`) is shaped to match
-//! minimer so the swap is mechanical.
+//! Note: minimer's `impl_from_error!` macro is intended for use inside
+//! minimer itself (orphan-rule constraints prevent downstream crates from
+//! invoking it for foreign error types). Until minimer ships a downstream-
+//! friendly extension surface, call sites use explicit `.map_err(|err| ...)`
+//! to convert from std and ecosystem error types into `AppError`.
 
-use std::fmt;
-
-#[derive(Debug)]
-pub struct AppError(String);
-
-impl fmt::Display for AppError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for AppError {}
-
-impl From<String> for AppError {
-    fn from(message: String) -> Self {
-        Self(message)
-    }
-}
-
-impl From<&str> for AppError {
-    fn from(message: &str) -> Self {
-        Self(message.to_string())
-    }
-}
+pub use minimer::AppError;
