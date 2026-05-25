@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["ingestion"]
+members = ["ingestion", "tools/seed_generator"]
 
 [workspace.package]
 edition = "2024"
