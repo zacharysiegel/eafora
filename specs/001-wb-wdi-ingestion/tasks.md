@@ -35,13 +35,12 @@ Blocks all subsequent phases.
 ### Test harness
 
 - [ ] T012 [P] [Foundational] Write `ingestion/tests/helpers/mod.rs` and `ingestion/tests/helpers/test_db.rs` — `pub async fn test_pool() -> &'static PgPool` returning a `LazyLock`-cached pool against `eafora_test`; `pub async fn with_rollback<F, Fut>(pool, f)` that wraps a closure in a transaction rolled back at teardown.
-- [ ] T013 [P] [Foundational] Write `ingestion/tests/helpers/sample_loader.rs` — `pub fn load_wb_wdi_sample(name: &str) -> WdiResponse` reading `ingestion/samples/wb_wdi/<name>.json` and deserializing to the parser's input type.
+- [ ] T013 [P] [Foundational] Write `ingestion/tests/helpers/world_bank_wdi.rs` — `pub fn load_sample(name: &str) -> WdiResponse` reading `ingestion/samples/wb_wdi/<name>.json` and deserializing to the parser's input type.
 
 ### Shared canonical-store models and queries
 
 - [ ] T014 [P] [Foundational] Write `ingestion/src/canonical/canonical_model.rs` — Rust types mirroring `region`, `country`, `statistic`, `data_source` rows.
 - [ ] T015 [P] [Foundational] Write `ingestion/src/canonical/canonical_db.rs` — `find_country_by_iso3(pool, iso3) -> Option<Country>`, `find_statistic_by_code(pool, code) -> Option<Statistic>`, `find_data_source_by_code(pool, code) -> Option<DataSource>`. Used by every adapter's normalize step.
-- [ ] T016 [P] [Foundational] Write `ingestion/src/canonical/canonical_api.rs` — placeholder CLI handlers for canonical-store inspection (sketch only; not wired in this feature).
 
 ### WB WDI types
 
@@ -149,10 +148,9 @@ All tasks in this phase contribute to **[US1, US2, US3]** — the adapter is the
 # These T-numbers all touch different files; can be drafted in any order:
 T011 src/lib.rs
 T012 tests/helpers/test_db.rs
-T013 tests/helpers/sample_loader.rs
+T013 tests/helpers/world_bank_wdi.rs
 T014 src/canonical/canonical_model.rs
 T015 src/canonical/canonical_db.rs
-T016 src/canonical/canonical_api.rs
 T017 src/world_bank_wdi/world_bank_wdi_model.rs
 T018 samples/wb_wdi/happy_path.json
 T019 samples/wb_wdi/na_value.json

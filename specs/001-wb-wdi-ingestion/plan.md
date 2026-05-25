@@ -93,7 +93,6 @@ ingestion/                              # workspace member; new in this feature
 │   │   ├── world_bank_wdi_db.rs        # sqlx queries scoped to this source's ingestion (publication INSERT, statistic_value lookup-current/INSERT/UPDATE-superseded)
 │   │   └── world_bank_wdi_model.rs     # WB WDI response types (paging metadata, row shape), ParsedRow, NormalizedRow
 │   └── canonical/                      # cross-cutting reads of the canonical store (used by future adapters too)
-│       ├── canonical_api.rs            # CLI handlers for canonical-store inspection
 │       ├── canonical_db.rs             # shared sqlx queries (region/country/statistic lookups by code)
 │       └── canonical_model.rs          # shared entity types
 └── tests/
@@ -101,7 +100,7 @@ ingestion/                              # workspace member; new in this feature
     └── helpers/
         ├── mod.rs
         ├── test_db.rs                  # acquires the eafora_test pool; transaction-per-test scaffolding
-        └── sample_loader.rs            # reads samples/wb_wdi/*.json into Rust types for assertion-friendly tests
+        └── world_bank_wdi.rs           # WB-WDI-specific test helpers (sample loading, assertions)
 ```
 
 **Structure Decision**: Single-project layout (Cargo workspace with `ingestion/` as one of multiple workspace members; `core/` and the per-platform clients land in later features). The `ingestion/` member is a CLI binary, not a library. The lobby/-triplet pattern within `src/world_bank_wdi/` follows the convention from `docs/architecture/ingestion.md` §Workspace placement: every per-source feature module is exactly three files (`<name>_api.rs`, `<name>_db.rs`, `<name>_model.rs`), each a feature concern, sharing nothing with sibling sources except the `AppError` and `IngestReport` types in `error.rs` / `world_bank_wdi/world_bank_wdi_api.rs`.
@@ -131,10 +130,10 @@ Per the spec's Functional Requirements + Success Criteria, this feature builds t
 - **Test database**: a separate `eafora_test` PostgreSQL database on the same host as `eafora`. `setup-test-db.sh` (a new script in `scripts/`) drops the database if it exists, recreates it, applies migrations via dbmate, and exits. Run before the first integration test of a session; safe to re-run.
 - **Pool acquisition**: `tests/helpers/test_db.rs` exposes `pub async fn test_pool() -> PgPool` returning a connection pool against `eafora_test`. The pool is shared across all tests in a single `cargo test` invocation (one global LazyLock-style cache).
 - **Per-test isolation**: each integration test acquires a connection, opens a transaction at the start, performs all DB operations within it, and rolls back at the end. The `tests/helpers/test_db.rs` module exposes `pub async fn with_rollback<F, Fut>(f: F)` that scaffolds this pattern.
-- **Sample loader**: `tests/helpers/sample_loader.rs` reads `ingestion/samples/wb_wdi/*.json` files and deserializes them into the `WdiResponse` type used by the parser. Tests pass these to `parse_response` directly (skipping the HTTP fetch), then assert on the resulting `Vec<ParsedRow>`.
+- **Sample loader**: `tests/helpers/world_bank_wdi.rs` exposes `load_sample(name)` which reads `ingestion/samples/wb_wdi/*.json` files and deserializes them into the `WdiResponse` type used by the parser. Tests pass these to `parse_response` directly (skipping the HTTP fetch), then assert on the resulting `Vec<ParsedRow>`.
 - **Assertion helpers**: `assert_ingest_report_eq(actual, expected)` for comparing IngestReport instances ignoring volatile fields (timestamps); `assert_value_at(pool, region_code, statistic_code, period_start, expected) -> ()` for spot-checking specific cells.
 
-When the second adapter (e.g. Eurostat) lands, it'll reuse the test_db / sample_loader / assertion helpers verbatim and add its own `eurostat_integration.rs` test file alongside.
+When the second adapter (e.g. Eurostat) lands, it'll reuse the test_db helper verbatim and add its own `tests/helpers/eurostat.rs` for source-specific helpers alongside its own `eurostat_integration.rs` test file.
 
 ## Local development
 

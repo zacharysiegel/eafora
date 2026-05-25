@@ -62,11 +62,10 @@ eafora/
 │       ├── eurostat/                       # same shape per added source
 │       ├── hfd/
 │       ├── canonical/                      # cross-cutting reads of the canonical store
-│       │   ├── canonical_api.rs            # CLI handlers for canonical-store inspection (lobby/-triplet position)
 │       │   ├── canonical_db.rs             # shared sqlx queries
 │       │   └── canonical_model.rs          # shared entity types
 │       ├── artifact/                       # artifact builder
-│       │   ├── artifact_api.rs             # CLI handlers for artifact build / inspection (lobby/-triplet position)
+│       │   ├── artifact_api.rs             # CLI handlers for artifact build / inspection
 │       │   ├── artifact_db.rs              # queries that drive the build (read fact table)
 │       │   ├── artifact_model.rs           # Manifest, ArtifactVersion, build options
 │       │   ├── flatgeobuf_writer.rs        # geometry shard writer
@@ -75,7 +74,7 @@ eafora/
 │       └── geometry_ingest/                # Natural Earth ingestion (separate from statistic adapters)
 ```
 
-Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `source <code>`, `build`, `seed`, `publish`, etc. Used for manual invocation, `launchd` triggers, and local dev. The `_api.rs` filename in each feature triplet matches the Singularity `lobby/` convention and reserves the position for actix-web route configurers if v3+ introduces an HTTP server mode; no actix-web dependency is taken until that mode actually lands.
+Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `source <code>`, `build`, `seed`, `publish`, etc. Used for manual invocation, `launchd` triggers, and local dev. Per-feature module layout follows the Singularity `lobby/` convention — `<feature>_api.rs` + `<feature>_db.rs` + `<feature>_model.rs` — but the `_api.rs` slot is only created when it has real content (a CLI dispatch helper or, post-v2, an actix-web route configurer). Features with no API surface yet ship as the two-file (`_db.rs` + `_model.rs`) reduction.
 
 ### CLI structure (clap builder API)
 
