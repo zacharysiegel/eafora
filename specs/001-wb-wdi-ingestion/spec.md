@@ -10,13 +10,9 @@
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Scheduled weekly capture of WB WDI TFR (Priority: P1)
+### Scheduled weekly capture (P1)
 
-The launchd-managed weekly schedule on the Mac mini invokes `ingestion run-all`, which dispatches the WB WDI adapter as one of its registered sources. The adapter fetches the latest TFR (Total Fertility Rate) values for every country WB WDI covers, identifies which are new vs. revised vs. unchanged relative to the canonical store, and persists changes. An IngestReport summarises the run for the operator.
-
-**Why this priority**: this is the entire reason the feature exists. Without the scheduled capture path, the canonical store goes stale and the artifacts that clients consume are frozen at v1's first manual seed. P1 is the path that makes Eafora's "leading aggregator" claim incrementally truer over time.
-
-**Independent Test**: from a populated canonical store and a working launchd plist, observe that one Monday tick triggers the WB WDI adapter end-to-end, that any new WB-published TFR values show up in `statistic_value` afterward, and that the IngestReport's counts match the actual DB delta.
+The launchd-managed weekly schedule on the Mac mini invokes `ingestion run-all`, which dispatches the WB WDI adapter as one of its registered sources. The adapter fetches the latest TFR (Total Fertility Rate) values for every country WB WDI covers, identifies which are new vs. revised vs. unchanged relative to the canonical store, and persists changes. An IngestReport summarises the run for the operator. This is the entire reason the feature exists — without it, the canonical store goes stale and downstream artifacts freeze at v1's first manual seed.
 
 **Acceptance Scenarios**:
 
@@ -26,13 +22,9 @@ The launchd-managed weekly schedule on the Mac mini invokes `ingestion run-all`,
 
 ---
 
-### User Story 2 - Manual run for development and operational debugging (Priority: P2)
+### Manual run for development and operational debugging (P2)
 
-A developer or operator runs `ingestion ingest-source wb_wdi` from a shell to capture WB WDI data outside the scheduled cycle. The behaviour is identical to the scheduled path; the IngestReport is logged to stdout/stderr for direct review. Used during dev iteration, post-incident verification, and one-off catch-up runs.
-
-**Why this priority**: needed for development (you can't iterate on an adapter you can only run weekly via launchd) and for operations (when the scheduled run fails, you need to be able to re-run manually). Same code path as P1, so reusing the work.
-
-**Independent Test**: from a developer machine with a Postgres `eafora` database and the schema applied, run `cargo run -p ingestion -- ingest-source wb_wdi` and observe the same behaviour and IngestReport as the scheduled invocation produces.
+A developer or operator runs `ingestion ingest-source wb_wdi` from a shell to capture WB WDI data outside the scheduled cycle. The behaviour is identical to the scheduled path; the IngestReport prints to stdout/stderr for direct review. Used during dev iteration (you can't iterate on an adapter you can only run weekly via launchd) and for operational catch-up after a failed scheduled run.
 
 **Acceptance Scenarios**:
 
@@ -42,18 +34,15 @@ A developer or operator runs `ingestion ingest-source wb_wdi` from a shell to ca
 
 ---
 
-### User Story 3 - Provenance preserved across revisions (Priority: P3)
+### Provenance preserved across revisions (P3)
 
-When WB WDI revises a previously-published value (the same `(country, statistic, period)` cell now reports a different number in a later publication), the adapter UPDATEs the `statistic_value` row in place to point at the new publication; the previous `data_source_publication` row stays in the publications table as audit trail. An operator can later answer "which WB WDI publication did this canonical row come from?" with one join.
-
-**Why this priority**: directly supports Constitution Principle II (per-cell source provenance with retrieval timestamp and license). Without this, revisions silently overwrite the prior publication identity and the audit trail is lost.
-
-**Independent Test**: insert a sample publication `2024-Q4` row plus matching `statistic_value` rows; run the adapter against a `2025-Q1` sample response in which one country's TFR value has changed; assert that (a) a new `data_source_publication` row exists for `2025-Q1`, (b) the affected `statistic_value` row's `data_source_publication_id` now points at `2025-Q1`, (c) the `2024-Q4` publication row is still present.
+When WB WDI revises a previously-published value (the same `(country, statistic, period)` cell now reports a different number in a later publication), the adapter UPDATEs the `statistic_value` row in place to point at the new publication; the previous `data_source_publication` row stays in the publications table as audit trail. Constitution Principle II requires per-cell source provenance with retrieval timestamp and license — without this behaviour, revisions silently overwrite the prior publication identity and the audit trail is lost.
 
 **Acceptance Scenarios**:
 
 1. **Given** `statistic_value` has Germany TFR 2023 = 1.46 captured under publication `2024-Q4`, **When** the adapter ingests publication `2025-Q1` in which Germany TFR 2023 = 1.44, **Then** the existing row's `value` is 1.44 and its `data_source_publication_id` references the `2025-Q1` row in `data_source_publication`.
 2. **Given** an artifact builder runs after such a revision, **When** the manifest is generated, **Then** `data_source_versions_jsonb` records `{"wb_wdi": "2025-Q1", ...}` reflecting the latest publication.
+3. **Given** a row was captured under publication `2024-Q4` and later updated to point at `2025-Q1`, **When** an operator queries the publications table, **Then** both `2024-Q4` and `2025-Q1` rows exist with their respective `revision_label`, `published`, and `fetched` values intact.
 
 ---
 
