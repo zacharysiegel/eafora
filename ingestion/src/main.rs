@@ -11,12 +11,12 @@ async fn main() -> Result<(), AppError> {
 
     let matches: ArgMatches = build_cli().get_matches();
     match matches.subcommand() {
-        Some(("source",  sub_matches)) => dispatch_source(sub_matches).await,
-        Some(("all",     _))           => dispatch_all().await,
-        Some(("build",   sub_matches)) => dispatch_build(sub_matches).await,
-        Some(("seed",    _))           => dispatch_seed().await,
+        Some(("source", sub_matches)) => dispatch_source(sub_matches).await,
+        Some(("all", _)) => dispatch_all().await,
+        Some(("build", sub_matches)) => dispatch_build(sub_matches).await,
+        Some(("seed", _)) => dispatch_seed().await,
         Some(("publish", sub_matches)) => dispatch_publish(sub_matches).await,
-        _                              => unreachable!("subcommand_required guarantees a match"),
+        _ => unreachable!("subcommand_required guarantees a match"),
     }
 }
 
