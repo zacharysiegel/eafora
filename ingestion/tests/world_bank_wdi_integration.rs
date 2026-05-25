@@ -6,11 +6,12 @@
 mod helpers;
 
 use chrono::{NaiveDate, Utc};
-use sqlx::{Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::adapter::*;
 use ingestion::canonical::canonical_db;
+use ingestion::canonical::canonical_model::StatisticValue;
 use ingestion::ingest;
 use ingestion::ingest::*;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;
@@ -52,7 +53,7 @@ fn usa_2024(region_id: Uuid, statistic_id: Uuid, value: f64) -> NormalizedStatis
 
 #[tokio::test]
 async fn normalize_known_country_resolves_region_id() {
-    let pool = helpers::test_db::test_pool().await;
+    let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = vec![ParsedWdiStatisticValue {
         iso3: "USA".to_string(),
@@ -75,7 +76,7 @@ async fn normalize_known_country_resolves_region_id() {
 
 #[tokio::test]
 async fn normalize_unknown_country_warns_and_skips() {
-    let pool = helpers::test_db::test_pool().await;
+    let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = vec![ParsedWdiStatisticValue {
         iso3: "XKX".to_string(),
@@ -95,7 +96,7 @@ async fn normalize_unknown_country_warns_and_skips() {
 
 #[tokio::test]
 async fn normalize_null_value_warns_and_skips() {
-    let pool = helpers::test_db::test_pool().await;
+    let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = vec![ParsedWdiStatisticValue {
         iso3: "USA".to_string(),
@@ -114,7 +115,7 @@ async fn normalize_null_value_warns_and_skips() {
 
 #[tokio::test]
 async fn record_inserts_new_publication_and_value() {
-    let pool = helpers::test_db::test_pool().await;
+    let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
@@ -136,7 +137,7 @@ async fn record_inserts_new_publication_and_value() {
 
 #[tokio::test]
 async fn record_re_fetch_same_revision_matches_publication_and_skips() {
-    let pool = helpers::test_db::test_pool().await;
+    let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
@@ -167,7 +168,7 @@ async fn record_re_fetch_same_revision_matches_publication_and_skips() {
 
 #[tokio::test]
 async fn record_revised_value_supersedes_old_and_inserts_new() {
-    let pool = helpers::test_db::test_pool().await;
+    let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
@@ -193,14 +194,14 @@ async fn record_revised_value_supersedes_old_and_inserts_new() {
     assert_eq!(report.values_revised, 1);
     assert_eq!(report.values_added, 0);
     assert_eq!(report.values_skipped, 0);
-    let current = ingest::ingest_db::find_current_value(
+    let current: Option<StatisticValue> = ingest::ingest_db::find_current_value(
         &mut *transaction,
         &usa_2024(region_id, statistic_id, 0.0),
         data_source_id,
     )
     .await
     .expect("find current succeeds");
-    let current_row = current.expect("current row exists");
+    let current_row: StatisticValue = current.expect("current row exists");
     assert_eq!(current_row.value, 1.62);
     let scoped_rows: i64 = sqlx::query_scalar!(
         "select count(*) as \"count!\" from statistic_value where region_id = $1 and period_start = $2",

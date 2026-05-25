@@ -8,6 +8,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::adapter::NormalizedStatisticValue;
+use crate::canonical::canonical_model::StatisticValue;
 use crate::error::AppError;
 use crate::ingest::ingest_db;
 use crate::ingest::{IngestReport, RecordOutcome};
@@ -56,7 +57,7 @@ pub async fn record_statistic_value(
     publication_id: Uuid,
     normalized_statistic_value: &NormalizedStatisticValue,
 ) -> Result<RecordOutcome, AppError> {
-    let current =
+    let current: Option<StatisticValue> =
         ingest_db::find_current_value(&mut *connection, normalized_statistic_value, data_source_id).await?;
     if let Some(current_row) = current {
         if current_row.value == normalized_statistic_value.value

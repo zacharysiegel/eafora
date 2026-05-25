@@ -12,6 +12,7 @@ use crate::adapter::{
     AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue, NaiveDatePeriod,
 };
 use crate::canonical::canonical_db;
+use crate::canonical::canonical_model::{Country, DataSource, Statistic};
 use crate::error::AppError;
 use crate::ingest;
 use crate::ingest::IngestReport;
@@ -31,7 +32,7 @@ pub async fn normalize(
     connection: &mut PgConnection,
     parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue>,
 ) -> Result<(Vec<NormalizedStatisticValue>, Vec<IngestWarning>), AppError> {
-    let statistic =
+    let statistic: Statistic =
         canonical_db::find_statistic_by_code(&mut *connection, WB_WDI_STATISTIC_CODE)
             .await?
             .ok_or_else(|| {
@@ -61,7 +62,7 @@ async fn normalize_row(
             message: format!("wb_wdi: NA value for {} {}", parsed_wdi_statistic_value.iso3, parsed_wdi_statistic_value.year),
         }));
     };
-    let Some(country) = canonical_db::find_country_by_iso3(&mut *connection, &parsed_wdi_statistic_value.iso3).await? else {
+    let Some(country): Option<Country> = canonical_db::find_country_by_iso3(&mut *connection, &parsed_wdi_statistic_value.iso3).await? else {
         return Ok(NormalizeOutcome::Warned(IngestWarning {
             kind: IngestWarningKind::UnknownCountry,
             message: format!(
@@ -87,7 +88,7 @@ async fn normalize_row(
 /// can't leave the canonical store with partial publication state.
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
     let mut transaction: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
-    let data_source = canonical_db::find_data_source_by_code(&mut *transaction, WB_WDI_DATA_SOURCE_CODE)
+    let data_source: DataSource = canonical_db::find_data_source_by_code(&mut *transaction, WB_WDI_DATA_SOURCE_CODE)
         .await?
         .ok_or_else(|| {
             AppError::from(format!(
