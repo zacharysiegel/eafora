@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select id, code, name_en, homepage_url, license_class, license_name, license_url, attribution_text, preference_rank, created, modified\n        from data_source\n        where code = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "name_en",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "homepage_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "license_class",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "license_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "license_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "attribution_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "preference_rank",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "created",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "modified",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "eb1c1e9508bb393188f020cbdc8d68c28eb51f5f7f9a79e6acb75f30b3427c0e"
+}
