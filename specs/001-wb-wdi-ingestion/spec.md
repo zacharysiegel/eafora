@@ -1,0 +1,128 @@
+# Feature Specification: World Bank WDI ingestion CLI
+
+**Feature Branch**: `001-wb-wdi-ingestion`
+
+**Created**: 2026-05-24
+
+**Status**: Draft
+
+**Input**: User description: "World Bank WDI ingestion CLI — first concrete adapter implementing the fetch_and_store contract from docs/architecture/ingestion.md; fetches TFR from World Bank, normalizes to canonical schema, upserts statistic_value rows"
+
+## User Scenarios & Testing *(mandatory)*
+
+### User Story 1 - Scheduled weekly capture of WB WDI TFR (Priority: P1)
+
+The launchd-managed weekly schedule on the Mac mini invokes `ingestion run-all`, which dispatches the WB WDI adapter as one of its registered sources. The adapter fetches the latest TFR (Total Fertility Rate) values for every country WB WDI covers, identifies which are new vs. revised vs. unchanged relative to the canonical store, and persists changes. An IngestReport summarises the run for the operator.
+
+**Why this priority**: this is the entire reason the feature exists. Without the scheduled capture path, the canonical store goes stale and the artifacts that clients consume are frozen at v1's first manual seed. P1 is the path that makes Eafora's "leading aggregator" claim incrementally truer over time.
+
+**Independent Test**: from a populated canonical store and a working launchd plist, observe that one Monday tick triggers the WB WDI adapter end-to-end, that any new WB-published TFR values show up in `statistic_value` afterward, and that the IngestReport's counts match the actual DB delta.
+
+**Acceptance Scenarios**:
+
+1. **Given** the canonical store has WB WDI TFR data captured from publication `2024-Q4`, **When** WB releases publication `2025-Q1` and the next weekly schedule fires, **Then** the new publication's values are upserted into `statistic_value` and a row for `2025-Q1` is inserted into `data_source_publication`.
+2. **Given** the canonical store is empty (first-ever run), **When** the WB WDI adapter runs, **Then** every country/year datum WB publishes for TFR lands in `statistic_value` (~200 countries × ~65 years ≈ 13,000 rows) and one row is created in `data_source_publication`.
+3. **Given** WB WDI has not published a new revision since the last run, **When** the adapter runs, **Then** zero rows are inserted/updated in `statistic_value`, zero rows are inserted in `data_source_publication`, and the IngestReport's `values_unchanged` equals the row count.
+
+---
+
+### User Story 2 - Manual run for development and operational debugging (Priority: P2)
+
+A developer or operator runs `ingestion ingest-source wb_wdi` from a shell to capture WB WDI data outside the scheduled cycle. The behaviour is identical to the scheduled path; the IngestReport is logged to stdout/stderr for direct review. Used during dev iteration, post-incident verification, and one-off catch-up runs.
+
+**Why this priority**: needed for development (you can't iterate on an adapter you can only run weekly via launchd) and for operations (when the scheduled run fails, you need to be able to re-run manually). Same code path as P1, so reusing the work.
+
+**Independent Test**: from a developer machine with a Postgres `eafora` database and the schema applied, run `cargo run -p ingestion -- ingest-source wb_wdi` and observe the same behaviour and IngestReport as the scheduled invocation produces.
+
+**Acceptance Scenarios**:
+
+1. **Given** a developer machine with the canonical schema applied and the `data_source` row for wb_wdi seeded, **When** the developer runs `cargo run -p ingestion -- ingest-source wb_wdi`, **Then** the WB WDI API is fetched, rows are upserted, and the IngestReport prints to the terminal.
+2. **Given** a previously-captured publication is the latest WB has, **When** the developer re-runs the same command, **Then** the IngestReport shows `values_unchanged` only and no DB writes occur.
+3. **Given** the `--force-full-refetch` flag is passed, **When** the adapter runs, **Then** it re-fetches without consulting `read_last_seen_revision` and re-evaluates every row against the natural key.
+
+---
+
+### User Story 3 - Provenance preserved across revisions (Priority: P3)
+
+When WB WDI revises a previously-published value (the same `(country, statistic, period)` cell now reports a different number in a later publication), the adapter UPDATEs the `statistic_value` row in place to point at the new publication; the previous `data_source_publication` row stays in the publications table as audit trail. An operator can later answer "which WB WDI publication did this canonical row come from?" with one join.
+
+**Why this priority**: directly supports Constitution Principle II (per-cell source provenance with retrieval timestamp and license). Without this, revisions silently overwrite the prior publication identity and the audit trail is lost.
+
+**Independent Test**: insert a sample publication `2024-Q4` row plus matching `statistic_value` rows; run the adapter against a `2025-Q1` sample response in which one country's TFR value has changed; assert that (a) a new `data_source_publication` row exists for `2025-Q1`, (b) the affected `statistic_value` row's `data_source_publication_id` now points at `2025-Q1`, (c) the `2024-Q4` publication row is still present.
+
+**Acceptance Scenarios**:
+
+1. **Given** `statistic_value` has Germany TFR 2023 = 1.46 captured under publication `2024-Q4`, **When** the adapter ingests publication `2025-Q1` in which Germany TFR 2023 = 1.44, **Then** the existing row's `value` is 1.44 and its `data_source_publication_id` references the `2025-Q1` row in `data_source_publication`.
+2. **Given** an artifact builder runs after such a revision, **When** the manifest is generated, **Then** `data_source_versions_jsonb` records `{"wb_wdi": "2025-Q1", ...}` reflecting the latest publication.
+
+---
+
+### Edge Cases
+
+- **Source returns `null`/`"NA"` for a country/year cell** — adapter logs an `IngestWarning` identifying the cell, skips that datum, continues with the rest of the response.
+- **Source returns a country code we don't have in our `country` extension table** (e.g. Kosovo's `XKX`, historical codes like `YUG`) — adapter logs an `IngestWarning` identifying the raw code, skips the row, continues.
+- **HTTP failure** — DNS resolution failure, TCP timeout, TLS error, or 5xx response: adapter returns `AppError`; no partial DB writes; canonical store stays consistent. The next scheduled run retries the full fetch.
+- **Schema drift in WB WDI's response** — JSON shape doesn't match the parser's expectations (renamed field, removed metadata block): adapter returns `AppError` with a descriptive message identifying the path that failed to parse; canonical store stays consistent.
+- **Same revision label, no upstream change** — `read_last_seen_revision` finds the publication already exists; `fetch_upstream` is invoked anyway (WB WDI doesn't expose a cheap-poll endpoint); the response matches what's already stored; `upsert_rows` produces zero writes; `IngestReport.values_unchanged` equals the row count.
+- **Revision label format change** — WB changes how it labels publications (e.g., from `2024-Q4` to `2024-12`): the adapter's revision-label extraction logic needs updating; until then, a synthetic label (response payload hash) is used as a fallback so ingestion doesn't break.
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+- **FR-001**: System MUST implement the `fetch_and_store(pool, options) -> Result<IngestReport, AppError>` adapter contract for the World Bank WDI source, exactly as specified in `docs/architecture/ingestion.md` §Adapter contract, including all five named helpers (`read_last_seen_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`).
+- **FR-002**: System MUST fetch TFR data from WB WDI's API, specifically the `SP.DYN.TFRT.IN` series, in JSON format. The endpoint URL is the documented WB WDI API path and includes a `per_page` parameter sized to retrieve all rows in a single request.
+- **FR-003**: System MUST parse the WB WDI JSON response (a paging-metadata-plus-rows structure) into intermediate types defined in `world_bank_wdi_model.rs`. Parsing MUST be a pure function (no I/O, no DB access).
+- **FR-004**: For each parsed row, system MUST resolve the country via ISO 3166 alpha-3 lookup against the `country` extension table (joined to `region` for the `region_id`), resolve the statistic ID via `statistic.code = 'tfr'`, and compute `period_start` / `period_end` as full calendar year `[YYYY-01-01, YYYY+1-01-01)`.
+- **FR-005**: System MUST INSERT a `data_source_publication` row for the WB WDI publication captured by this run, keyed on `(data_source_id, revision_label)` with `ON CONFLICT DO NOTHING`. The publication's `revision_label` MUST be derived from the WB API response (specifically the `lastupdated` field where present, or a synthesized label otherwise — see Assumptions).
+- **FR-006**: System MUST UPSERT `statistic_value` rows on the natural key `(region_id, statistic_id, period_start, period_end, data_source_id)`, with `data_source_publication_id` set to the publication from FR-005. The denormalized `data_source_id` column MUST equal `data_source_publication.data_source_id` for the same row.
+- **FR-007**: System MUST return an `IngestReport` containing `values_inserted` / `values_updated` / `values_unchanged` counts (per the no-redundant-write logic of `upsert_rows`), `upstream_revision` (the publication's revision label), `started` / `finished` timestamps, and any `IngestWarning` instances accumulated during the run.
+- **FR-008**: System MUST surface non-fatal data quirks (NA values, unknown country codes, null TFR for a known country, etc.) as `IngestWarning` instances appended to the report — not as `AppError` returns. The run continues past each warning.
+- **FR-009**: System MUST register WB WDI in `data_source` via a seed migration with `code='wb_wdi'`, `name_en='World Bank World Development Indicators'`, `homepage_url='https://datatopics.worldbank.org/world-development-indicators/'`, `license_class='attribution'`, `license_name='CC BY 4.0'`, `attribution_text='The World Bank: World Development Indicators'`, and `preference_rank=90`.
+- **FR-010**: System MUST register the `tfr` statistic in the `statistic` table via a seed migration with `code='tfr'`, `name_en='Total fertility rate'`, `description` referencing the standard demographic definition, and `units='births per woman'`.
+- **FR-011**: System MUST wire the WB WDI adapter into `main.rs`'s `ingest-source` subcommand dispatch (so `ingestion ingest-source wb_wdi` calls `world_bank_wdi::fetch_and_store(...)`) and into the `run-all` orchestration loop (so the weekly launchd trigger includes WB WDI).
+- **FR-012**: System MUST provide checked-in sample WB WDI API responses under `ingestion/samples/wb_wdi/` covering at minimum: a happy-path response, an NA-value case, and an unknown-country-code case. Sample responses MUST be replayable by `seed-samples` and by integration tests without live HTTP.
+- **FR-013**: System MUST cover `parse_response` and `normalize` with TDD unit tests per Constitution Principle VII. Tests MUST be authored before implementation; the Red-Green-Refactor cycle MUST be respected.
+- **FR-014**: System MUST treat WB WDI's JSON response as the source of truth for the run's revision label; if no native revision label is exposed, system MUST synthesize one (response payload SHA-256 truncated to 8-12 hex chars) so that the publication-table invariant — every captured publication has a label — is maintained.
+
+### Key Entities
+
+- **WB WDI TFR datum**: a single (country, year, value) tuple from the WB WDI API response. Each maps to one row in `statistic_value` (joined to `data_source_publication` for revision metadata).
+- **WB WDI publication**: one batch release from WB WDI, identified by a revision label such as `'2024-Q4'`. Each maps to one row in `data_source_publication`. A typical run captures exactly one publication.
+- **WB WDI source registration**: a single row in `data_source` with `code='wb_wdi'`. Created once via seed migration; referenced by every `statistic_value` row attributed to WB WDI.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: After a fresh ingestion run on an empty canonical store, the `tfr` statistic has approximately 13,000 `statistic_value` rows (≈200 countries × ≈65 years), and one `data_source_publication` row exists for the WB WDI source.
+- **SC-002**: A scheduled weekly ingestion run captures any new or revised WB WDI TFR values within one launchd cycle (≤ 7 days) of WB's publication of those values.
+- **SC-003**: A re-run with no upstream change produces zero DB writes; the IngestReport shows `values_inserted = 0`, `values_updated = 0`, `values_unchanged = N` where N is the row count for WB WDI in `statistic_value`.
+- **SC-004**: For any artifact build that occurs after a successful WB WDI run, the manifest's `data_source_versions_jsonb` includes `"wb_wdi": "<the captured revision label>"`, and an operator can answer "which WB publication did this canonical row come from?" via a single join from `statistic_value` to `data_source_publication`.
+- **SC-005**: The `parse_response` and `normalize` helpers achieve at least 90% line coverage in the test suite, exercising the happy-path response, every documented edge case (NA value, unknown country code, schema-drift detection), and the upsert idempotence property.
+- **SC-006**: A full ingestion run (fetch + parse + normalize + upsert) completes in under 5 seconds on the Mac mini's network and database, with no manual intervention.
+
+## Assumptions
+
+- The architecture in `docs/architecture/ingestion.md` is locked. The canonical schema (`region`, `country`, `statistic`, `data_source`, `data_source_publication`, `statistic_value`, `artifact_version`) is applied via dbmate before this feature is exercised.
+- WB WDI's API at `api.worldbank.org/v2/` remains publicly accessible without authentication. The TFR series code remains `SP.DYN.TFRT.IN`. The JSON response shape (paging metadata header + rows array) is stable enough that a single parser handles it; if it changes, schema drift is treated as an `AppError`.
+- WB WDI's TFR data covers calendar-year periods. Each datum's period is a full calendar year (`YYYY-01-01` to `YYYY+1-01-01`); no quarterly or sub-annual TFR data is published. (This is documented for WB WDI as of the 2026-05-21 data-sources research; if WB later adds finer granularity, the adapter would need updating.)
+- The CC BY 4.0 license terms documented in `docs/research/data-source-licensing.md` Part 1 remain stable; the attribution text used in the seed migration matches WB's published terms.
+- The WB API's `lastupdated` field — present per the 2026-05-21 research — is what the adapter parses for the publication's `revision_label`. If `lastupdated` is missing or unstable, the adapter falls back to a synthetic label (response-payload SHA-256, truncated). The fallback is the third item under FR-014.
+- The seed migrations registering `wb_wdi` and `tfr` are part of this feature's deliverable; they're not assumed to exist beforehand.
+- This feature does NOT include the artifact-build path or R2 upload — those land separately via `build-artifacts` / `upload-artifacts` (which are out of scope here). This feature only populates the canonical store.
+
+## Constitution Check
+
+Per Constitution §Compliance review, this spec honors the binding principles as follows:
+
+- **Principle I (Educational neutrality)**: not directly applicable — the feature ingests source data into the canonical store; no UI text or editorial copy is added. The `data_source.attribution_text` will be set to WB's literal attribution string ("The World Bank: World Development Indicators") per WB's terms-of-use; that's factual citation, not editorial.
+- **Principle II (Source provenance — NON-NEGOTIABLE)**: directly served. Every WB WDI datum lands in `statistic_value` with a foreign key to a `data_source_publication` row carrying the WB revision label and our retrieval timestamp; the chain `statistic_value` → `data_source_publication` → `data_source` provides full provenance (publisher, license, revision, retrieval) for every cell.
+- **Principle III (Rust core, native UI shells)**: applies — the adapter is a Rust module in the `ingestion/` binary. No UI, no FFI surface added.
+- **Principle IV (Singularity convention parity)**: applies — uses reqwest, `sqlx::query_as!`, tokio per the locked picks; no new third-party dependencies introduced beyond what the architecture doc already names. The Postgres-via-launchd deviation already recorded in v1.3.3 is the host's responsibility, not this feature's.
+- **Principle V (Explicit over implicit)**: applies — the adapter exposes itself as a CLI subcommand handler (no actix-web routes); SQL is hand-written via `sqlx::query_as!`; no ORM, no RPC framework, no `#[derive(Parser)]` macros for the clap config (clap builder API only, per the registered preference).
+- **Principle VI (CDN-delivered data, no live API through v2)**: applies indirectly — this feature populates the canonical store that the artifact builder reads from. No client API is exposed; clients still consume only from CDN artifacts.
+- **Principle VII (Test-first for core logic)**: directly applicable. `parse_response` and `normalize` are core logic surfaces and MUST follow Red-Green-Refactor. FR-013 codifies this; SC-005 measures it.
+- **Principle VIII (Workflow discipline)**: this feature is the first `/speckit-specify` use; the spec lives at `specs/001-wb-wdi-ingestion/spec.md` per the convention.
+
+No principle violations identified; no constitution amendments proposed.
