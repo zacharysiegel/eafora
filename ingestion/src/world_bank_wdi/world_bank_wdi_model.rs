@@ -58,3 +58,29 @@ pub struct NormalizedRow {
     pub value: f64,
     pub data_status: String,
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct AdapterOptions {
+    pub force_full_refetch: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct IngestReport {
+    pub values_added: u64,
+    pub values_revised: u64,
+    pub values_skipped: u64,
+    pub warnings: Vec<IngestWarning>,
+}
+
+#[derive(Debug, Clone)]
+pub struct IngestWarning {
+    pub kind: IngestWarningKind,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IngestWarningKind {
+    UnknownCountry,
+    NaValue,
+    UnparsableRow,
+}
