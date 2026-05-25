@@ -39,10 +39,12 @@ pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, App
 pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, AppError> {
     let WdiResponse(_metadata, raw_wdi_statistic_values) = raw;
     let mut parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = Vec::with_capacity(raw_wdi_statistic_values.len());
+
     for raw_wdi_statistic_value in raw_wdi_statistic_values {
         let parsed_wdi_statistic_value: ParsedWdiStatisticValue = parse_row(&raw_wdi_statistic_value)?;
         parsed_wdi_statistic_values.push(parsed_wdi_statistic_value);
     }
+
     Ok(parsed_wdi_statistic_values)
 }
 

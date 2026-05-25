@@ -42,12 +42,14 @@ pub async fn normalize(
             })?;
     let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::with_capacity(parsed_wdi_statistic_values.len());
     let mut warnings: Vec<IngestWarning> = Vec::new();
+
     for parsed_wdi_statistic_value in parsed_wdi_statistic_values {
         match normalize_row(&mut *connection, &parsed_wdi_statistic_value, statistic.id).await? {
             NormalizeOutcome::Normalized(row) => normalized_statistic_values.push(row),
             NormalizeOutcome::Warned(warning) => warnings.push(warning),
         }
     }
+
     Ok((normalized_statistic_values, warnings))
 }
 
@@ -88,6 +90,7 @@ async fn normalize_row(
 /// can't leave the canonical store with partial publication state.
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
     let mut transaction: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+
     let data_source: DataSource = canonical_db::find_data_source_by_code(&mut *transaction, WB_WDI_DATA_SOURCE_CODE)
         .await?
         .ok_or_else(|| {
@@ -98,11 +101,14 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         })?;
     let _last_seen: Option<String> =
         ingest::ingest_db::read_latest_publication_revision(&mut *transaction, data_source.id).await?;
+
     let raw: WdiResponse = world_bank_wdi_client::fetch_upstream(options).await?;
     let revision_label: String = raw.0.lastupdated.clone();
     let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = world_bank_wdi_client::parse_response(raw)?;
+
     let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
         normalize(&mut *transaction, parsed_wdi_statistic_values).await?;
+
     let mut report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source.id,
@@ -112,6 +118,7 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     )
     .await?;
     report.warnings = warnings;
+
     transaction.commit().await?;
     Ok(report)
 }

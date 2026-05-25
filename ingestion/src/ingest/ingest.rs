@@ -39,6 +39,7 @@ pub async fn record_statistic_values(
     )
     .await?;
     let mut report: IngestReport = IngestReport::default();
+
     for normalized_statistic_value in normalized_statistic_values {
         let outcome: RecordOutcome =
             record_statistic_value(&mut *connection, data_source_id, publication_id, &normalized_statistic_value).await?;
@@ -48,6 +49,7 @@ pub async fn record_statistic_values(
             RecordOutcome::Skipped => report.values_skipped += 1,
         }
     }
+
     Ok(report)
 }
 
@@ -59,6 +61,7 @@ pub async fn record_statistic_value(
 ) -> Result<RecordOutcome, AppError> {
     let current: Option<StatisticValue> =
         ingest_db::find_current_value(&mut *connection, normalized_statistic_value, data_source_id).await?;
+
     if let Some(current_row) = current {
         if current_row.value == normalized_statistic_value.value
             && current_row.data_status == normalized_statistic_value.data_status
@@ -75,6 +78,7 @@ pub async fn record_statistic_value(
         .await?;
         return Ok(RecordOutcome::Revised);
     }
+
     ingest_db::insert_statistic_value(
         &mut *connection,
         normalized_statistic_value,
