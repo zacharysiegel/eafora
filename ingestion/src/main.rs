@@ -1,9 +1,4 @@
 //! ingestion: the Eafora canonical-store CLI binary.
-//!
-//! This file is the clap entrypoint and the dispatch table. Each subcommand
-//! routes to a `dispatch_*` helper; in this scaffolding PR the helpers are
-//! all stubs returning "not yet implemented" — subsequent PRs replace each
-//! stub with the real implementation per `specs/001-wb-wdi-ingestion/tasks.md`.
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 

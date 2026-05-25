@@ -1,6 +1,5 @@
 //! PgPool bootstrap. Reads `DATABASE_URL` from the environment, builds a
-//! configured pool, returns it. Symmetric in concern with
-//! `tests/helpers/test_db.rs` but for the production binary.
+//! configured pool, returns it.
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
