@@ -1,5 +1,3 @@
-pub mod adapter;
-pub use adapter::*;
+pub mod adapter_model;
 
 pub use adapter_model::*;
-pub mod adapter_model;

@@ -17,7 +17,7 @@ const WB_WDI_API_URL: &str =
 /// Calls the WB WDI HTTP API for the TFR indicator across every country and
 /// every available year. WB has no native incremental query for this
 /// indicator, so we always pull the full set; the per-row supersede logic in
-/// `ingest::upsert_rows` keeps writes proportional to actual changes.
+/// `ingest::upsert_statistic_values` keeps writes proportional to actual changes.
 pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, AppError> {
     let response: reqwest::Response = reqwest::get(WB_WDI_API_URL).await?;
     if !response.status().is_success() {

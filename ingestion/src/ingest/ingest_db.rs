@@ -63,7 +63,7 @@ pub async fn insert_publication_or_match<'e>(
 
 pub async fn find_current_value<'e>(
     executor: impl PgExecutor<'e>,
-    cell: &NormalizedRow,
+    row: &NormalizedRow,
     data_source_id: Uuid,
 ) -> Result<Option<StatisticValue>, AppError> {
     let current: Option<StatisticValue> = sqlx::query_as!(
@@ -78,10 +78,10 @@ pub async fn find_current_value<'e>(
           and data_source_id = $5
           and superseded is null
         "#,
-        cell.region_id,
-        cell.statistic_id,
-        cell.period_start,
-        cell.period_end,
+        row.region_id,
+        row.statistic_id,
+        row.period.start,
+        row.period.end,
         data_source_id,
     )
     .fetch_optional(executor)
@@ -103,8 +103,8 @@ pub async fn insert_statistic_value<'e>(
         "#,
         row.region_id,
         row.statistic_id,
-        row.period_start,
-        row.period_end,
+        row.period.start,
+        row.period.end,
         row.value,
         data_source_id,
         data_source_publication_id,

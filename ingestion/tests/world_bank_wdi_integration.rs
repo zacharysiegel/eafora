@@ -44,8 +44,7 @@ fn usa_2024(region_id: Uuid, statistic_id: Uuid, value: f64) -> NormalizedRow {
     NormalizedRow {
         region_id,
         statistic_id,
-        period_start: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
-        period_end: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+        period: Period::from_year(2024).unwrap(),
         value,
         data_status: "final".to_string(),
     }
@@ -67,8 +66,8 @@ async fn normalize_known_country_resolves_region_id() {
     assert_eq!(normalized_rows.len(), 1);
     assert!(warnings.is_empty());
     let row: &NormalizedRow = &normalized_rows[0];
-    assert_eq!(row.period_start, NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
-    assert_eq!(row.period_end, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
+    assert_eq!(row.period.start, NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+    assert_eq!(row.period.end, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
     assert_eq!(row.value, 1.66);
     assert_eq!(row.data_status, "final");
     transaction.rollback().await.unwrap();
@@ -120,7 +119,7 @@ async fn upsert_inserts_new_publication_and_value() {
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
-    let report: IngestReport = ingest::upsert_rows(
+    let report: IngestReport = ingest::upsert_statistic_values(
         &mut *transaction,
         data_source_id,
         "test-upsert_inserts_new",
@@ -128,7 +127,7 @@ async fn upsert_inserts_new_publication_and_value() {
         vec![usa_2024(region_id, statistic_id, 1.66)],
     )
     .await
-    .expect("upsert_rows succeeds");
+    .expect("upsert_statistic_values succeeds");
     assert_eq!(report.values_added, 1);
     assert_eq!(report.values_revised, 0);
     assert_eq!(report.values_skipped, 0);
@@ -143,7 +142,7 @@ async fn upsert_re_fetch_same_revision_matches_publication_and_skips() {
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
     let row = || usa_2024(region_id, statistic_id, 1.66);
-    ingest::upsert_rows(
+    ingest::upsert_statistic_values(
         &mut *transaction,
         data_source_id,
         "test-upsert_refetch",
@@ -152,7 +151,7 @@ async fn upsert_re_fetch_same_revision_matches_publication_and_skips() {
     )
     .await
     .expect("first upsert");
-    let report: IngestReport = ingest::upsert_rows(
+    let report: IngestReport = ingest::upsert_statistic_values(
         &mut *transaction,
         data_source_id,
         "test-upsert_refetch",
@@ -173,7 +172,7 @@ async fn upsert_revised_value_supersedes_old_and_inserts_new() {
     let data_source_id: Uuid = get_wb_wdi_data_source_id(&mut transaction).await;
     let statistic_id: Uuid = get_tfr_statistic_id(&mut transaction).await;
     let region_id: Uuid = get_usa_region_id(&mut transaction).await;
-    ingest::upsert_rows(
+    ingest::upsert_statistic_values(
         &mut *transaction,
         data_source_id,
         "test-upsert_revised-rev1",
@@ -182,7 +181,7 @@ async fn upsert_revised_value_supersedes_old_and_inserts_new() {
     )
     .await
     .expect("first upsert");
-    let report: IngestReport = ingest::upsert_rows(
+    let report: IngestReport = ingest::upsert_statistic_values(
         &mut *transaction,
         data_source_id,
         "test-upsert_revised-rev2",

@@ -9,7 +9,7 @@ use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::adapter::{
-    AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedRow, year_to_period,
+    AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedRow, Period,
 };
 use crate::canonical::canonical_db;
 use crate::error::AppError;
@@ -70,12 +70,10 @@ async fn normalize_row(
             ),
         }));
     };
-    let (period_start, period_end) = year_to_period(parsed_row.year)?;
     Ok(NormalizeOutcome::Normalized(NormalizedRow {
         region_id: country.region_id,
         statistic_id,
-        period_start,
-        period_end,
+        period: Period::from_year(parsed_row.year)?,
         value,
         data_status: WB_WDI_DATA_STATUS_FINAL.to_string(),
     }))
@@ -84,7 +82,7 @@ async fn normalize_row(
 /// Adapter orchestrator. Opens a single transaction, then chains
 /// `read_latest_publication_revision` (informational only; WB has no
 /// native incremental query) → client::fetch_upstream → client::parse_response
-/// → normalize → ingest::upsert_rows under that transaction. The whole
+/// → normalize → ingest::upsert_statistic_values under that transaction. The whole
 /// batch commits atomically or rolls back together, so a mid-run failure
 /// can't leave the canonical store with partial publication state.
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
@@ -104,7 +102,7 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     let parsed_rows: Vec<ParsedRow> = world_bank_wdi_client::parse_response(raw)?;
     let (normalized_rows, warnings): (Vec<NormalizedRow>, Vec<IngestWarning>) =
         normalize(&mut *transaction, parsed_rows).await?;
-    let mut report: IngestReport = ingest::upsert_rows(
+    let mut report: IngestReport = ingest::upsert_statistic_values(
         &mut *transaction,
         data_source.id,
         &revision_label,

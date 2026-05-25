@@ -1,6 +1,6 @@
 //! Ingest layer: takes `NormalizedRow` batches from any source adapter and
 //! persists them to the canonical store with append-with-supersede
-//! semantics. Source-agnostic — every adapter calls `upsert_rows` with
+//! semantics. Source-agnostic — every adapter calls `upsert_statistic_values` with
 //! the same signature.
 
 use chrono::{DateTime, Utc};
@@ -23,7 +23,7 @@ use crate::ingest::{IngestReport, UpsertOutcome};
 /// - current row matches new value + status: skip, count `values_skipped`
 /// - current row differs: set the old row's `superseded = now()`, INSERT a
 ///   new row pointing at the new publication, count `values_revised`
-pub async fn upsert_rows(
+pub async fn upsert_statistic_values(
     connection: &mut PgConnection,
     data_source_id: Uuid,
     publication_revision_label: &str,
