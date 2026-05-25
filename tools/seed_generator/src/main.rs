@@ -123,8 +123,8 @@ fn emit_sql(country_rows: &[CountryRow]) {
     println!("-- top-level regions, 17 subregions, 7 intermediate regions), ISO 3166-1");
     println!("-- country rows under their deepest applicable parent, the tfr statistic,");
     println!("-- and the wb_wdi data_source. Generated from");
-    println!("-- ingestion/db/seed-data/m49-iso3166.csv via tools/seed_generator —");
-    println!("-- regenerate with `cargo run -p seed_generator -- ingestion/db/seed-data/m49-iso3166.csv > ingestion/db/migrations/<this-file>`.");
+    println!("-- ingestion/db/seed-data/m49-iso3166-2026-05-25.csv via tools/seed_generator —");
+    println!("-- regenerate with `cargo run -p seed_generator -- ingestion/db/seed-data/m49-iso3166-<snapshot-date>.csv > ingestion/db/migrations/<this-file>`.");
     println!();
     emit_top_level_regions(country_rows);
     emit_subregions(country_rows);

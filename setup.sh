@@ -11,6 +11,22 @@ set -euo pipefail
 repo_dir=$(git rev-parse --show-toplevel)
 cd "${repo_dir}"
 
+function check_prerequisites {
+    function required_program {
+        local program_name="$1"
+        local install_hint="$2"
+        if ! which "${program_name}" 1>/dev/null 2>&1; then
+            echo "The \`${program_name}\` program is required"
+            echo "  install: ${install_hint}"
+            exit 1
+        fi
+    }
+    required_program "brew"   "https://brew.sh"
+    required_program "cargo"  "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+    required_program "dbmate" "brew install dbmate"
+}
+check_prerequisites
+
 if ! test -f .env; then
     echo "Generating .env from template.env"
     cp template.env .env
@@ -18,7 +34,7 @@ fi
 
 source ./.env
 
-if ! brew list --formula 2>/dev/null | grep -q '^postgresql@18$'; then
+if ! brew ls --versions postgresql@18 >/dev/null 2>&1; then
     echo "Installing postgresql@18 via Homebrew"
     brew install postgresql@18
 fi

@@ -4,8 +4,8 @@
 -- top-level regions, 17 subregions, 7 intermediate regions), ISO 3166-1
 -- country rows under their deepest applicable parent, the tfr statistic,
 -- and the wb_wdi data_source. Generated from
--- ingestion/db/seed-data/m49-iso3166.csv via tools/seed_generator —
--- regenerate with `cargo run -p seed_generator -- ingestion/db/seed-data/m49-iso3166.csv > ingestion/db/migrations/<this-file>`.
+-- ingestion/db/seed-data/m49-iso3166-2026-05-25.csv via tools/seed_generator —
+-- regenerate with `cargo run -p seed_generator -- ingestion/db/seed-data/m49-iso3166-<snapshot-date>.csv > ingestion/db/migrations/<this-file>`.
 
 insert into region (code, name_en, level, m49_code) values
     ('africa', 'Africa', 'region', '002'),
