@@ -658,7 +658,7 @@ This is a deviation from Singularity's Podman Compose setup (Constitution Princi
 
 ### v1: Mac mini M1 + `launchd`
 
-A `launchd` plist (template at `scripts/eafora-ingestion.plist.template`, installed by `setup.sh` to `~/Library/LaunchAgents/org.eafora.ingestion.plist` on the Mac mini) triggers `ingestion all` on a schedule:
+A `launchd` plist (template at `ingestion/eafora-ingestion.plist.template`, installed by `setup.sh` to `~/Library/LaunchAgents/org.eafora.ingestion.plist` on the Mac mini) triggers `ingestion all` on a schedule:
 
 ```xml
 <key>StartCalendarInterval</key>

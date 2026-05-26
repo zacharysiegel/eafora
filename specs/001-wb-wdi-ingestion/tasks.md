@@ -108,7 +108,7 @@ All tasks in this phase contribute to **[US1, US2, US3]** — the adapter is the
 ### Scheduled run path **[US1]**
 
 - [ ] T036 [US1] Replace the `all` stub in `main.rs` with the orchestration loop per plan §Implementation phases step 5: iterate `[wb_wdi]` (just one adapter for now); call each adapter's `fetch_and_store`; catch and log any `AppError`; continue to the next adapter on failure (per architecture doc §Scheduling error-isolation rule); after all adapters, log an aggregate report with per-adapter outcomes.
-- [ ] T037 [P] [US1] Author `scripts/eafora-ingestion.plist.template` — launchd plist matching the architecture doc's `StartCalendarInterval` block (Mondays 03:00 local) with `ProgramArguments` invoking the ingestion binary's `all` subcommand.
+- [ ] T037 [P] [US1] Author `ingestion/eafora-ingestion.plist.template` — launchd plist matching the architecture doc's `StartCalendarInterval` block (Mondays 03:00 local) with `ProgramArguments` invoking the ingestion binary's `all` subcommand.
 - [ ] T038 [US1] Update `setup.sh` to render `eafora-ingestion.plist.template` into `~/Library/LaunchAgents/org.eafora.ingestion.plist` and load via `launchctl bootstrap gui/$(id -u)`. Per Constitution Principle VIII (workflow discipline), commit setup.sh changes alongside the plist template so the install is reproducible.
 
 **Checkpoint**: After Phase 4, both manual and scheduled paths work end-to-end. **[US1]** + **[US2]** acceptance scenarios pass; **[US3]** is satisfied transitively because `upsert_rows` includes the supersede logic (validated by T027/T028/T029 + T032/T033).
