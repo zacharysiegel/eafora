@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 use ingestion::adapter::AdapterOptions;
 use ingestion::artifact::{self, BuildOptions, LocalArtifactBuild};
@@ -133,7 +133,7 @@ async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
     let version_label: &String = require_arg(matches, "version-label")?;
 
     let pool: PgPool = db::create_pool().await?;
-    let mut transaction: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+    let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
     let options: BuildOptions = BuildOptions::default();
     let build: LocalArtifactBuild =
         artifact::build_artifacts(&mut *transaction, &output_dir, version_label, options).await?;

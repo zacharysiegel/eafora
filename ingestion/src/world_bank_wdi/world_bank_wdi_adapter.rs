@@ -5,7 +5,7 @@
 //! `crate::ingest`.
 
 use chrono::Utc;
-use sqlx::{PgConnection, PgPool};
+use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::adapter::{
@@ -88,7 +88,7 @@ async fn normalize_row(
 /// batch commits atomically or rolls back together, so a mid-run failure
 /// can't leave the canonical store with partial publication state.
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
-    let mut transaction: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+    let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
 
     let data_source: DataSource = canonical_db::find_data_source_by_code(&mut *transaction, WB_WDI_DATA_SOURCE_CODE)
         .await?

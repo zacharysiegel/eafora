@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use sqlx::PgConnection;
+use sqlx::{PgConnection, PgExecutor};
 use uuid::Uuid;
 
 use crate::artifact::artifact_db::{read_all_statistic_codes, read_candidate_values};
@@ -89,7 +89,7 @@ pub async fn build_artifacts(
 }
 
 async fn warn_on_statistics_without_values<'e>(
-    executor: impl sqlx::PgExecutor<'e>,
+    executor: impl PgExecutor<'e>,
     candidates: &[CandidateValue],
 ) -> Result<(), AppError> {
     let known_codes: Vec<String> = read_all_statistic_codes(executor).await?;
