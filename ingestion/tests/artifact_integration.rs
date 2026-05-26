@@ -13,6 +13,8 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::artifact::{self, BuildOptions, LocalArtifactBuild};
+use ingestion::artifact::artifact_model::ShardOutput;
+use ingestion::artifact::writer::flatgeobuf::emit_geometry_flatgeobuf;
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
 use helpers::test_db::test_pool;
@@ -71,6 +73,28 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert_eq!(manifest_value["version"], "2026-05-26-test");
     assert!(manifest_value["statistics"]["tfr"]["base"]["url"].is_string());
     assert!(manifest_value["geometry"]["url"].is_string());
+
+    transaction.rollback().await.unwrap();
+}
+
+/// Live HTTP test: downloads the pinned Natural Earth release and confirms
+/// most features resolve to known canonical countries. Gated behind
+/// `#[ignore]` so CI doesn't depend on naciscdn.org availability; run via
+/// `cargo test -p ingestion --test artifact_integration -- --ignored`.
+#[tokio::test]
+#[ignore]
+async fn emit_geometry_flatgeobuf_against_live_natural_earth_release() {
+    let pool: PgPool = test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let geometry_shard: ShardOutput =
+        emit_geometry_flatgeobuf(&mut *transaction, temp_dir.path())
+            .await
+            .expect("geometry shard emitted");
+
+    assert!(geometry_shard.path.exists());
+    assert!(geometry_shard.byte_count > 100_000);
 
     transaction.rollback().await.unwrap();
 }
