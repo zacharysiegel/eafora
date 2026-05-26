@@ -1,4 +1,4 @@
-# Implementation Plan: Artifact builder + R2 publish
+# Implementation Plan: Artifact builder + Cloudflare R2 publish
 
 **Feature**: 002-artifact-builder
 
@@ -16,7 +16,7 @@
 | `shapefile` | Reads the Natural Earth `.shp` from the downloaded zip. | `0.7.*` |
 | `zip` | Unzips the Natural Earth release in-memory (no temp files). | `4.5.*` |
 | `sha2` | SHA-256 hashing for content-hashed filenames + manifest. | `0.10.*` |
-| `aws-sigv4` | Signs the S3 PUT requests for the R2 store impl; thin enough to keep "explicit over implicit" intact (the raw `reqwest::Client` still issues the calls). | `1.3.*` |
+| `aws-sigv4` | Signs the S3 PUT requests for the Cloudflare R2 store impl; thin enough to keep "explicit over implicit" intact (the raw `reqwest::Client` still issues the calls). | `1.3.*` |
 | `async-trait` | Lets the `ArtifactStore` trait declare async methods + be object-safe (`&dyn ArtifactStore`). Standard in async Rust ecosystem; one transitive crate. | `0.1.*` |
 
 **Why these specific picks** (per `feedback_eafora_library_conventions.md` — ask before adding deps):
@@ -25,7 +25,7 @@
 - `flatgeobuf` is the only viable FlatGeobuf writer in Rust.
 - `aws-sigv4` (not the full `aws-sdk-s3`) — we want to see the actual HTTP request being built; the SDK hides too much.
 - `async-trait` over native AFIT — native async-fn-in-trait is stable in 2024 edition but not object-safe without extra ceremony (`trait-variant` crate or manual desugaring). For one trait with two impls, `async_trait` is the cheapest path to `&dyn ArtifactStore`.
-- No new test deps. Mocking the R2 store happens via a `Dryrun` `ArtifactStore` impl that validates inputs without doing I/O (see Test harness design).
+- No new test deps. Mocking the Cloudflare R2 store happens via a `Dryrun` `ArtifactStore` impl that validates inputs without doing I/O (see Test harness design).
 
 ### Storage abstraction
 
@@ -36,7 +36,7 @@ Storage targets are an `ArtifactStore` trait — composition over enum dispatch 
 pub trait ArtifactStore: Send + Sync {
     /// Publishes one file under `key` (the path relative to the destination root,
     /// e.g. "data/tfr-base-ab12cd34.sqlite") with the given Cache-Control header.
-    /// Returns the URL the file is now fetchable from (https://...cdn... for R2,
+    /// Returns the URL the file is now fetchable from (https://...cdn... for Cloudflare R2,
     /// file://... for local).
     async fn put(&self, key: &str, body: Bytes, cache_control: &str) -> Result<String, AppError>;
 }
@@ -45,7 +45,7 @@ pub struct LocalArtifactStore {
     pub published_dir: PathBuf,  // e.g. ${repo_dir}/published — per-version subdirs land inside
 }
 
-pub struct R2ArtifactStore {
+pub struct CloudflareR2ArtifactStore {
     pub client: reqwest::Client,
     pub credentials: aws_sigv4::sign::v4::SigningParams,
     pub account_id: String,
@@ -59,16 +59,16 @@ pub struct DryrunArtifactStore {
 }
 ```
 
-`upload_artifacts_to_r2` becomes `publish_artifacts(store: &dyn ArtifactStore, build: &LocalArtifactBuild) -> Result<ArtifactVersion, AppError>` — destination-agnostic. Naming convention follows: file is `ingestion/src/artifact/publish.rs`; the trait + impls live in `ingestion/src/artifact/store/{mod.rs, local.rs, r2.rs, dryrun.rs}`.
+`upload_artifacts_to_cloudflare_r2` becomes `publish_artifacts(store: &dyn ArtifactStore, build: &LocalArtifactBuild) -> Result<ArtifactVersion, AppError>` — destination-agnostic. Naming convention follows: file is `ingestion/src/artifact/publish.rs`; the trait + impls live in `ingestion/src/artifact/store/{mod.rs, local.rs, cloudflare_r2.rs, dryrun.rs}`.
 
 The CLI's `dispatch_publish` parses the destination flag and constructs the right `ArtifactStore` impl, then passes it to `publish_artifacts`.
 
 ### CLI flags
 
 ```sh
-# Defaults to --destination=local for now; flip to r2 when product ships.
+# Defaults to --destination=local for now; flip to --destination=cloudflare-r2 when product ships.
 ingestion publish <version-label> \
-    [--destination=local|r2] \
+    [--destination=local|cloudflare-r2] \
     [--local-dir=<path>]              # required if --destination=local; defaults to ${repo_dir}/published
     [--dry-run]                       # constructs the store, calls put(), validates signing/paths but no actual I/O
 ```
@@ -90,7 +90,7 @@ ingestion/src/artifact/
 ├── store/
 │   ├── mod.rs                  # ArtifactStore trait
 │   ├── local.rs                # LocalArtifactStore impl
-│   ├── r2.rs                   # R2ArtifactStore impl (raw reqwest + aws-sigv4)
+│   ├── cloudflare_r2.rs                   # CloudflareR2ArtifactStore impl (raw reqwest + aws-sigv4)
 │   └── dryrun.rs               # DryrunArtifactStore impl for tests
 └── geometry_ingest/            # in-tree subdirectory for the Natural Earth processing; eventually lifts to a top-level geometry_ingest/ when subnational lands
     ├── mod.rs
@@ -122,9 +122,9 @@ create index values_by_region on values (region_id);
 
 `serde_json` with a typed `Manifest` struct + serde derives — matches `serde_json` usage everywhere else. Field order in the JSON output is fixed (BTreeMap on statistic codes for deterministic builds). Pretty-printed with two-space indents for human readability.
 
-### R2 upload mechanics
+### Cloudflare R2 upload mechanics
 
-The R2 bucket is reachable via the S3 endpoint `https://<account-id>.r2.cloudflarestorage.com`. We construct each request manually:
+The Cloudflare R2 bucket is reachable via the S3 endpoint `https://<account-id>.r2.cloudflarestorage.com`. We construct each request manually:
 
 ```rust
 let signed_request = aws_sigv4::http_request::sign(/* PUT, headers, body */, &credentials, &signing_settings)?;
@@ -132,10 +132,10 @@ let response = reqwest_client.put(url).headers(signed_headers).body(body).send()
 ```
 
 Credentials come from `secr`-encrypted secrets at keys (TBD; documented in setup.sh as the credentials get added):
-- `r2.access_key_id`
-- `r2.secret_access_key`
-- `r2.account_id`
-- `r2.bucket_name`
+- `cloudflare_r2.access_key_id`
+- `cloudflare_r2.secret_access_key`
+- `cloudflare_r2.account_id`
+- `cloudflare_r2.bucket_name`
 
 ### Constitution alignment
 
@@ -151,7 +151,7 @@ Single-project layout (the `ingestion/` workspace member, same as 001). Module l
 
 - **Pure-logic tests** live in `#[cfg(test)] mod tests` blocks within their respective files (`source_preference_merge.rs`, `content_hashing.rs`, `manifest_writer.rs`).
 - **DB integration tests** live in `tests/artifact_integration.rs`. Each test opens a transaction on the existing `eafora_test` pool helper, exercises `read_candidate_values` / `insert_artifact_version`, and rolls back.
-- **R2 integration test**: one test in `tests/artifact_integration.rs` runs `upload_artifacts_to_r2` with `--dry-run` on a real `LocalArtifactBuild` fixture (constructed from temp files via `tempfile`). Asserts: every shard's signed PUT URL is computed, the headers carry the right Cache-Control values, and `artifact_version` is NOT inserted (dry-run skips that step too).
+- **Cloudflare R2 integration test**: one test in `tests/artifact_integration.rs` runs `upload_artifacts_to_cloudflare_r2` with `--dry-run` on a real `LocalArtifactBuild` fixture (constructed from temp files via `tempfile`). Asserts: every shard's signed PUT URL is computed, the headers carry the right Cache-Control values, and `artifact_version` is NOT inserted (dry-run skips that step too).
 - **End-to-end test**: one test runs the full `build` against `eafora_test` (which has the seeded canonical store but no values), inserts a small known fixture into `statistic_value`, runs the build, asserts the shard file exists and contains the expected rows when opened via `rusqlite`.
 
 ## Implementation phases
@@ -164,7 +164,7 @@ Single-project layout (the `ingestion/` workspace member, same as 001). Module l
 6. **Content hashing + tmp-file rename** (T022-T023, TDD): tests then implementation.
 7. **Manifest emission** (T024-T025, TDD): build the `Manifest` struct from `HashedOutputs`, serialize via `serde_json::to_string_pretty`, hash it, write to disk.
 8. **build_artifacts orchestrator** (T026): chain phases 2-7; integration test against `eafora_test`.
-9. **R2 publish** (T027-T031): `upload_files_to_r2` (signed PUTs via reqwest + aws-sigv4), `insert_artifact_version`, `upload_artifacts_to_r2` orchestrator with the atomic-publish invariant. `--dry-run` flag wires through `publish`.
+9. **Cloudflare R2 publish** (T027-T031): `upload_files_to_cloudflare_r2` (signed PUTs via reqwest + aws-sigv4), `insert_artifact_version`, `upload_artifacts_to_cloudflare_r2` orchestrator with the atomic-publish invariant. `--dry-run` flag wires through `publish`.
 10. **CLI wiring** (T032-T034): `dispatch_build`, `dispatch_publish`, `--upload` flag on build that chains the two.
 11. **Polish** (T035-T038): coverage measurement on pure helpers, live build + dry-run publish timing per SC-002, architecture-doc amendments for any divergences, cleanup-merged.
 
@@ -172,12 +172,12 @@ Single-project layout (the `ingestion/` workspace member, same as 001). Module l
 
 This feature breaks naturally into three serial PRs, stacked linearly:
 
-- **PR A** (`impl-artifact-build-local`): phases 1-8 — every artifact lands on disk; build CLI works; no R2 yet.
-- **PR B** (`impl-artifact-publish-r2`): phase 9 — R2 upload + artifact_version recording; publish CLI works; `--dry-run` covers tests.
+- **PR A** (`impl-artifact-build-local`): phases 1-8 — every artifact lands on disk; build CLI works; no Cloudflare R2 yet.
+- **PR B** (`impl-artifact-publish-cloudflare-r2`): phase 9 — Cloudflare R2 upload + artifact_version recording; publish CLI works; `--dry-run` covers tests.
 - **PR C** (`impl-artifact-cli-polish`): phases 10-11 — `build --upload` chained mode, coverage measurement, doc amendments.
 
 Each PR includes its tasks block from `tasks.md` (subset), is reviewable independently, and stacks the next branch on the prior per `feedback_branch_per_body_of_work.md` and `feedback_serial_branches_must_stack.md`.
 
 ## Brief PR description (per `feedback_pr_description_style.md`, applies to PR A only — B and C get their own when cut)
 
-> Implements `build_artifacts(pool, output_dir, version_label)` per `docs/architecture/ingestion.md` §Artifact builder: reads candidate values from the canonical store, applies the source-preference merge, emits per-statistic / per-license-class SQLite shards and a content-hashed FlatGeobuf geometry shard processed from the pinned Natural Earth release, writes `manifest.json` with full SHA-256 hashes referenced by content-hashed filenames. Adds the `build <output-dir> <version-label>` CLI dispatch. No R2 upload yet (lands in the stacked follow-up PR); the `artifact_version` table is unchanged by `build`.
+> Implements `build_artifacts(pool, output_dir, version_label)` per `docs/architecture/ingestion.md` §Artifact builder: reads candidate values from the canonical store, applies the source-preference merge, emits per-statistic / per-license-class SQLite shards and a content-hashed FlatGeobuf geometry shard processed from the pinned Natural Earth release, writes `manifest.json` with full SHA-256 hashes referenced by content-hashed filenames. Adds the `build <output-dir> <version-label>` CLI dispatch. No Cloudflare R2 upload yet (lands in the stacked follow-up PR); the `artifact_version` table is unchanged by `build`.
