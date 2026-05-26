@@ -1,0 +1,129 @@
+//! FlatGeobuf geometry writer. Pulls the pinned Natural Earth release,
+//! parses each country feature in-memory, joins to the canonical store's
+//! `country.iso3`, and emits one `.fgb` containing every feature whose
+//! `ADM0_A3` resolves to a known country. Unknown ADM0_A3 codes get a
+//! warning logged and the feature dropped — Natural Earth ships entries
+//! like `KOS` (Kosovo) that some downstream consumers don't recognize.
+
+use std::io::Cursor;
+use std::path::{Path, PathBuf};
+
+use flatgeobuf::{ColumnType, FgbWriter, GeometryType};
+use geozero::{ColumnValue, PropertyProcessor};
+use shapefile::dbase::FieldValue;
+use shapefile::{Reader, ShapeReader};
+use sqlx::PgExecutor;
+use uuid::Uuid;
+
+use crate::artifact::artifact_db::read_country_iso3_to_name_en;
+use crate::artifact::artifact_model::ShardOutput;
+use crate::error::AppError;
+use crate::geometry::natural_earth::{self, ShapefileBytes};
+
+const GEOMETRY_SUBDIR: &str = "geometry";
+const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
+const GEOMETRY_FILENAME_STEM: &str = "world-50m";
+
+const ADM0_A3_FIELD: &str = "ADM0_A3";
+
+pub async fn emit_geometry_flatgeobuf<'e>(
+    executor: impl PgExecutor<'e>,
+    output_dir: &Path,
+) -> Result<ShardOutput, AppError> {
+    let iso3_to_name_en: std::collections::BTreeMap<String, String> =
+        read_country_iso3_to_name_en(executor).await?;
+
+    let client: reqwest::Client = reqwest::Client::new();
+    let zip_bytes: Vec<u8> = natural_earth::download_pinned_release(&client).await?;
+    let shapefile_bytes: ShapefileBytes = natural_earth::extract_shapefile_from_zip(&zip_bytes)?;
+
+    write_flatgeobuf_to_disk(&shapefile_bytes, &iso3_to_name_en, output_dir)
+}
+
+fn write_flatgeobuf_to_disk(
+    shapefile_bytes: &ShapefileBytes,
+    iso3_to_name_en: &std::collections::BTreeMap<String, String>,
+    output_dir: &Path,
+) -> Result<ShardOutput, AppError> {
+    let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
+    std::fs::create_dir_all(&geometry_dir)
+        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: create_dir {:?}: {}", geometry_dir, err)))?;
+
+    let tmp_uuid: Uuid = Uuid::now_v7();
+    let path: PathBuf = geometry_dir.join(format!("{}-tmp.{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
+
+    let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)
+        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: FgbWriter::create: {}", err)))?;
+    writer.add_column("iso3", ColumnType::String, |_fbb, _col| {});
+    writer.add_column("name_en", ColumnType::String, |_fbb, _col| {});
+
+    let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(shapefile_bytes)?;
+
+    for shape_and_record in reader.iter_shapes_and_records() {
+        let (shape, record) = shape_and_record
+            .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: read feature: {}", err)))?;
+
+        let Some(iso3) = read_character_field(&record, ADM0_A3_FIELD) else {
+            continue;
+        };
+        let Some(name_en) = iso3_to_name_en.get(&iso3) else {
+            log::warn!(
+                "emit_geometry_flatgeobuf: dropping Natural Earth feature with unknown ADM0_A3={}",
+                iso3,
+            );
+            continue;
+        };
+
+        let geometry: geo_types::Geometry<f64> = geo_types::Geometry::try_from(shape)
+            .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: shape→geo_types {}: {}", iso3, err)))?;
+
+        let iso3_property: String = iso3.clone();
+        let name_en_property: String = name_en.clone();
+
+        writer
+            .add_feature_geom(geometry, |feature| {
+                feature
+                    .property(0, "iso3", &ColumnValue::String(&iso3_property))
+                    .ok();
+                feature
+                    .property(1, "name_en", &ColumnValue::String(&name_en_property))
+                    .ok();
+            })
+            .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: add_feature_geom {}: {}", iso3, err)))?;
+    }
+
+    let file: std::fs::File = std::fs::File::create(&path)
+        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: create {:?}: {}", path, err)))?;
+    let mut buffered: std::io::BufWriter<std::fs::File> = std::io::BufWriter::new(file);
+    writer
+        .write(&mut buffered)
+        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: write: {}", err)))?;
+
+    let byte_count: u64 = std::fs::metadata(&path)
+        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: metadata {:?}: {}", path, err)))?
+        .len();
+
+    Ok(ShardOutput { path, byte_count })
+}
+
+fn build_shapefile_reader<'a>(
+    shapefile_bytes: &'a ShapefileBytes,
+) -> Result<Reader<Cursor<&'a [u8]>, Cursor<&'a [u8]>>, AppError> {
+    let shape_cursor: Cursor<&'a [u8]> = Cursor::new(shapefile_bytes.shp.as_slice());
+    let shx_cursor: Cursor<&'a [u8]> = Cursor::new(shapefile_bytes.shx.as_slice());
+    let dbf_cursor: Cursor<&'a [u8]> = Cursor::new(shapefile_bytes.dbf.as_slice());
+
+    let shape_reader: ShapeReader<Cursor<&'a [u8]>> = ShapeReader::with_shx(shape_cursor, shx_cursor)
+        .map_err(|err| AppError::from(format!("build_shapefile_reader: ShapeReader: {}", err)))?;
+    let dbase_reader: shapefile::dbase::Reader<Cursor<&'a [u8]>> = shapefile::dbase::Reader::new(dbf_cursor)
+        .map_err(|err| AppError::from(format!("build_shapefile_reader: dbase::Reader: {}", err)))?;
+
+    Ok(Reader::new(shape_reader, dbase_reader))
+}
+
+fn read_character_field(record: &shapefile::dbase::Record, field_name: &str) -> Option<String> {
+    match record.get(field_name) {
+        Some(FieldValue::Character(Some(value))) => Some(value.trim().to_string()),
+        _ => None,
+    }
+}

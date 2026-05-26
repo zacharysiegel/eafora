@@ -936,6 +936,7 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5f28f34864745eb2f123c990c6ffd92c1584bd39439b3f27ff2a0f4ea5b309b"
 dependencies = [
+ "geo-types",
  "log",
  "serde_json",
  "thiserror 1.0.69",
@@ -1369,6 +1370,8 @@ dependencies = [
  "dotenvy",
  "env_logger",
  "flatgeobuf",
+ "geo-types",
+ "geozero",
  "log",
  "minimer",
  "reqwest",
@@ -2434,6 +2437,7 @@ checksum = "c318c0e76bc2d54086b2d936ae0ca92eab5b84eb73f5704c1d14dba33be643e3"
 dependencies = [
  "byteorder",
  "dbase",
+ "geo-types",
 ]
 
 [[package]]

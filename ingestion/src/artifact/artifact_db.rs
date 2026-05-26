@@ -3,6 +3,8 @@
 //! after a successful publish. Both take `impl PgExecutor<'_>` so callers
 //! pass either `&PgPool` or `&mut *tx`.
 
+use std::collections::BTreeMap;
+
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
@@ -79,4 +81,32 @@ pub async fn read_candidate_values<'e>(
         .collect();
 
     Ok(candidate_values)
+}
+
+pub async fn read_country_iso3_to_name_en<'e>(
+    executor: impl PgExecutor<'e>,
+) -> Result<BTreeMap<String, String>, AppError> {
+    struct CountryNameRow {
+        iso3: String,
+        name_en: String,
+    }
+
+    let rows: Vec<CountryNameRow> = sqlx::query_as!(
+        CountryNameRow,
+        r#"
+        select country.iso3 as "iso3!", region.name_en as "name_en!"
+        from country
+        join region on region.id = country.region_id
+        where country.deleted is null
+        "#,
+    )
+    .fetch_all(executor)
+    .await?;
+
+    let iso3_to_name_en: BTreeMap<String, String> = rows
+        .into_iter()
+        .map(|country_name_row| (country_name_row.iso3, country_name_row.name_en))
+        .collect();
+
+    Ok(iso3_to_name_en)
 }
