@@ -18,3 +18,9 @@ env_logger = { workspace = true }
 dotenvy = { workspace = true }
 minimer = { workspace = true }
 secr = { workspace = true }
+rusqlite = { workspace = true }
+flatgeobuf = { workspace = true }
+shapefile = { workspace = true }
+zip = { workspace = true }
+sha2 = { workspace = true }
+aws-sigv4 = { workspace = true }
