@@ -76,9 +76,10 @@ eafora/
 │       │   ├── artifact_api.rs             # CLI handlers for artifact build / inspection
 │       │   ├── artifact_db.rs              # queries that drive the build (read fact table)
 │       │   ├── artifact_model.rs           # Manifest, ArtifactVersion, build options
-│       │   ├── flatgeobuf_writer.rs        # geometry shard writer
-│       │   ├── sqlite_writer.rs            # per-statistic, per-license-tier shard writer
-│       │   └── manifest_writer.rs          # manifest.json builder + content hashing
+│       │   └── writer/                     # output-shape writers
+│       │       ├── flatgeobuf.rs           # geometry shard writer
+│       │       ├── sqlite.rs               # per-statistic, per-license-tier shard writer
+│       │       └── manifest.rs             # manifest.json builder + content hashing
 │       └── geometry/                # Natural Earth ingestion (separate from statistic adapters)
 ```
 

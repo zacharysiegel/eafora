@@ -24,21 +24,21 @@ Task ordering reflects the three-PR stacked sequence in plan.md §Phasing for PR
 - [ ] T005 [Foundational] Move `ArtifactVersion` from `canonical_model` (if it's there) to `artifact_model` — it's only used by this feature, no other module references it.
 - [ ] T006 [P] [Foundational] Write `ingestion/src/artifact/artifact_db.rs::read_candidate_values(executor) -> Result<Vec<CandidateValue>, AppError>`. Single sqlx `query_as!` joining `statistic_value` → `data_source` → `statistic`, filtered to `superseded is null`.
 
-### Phase 3: Source-preference merge (TDD)
+### Phase 3: Source priority (TDD)
 
-- [ ] T007 [Tests-first] Write unit tests for `apply_source_preference_merge` in `ingestion/src/artifact/source_preference_merge.rs::#[cfg(test)] mod tests`: (a) single source → output identical to input; (b) two sources with different preference_rank — lower wins; (c) two sources with same preference_rank — tie broken by data_source_id; (d) data_status override (`final` beats `provisional` per the architecture's merge rule); (e) different license_class groups don't merge across.
-- [ ] T008 Implement `apply_source_preference_merge(candidates: Vec<CandidateValue>) -> Vec<MergedValue>` to make T007 pass. Pure function — no I/O. Group by `(region_id, statistic_id, period.start, period.end, license_class)`; within each group apply the merge.
+- [ ] T007 [Tests-first] Write unit tests for `apply_source_priority` in `ingestion/src/artifact/source_priority.rs::#[cfg(test)] mod tests`: (a) single source → output identical to input; (b) two sources with different preference_rank — lower wins; (c) two sources with same preference_rank — tie broken by data_source_id; (d) data_status override (`final` beats `provisional` per the architecture's merge rule); (e) different license_class groups don't merge across.
+- [ ] T008 Implement `apply_source_priority(candidates: Vec<CandidateValue>) -> Vec<MergedValue>` to make T007 pass. Pure function — no I/O. Group by `(region_id, statistic_id, period.start, period.end, license_class)`; within each group apply the merge.
 
 ### Phase 4: SQLite shard writer
 
-- [ ] T009 [Tests-first] Write unit tests for the SQLite schema in `ingestion/src/artifact/sqlite_writer.rs::#[cfg(test)] mod tests`: emit_sqlite_shards writes the expected `values` table schema; rows match the input MergedValues; per-statistic per-license-class file split is correct.
+- [ ] T009 [Tests-first] Write unit tests for the SQLite schema in `ingestion/src/artifact/writer/sqlite.rs::#[cfg(test)] mod tests`: emit_sqlite_shards writes the expected `values` table schema; rows match the input MergedValues; per-statistic per-license-class file split is correct.
 - [ ] T010 Implement `emit_sqlite_shards(merged: &[MergedValue], output_dir: &Path) -> Result<Vec<ShardOutput>, AppError>` to make T009 pass. Uses `rusqlite::Connection::open` against `data/<statistic_code>-<license_class>-tmp.<uuid>.sqlite`, batches inserts in a transaction, returns ShardOutput (path + size; not yet hashed).
-- [ ] T011 [P] [Foundational] Add `collect_data_source_versions(candidates: &[CandidateValue]) -> BTreeMap<String, String>` to `source_preference_merge.rs`. Pure function — reduces candidates to `(data_source.code → max data_source_revision)`.
+- [ ] T011 [P] [Foundational] Add `collect_data_source_versions(candidates: &[CandidateValue]) -> BTreeMap<String, String>` to `source_priority.rs`. Pure function — reduces candidates to `(data_source.code → max data_source_revision)`.
 
 ### Phase 5: FlatGeobuf geometry writer
 
 - [ ] T012 [Foundational] Write `ingestion/src/artifact/geometry/natural_earth.rs`: pinned `NATURAL_EARTH_URL` const (`https://naciscdn.org/naturalearth/50m/cultural/ne_50m_admin_0_countries.zip`), `download_pinned_release(client: &reqwest::Client) -> Result<Vec<u8>, AppError>`, `extract_shapefile_from_zip(zip_bytes: &[u8]) -> Result<ShapefileBytes, AppError>` where `ShapefileBytes` carries the four-file shapefile components in memory.
-- [ ] T013 Implement `emit_geometry_flatgeobuf(executor, output_dir) -> Result<ShardOutput, AppError>` in `ingestion/src/artifact/flatgeobuf_writer.rs`: downloads + extracts via T012, reads features via `shapefile` crate, joins each feature's `ADM0_A3` to the canonical `country.iso3` table via `canonical_db`, writes a FlatGeobuf with properties `{iso3, name_en}` and the feature's geometry to `geometry/world-50m-tmp.<uuid>.fgb`.
+- [ ] T013 Implement `emit_geometry_flatgeobuf(executor, output_dir) -> Result<ShardOutput, AppError>` in `ingestion/src/artifact/writer/flatgeobuf.rs`: downloads + extracts via T012, reads features via `shapefile` crate, joins each feature's `ADM0_A3` to the canonical `country.iso3` table via `canonical_db`, writes a FlatGeobuf with properties `{iso3, name_en}` and the feature's geometry to `geometry/world-50m-tmp.<uuid>.fgb`.
 - [ ] T014 [Tests-first] Test for `emit_geometry_flatgeobuf` in `tests/artifact_integration.rs`: downloads + processes the live Natural Earth release; asserts ~250 features emitted; asserts every feature's `iso3` resolves to a known country (allowing for the documented misses like Kosovo's `KOS`). Live HTTP — gated behind `#[ignore]` and run manually as part of T039 timing.
 
 ### Phase 6: Content hashing
@@ -48,7 +48,7 @@ Task ordering reflects the three-PR stacked sequence in plan.md §Phasing for PR
 
 ### Phase 7: Manifest emission (TDD)
 
-- [ ] T017 [Tests-first] Write unit tests for `emit_manifest` in `ingestion/src/artifact/manifest_writer.rs::#[cfg(test)] mod tests`: (a) the serialized JSON matches the architecture's §Manifest format byte-for-byte for a known input; (b) statistic codes are sorted alphabetically (BTreeMap); (c) license-class entries within a statistic are sorted alphabetically too; (d) the manifest's own SHA-256 is computed correctly.
+- [ ] T017 [Tests-first] Write unit tests for `emit_manifest` in `ingestion/src/artifact/writer/manifest.rs::#[cfg(test)] mod tests`: (a) the serialized JSON matches the architecture's §Manifest format byte-for-byte for a known input; (b) statistic codes are sorted alphabetically (BTreeMap); (c) license-class entries within a statistic are sorted alphabetically too; (d) the manifest's own SHA-256 is computed correctly.
 - [ ] T018 Implement `emit_manifest(hashed, version_label, data_source_versions, output_dir) -> Result<ShardOutput, AppError>` to make T017 pass.
 
 ### Phase 8: build_artifacts orchestrator
@@ -86,7 +86,7 @@ PR B introduces the destination-agnostic `ArtifactRepository` trait and three im
 - [ ] T037 [US] Wire `dispatch_delete` in `main.rs`: `ingestion delete <version-label> [--destination=local|cloudflare-r2] [--local-dir=<path>]`. Forces the operator to specify the destination (no default) since deletion is irreversible. Logs the `DeleteReport.orphan_files` if any.
 - [ ] T038 Integration test in `tests/artifact_integration.rs`: publish to a `LocalArtifactRepository` in `tempdir()`, then delete, then assert: the published-dir for the version is gone, the `artifact_version` row is gone, the local build dir (the build-output, separate from the published-dir) is untouched.
 - [ ] T039 Update `ingestion/eafora-ingestion.plist.template` to invoke `build /tmp/eafora-build-$(date +%F) <date>` followed by `publish <date> --destination=local --local-dir ${REPO_ROOT}/published` after the `all` subcommand. Pre-ship: local destination only. Post-ship: flip the flag to `cloudflare-r2`. (The plist's `ProgramArguments` references the destination directly so the switch is a one-flag edit.)
-- [ ] T040 Run `cargo llvm-cov -p ingestion` and verify the pure-function helpers (`apply_source_preference_merge`, `collect_data_source_versions`, manifest writer, content hashing) achieve ≥90% line coverage per SC-005.
+- [ ] T040 Run `cargo llvm-cov -p ingestion` and verify the pure-function helpers (`apply_source_priority`, `collect_data_source_versions`, manifest writer, content hashing) achieve ≥90% line coverage per SC-005.
 - [ ] T041 [P] Live timing of `build + publish --destination=cloudflare-r2` end-to-end against the v1 canonical store; verify SC-002 (<60s).
 - [ ] T042 [P] If implementation surfaced any divergence from `docs/architecture/ingestion.md` §Artifact builder or §Cloudflare R2 upload, propose an architecture amendment in a follow-up. Specifically expected: the architecture currently talks about `upload_artifacts_to_cloudflare_r2`; the as-built `publish_artifacts<S: ArtifactRepository>(repository: &S, ...)` lives in the same doc with the trait abstraction added, plus the new `delete_artifact` flow.
 - [ ] T039 [P] Run `./scripts/cleanup-merged.sh` after PRs A, B, C all integrate.

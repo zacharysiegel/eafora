@@ -106,11 +106,11 @@ ingestion/src/artifact/
 ├── artifact.rs                 # build_artifacts orchestrator + helpers in artifact_db / artifact_model that the orchestrator sequences
 ├── artifact_model.rs           # CandidateValue, MergedValue, LocalArtifactBuild, ShardOutput, HashedOutputs, ArtifactVersion (the canonical entity belongs here too since it's only used by this feature)
 ├── artifact_db.rs              # read_candidate_values + insert_artifact_version (sqlx queries)
-├── source_preference_merge.rs  # apply_source_preference_merge — pure logic; TDD surface
-├── sqlite_writer.rs            # emit_sqlite_shards
-├── flatgeobuf_writer.rs        # emit_geometry_flatgeobuf
+├── source_priority.rs  # apply_source_priority — pure logic; TDD surface
+├── writer/sqlite.rs            # emit_sqlite_shards
+├── writer/flatgeobuf.rs        # emit_geometry_flatgeobuf
 ├── content_hashing.rs          # compute_content_hashes — SHA-256 + the *.tmp.<uuid> → <name>-<sha8>.<ext> rename dance
-├── manifest_writer.rs          # emit_manifest — builds + hashes manifest.json
+├── writer/manifest.rs          # emit_manifest — builds + hashes manifest.json
 ├── publish.rs                  # publish_artifacts orchestrator (generic over S: ArtifactRepository)
 ├── repository/
 │   ├── mod.rs                  # ArtifactRepository trait
@@ -165,7 +165,7 @@ Credentials come from `secr`-encrypted secrets at keys (TBD; documented in setup
 ### Constitution alignment
 
 - **Principle V (Explicit over implicit)**: hand-written SQL for `read_candidate_values` and `insert_artifact_version`; raw `reqwest` + `aws-sigv4` for S3 PUTs (no SDK); SQLite writes via `rusqlite::Connection::execute_batch` with hand-written DDL.
-- **Principle VII (Test-first)**: `apply_source_preference_merge`, manifest serialization, content hashing, SHA-256-from-bytes, and the `name.tmp.<uuid> → name-<sha8>.<ext>` rename helper are pure functions and follow Red-Green-Refactor.
+- **Principle VII (Test-first)**: `apply_source_priority`, manifest serialization, content hashing, SHA-256-from-bytes, and the `name.tmp.<uuid> → name-<sha8>.<ext>` rename helper are pure functions and follow Red-Green-Refactor.
 - **Principle IV (Singularity convention parity)**: every new dep above is added to `[workspace.dependencies]` with the wildcard pin; consumer crates use `{ workspace = true }`.
 
 ### Module-layout decision
@@ -174,7 +174,7 @@ Single-project layout (the `ingestion/` workspace member, same as 001). Module l
 
 ## Test harness design
 
-- **Pure-logic tests** live in `#[cfg(test)] mod tests` blocks within their respective files (`source_preference_merge.rs`, `content_hashing.rs`, `manifest_writer.rs`).
+- **Pure-logic tests** live in `#[cfg(test)] mod tests` blocks within their respective files (`source_priority.rs`, `content_hashing.rs`, `writer/manifest.rs`).
 - **DB integration tests** live in `tests/artifact_integration.rs`. Each test opens a transaction on the existing `eafora_test` pool helper, exercises `read_candidate_values` / `insert_artifact_version`, and rolls back.
 - **Cloudflare R2 integration test**: one test in `tests/artifact_integration.rs` runs `upload_artifacts_to_cloudflare_r2` with `--dry-run` on a real `LocalArtifactBuild` fixture (constructed from temp files via `tempfile`). Asserts: every shard's signed PUT URL is computed, the headers carry the right Cache-Control values, and `artifact_version` is NOT inserted (dry-run skips that step too).
 - **End-to-end test**: one test runs the full `build` against `eafora_test` (which has the seeded canonical store but no values), inserts a small known fixture into `statistic_value`, runs the build, asserts the shard file exists and contains the expected rows when opened via `rusqlite`.
@@ -183,7 +183,7 @@ Single-project layout (the `ingestion/` workspace member, same as 001). Module l
 
 1. **Workspace setup** (Cargo deps): add the 7 crates above to `[workspace.dependencies]`; `ingestion/Cargo.toml` references each via `{ workspace = true }`.
 2. **artifact_model + artifact_db** (T010-T013): types, `read_candidate_values`, `insert_artifact_version` scaffolded (returns dummy / not-yet-implemented until later phases).
-3. **source-preference merge** (T014-T015, TDD): tests then implementation.
+3. **source-priority merge** (T014-T015, TDD): tests then implementation.
 4. **SQLite shard writer** (T016-T018, TDD-light): tests cover the schema + row writing; FR-005 satisfied.
 5. **FlatGeobuf geometry writer** (T019-T021): Natural Earth download (pinned URL, zip → shapefile in-memory), join to `country.iso3` table from DB, write `.fgb`.
 6. **Content hashing + tmp-file rename** (T022-T023, TDD): tests then implementation.
@@ -205,4 +205,4 @@ Each PR includes its tasks block from `tasks.md` (subset), is reviewable indepen
 
 ## Brief PR description (per `feedback_pr_description_style.md`, applies to PR A only — B and C get their own when cut)
 
-> Implements `build_artifacts(pool, output_dir, version_label)` per `docs/architecture/ingestion.md` §Artifact builder: reads candidate values from the canonical store, applies the source-preference merge, emits per-statistic / per-license-class SQLite shards and a content-hashed FlatGeobuf geometry shard processed from the pinned Natural Earth release, writes `manifest.json` with full SHA-256 hashes referenced by content-hashed filenames. Adds the `build <output-dir> <version-label>` CLI dispatch. No Cloudflare R2 upload yet (lands in the stacked follow-up PR); the `artifact_version` table is unchanged by `build`.
+> Implements `build_artifacts(pool, output_dir, version_label)` per `docs/architecture/ingestion.md` §Artifact builder: reads candidate values from the canonical store, applies the source-priority merge, emits per-statistic / per-license-class SQLite shards and a content-hashed FlatGeobuf geometry shard processed from the pinned Natural Earth release, writes `manifest.json` with full SHA-256 hashes referenced by content-hashed filenames. Adds the `build <output-dir> <version-label>` CLI dispatch. No Cloudflare R2 upload yet (lands in the stacked follow-up PR); the `artifact_version` table is unchanged by `build`.
