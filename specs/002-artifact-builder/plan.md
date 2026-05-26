@@ -117,7 +117,7 @@ ingestion/src/artifact/
 │   ├── local.rs                # LocalArtifactRepository impl
 │   ├── cloudflare_r2.rs                   # CloudflareR2ArtifactRepository impl (raw reqwest + aws-sigv4)
 │   └── dryrun.rs               # DryrunArtifactRepository impl for tests
-└── geometry_ingest/            # in-tree subdirectory for the Natural Earth processing; eventually lifts to a top-level geometry_ingest/ when subnational lands
+└── geometry/            # in-tree subdirectory for the Natural Earth processing; eventually lifts to a top-level geometry/ when subnational lands
     ├── mod.rs
     └── natural_earth.rs        # pinned URL, zip extraction, shapefile → FlatGeobuf join via country.iso3
 ```
@@ -170,7 +170,7 @@ Credentials come from `secr`-encrypted secrets at keys (TBD; documented in setup
 
 ### Module-layout decision
 
-Single-project layout (the `ingestion/` workspace member, same as 001). Module layout above expands the existing per-feature pattern: each artifact concern is its own file under `ingestion/src/artifact/`. The `geometry_ingest/` subdirectory inside `artifact/` is the v1 home for Natural Earth processing; it lifts to a top-level `ingestion/src/geometry_ingest/` when subnational geometry support lands (per architecture doc line 74).
+Single-project layout (the `ingestion/` workspace member, same as 001). Module layout above expands the existing per-feature pattern: each artifact concern is its own file under `ingestion/src/artifact/`. The `geometry/` subdirectory inside `artifact/` is the v1 home for Natural Earth processing; it lifts to a top-level `ingestion/src/geometry/` when subnational geometry support lands (per architecture doc line 74).
 
 ## Test harness design
 

@@ -79,7 +79,7 @@ eafora/
 │       │   ├── flatgeobuf_writer.rs        # geometry shard writer
 │       │   ├── sqlite_writer.rs            # per-statistic, per-license-tier shard writer
 │       │   └── manifest_writer.rs          # manifest.json builder + content hashing
-│       └── geometry_ingest/                # Natural Earth ingestion (separate from statistic adapters)
+│       └── geometry/                # Natural Earth ingestion (separate from statistic adapters)
 ```
 
 Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `source <code>`, `build`, `seed`, `publish`, etc. Used for manual invocation, `launchd` triggers, and local dev. Per-feature module layout follows the Singularity `lobby/` convention with two suffix variants — `<feature>_api.rs` for HTTP routes Eafora HOSTS (none in v1; reserved for v3+ HTTP server mode) and `<feature>_client.rs` for code that calls OUT to an external HTTP API. Per-source modules split further: `<source>_client.rs` owns HTTP + parse (knows the wire format but not the canonical store), `<source>_adapter.rs` owns normalize + the `fetch_and_store` orchestrator (knows the canonical store), and `<source>_db.rs` is reserved for source-specific SQL when needed (often absent — generic canonical-store writes live in `crate::ingest::ingest_db`).
