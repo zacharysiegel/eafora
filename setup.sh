@@ -70,4 +70,27 @@ echo "Applying migrations to eafora"
 echo "Applying migrations to eafora_test"
 ./scripts/setup-test-db.sh
 
+echo "Building release ingestion binary (needed by the launchd job)"
+cargo build --release -p ingestion
+
+echo "Installing launchd job at ~/Library/LaunchAgents/org.eafora.ingestion.plist (Mondays 03:00)"
+launch_agents_dir="${HOME}/Library/LaunchAgents"
+log_dir="${HOME}/Library/Logs/Eafora"
+plist_path="${launch_agents_dir}/org.eafora.ingestion.plist"
+ingestion_bin="${repo_dir}/target/release/ingestion"
+
+mkdir -p "${launch_agents_dir}" "${log_dir}"
+
+sed \
+    -e "s|@@INGESTION_BIN@@|${ingestion_bin}|g" \
+    -e "s|@@REPO_ROOT@@|${repo_dir}|g" \
+    -e "s|@@LOG_DIR@@|${log_dir}|g" \
+    ./scripts/eafora-ingestion.plist.template \
+    > "${plist_path}"
+
+if launchctl print "gui/$(id -u)/org.eafora.ingestion" >/dev/null 2>&1; then
+    launchctl bootout "gui/$(id -u)/org.eafora.ingestion" || true
+fi
+launchctl bootstrap "gui/$(id -u)" "${plist_path}"
+
 echo "Setup complete."

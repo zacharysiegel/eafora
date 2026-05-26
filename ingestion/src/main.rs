@@ -1,8 +1,17 @@
 //! ingestion: the Eafora canonical-store CLI binary.
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use sqlx::PgPool;
 
+use ingestion::adapter::AdapterOptions;
+use ingestion::db;
 use ingestion::error::AppError;
+use ingestion::ingest::IngestReport;
+use ingestion::world_bank_wdi::world_bank_wdi_adapter;
+
+/// Registered source adapters. Adding a new source = one entry here plus
+/// the source's per-feature module + a `data_source` seed row.
+const REGISTERED_SOURCES: &[&str] = &["wb_wdi"];
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -10,6 +19,7 @@ async fn main() -> Result<(), AppError> {
     let _ = dotenvy::dotenv();
 
     let matches: ArgMatches = build_cli().get_matches();
+
     match matches.subcommand() {
         Some(("source", sub_matches)) => dispatch_source(sub_matches).await,
         Some(("all", _)) => dispatch_all().await,
@@ -45,12 +55,69 @@ fn build_cli() -> Command {
         )
 }
 
-async fn dispatch_source(_matches: &ArgMatches) -> Result<(), AppError> {
-    Err(AppError::new("source: not yet implemented"))
+async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
+    let source_code: &String = matches
+        .get_one::<String>("source")
+        .expect("source arg is required");
+    let force_full_refetch: bool = matches.get_flag("force-full-refetch");
+    let options: AdapterOptions = AdapterOptions { force_full_refetch };
+
+    let pool: PgPool = db::create_pool().await?;
+    let report: IngestReport = run_source(&pool, source_code, options).await?;
+
+    log_report(source_code, &report);
+    Ok(())
 }
 
 async fn dispatch_all() -> Result<(), AppError> {
-    Err(AppError::new("all: not yet implemented"))
+    let pool: PgPool = db::create_pool().await?;
+    let options: AdapterOptions = AdapterOptions { force_full_refetch: false };
+
+    let mut failure_count: usize = 0;
+
+    for source_code in REGISTERED_SOURCES {
+        log::info!("source {} starting", source_code);
+        match run_source(&pool, source_code, options).await {
+            Ok(report) => log_report(source_code, &report),
+            Err(error) => {
+                log::error!("source {} failed: {}", source_code, error);
+                failure_count += 1;
+            }
+        }
+    }
+
+    if failure_count > 0 {
+        return Err(AppError::from(format!(
+            "all: {failure_count} of {} adapters failed",
+            REGISTERED_SOURCES.len(),
+        )));
+    }
+    Ok(())
+}
+
+async fn run_source(
+    pool: &PgPool,
+    source_code: &str,
+    options: AdapterOptions,
+) -> Result<IngestReport, AppError> {
+    match source_code {
+        "wb_wdi" => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
+        other => Err(AppError::from(format!("unknown source code: {other:?}"))),
+    }
+}
+
+fn log_report(source_code: &str, report: &IngestReport) {
+    log::info!(
+        "source {} complete: added={} revised={} skipped={} warnings={}",
+        source_code,
+        report.values_added,
+        report.values_revised,
+        report.values_skipped,
+        report.warnings.len(),
+    );
+    for warning in &report.warnings {
+        log::warn!("source {} {:?}: {}", source_code, warning.kind, warning.message);
+    }
 }
 
 async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {

@@ -41,6 +41,12 @@ pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, 
     let mut parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = Vec::with_capacity(raw_wdi_statistic_values.len());
 
     for raw_wdi_statistic_value in raw_wdi_statistic_values {
+        // WB intermixes regional aggregates (e.g. country.id="XD" "Late-demographic dividend")
+        // with country rows. Aggregates have empty `countryiso3code` — they aren't country
+        // data and we don't ingest them. Drop them here so normalize never sees them.
+        if raw_wdi_statistic_value.countryiso3code.is_empty() {
+            continue;
+        }
         let parsed_wdi_statistic_value: ParsedWdiStatisticValue = parse_row(&raw_wdi_statistic_value)?;
         parsed_wdi_statistic_values.push(parsed_wdi_statistic_value);
     }
@@ -49,12 +55,6 @@ pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, 
 }
 
 fn parse_row(raw_wdi_statistic_value: &WdiStatisticValue) -> Result<ParsedWdiStatisticValue, AppError> {
-    if raw_wdi_statistic_value.countryiso3code.is_empty() {
-        return Err(AppError::from(format!(
-            "wb_wdi: parse_row: empty countryiso3code (country.id={}, date={})",
-            raw_wdi_statistic_value.country.id, raw_wdi_statistic_value.date,
-        )));
-    }
     let year: i32 = raw_wdi_statistic_value.date.parse::<i32>().map_err(|err| {
         AppError::from(format!(
             "wb_wdi: parse_row: non-numeric date {:?} for {}: {}",
@@ -135,9 +135,18 @@ mod tests {
     }
 
     #[test]
-    fn parse_response_rejects_empty_iso3() {
-        let raw: WdiResponse = WdiResponse(metadata(), vec![row("", "2024", Some(1.66))]);
-        let result: Result<Vec<ParsedWdiStatisticValue>, AppError> = parse_response(raw);
-        assert!(result.is_err());
+    fn parse_response_drops_empty_iso3_aggregates() {
+        let raw: WdiResponse = WdiResponse(
+            metadata(),
+            vec![
+                row("USA", "2024", Some(1.66)),
+                row("", "2024", Some(2.10)),
+                row("DEU", "2023", Some(1.36)),
+            ],
+        );
+        let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = parse_response(raw).expect("parse_response succeeds");
+        assert_eq!(parsed_wdi_statistic_values.len(), 2);
+        assert_eq!(parsed_wdi_statistic_values[0].iso3, "USA");
+        assert_eq!(parsed_wdi_statistic_values[1].iso3, "DEU");
     }
 }
