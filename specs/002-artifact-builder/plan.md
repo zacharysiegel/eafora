@@ -100,26 +100,32 @@ ingestion publish <version-label> \
 
 ### Module layout
 
+`geometry/` sits at the top of `ingestion/src/` (sibling to `artifact/`, `adapter/`, `ingest/`, etc.) — not under `artifact/`. It does both fetch (download from Natural Earth, unzip, parse the shapefile in-memory) and publish (the shapefile-to-FlatGeobuf conversion is consumed by `artifact/writer/flatgeobuf.rs`); that dual role makes it a cross-cutting concern rather than an artifact-only one. Lifting now (small as it is) makes the subnational-geometry path in v2+ a plain expansion of the existing top-level module, not a relocation.
+
 ```
-ingestion/src/artifact/
-├── mod.rs
-├── artifact.rs                 # build_artifacts orchestrator + helpers in artifact_db / artifact_model that the orchestrator sequences
-├── artifact_model.rs           # CandidateValue, MergedValue, LocalArtifactBuild, ShardOutput, HashedOutputs, ArtifactVersion (the canonical entity belongs here too since it's only used by this feature)
-├── artifact_db.rs              # read_candidate_values + insert_artifact_version (sqlx queries)
-├── source_priority.rs          # apply_source_priority — pure logic; TDD surface
-├── content_hashing.rs          # compute_content_hashes — SHA-256 + the *.tmp.<uuid> → <name>-<sha8>.<ext> rename dance
-├── publish.rs                  # publish_artifacts orchestrator (generic over S: ArtifactRepository)
-├── writer/                     # output-shape writers (one file per output format)
-│   ├── mod.rs                  # pub mod sqlite; pub mod flatgeobuf; pub mod manifest;
-│   ├── sqlite.rs               # emit_sqlite_shards
-│   ├── flatgeobuf.rs           # emit_geometry_flatgeobuf
-│   └── manifest.rs             # emit_manifest — builds + hashes manifest.json
-├── repository/
-│   ├── mod.rs                  # ArtifactRepository trait; pub mod local; pub mod cloudflare_r2; pub mod dryrun;
-│   ├── local.rs                # LocalArtifactRepository impl
-│   ├── cloudflare_r2.rs        # CloudflareR2ArtifactRepository impl (raw reqwest + aws-sigv4)
-│   └── dryrun.rs               # DryrunArtifactRepository impl for tests
-└── geometry/                   # in-tree subdirectory for the Natural Earth processing; eventually lifts to a top-level geometry/ when subnational lands
+ingestion/src/
+├── adapter/                    # cross-adapter types + generic helpers (existing)
+├── canonical/                  # canonical-store reads + reference enums (existing)
+├── ingest/                     # canonical-store writes (existing)
+├── artifact/
+│   ├── mod.rs
+│   ├── artifact.rs             # build_artifacts orchestrator
+│   ├── artifact_model.rs       # CandidateValue, MergedValue, LocalArtifactBuild, ShardOutput, HashedOutputs, ArtifactVersion
+│   ├── artifact_db.rs          # read_candidate_values + insert_artifact_version (sqlx queries)
+│   ├── source_priority.rs      # apply_source_priority — pure logic; TDD surface
+│   ├── content_hashing.rs      # compute_content_hashes — SHA-256 + the *.tmp.<uuid> → <name>-<sha8>.<ext> rename dance
+│   ├── publish.rs              # publish_artifacts orchestrator (generic over S: ArtifactRepository)
+│   ├── writer/                 # output-shape writers
+│   │   ├── mod.rs              # pub mod sqlite; pub mod flatgeobuf; pub mod manifest;
+│   │   ├── sqlite.rs           # emit_sqlite_shards
+│   │   ├── flatgeobuf.rs       # emit_geometry_flatgeobuf — calls into crate::geometry to get features, writes .fgb
+│   │   └── manifest.rs         # emit_manifest — builds + hashes manifest.json
+│   └── repository/
+│       ├── mod.rs              # ArtifactRepository trait; pub mod local; pub mod cloudflare_r2; pub mod dryrun;
+│       ├── local.rs            # LocalArtifactRepository impl
+│       ├── cloudflare_r2.rs    # CloudflareR2ArtifactRepository impl (raw reqwest + aws-sigv4)
+│       └── dryrun.rs           # DryrunArtifactRepository impl for tests
+└── geometry/                   # top-level (sibling to artifact/): fetch + parse Natural Earth; subnational paths land here in v2+
     ├── mod.rs                  # pub mod natural_earth;
     └── natural_earth.rs        # pinned URL, zip extraction, shapefile → in-memory features
 ```
@@ -172,7 +178,7 @@ Credentials come from `secr`-encrypted secrets at keys (TBD; documented in setup
 
 ### Module-layout decision
 
-Single-project layout (the `ingestion/` workspace member, same as 001). Module layout above expands the existing per-feature pattern: each artifact concern is its own file under `ingestion/src/artifact/`. The `geometry/` subdirectory inside `artifact/` is the v1 home for Natural Earth processing; it lifts to a top-level `ingestion/src/geometry/` when subnational geometry support lands (per architecture doc line 74).
+Single-project layout (the `ingestion/` workspace member, same as 001). Module layout above expands the existing per-feature pattern: each artifact concern is its own file under `ingestion/src/artifact/`. The `geometry/` module sits at the top of `ingestion/src/` so the future subnational-geometry path lands as a plain extension of that module rather than a relocation.
 
 ## Test harness design
 
