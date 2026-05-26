@@ -1,0 +1,130 @@
+# Implementation Plan: Artifact builder + R2 publish
+
+**Feature**: 002-artifact-builder
+
+**Spec**: `specs/002-artifact-builder/spec.md`
+
+## Technical Context
+
+### Dependencies (additions to `[workspace.dependencies]`)
+
+| Crate | Purpose | Wildcard pin |
+|-------|---------|--------------|
+| `rusqlite` | Embedded SQLite writer for per-statistic shards. Bundled feature ships SQLite source so no system library is required. | `0.32.*` |
+| `flatgeobuf` | FlatGeobuf writer (the upstream library, MIT-licensed). | `4.6.*` |
+| `geozero` | Pulled in via `flatgeobuf`; provides the GeoJSON / WKB conversion the writer needs. | (transitive) |
+| `shapefile` | Reads the Natural Earth `.shp` from the downloaded zip. | `0.7.*` |
+| `zip` | Unzips the Natural Earth release in-memory (no temp files). | `4.5.*` |
+| `sha2` | SHA-256 hashing for content-hashed filenames + manifest. | `0.10.*` |
+| `aws-sigv4` | Signs the S3 PUT requests; thin enough to keep "explicit over implicit" intact (the raw `reqwest::Client` still issues the calls). | `1.3.*` |
+
+**Why these specific picks** (per `feedback_eafora_library_conventions.md` — ask before adding deps):
+
+- `rusqlite` over `sqlx::sqlite` — sqlx pulls in async runtime baggage we don't need for a per-build local file writer; rusqlite is sync, simple, has a much smaller dep tree, and matches the "explicit over implicit" preference.
+- `flatgeobuf` is the only viable FlatGeobuf writer in Rust.
+- `aws-sigv4` (not the full `aws-sdk-s3`) — we want to see the actual HTTP request being built; the SDK hides too much.
+- No new test deps. Mocking R2 happens via a `--dry-run` flag on `publish` that exercises the full upload code path without actually opening a connection (the AWS sigv4 signer doesn't care if the target host is reachable, and `reqwest` short-circuits at the connection step when the dry-run flag is set).
+
+### Module layout
+
+```
+ingestion/src/artifact/
+├── mod.rs
+├── artifact.rs                 # build_artifacts orchestrator + helpers in artifact_db / artifact_model that the orchestrator sequences
+├── artifact_model.rs           # CandidateValue, MergedValue, LocalArtifactBuild, ShardOutput, HashedOutputs, ArtifactVersion (the canonical entity belongs here too since it's only used by this feature)
+├── artifact_db.rs              # read_candidate_values + insert_artifact_version (sqlx queries)
+├── source_preference_merge.rs  # apply_source_preference_merge — pure logic; TDD surface
+├── sqlite_writer.rs            # emit_sqlite_shards
+├── flatgeobuf_writer.rs        # emit_geometry_flatgeobuf — downloads Natural Earth, processes in memory, writes .fgb
+├── content_hashing.rs          # compute_content_hashes — SHA-256 + the *.tmp-<uuid> → <name>-<sha8>.<ext> rename dance
+├── manifest_writer.rs          # emit_manifest — builds + hashes manifest.json
+├── publish.rs                  # upload_artifacts_to_r2 + upload_files_to_r2 (raw reqwest + aws-sigv4)
+└── geometry_ingest/            # in-tree subdirectory for the Natural Earth processing; eventually lifts to a top-level geometry_ingest/ when subnational lands
+    ├── mod.rs
+    └── natural_earth.rs        # pinned URL, zip extraction, shapefile → FlatGeobuf join via country.iso3
+```
+
+Per `feedback_no_per_source_test_helper_modules.md`: artifact-builder integration tests live in `ingestion/tests/artifact_integration.rs`; any helpers used only there inline as private fns.
+
+### SQLite shard schema
+
+```sql
+create table values (
+    region_iso3   text    not null,
+    region_id     blob    not null,        -- UUID-as-blob for compactness + client-side index reuse
+    period_start  text    not null,        -- ISO 8601 date 'YYYY-MM-DD'
+    period_end    text    not null,
+    value         real    not null,
+    data_status   text    not null,
+    data_source_code     text not null,
+    data_source_revision text not null,
+    primary key (region_iso3, period_start, period_end)
+);
+create index values_by_region on values (region_id);
+```
+
+`region_iso3` is for human-readable client queries; `region_id` is for the rare cross-shard joins. Period as text (ISO 8601) so client queries are naturally string-comparable across all SQLite versions without date-function dependencies.
+
+### Manifest serialization
+
+`serde_json` with a typed `Manifest` struct + serde derives — matches `serde_json` usage everywhere else. Field order in the JSON output is fixed (BTreeMap on statistic codes for deterministic builds). Pretty-printed with two-space indents for human readability.
+
+### R2 upload mechanics
+
+The R2 bucket is reachable via the S3 endpoint `https://<account-id>.r2.cloudflarestorage.com`. We construct each request manually:
+
+```rust
+let signed_request = aws_sigv4::http_request::sign(/* PUT, headers, body */, &credentials, &signing_settings)?;
+let response = reqwest_client.put(url).headers(signed_headers).body(body).send().await?;
+```
+
+Credentials come from `secr`-encrypted secrets at keys (TBD; documented in setup.sh as the credentials get added):
+- `r2.access_key_id`
+- `r2.secret_access_key`
+- `r2.account_id`
+- `r2.bucket_name`
+
+### Constitution alignment
+
+- **Principle V (Explicit over implicit)**: hand-written SQL for `read_candidate_values` and `insert_artifact_version`; raw `reqwest` + `aws-sigv4` for S3 PUTs (no SDK); SQLite writes via `rusqlite::Connection::execute_batch` with hand-written DDL.
+- **Principle VII (Test-first)**: `apply_source_preference_merge`, manifest serialization, content hashing, SHA-256-from-bytes, and the `name.tmp.<uuid> → name-<sha8>.<ext>` rename helper are pure functions and follow Red-Green-Refactor.
+- **Principle IV (Singularity convention parity)**: every new dep above is added to `[workspace.dependencies]` with the wildcard pin; consumer crates use `{ workspace = true }`.
+
+### Module-layout decision
+
+Single-project layout (the `ingestion/` workspace member, same as 001). Module layout above expands the existing per-feature pattern: each artifact concern is its own file under `ingestion/src/artifact/`. The `geometry_ingest/` subdirectory inside `artifact/` is the v1 home for Natural Earth processing; it lifts to a top-level `ingestion/src/geometry_ingest/` when subnational geometry support lands (per architecture doc line 74).
+
+## Test harness design
+
+- **Pure-logic tests** live in `#[cfg(test)] mod tests` blocks within their respective files (`source_preference_merge.rs`, `content_hashing.rs`, `manifest_writer.rs`).
+- **DB integration tests** live in `tests/artifact_integration.rs`. Each test opens a transaction on the existing `eafora_test` pool helper, exercises `read_candidate_values` / `insert_artifact_version`, and rolls back.
+- **R2 integration test**: one test in `tests/artifact_integration.rs` runs `upload_artifacts_to_r2` with `--dry-run` on a real `LocalArtifactBuild` fixture (constructed from temp files via `tempfile`). Asserts: every shard's signed PUT URL is computed, the headers carry the right Cache-Control values, and `artifact_version` is NOT inserted (dry-run skips that step too).
+- **End-to-end test**: one test runs the full `build` against `eafora_test` (which has the seeded canonical store but no values), inserts a small known fixture into `statistic_value`, runs the build, asserts the shard file exists and contains the expected rows when opened via `rusqlite`.
+
+## Implementation phases
+
+1. **Workspace setup** (Cargo deps): add the 7 crates above to `[workspace.dependencies]`; `ingestion/Cargo.toml` references each via `{ workspace = true }`.
+2. **artifact_model + artifact_db** (T010-T013): types, `read_candidate_values`, `insert_artifact_version` scaffolded (returns dummy / not-yet-implemented until later phases).
+3. **source-preference merge** (T014-T015, TDD): tests then implementation.
+4. **SQLite shard writer** (T016-T018, TDD-light): tests cover the schema + row writing; FR-005 satisfied.
+5. **FlatGeobuf geometry writer** (T019-T021): Natural Earth download (pinned URL, zip → shapefile in-memory), join to `country.iso3` table from DB, write `.fgb`.
+6. **Content hashing + tmp-file rename** (T022-T023, TDD): tests then implementation.
+7. **Manifest emission** (T024-T025, TDD): build the `Manifest` struct from `HashedOutputs`, serialize via `serde_json::to_string_pretty`, hash it, write to disk.
+8. **build_artifacts orchestrator** (T026): chain phases 2-7; integration test against `eafora_test`.
+9. **R2 publish** (T027-T031): `upload_files_to_r2` (signed PUTs via reqwest + aws-sigv4), `insert_artifact_version`, `upload_artifacts_to_r2` orchestrator with the atomic-publish invariant. `--dry-run` flag wires through `publish`.
+10. **CLI wiring** (T032-T034): `dispatch_build`, `dispatch_publish`, `--upload` flag on build that chains the two.
+11. **Polish** (T035-T038): coverage measurement on pure helpers, live build + dry-run publish timing per SC-002, architecture-doc amendments for any divergences, cleanup-merged.
+
+## Phasing for PRs
+
+This feature breaks naturally into three serial PRs, stacked linearly:
+
+- **PR A** (`impl-artifact-build-local`): phases 1-8 — every artifact lands on disk; build CLI works; no R2 yet.
+- **PR B** (`impl-artifact-publish-r2`): phase 9 — R2 upload + artifact_version recording; publish CLI works; `--dry-run` covers tests.
+- **PR C** (`impl-artifact-cli-polish`): phases 10-11 — `build --upload` chained mode, coverage measurement, doc amendments.
+
+Each PR includes its tasks block from `tasks.md` (subset), is reviewable independently, and stacks the next branch on the prior per `feedback_branch_per_body_of_work.md` and `feedback_serial_branches_must_stack.md`.
+
+## Brief PR description (per `feedback_pr_description_style.md`, applies to PR A only — B and C get their own when cut)
+
+> Implements `build_artifacts(pool, output_dir, version_label)` per `docs/architecture/ingestion.md` §Artifact builder: reads candidate values from the canonical store, applies the source-preference merge, emits per-statistic / per-license-class SQLite shards and a content-hashed FlatGeobuf geometry shard processed from the pinned Natural Earth release, writes `manifest.json` with full SHA-256 hashes referenced by content-hashed filenames. Adds the `build <output-dir> <version-label>` CLI dispatch. No R2 upload yet (lands in the stacked follow-up PR); the `artifact_version` table is unchanged by `build`.
