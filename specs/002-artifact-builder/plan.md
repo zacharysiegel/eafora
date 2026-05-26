@@ -43,8 +43,8 @@ pub trait ArtifactRepository: Send + Sync {
 }
 
 pub struct LocalArtifactRepository {
-    pub published_dir: PathBuf,  // e.g. ${repo_dir}/published — per-version subdirs land inside
-    pub version_label: String,
+    pub published_dir: PathBuf,  // e.g. ${repo_dir}/published
+    pub version_label: String,   // every put writes to <published_dir>/<version_label>/<key>
 }
 
 pub struct CloudflareR2ArtifactRepository {
@@ -53,13 +53,17 @@ pub struct CloudflareR2ArtifactRepository {
     pub account_id: String,
     pub bucket_name: String,
     pub cdn_base_url: String,    // e.g. https://artifacts.eafora.org
+    pub version_label: String,   // every put writes to <bucket>/<version_label>/<key>; URL returned is <cdn_base_url>/<version_label>/<key>
 }
 
 pub struct DryrunArtifactRepository {
     // Records every put/delete call for test assertions; no I/O.
+    pub version_label: String,
     pub recorded: Mutex<Vec<RecordedOp>>,
 }
 ```
+
+**Path scheme (Option A — per-version namespace, symmetric across destinations)**: every key passed to `put` is namespaced under the repository's `version_label`. A `put("data/tfr-base-<sha>.sqlite", ...)` writes to `<published_dir>/<version_label>/data/tfr-base-<sha>.sqlite` for local, or `<bucket>/<version_label>/data/tfr-base-<sha>.sqlite` for Cloudflare R2. Deletion is trivial — `rm -rf` the local subdir, or list-and-delete the bucket prefix. Identical content-hashed shards across versions get duplicated; the dedup loss is ~5MB per version (free at our scale on both destinations per `project_eafora_r2_pricing.md`).
 
 `upload_artifacts_to_cloudflare_r2` becomes `publish_artifacts<S: ArtifactRepository>(repository: &S, pool: &PgPool, build: &LocalArtifactBuild) -> Result<ArtifactVersion, AppError>` — generic, no `&dyn`. The trait + impls live in `ingestion/src/artifact/repository/{mod.rs, local.rs, cloudflare_r2.rs, dryrun.rs}`; `publish_artifacts` lives in `ingestion/src/artifact/publish.rs`.
 
@@ -69,15 +73,15 @@ The CLI's `dispatch_publish` parses the destination flag and monomorphizes per a
 let artifact_version: ArtifactVersion = match destination {
     Destination::Local { published_dir } => {
         let repository: LocalArtifactRepository = LocalArtifactRepository { published_dir, version_label: version_label.clone() };
-        publish_artifacts(&store, &pool, &build).await?
+        publish_artifacts(&repository, &pool, &build).await?
     }
     Destination::CloudflareR2 => {
         let repository: CloudflareR2ArtifactRepository = construct_cloudflare_r2_store().await?;
-        publish_artifacts(&store, &pool, &build).await?
+        publish_artifacts(&repository, &pool, &build).await?
     }
     Destination::Dryrun => {
         let repository: DryrunArtifactRepository = DryrunArtifactRepository::new();
-        publish_artifacts(&store, &pool, &build).await?
+        publish_artifacts(&repository, &pool, &build).await?
     }
 };
 ```
@@ -87,7 +91,7 @@ Three monomorphizations of `publish_artifacts` get compiled — small (~50 LOC e
 ### CLI flags
 
 ```sh
-# Defaults to --destination=local for now; flip to --destination=cloudflare-r2 when product ships.
+# Defaults to --destination=local
 ingestion publish <version-label> \
     [--destination=local|cloudflare-r2] \
     [--local-dir=<path>]              # required if --destination=local; defaults to ${repo_dir}/published
