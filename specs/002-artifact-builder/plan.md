@@ -106,20 +106,22 @@ ingestion/src/artifact/
 ├── artifact.rs                 # build_artifacts orchestrator + helpers in artifact_db / artifact_model that the orchestrator sequences
 ├── artifact_model.rs           # CandidateValue, MergedValue, LocalArtifactBuild, ShardOutput, HashedOutputs, ArtifactVersion (the canonical entity belongs here too since it's only used by this feature)
 ├── artifact_db.rs              # read_candidate_values + insert_artifact_version (sqlx queries)
-├── source_priority.rs  # apply_source_priority — pure logic; TDD surface
-├── writer/sqlite.rs            # emit_sqlite_shards
-├── writer/flatgeobuf.rs        # emit_geometry_flatgeobuf
+├── source_priority.rs          # apply_source_priority — pure logic; TDD surface
 ├── content_hashing.rs          # compute_content_hashes — SHA-256 + the *.tmp.<uuid> → <name>-<sha8>.<ext> rename dance
-├── writer/manifest.rs          # emit_manifest — builds + hashes manifest.json
 ├── publish.rs                  # publish_artifacts orchestrator (generic over S: ArtifactRepository)
+├── writer/                     # output-shape writers (one file per output format)
+│   ├── mod.rs                  # pub mod sqlite; pub mod flatgeobuf; pub mod manifest;
+│   ├── sqlite.rs               # emit_sqlite_shards
+│   ├── flatgeobuf.rs           # emit_geometry_flatgeobuf
+│   └── manifest.rs             # emit_manifest — builds + hashes manifest.json
 ├── repository/
-│   ├── mod.rs                  # ArtifactRepository trait
+│   ├── mod.rs                  # ArtifactRepository trait; pub mod local; pub mod cloudflare_r2; pub mod dryrun;
 │   ├── local.rs                # LocalArtifactRepository impl
-│   ├── cloudflare_r2.rs                   # CloudflareR2ArtifactRepository impl (raw reqwest + aws-sigv4)
+│   ├── cloudflare_r2.rs        # CloudflareR2ArtifactRepository impl (raw reqwest + aws-sigv4)
 │   └── dryrun.rs               # DryrunArtifactRepository impl for tests
-└── geometry/            # in-tree subdirectory for the Natural Earth processing; eventually lifts to a top-level geometry/ when subnational lands
-    ├── mod.rs
-    └── natural_earth.rs        # pinned URL, zip extraction, shapefile → FlatGeobuf join via country.iso3
+└── geometry/                   # in-tree subdirectory for the Natural Earth processing; eventually lifts to a top-level geometry/ when subnational lands
+    ├── mod.rs                  # pub mod natural_earth;
+    └── natural_earth.rs        # pinned URL, zip extraction, shapefile → in-memory features
 ```
 
 Per `feedback_no_per_source_test_helper_modules.md`: artifact-builder integration tests live in `ingestion/tests/artifact_integration.rs`; any helpers used only there inline as private fns.
