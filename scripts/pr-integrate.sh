@@ -9,6 +9,8 @@
 #
 # Usage:
 #   ./scripts/pr-integrate.sh <branch>
+#   ./scripts/pr-integrate.sh --current                                   (use the currently
+#                                                                         checked-out branch)
 #   ./scripts/pr-integrate.sh <branch> --onto <former-parent-branch>     (for a stacked branch
 #                                                                         whose parent already merged)
 #
@@ -29,6 +31,7 @@ set -euo pipefail
 
 BRANCH=""
 FORMER_PARENT=""
+USE_CURRENT_BRANCH=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -39,6 +42,10 @@ while [[ $# -gt 0 ]]; do
                 exit 64
             fi
             FORMER_PARENT="$1"
+            shift
+            ;;
+        --current)
+            USE_CURRENT_BRANCH=true
             shift
             ;;
         -h|--help)
@@ -61,8 +68,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if [[ "$USE_CURRENT_BRANCH" == true ]]; then
+    if [[ -n "$BRANCH" ]]; then
+        echo "error: --current cannot be combined with a positional branch argument" >&2
+        exit 64
+    fi
+    BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+    if [[ -z "$BRANCH" ]]; then
+        echo "error: --current requires HEAD to be on a branch (detached HEAD)" >&2
+        exit 1
+    fi
+fi
+
 if [[ -z "$BRANCH" ]]; then
-    echo "usage: $0 <branch> [--onto <former-parent-branch>]" >&2
+    echo "usage: $0 (<branch> | --current) [--onto <former-parent-branch>]" >&2
     exit 64
 fi
 
