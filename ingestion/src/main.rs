@@ -135,8 +135,7 @@ async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
     let pool: PgPool = db::create_pool().await?;
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
     let options: BuildOptions = BuildOptions::default();
-    let build: LocalArtifactBuild =
-        artifact::build_artifacts(&mut *transaction, &output_dir, version_label, options).await?;
+    let build: LocalArtifactBuild = artifact::build_artifacts(&mut *transaction, &output_dir, version_label, options).await?;
     transaction.commit().await?;
 
     log::info!(
