@@ -129,7 +129,7 @@ Per `feedback_no_per_source_test_helper_modules.md`: artifact-builder integratio
 ### SQLite shard schema
 
 ```sql
-create table values (
+create table statistic_value (
     region_iso3   text    not null,
     region_id     blob    not null,        -- UUID-as-blob for compactness + client-side index reuse
     period_start  text    not null,        -- ISO 8601 date 'YYYY-MM-DD'
@@ -140,7 +140,7 @@ create table values (
     data_source_revision text not null,
     primary key (region_iso3, period_start, period_end)
 );
-create index values_by_region on values (region_id);
+create index statistic_value_by_region on statistic_value (region_id);
 ```
 
 `region_iso3` is for human-readable client queries; `region_id` is for the rare cross-shard joins. Period as text (ISO 8601) so client queries are naturally string-comparable across all SQLite versions without date-function dependencies.
