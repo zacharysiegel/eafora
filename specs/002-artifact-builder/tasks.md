@@ -60,28 +60,32 @@ Task ordering reflects the three-PR stacked sequence in plan.md §Phasing for PR
 
 ---
 
-## PR B: R2 publish (phase 9)
+## PR B: Publish + storage abstraction (phase 9)
 
-- [ ] T023 [Tests-first] Write unit tests for the AWS sigv4 signing logic in `ingestion/src/artifact/publish.rs::#[cfg(test)] mod tests`: assert that a known input (PUT method, bucket/key, fixed timestamp, fixed credentials) produces the expected `Authorization` header per the AWS sigv4 spec.
-- [ ] T024 Implement `upload_files_to_r2(client, credentials, bucket, region, hashed, manifest) -> Result<(), AppError>` in `publish.rs`: for each ShardOutput, construct a signed PUT request via `aws_sigv4::http_request::sign`, set the appropriate `Cache-Control` header (`immutable` for shards/geometry; `max-age=300` for manifest), and issue the request via `reqwest`. Idempotent — re-running with the same content-hashed keys is a no-op overwrite.
-- [ ] T025 [Foundational] Write `ingestion/src/artifact/artifact_db.rs::insert_artifact_version(executor, version_label, manifest_output, hashed, data_source_versions) -> Result<ArtifactVersion, AppError>`. Single `query_as!` insert; `manifest_url` resolves to the CDN URL via a `cdn_base_url` parameter (TBD config).
-- [ ] T026 Implement `upload_artifacts_to_r2(pool, build) -> Result<ArtifactVersion, AppError>` orchestrator: calls T024 first; only if all uploads succeed does it call T025. Per FR-002, the local build is not modified or deleted on failure.
-- [ ] T027 Add `--dry-run` flag to publish: skips the actual network PUT (the signed request is constructed and validated, just not sent); skips the `insert_artifact_version` insert. Tests use this to exercise the full code path without network.
-- [ ] T028 [US3] Wire `dispatch_publish` in `main.rs` to read the local build from disk (manifest + referenced files), pass it through `upload_artifacts_to_r2`. The `<version-label>` arg matches a previously-built directory's manifest version.
-- [ ] T029 Integration test in `tests/artifact_integration.rs`: build a small LocalArtifactBuild fixture in `tempdir()`, run `upload_artifacts_to_r2` with `--dry-run` against an `eafora_test` transaction, assert: no row in `artifact_version` (dry-run skips); every signed request was constructed; no panics.
-- [ ] T030 Document R2 secret keys: `r2.access_key_id`, `r2.secret_access_key`, `r2.account_id`, `r2.bucket_name` — add to `template.env` as commented placeholders and to `setup.sh` as a `secr` read step (deferred to real credentials existing).
-- [ ] T031 Manual verification of PR B: live publish against a developer R2 bucket; assert the manifest URL returns HTTP 200 and the shards do too.
+PR B introduces the destination-agnostic `ArtifactStore` trait and three impls: local disk, R2, and a dry-run for tests. Pre-product-ship the periodic job runs with `--destination=local`; the R2 store is verified once against a real bucket then sits behind the flag until launch.
+
+- [ ] T023 [Foundational] Write `ingestion/src/artifact/store/mod.rs::ArtifactStore` trait (async; `Send + Sync`) with one method: `async fn put(&self, key: &str, body: Bytes, cache_control: &str) -> Result<String, AppError>`. Return value is the URL the file is now fetchable from.
+- [ ] T024 [Foundational] Write `ingestion/src/artifact/store/local.rs::LocalArtifactStore`. Constructor takes `published_dir: PathBuf` + the build's `version_label` (the impl creates `<published_dir>/<version_label>/` and copies files under it). `put` writes bytes to `<published_dir>/<version_label>/<key>` and returns `file://<absolute_path>`.
+- [ ] T025 [Tests-first] Write unit tests for the aws-sigv4 signing logic in `ingestion/src/artifact/store/r2.rs::#[cfg(test)] mod tests`: assert that a known input (PUT method, bucket/key, fixed timestamp, fixed credentials) produces the expected `Authorization` header per the AWS sigv4 spec.
+- [ ] T026 Implement `R2ArtifactStore`. `put` signs a PUT request via `aws_sigv4::http_request::sign`, sets `Cache-Control` from the caller, issues via `reqwest`, returns the `<cdn_base_url>/<key>` URL.
+- [ ] T027 Write `ingestion/src/artifact/store/dryrun.rs::DryrunArtifactStore`. `put` appends to an internal `Mutex<Vec<RecordedPut>>` and returns a placeholder URL; never does I/O. Used by tests to assert "publish would have uploaded these files" without network or filesystem touches.
+- [ ] T028 [Foundational] Write `ingestion/src/artifact/artifact_db.rs::insert_artifact_version(executor, version_label, manifest_output, hashed, data_source_versions, manifest_url) -> Result<ArtifactVersion, AppError>`. Single `query_as!` insert; `manifest_url` is whatever the store impl returned for the manifest's `put` call.
+- [ ] T029 Implement `publish_artifacts(store: &dyn ArtifactStore, pool: &PgPool, build: &LocalArtifactBuild) -> Result<ArtifactVersion, AppError>` in `publish.rs`. Iterates every file (shards, geometry, then manifest LAST since the manifest references the others' final URLs); collects the manifest's URL from the final `store.put`; calls `insert_artifact_version` only if all puts succeed. Per FR-002 the local build on disk is not modified or deleted by publish — failure means retry-by-rerun.
+- [ ] T030 [US3] Wire `dispatch_publish` in `main.rs`: parse `--destination=local|r2` (default `local`), `--local-dir=<path>` (required if local; defaults to `${repo_dir}/published`), `--dry-run` (constructs `DryrunArtifactStore` regardless of destination). Reads the local build from disk (manifest + referenced files), constructs the right `ArtifactStore`, calls `publish_artifacts`.
+- [ ] T031 Integration test in `tests/artifact_integration.rs`: build a small `LocalArtifactBuild` fixture in `tempdir()`, run `publish_artifacts` with a `DryrunArtifactStore` and an `eafora_test` transaction, assert: every expected key was put-called with the right Cache-Control; `artifact_version` row got inserted with the dry-run's returned manifest URL; transaction rolls back so no committed state remains.
+- [ ] T032 Integration test in `tests/artifact_integration.rs`: same fixture + a `LocalArtifactStore` pointing at `tempdir()`, assert: every file lands in the expected `<published_dir>/<version>/<key>` path; `artifact_version.manifest_url` starts with `file://`.
+- [ ] T033 Document R2 secret keys: `r2.access_key_id`, `r2.secret_access_key`, `r2.account_id`, `r2.bucket_name`, plus the public `R2_CDN_BASE_URL` env var or config — add to `template.env` as commented placeholders and to `setup.sh` as a `secr` read step (deferred to real credentials existing).
+- [ ] T034 Manual verification of PR B: live publish against a developer R2 bucket via `--destination=r2`; assert the manifest URL returns HTTP 200 and the shards do too. This is the ONE live R2 run to confirm the path works end-to-end.
 
 ---
 
 ## PR C: CLI polish + meta (phases 10-11)
 
-- [ ] T032 Implement the `--upload` flag on `build` that chains `build_artifacts` directly into `upload_artifacts_to_r2` without round-tripping through disk (avoids re-reading the manifest from disk; uses the in-memory `LocalArtifactBuild`).
-- [ ] T033 Update `scripts/eafora-ingestion.plist.template` (or fork it) to invoke `build /tmp/eafora-build-<timestamp> <date> --upload` after the `all` subcommand. Decision: chain into the same launchd job, or use a second plist? Default: same job — failure of build/publish surfaces in the launchd log alongside the ingestion run.
-- [ ] T034 Run `cargo llvm-cov -p ingestion` and verify the pure-function helpers (`apply_source_preference_merge`, `collect_data_source_versions`, manifest writer, content hashing) achieve ≥90% line coverage per SC-005.
-- [ ] T035 [P] Live timing of `build + publish` end-to-end against the v1 canonical store; verify SC-002 (<60s).
-- [ ] T036 [P] If implementation surfaced any divergence from `docs/architecture/ingestion.md` §Artifact builder or §R2 upload, propose an architecture amendment in a follow-up.
-- [ ] T037 [P] Run `./scripts/cleanup-merged.sh` after PRs A, B, C all integrate.
+- [ ] T035 Update `ingestion/eafora-ingestion.plist.template` to invoke `build /tmp/eafora-build-$(date +%F) <date>` followed by `publish <date> --destination=local --local-dir ${REPO_ROOT}/published` after the `all` subcommand. Pre-ship: local destination only. Post-ship: flip the flag to `r2`. (The plist's `ProgramArguments` references the destination directly so the switch is a one-flag edit.)
+- [ ] T036 Run `cargo llvm-cov -p ingestion` and verify the pure-function helpers (`apply_source_preference_merge`, `collect_data_source_versions`, manifest writer, content hashing) achieve ≥90% line coverage per SC-005.
+- [ ] T037 [P] Live timing of `build + publish --destination=local` end-to-end against the v1 canonical store; verify SC-002 (<60s).
+- [ ] T038 [P] If implementation surfaced any divergence from `docs/architecture/ingestion.md` §Artifact builder or §R2 upload, propose an architecture amendment in a follow-up. Specifically expected: the architecture currently talks about `upload_artifacts_to_r2`; the as-built `publish_artifacts(store: &dyn ArtifactStore, ...)` lives in the same doc with the trait abstraction added.
+- [ ] T039 [P] Run `./scripts/cleanup-merged.sh` after PRs A, B, C all integrate.
 
 ---
 

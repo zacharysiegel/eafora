@@ -16,14 +16,62 @@
 | `shapefile` | Reads the Natural Earth `.shp` from the downloaded zip. | `0.7.*` |
 | `zip` | Unzips the Natural Earth release in-memory (no temp files). | `4.5.*` |
 | `sha2` | SHA-256 hashing for content-hashed filenames + manifest. | `0.10.*` |
-| `aws-sigv4` | Signs the S3 PUT requests; thin enough to keep "explicit over implicit" intact (the raw `reqwest::Client` still issues the calls). | `1.3.*` |
+| `aws-sigv4` | Signs the S3 PUT requests for the R2 store impl; thin enough to keep "explicit over implicit" intact (the raw `reqwest::Client` still issues the calls). | `1.3.*` |
+| `async-trait` | Lets the `ArtifactStore` trait declare async methods + be object-safe (`&dyn ArtifactStore`). Standard in async Rust ecosystem; one transitive crate. | `0.1.*` |
 
 **Why these specific picks** (per `feedback_eafora_library_conventions.md` — ask before adding deps):
 
 - `rusqlite` over `sqlx::sqlite` — sqlx pulls in async runtime baggage we don't need for a per-build local file writer; rusqlite is sync, simple, has a much smaller dep tree, and matches the "explicit over implicit" preference.
 - `flatgeobuf` is the only viable FlatGeobuf writer in Rust.
 - `aws-sigv4` (not the full `aws-sdk-s3`) — we want to see the actual HTTP request being built; the SDK hides too much.
-- No new test deps. Mocking R2 happens via a `--dry-run` flag on `publish` that exercises the full upload code path without actually opening a connection (the AWS sigv4 signer doesn't care if the target host is reachable, and `reqwest` short-circuits at the connection step when the dry-run flag is set).
+- `async-trait` over native AFIT — native async-fn-in-trait is stable in 2024 edition but not object-safe without extra ceremony (`trait-variant` crate or manual desugaring). For one trait with two impls, `async_trait` is the cheapest path to `&dyn ArtifactStore`.
+- No new test deps. Mocking the R2 store happens via a `Dryrun` `ArtifactStore` impl that validates inputs without doing I/O (see Test harness design).
+
+### Storage abstraction
+
+Storage targets are an `ArtifactStore` trait — composition over enum dispatch so new destinations (GCS, in-process for tests, dry-run) drop in without touching the publish orchestrator:
+
+```rust
+#[async_trait::async_trait]
+pub trait ArtifactStore: Send + Sync {
+    /// Publishes one file under `key` (the path relative to the destination root,
+    /// e.g. "data/tfr-base-ab12cd34.sqlite") with the given Cache-Control header.
+    /// Returns the URL the file is now fetchable from (https://...cdn... for R2,
+    /// file://... for local).
+    async fn put(&self, key: &str, body: Bytes, cache_control: &str) -> Result<String, AppError>;
+}
+
+pub struct LocalArtifactStore {
+    pub published_dir: PathBuf,  // e.g. ${repo_dir}/published — per-version subdirs land inside
+}
+
+pub struct R2ArtifactStore {
+    pub client: reqwest::Client,
+    pub credentials: aws_sigv4::sign::v4::SigningParams,
+    pub account_id: String,
+    pub bucket_name: String,
+    pub cdn_base_url: String,    // e.g. https://artifacts.eafora.org
+}
+
+pub struct DryrunArtifactStore {
+    // Records every put call for test assertions; no I/O.
+    pub recorded: Mutex<Vec<RecordedPut>>,
+}
+```
+
+`upload_artifacts_to_r2` becomes `publish_artifacts(store: &dyn ArtifactStore, build: &LocalArtifactBuild) -> Result<ArtifactVersion, AppError>` — destination-agnostic. Naming convention follows: file is `ingestion/src/artifact/publish.rs`; the trait + impls live in `ingestion/src/artifact/store/{mod.rs, local.rs, r2.rs, dryrun.rs}`.
+
+The CLI's `dispatch_publish` parses the destination flag and constructs the right `ArtifactStore` impl, then passes it to `publish_artifacts`.
+
+### CLI flags
+
+```sh
+# Defaults to --destination=local for now; flip to r2 when product ships.
+ingestion publish <version-label> \
+    [--destination=local|r2] \
+    [--local-dir=<path>]              # required if --destination=local; defaults to ${repo_dir}/published
+    [--dry-run]                       # constructs the store, calls put(), validates signing/paths but no actual I/O
+```
 
 ### Module layout
 
@@ -35,10 +83,15 @@ ingestion/src/artifact/
 ├── artifact_db.rs              # read_candidate_values + insert_artifact_version (sqlx queries)
 ├── source_preference_merge.rs  # apply_source_preference_merge — pure logic; TDD surface
 ├── sqlite_writer.rs            # emit_sqlite_shards
-├── flatgeobuf_writer.rs        # emit_geometry_flatgeobuf — downloads Natural Earth, processes in memory, writes .fgb
-├── content_hashing.rs          # compute_content_hashes — SHA-256 + the *.tmp-<uuid> → <name>-<sha8>.<ext> rename dance
+├── flatgeobuf_writer.rs        # emit_geometry_flatgeobuf
+├── content_hashing.rs          # compute_content_hashes — SHA-256 + the *.tmp.<uuid> → <name>-<sha8>.<ext> rename dance
 ├── manifest_writer.rs          # emit_manifest — builds + hashes manifest.json
-├── publish.rs                  # upload_artifacts_to_r2 + upload_files_to_r2 (raw reqwest + aws-sigv4)
+├── publish.rs                  # publish_artifacts orchestrator (destination-agnostic, takes &dyn ArtifactStore)
+├── store/
+│   ├── mod.rs                  # ArtifactStore trait
+│   ├── local.rs                # LocalArtifactStore impl
+│   ├── r2.rs                   # R2ArtifactStore impl (raw reqwest + aws-sigv4)
+│   └── dryrun.rs               # DryrunArtifactStore impl for tests
 └── geometry_ingest/            # in-tree subdirectory for the Natural Earth processing; eventually lifts to a top-level geometry_ingest/ when subnational lands
     ├── mod.rs
     └── natural_earth.rs        # pinned URL, zip extraction, shapefile → FlatGeobuf join via country.iso3
