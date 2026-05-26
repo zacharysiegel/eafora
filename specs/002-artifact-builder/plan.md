@@ -164,7 +164,7 @@ Single-project layout (the `ingestion/` workspace member, same as 001). Module l
 6. **Content hashing + tmp-file rename** (T022-T023, TDD): tests then implementation.
 7. **Manifest emission** (T024-T025, TDD): build the `Manifest` struct from `HashedOutputs`, serialize via `serde_json::to_string_pretty`, hash it, write to disk.
 8. **build_artifacts orchestrator** (T026): chain phases 2-7; integration test against `eafora_test`.
-9. **Cloudflare R2 publish** (T027-T031): `upload_files_to_cloudflare_r2` (signed PUTs via reqwest + aws-sigv4), `insert_artifact_version`, `upload_artifacts_to_cloudflare_r2` orchestrator with the atomic-publish invariant. `--dry-run` flag wires through `publish`.
+9. **Cloudflare R2 publish** (T027-T031): `upload_files_to_cloudflare_r2` (signed PUTs via reqwest + aws-sigv4), `insert_artifact_version` with `ON CONFLICT (version_label) DO NOTHING`, `upload_artifacts_to_cloudflare_r2` orchestrator with the well-ordered publish flow (PUTs first with manifest LAST, then INSERT — partial failures leave orphan files but never a row that lies). `--dry-run` flag wires through `publish`.
 10. **CLI wiring** (T032-T034): `dispatch_build`, `dispatch_publish`, `--upload` flag on build that chains the two.
 11. **Polish** (T035-T038): coverage measurement on pure helpers, live build + dry-run publish timing per SC-002, architecture-doc amendments for any divergences, cleanup-merged.
 
