@@ -1379,6 +1379,7 @@ dependencies = [
  "sha2",
  "shapefile",
  "sqlx",
+ "tempfile",
  "tokio",
  "uuid",
  "zip",

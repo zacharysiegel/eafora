@@ -24,3 +24,6 @@ shapefile = { workspace = true }
 zip = { workspace = true }
 sha2 = { workspace = true }
 aws-sigv4 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
