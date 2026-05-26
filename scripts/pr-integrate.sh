@@ -11,7 +11,7 @@
 #   ./scripts/pr-integrate.sh <branch>
 #   ./scripts/pr-integrate.sh --current                                   (use the currently
 #                                                                         checked-out branch)
-#   ./scripts/pr-integrate.sh <branch> --onto <former-parent-branch>     (for a stacked branch
+#   ./scripts/pr-integrate.sh <branch> --from <former-parent-branch>     (for a stacked branch
 #                                                                         whose parent already merged)
 #
 # Behavior:
@@ -30,18 +30,18 @@
 set -euo pipefail
 
 BRANCH=""
-FORMER_PARENT=""
+FROM_BRANCH=""
 USE_CURRENT_BRANCH=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --onto)
+        --from)
             shift
             if [[ $# -lt 1 ]]; then
-                echo "error: --onto requires a former-parent branch argument" >&2
+                echo "error: --from requires a former-parent branch argument" >&2
                 exit 64
             fi
-            FORMER_PARENT="$1"
+            FROM_BRANCH="$1"
             shift
             ;;
         --current)
@@ -81,7 +81,7 @@ if [[ "$USE_CURRENT_BRANCH" == true ]]; then
 fi
 
 if [[ -z "$BRANCH" ]]; then
-    echo "usage: $0 (<branch> | --current) [--onto <former-parent-branch>]" >&2
+    echo "usage: $0 (<branch> | --current) [--from <former-parent-branch>]" >&2
     exit 64
 fi
 
@@ -110,10 +110,10 @@ if ! git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null 2>&1; then
     exit 1
 fi
 
-if [[ -n "$FORMER_PARENT" ]]; then
-    if ! git show-ref --verify --quiet "refs/heads/$FORMER_PARENT" && \
-       ! git rev-parse --verify --quiet "$FORMER_PARENT" > /dev/null; then
-        echo "error: former-parent ref '$FORMER_PARENT' not resolvable" >&2
+if [[ -n "$FROM_BRANCH" ]]; then
+    if ! git show-ref --verify --quiet "refs/heads/$FROM_BRANCH" && \
+       ! git rev-parse --verify --quiet "$FROM_BRANCH" > /dev/null; then
+        echo "error: former-parent ref '$FROM_BRANCH' not resolvable" >&2
         exit 1
     fi
 fi
@@ -124,8 +124,8 @@ git pull --ff-only
 
 echo ">>> Updating branch '$BRANCH' atop master"
 git checkout "$BRANCH"
-if [[ -n "$FORMER_PARENT" ]]; then
-    git rebase --onto master "$FORMER_PARENT" "$BRANCH"
+if [[ -n "$FROM_BRANCH" ]]; then
+    git rebase --onto master "$FROM_BRANCH" "$BRANCH"
 else
     git rebase master
 fi
