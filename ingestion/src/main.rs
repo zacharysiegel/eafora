@@ -29,8 +29,15 @@ async fn main() -> Result<(), AppError> {
         Some(("build", sub_matches)) => dispatch_build(sub_matches).await,
         Some(("seed", _)) => dispatch_seed().await,
         Some(("publish", sub_matches)) => dispatch_publish(sub_matches).await,
-        _ => unreachable!("subcommand_required guarantees a match"),
+        Some((other, _)) => Err(AppError::from(format!("unknown subcommand: {other}"))),
+        None => Err(AppError::new("missing subcommand")),
     }
+}
+
+fn require_arg<'a>(matches: &'a ArgMatches, name: &str) -> Result<&'a String, AppError> {
+    matches
+        .get_one::<String>(name)
+        .ok_or_else(|| AppError::from(format!("missing required argument: {name}")))
 }
 
 fn build_cli() -> Command {
@@ -59,9 +66,7 @@ fn build_cli() -> Command {
 }
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
-    let source_code: &String = matches
-        .get_one::<String>("source")
-        .expect("source arg is required");
+    let source_code: &String = require_arg(matches, "source")?;
     let force_full_refetch: bool = matches.get_flag("force-full-refetch");
     let options: AdapterOptions = AdapterOptions { force_full_refetch };
 
@@ -124,13 +129,8 @@ fn log_report(source_code: &str, report: &IngestReport) {
 }
 
 async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
-    let output_dir: PathBuf = matches
-        .get_one::<String>("output-dir")
-        .map(PathBuf::from)
-        .expect("output-dir arg is required");
-    let version_label: &String = matches
-        .get_one::<String>("version-label")
-        .expect("version-label arg is required");
+    let output_dir: PathBuf = PathBuf::from(require_arg(matches, "output-dir")?);
+    let version_label: &String = require_arg(matches, "version-label")?;
 
     let pool: PgPool = db::create_pool().await?;
     let mut transaction: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
