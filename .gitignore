@@ -12,3 +12,6 @@ target/
 
 # Per-developer environment overrides (template.env is committed)
 .env
+
+# launchd job logs (rendered into logs/ by setup.sh)
+logs/

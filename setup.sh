@@ -75,7 +75,7 @@ cargo build --release -p ingestion
 
 function install_launchd_ingestion_job {
     local launch_agents_dir="${HOME}/Library/LaunchAgents"
-    local log_dir="${HOME}/Library/Logs/Eafora"
+    local log_dir="${repo_dir}/logs"
     local plist_path="${launch_agents_dir}/org.eafora.ingestion.plist"
     local ingestion_bin="${repo_dir}/target/release/ingestion"
 
