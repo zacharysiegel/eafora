@@ -72,7 +72,7 @@ impl LicenseShardClass {
         match self {
             LicenseShardClass::Base => "base",
             LicenseShardClass::ShareAlike => "share_alike",
-            LicenseShardClass::NonCommercial => "non_commercial",
+            LicenseShardClass::NonCommercial => "noncommercial",
         }
     }
 }
