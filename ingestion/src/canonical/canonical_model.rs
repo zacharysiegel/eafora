@@ -59,3 +59,45 @@ pub struct StatisticValue {
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
 }
+
+/// Enumerates the `statistic.code` values seeded in the canonical store.
+/// New statistics get a variant here AND a seed migration row; the two
+/// stay in sync by convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatisticCode {
+    Tfr,
+}
+
+impl StatisticCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StatisticCode::Tfr => "tfr",
+        }
+    }
+}
+
+/// Enumerates the `statistic_value.data_status` values per the schema's
+/// `comment on column`: final | provisional | preliminary | projection |
+/// imputed | interpolated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DataStatus {
+    Final,
+    Provisional,
+    Preliminary,
+    Projection,
+    Imputed,
+    Interpolated,
+}
+
+impl DataStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DataStatus::Final => "final",
+            DataStatus::Provisional => "provisional",
+            DataStatus::Preliminary => "preliminary",
+            DataStatus::Projection => "projection",
+            DataStatus::Imputed => "imputed",
+            DataStatus::Interpolated => "interpolated",
+        }
+    }
+}

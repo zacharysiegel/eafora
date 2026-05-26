@@ -1,16 +1,21 @@
-//! WB-WDI-specific test helpers (sample loading; assertion utilities can be
-//! added here as Phase 3 lands). Loads checked-in sample responses from
-//! `ingestion/samples/wb_wdi/` without live HTTP.
+//! WB-WDI-specific test helpers (sample loading + fixture builders for
+//! `NormalizedStatisticValue` in WB-shaped tests). Loads checked-in sample
+//! responses from `ingestion/samples/wb_wdi/` without live HTTP.
 
 // `load_sample` is consumed by the sample-replay integration tests (T032/T033)
-// that haven't landed yet; the helper module is shared across test binaries
+// that haven't landed yet; `new_normalized_statistic_value` is used by every
+// upsert integration test. The helper module is shared across test binaries
 // which prevents adding the attribute per-function, so it stays here at the
-// module level until the first caller wires in.
+// module level until every helper has a caller.
 #![allow(dead_code)]
 
 use std::fs;
 use std::path::PathBuf;
 
+use uuid::Uuid;
+
+use ingestion::adapter::{NaiveDatePeriod, NormalizedStatisticValue};
+use ingestion::canonical::canonical_model::DataStatus;
 use ingestion::world_bank_wdi::world_bank_wdi_model::WdiResponse;
 
 /// Reads `ingestion/samples/wb_wdi/<name>.json` and deserializes it into
@@ -30,11 +35,27 @@ fn sample_path(name: &str) -> PathBuf {
 }
 
 fn read_or_panic(path: &PathBuf) -> String {
-    fs::read_to_string(path)
-        .unwrap_or_else(|err| panic!("read sample {}: {}", path.display(), err))
+    fs::read_to_string(path).unwrap_or_else(|err| panic!("read sample {}: {}", path.display(), err))
 }
 
 fn parse_or_panic(path: &PathBuf, file_text: &str) -> WdiResponse {
-    serde_json::from_str(file_text)
-        .unwrap_or_else(|err| panic!("parse sample {}: {}", path.display(), err))
+    serde_json::from_str(file_text).unwrap_or_else(|err| panic!("parse sample {}: {}", path.display(), err))
+}
+
+/// Builds a `NormalizedStatisticValue` for the given country region + year +
+/// value, defaulted to `DataStatus::Final`. Used by upsert tests that need
+/// a known-shape input without going through `normalize`.
+pub fn new_normalized_statistic_value(
+    region_id: Uuid,
+    statistic_id: Uuid,
+    year: i32,
+    value: f64,
+) -> NormalizedStatisticValue {
+    NormalizedStatisticValue {
+        region_id,
+        statistic_id,
+        period: NaiveDatePeriod::from_year(year).expect("valid year"),
+        value,
+        data_status: DataStatus::Final,
+    }
 }

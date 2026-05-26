@@ -8,6 +8,7 @@
 use chrono::NaiveDate;
 use uuid::Uuid;
 
+use crate::canonical::canonical_model::DataStatus;
 use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy)]
@@ -44,7 +45,7 @@ pub struct NormalizedStatisticValue {
     pub statistic_id: Uuid,
     pub period: NaiveDatePeriod,
     pub value: f64,
-    pub data_status: String,
+    pub data_status: DataStatus,
 }
 
 /// Per-row result of an adapter's normalize step. Every adapter accumulates

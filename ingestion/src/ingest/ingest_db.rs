@@ -108,7 +108,7 @@ pub async fn insert_statistic_value<'e>(
         normalized_statistic_value.value,
         data_source_id,
         data_source_publication_id,
-        normalized_statistic_value.data_status,
+        normalized_statistic_value.data_status.as_str(),
     )
     .fetch_one(executor)
     .await?;

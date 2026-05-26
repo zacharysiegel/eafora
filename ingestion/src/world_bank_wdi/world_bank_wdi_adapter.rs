@@ -12,7 +12,7 @@ use crate::adapter::{
     AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue, NaiveDatePeriod,
 };
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{Country, DataSource, Statistic};
+use crate::canonical::canonical_model::{Country, DataSource, DataStatus, Statistic, StatisticCode};
 use crate::error::AppError;
 use crate::ingest;
 use crate::ingest::IngestReport;
@@ -20,8 +20,6 @@ use crate::world_bank_wdi::world_bank_wdi_client;
 use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse};
 
 const WB_WDI_DATA_SOURCE_CODE: &str = "wb_wdi";
-const WB_WDI_STATISTIC_CODE: &str = "tfr";
-const WB_WDI_DATA_STATUS_FINAL: &str = "final";
 
 /// Joins parsed rows to canonical-store IDs and computes period bounds.
 /// Rows whose country isn't in our seed produce an `UnknownCountry` warning
@@ -33,11 +31,12 @@ pub async fn normalize(
     parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue>,
 ) -> Result<(Vec<NormalizedStatisticValue>, Vec<IngestWarning>), AppError> {
     let statistic: Statistic =
-        canonical_db::find_statistic_by_code(&mut *connection, WB_WDI_STATISTIC_CODE)
+        canonical_db::find_statistic_by_code(&mut *connection, StatisticCode::Tfr.as_str())
             .await?
             .ok_or_else(|| {
                 AppError::from(format!(
-                    "wb_wdi: statistic {WB_WDI_STATISTIC_CODE:?} missing from canonical store (run dbmate up)",
+                    "wb_wdi: statistic {:?} missing from canonical store (run dbmate up)",
+                    StatisticCode::Tfr.as_str(),
                 ))
             })?;
     let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::with_capacity(parsed_wdi_statistic_values.len());
@@ -78,7 +77,7 @@ async fn normalize_row(
         statistic_id,
         period: NaiveDatePeriod::from_year(parsed_wdi_statistic_value.year)?,
         value,
-        data_status: WB_WDI_DATA_STATUS_FINAL.to_string(),
+        data_status: DataStatus::Final,
     }))
 }
 
