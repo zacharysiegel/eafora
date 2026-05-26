@@ -20,7 +20,7 @@ pub struct AdapterOptions {
 /// `statistic_value.period_start` / `period_end` columns. Always paired —
 /// having a struct here prevents the two-NaiveDate-arg-inversion class of
 /// bugs and gives us one place to hang constructors like `from_year`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NaiveDatePeriod {
     pub start: NaiveDate,
     pub end: NaiveDate,
