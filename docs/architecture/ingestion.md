@@ -54,16 +54,24 @@ eafora/
 │       ├── main.rs             # tokio CLI entrypoint; dispatches subcommands (source, all, build, seed, publish); the all subcommand loops over the registered adapters inline
 │       ├── lib.rs              # re-exports for tests
 │       ├── error.rs            # minimer wiring + per-feature variant aggregation
-│       ├── world_bank_wdi/     # one source = one feature module (the lobby/ triplet pattern)
+│       ├── world_bank_wdi/     # one source = one per-source module
 │       │   ├── mod.rs
-│       │   ├── world_bank_wdi_client.rs    # external HTTP client + adapter orchestrator (fetch_and_store + the five named helpers)
-│       │   ├── world_bank_wdi_db.rs        # sqlx queries scoped to this source's ingestion
-│       │   └── world_bank_wdi_model.rs     # types (WDI API response shapes, normalization helpers)
+│       │   ├── world_bank_wdi_client.rs    # external HTTP client + parse_response (knows the wire format, NOT the canonical store)
+│       │   ├── world_bank_wdi_adapter.rs   # normalize (parsed → canonical) + fetch_and_store orchestrator
+│       │   └── world_bank_wdi_model.rs     # WB WDI response types + ParsedWdiStatisticValue
 │       ├── eurostat/                       # same shape per added source
 │       ├── hfd/
-│       ├── canonical/                      # cross-cutting reads of the canonical store
-│       │   ├── canonical_db.rs             # shared sqlx queries
-│       │   └── canonical_model.rs          # shared entity types
+│       ├── adapter/                        # cross-adapter types + generic helpers
+│       │   ├── adapter_model.rs            # AdapterOptions, NormalizedStatisticValue, NaiveDatePeriod, NormalizeOutcome, IngestWarning
+│       │   └── mod.rs
+│       ├── ingest/                         # canonical-store writes (source-agnostic)
+│       │   ├── ingest.rs                   # record_statistic_values orchestrator with append-with-supersede semantics
+│       │   ├── ingest_db.rs                # publication insert/match, find_current_value, insert_statistic_value, set_superseded
+│       │   ├── ingest_model.rs             # IngestReport, RecordOutcome
+│       │   └── mod.rs
+│       ├── canonical/                      # cross-cutting reads of the canonical reference tables
+│       │   ├── canonical_db.rs             # find_country_by_iso3, find_statistic_by_code, find_data_source_by_code
+│       │   └── canonical_model.rs          # Region, Country, Statistic, DataSource, StatisticValue + StatisticCode/DataStatus enums
 │       ├── artifact/                       # artifact builder
 │       │   ├── artifact_api.rs             # CLI handlers for artifact build / inspection
 │       │   ├── artifact_db.rs              # queries that drive the build (read fact table)
@@ -74,7 +82,7 @@ eafora/
 │       └── geometry_ingest/                # Natural Earth ingestion (separate from statistic adapters)
 ```
 
-Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `source <code>`, `build`, `seed`, `publish`, etc. Used for manual invocation, `launchd` triggers, and local dev. Per-feature module layout follows the Singularity `lobby/` convention with two suffix variants — `<feature>_api.rs` for HTTP routes Eafora HOSTS (none in v1; reserved for v3+ HTTP server mode) and `<feature>_client.rs` for code that calls OUT to an external HTTP API (every source adapter). Both share the `<feature>_db.rs` + `<feature>_model.rs` slots. Features without HTTP surface (incoming or outgoing) ship as the two-file (`_db.rs` + `_model.rs`) reduction.
+Through v2 the `ingestion/` binary is a CLI: `ingestion <subcommand>` — `source <code>`, `build`, `seed`, `publish`, etc. Used for manual invocation, `launchd` triggers, and local dev. Per-feature module layout follows the Singularity `lobby/` convention with two suffix variants — `<feature>_api.rs` for HTTP routes Eafora HOSTS (none in v1; reserved for v3+ HTTP server mode) and `<feature>_client.rs` for code that calls OUT to an external HTTP API. Per-source modules split further: `<source>_client.rs` owns HTTP + parse (knows the wire format but not the canonical store), `<source>_adapter.rs` owns normalize + the `fetch_and_store` orchestrator (knows the canonical store), and `<source>_db.rs` is reserved for source-specific SQL when needed (often absent — generic canonical-store writes live in `crate::ingest::ingest_db`).
 
 ### CLI structure (clap builder API)
 
@@ -366,33 +374,43 @@ Seed data (country list from ISO 3166, statistic definitions, source records) li
 
 ### Adapter contract
 
-Every source adapter exposes one entrypoint that orchestrates a fixed pipeline of named helper functions:
+Every source adapter exposes one entrypoint that opens a transaction and orchestrates a fixed pipeline of named helpers — fetch + parse in `<source>_client`, normalize in `<source>_adapter`, persistence in the source-agnostic `crate::ingest`:
 
 ```rust
 pub async fn fetch_and_store(
     pool: &PgPool,
     options: AdapterOptions,
 ) -> Result<IngestReport, AppError> {
-    let last_seen_revision: Option<String> = read_latest_publication_revision(pool).await?;
-    let raw_response: RawResponse = fetch_upstream(&options, last_seen_revision.as_deref()).await?;
-    let parsed_rows: Vec<ParsedRow> = parse_response(raw_response)?;
-    let normalized_rows: Vec<NormalizedRow> = normalize(pool, parsed_rows).await?;
-    let report: IngestReport = upsert_rows(pool, normalized_rows).await?;
+    let mut transaction = pool.begin().await?;
+
+    let data_source = canonical_db::find_data_source_by_code(&mut *transaction, "wb_wdi").await?...;
+    let last_seen_revision = ingest::ingest_db::read_latest_publication_revision(&mut *transaction, data_source.id).await?;
+
+    let raw = world_bank_wdi_client::fetch_upstream(options).await?;
+    let revision_label = raw.0.lastupdated.clone();
+    let parsed = world_bank_wdi_client::parse_response(raw)?;
+
+    let (normalized, warnings) = normalize(&mut *transaction, parsed).await?;
+
+    let mut report = ingest::record_statistic_values(&mut *transaction, data_source.id, &revision_label, Utc::now(), normalized).await?;
+    report.warnings = warnings;
+
+    transaction.commit().await?;
     Ok(report)
 }
 ```
 
-Each helper is a separate named function inside the source's feature module; the orchestrator only sequences them. The helper contracts:
+Each helper contract:
 
-- **`read_latest_publication_revision(pool)`** → `Option<String>`. Queries `select revision_label from data_source_publication where data_source_id = $1 order by fetched desc limit 1` to find the most recent publication this adapter has captured. `None` means "first run, fetch everything".
-- **`fetch_upstream(options, since)`** → source-specific `RawResponse`. Makes the HTTP request(s) via reqwest. Honors `options.force_full_refetch`; uses `since` to request only-changed data when the source's API supports it.
-- **`parse_response(raw)`** → `Vec<ParsedRow>`. Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access.
-- **`normalize(pool, parsed_rows)`** → `Vec<NormalizedRow>`. Joins to `region` (via country.iso3 for country-level data) / `statistic` by code, computes `period_start` / `period_end` from the source's time-period encoding, attaches `data_status` and `data_source_revision`. Reads from the DB to resolve foreign-key IDs but does not write.
-- **`upsert_rows(pool, normalized_rows)`** → `IngestReport`. First INSERTs the run's `(data_source_id, revision_label, fetched)` into `data_source_publication` (ON CONFLICT DO NOTHING; obtains the publication's id whether newly inserted or matched against an existing row). Then for each normalized row: looks up the current `superseded is null` row in `statistic_value` matching `(region_id, statistic_id, period_start, period_end, data_source_id)`. If none → INSERT the new row pointing at the publication. If a current row exists with the same `value` and `data_status` → no writes (no revision happened). If a current row exists with different `value` or `data_status` → UPDATE the old row's `superseded = now()`, then INSERT a new row pointing at the new publication. Returns `IngestReport` counts: `values_added` (new cells, no prior row), `values_revised` (revisions, each one supersede + insert pair), `values_skipped` (existing current row already matched, no writes needed).
+- **`read_latest_publication_revision(executor, data_source_id)`** → `Option<String>` (in `ingest::ingest_db`). Queries the most recent `data_source_publication.revision_label` for this source. `None` means "first run."
+- **`fetch_upstream(options)`** → source-specific `RawResponse` (in `<source>_client`). HTTP fetch via reqwest. Honors `options.force_full_refetch`.
+- **`parse_response(raw)`** → `Vec<Parsed<Source>StatisticValue>` (in `<source>_client`). Deserializes the source-specific response into intermediate types defined in `<source>_model.rs`. Pure function — no I/O, no DB access. May silently drop rows that aren't statistic-shaped (e.g. WB WDI's regional aggregates with empty `countryiso3code` get dropped here).
+- **`normalize(connection, parsed)`** → `(Vec<NormalizedStatisticValue>, Vec<IngestWarning>)` (in `<source>_adapter`). Joins to `region` (via `country.iso3` for country-level data) and `statistic` by code, computes the `NaiveDatePeriod` from the source's time encoding, attaches `DataStatus` and the appropriate statistic id. Reads from the DB to resolve foreign keys; never writes. Rows whose country isn't in the seed produce an `UnknownCountry` warning and are dropped from the normalized output; rows with `value: None` produce a `NotApplicableValue` warning and are dropped.
+- **`record_statistic_values(connection, data_source_id, revision_label, fetched, normalized)`** → `IngestReport` (in `crate::ingest`, source-agnostic). First inserts the `data_source_publication` row (or matches an existing one with the same `(data_source_id, revision_label)`); then for each `NormalizedStatisticValue` looks up the current `superseded is null` row in `statistic_value` for `(region_id, statistic_id, period.start, period.end, data_source_id)`. If none → INSERT; counts `values_added`. If a current row exists with the same `value` and `data_status` → skip; counts `values_skipped`. If a current row exists with different `value` or `data_status` → UPDATE the old row's `superseded = now()`, then INSERT a new row pointing at the new publication; counts `values_revised`. Per-row classification is `RecordOutcome` (Added | Revised | Skipped); `record_statistic_value` (singular) is the per-row helper.
 
-Adapters are independent of each other. Adding a new source is one new feature module (`<source>_client.rs`, `<source>_db.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record.
+Adapters are independent of each other. Adding a new source is one new feature module (`<source>_client.rs`, `<source>_adapter.rs`, `<source>_model.rs`) plus a migration that inserts the `data_source` record. Source-specific SQL (rare) goes in `<source>_db.rs`; generic canonical-store writes stay in `crate::ingest::ingest_db`.
 
-**Maintain a consistent adapter shape across sources.** Every adapter exposes the same five named helpers (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) with the same return shapes, even when a given source could in principle be simpler. The discipline is intentional: when source #2 lands and the shape proves stable across two real examples, the orchestrator becomes a one-time refactor into a shared `Adapter` trait (the public surface is already trait-ready by convention). Premature trait extraction with only one example would risk locking in a shape that's wrong for source #2; deferring requires every new source to mirror WB WDI's shape so we keep the option open.
+**Maintain a consistent adapter shape across sources.** Every adapter exposes the same pipeline (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `record_statistic_values`) with the same return shapes, even when a given source could in principle be simpler. The discipline is intentional: when source #2 lands and the shape proves stable across two real examples, the orchestrator becomes a one-time refactor into a shared `Adapter` trait (the public surface is already trait-ready by convention). Premature trait extraction with only one example would risk locking in a shape that's wrong for source #2; deferring requires every new source to mirror WB WDI's shape so we keep the option open.
 
 ### `AdapterOptions` and `IngestReport`
 
@@ -452,7 +470,7 @@ The mechanical steps for any new source:
 
 1. Add a migration inserting a row in `data_source` with the source's code, license, attribution string, and `preference_rank` (see §Source-preference merge for ranking).
 2. Create `ingestion/src/<source_code>/` with the three-file lobby triplet.
-3. Implement `fetch_and_store` (the orchestrator) and its five named helpers (`read_latest_publication_revision`, `fetch_upstream`, `parse_response`, `normalize`, `upsert_rows`) in `<source_code>_client.rs`.
+3. Implement `fetch_and_store` (the orchestrator) and the per-source helpers (`fetch_upstream` + `parse_response` in `<source_code>_client.rs`; `normalize` in `<source_code>_adapter.rs`). Generic helpers (`read_latest_publication_revision`, `record_statistic_values`) live in `crate::ingest` and don't need re-implementing per source.
 4. Implement source-specific SQL in `<source_code>_db.rs`.
 5. Define source-specific types and parsing in `<source_code>_model.rs`.
 6. Register the adapter in `main.rs`'s `all` subcommand handler and `source` dispatch.
