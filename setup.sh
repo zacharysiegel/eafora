@@ -73,24 +73,33 @@ echo "Applying migrations to eafora_test"
 echo "Building release ingestion binary (needed by the launchd job)"
 cargo build --release -p ingestion
 
-echo "Installing launchd job at ~/Library/LaunchAgents/org.eafora.ingestion.plist (Mondays 03:00)"
-launch_agents_dir="${HOME}/Library/LaunchAgents"
-log_dir="${HOME}/Library/Logs/Eafora"
-plist_path="${launch_agents_dir}/org.eafora.ingestion.plist"
-ingestion_bin="${repo_dir}/target/release/ingestion"
+function install_launchd_ingestion_job {
+    local launch_agents_dir="${HOME}/Library/LaunchAgents"
+    local log_dir="${HOME}/Library/Logs/Eafora"
+    local plist_path="${launch_agents_dir}/org.eafora.ingestion.plist"
+    local ingestion_bin="${repo_dir}/target/release/ingestion"
 
-mkdir -p "${launch_agents_dir}" "${log_dir}"
+    function render_plist {
+        mkdir -p "${launch_agents_dir}" "${log_dir}"
+        sed \
+            -e "s|@@INGESTION_BIN@@|${ingestion_bin}|g" \
+            -e "s|@@REPO_ROOT@@|${repo_dir}|g" \
+            -e "s|@@LOG_DIR@@|${log_dir}|g" \
+            ./scripts/eafora-ingestion.plist.template \
+            > "${plist_path}"
+    }
 
-sed \
-    -e "s|@@INGESTION_BIN@@|${ingestion_bin}|g" \
-    -e "s|@@REPO_ROOT@@|${repo_dir}|g" \
-    -e "s|@@LOG_DIR@@|${log_dir}|g" \
-    ./scripts/eafora-ingestion.plist.template \
-    > "${plist_path}"
+    function bootstrap_plist {
+        if launchctl print "gui/$(id -u)/org.eafora.ingestion" >/dev/null 2>&1; then
+            launchctl bootout "gui/$(id -u)/org.eafora.ingestion" || true
+        fi
+        launchctl bootstrap "gui/$(id -u)" "${plist_path}"
+    }
 
-if launchctl print "gui/$(id -u)/org.eafora.ingestion" >/dev/null 2>&1; then
-    launchctl bootout "gui/$(id -u)/org.eafora.ingestion" || true
-fi
-launchctl bootstrap "gui/$(id -u)" "${plist_path}"
+    echo "Installing launchd job at ${plist_path} (Mondays 03:00)"
+    render_plist
+    bootstrap_plist
+}
+install_launchd_ingestion_job
 
 echo "Setup complete."
