@@ -15,3 +15,8 @@ target/
 
 # launchd job logs (rendered into logs/ by setup.sh)
 logs/
+
+# Rendered launchd plist (template at scripts/eafora-ingestion.plist.template
+# is the source of truth; the rendered .plist is symlinked into
+# ~/Library/LaunchAgents by setup.sh)
+/scripts/eafora-ingestion.plist

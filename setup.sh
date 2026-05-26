@@ -76,28 +76,33 @@ cargo build --release -p ingestion
 function install_launchd_ingestion_job {
     local launch_agents_dir="${HOME}/Library/LaunchAgents"
     local log_dir="${repo_dir}/logs"
-    local plist_path="${launch_agents_dir}/org.eafora.ingestion.plist"
+    local plist_in_repo="${repo_dir}/scripts/eafora-ingestion.plist"
+    local plist_symlink="${launch_agents_dir}/org.eafora.ingestion.plist"
     local ingestion_bin="${repo_dir}/target/release/ingestion"
 
     function render_plist {
-        mkdir -p "${launch_agents_dir}" "${log_dir}"
+        mkdir -p "${log_dir}"
         sed \
             -e "s|@@INGESTION_BIN@@|${ingestion_bin}|g" \
             -e "s|@@REPO_ROOT@@|${repo_dir}|g" \
             -e "s|@@LOG_DIR@@|${log_dir}|g" \
             ./scripts/eafora-ingestion.plist.template \
-            > "${plist_path}"
+            > "${plist_in_repo}"
+    }
+
+    function symlink_plist_into_launch_agents {
+        mkdir -p "${launch_agents_dir}"
+        ln -sf "${plist_in_repo}" "${plist_symlink}"
     }
 
     function bootstrap_plist {
-        if launchctl print "gui/$(id -u)/org.eafora.ingestion" >/dev/null 2>&1; then
-            launchctl bootout "gui/$(id -u)/org.eafora.ingestion" || true
-        fi
-        launchctl bootstrap "gui/$(id -u)" "${plist_path}"
+        launchctl bootout "gui/$(id -u)/org.eafora.ingestion" 2>/dev/null || true
+        launchctl bootstrap "gui/$(id -u)" "${plist_symlink}"
     }
 
-    echo "Installing launchd job at ${plist_path} (Mondays 03:00)"
+    echo "Installing launchd job (template renders into ${plist_in_repo}; symlinked at ${plist_symlink}; Mondays 03:00)"
     render_plist
+    symlink_plist_into_launch_agents
     bootstrap_plist
 }
 install_launchd_ingestion_job
