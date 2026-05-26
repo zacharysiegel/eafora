@@ -10,14 +10,31 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::adapter::*;
-use ingestion::canonical::canonical_model::StatisticValue;
+use ingestion::canonical::canonical_model::{DataStatus, StatisticValue};
 use ingestion::ingest;
 use ingestion::ingest::*;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;
 use ingestion::world_bank_wdi::world_bank_wdi_model::ParsedWdiStatisticValue;
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
-use helpers::world_bank_wdi::new_normalized_statistic_value;
+
+/// Builds a `NormalizedStatisticValue` for the given country region + year
+/// + value, defaulted to `DataStatus::Final`. Used by record-* tests that
+/// need a known-shape input without going through `normalize`.
+fn new_normalized_statistic_value(
+    region_id: Uuid,
+    statistic_id: Uuid,
+    year: i32,
+    value: f64,
+) -> NormalizedStatisticValue {
+    NormalizedStatisticValue {
+        region_id,
+        statistic_id,
+        period: NaiveDatePeriod::from_year(year).expect("valid year"),
+        value,
+        data_status: DataStatus::Final,
+    }
+}
 
 #[tokio::test]
 async fn normalize_known_country_resolves_region_id() {
