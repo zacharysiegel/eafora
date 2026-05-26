@@ -110,3 +110,56 @@ pub async fn read_country_iso3_to_name_en<'e>(
 
     Ok(iso3_to_name_en)
 }
+
+pub async fn read_all_statistic_codes<'e>(
+    executor: impl PgExecutor<'e>,
+) -> Result<Vec<String>, AppError> {
+    struct StatisticCodeRow {
+        code: String,
+    }
+
+    let rows: Vec<StatisticCodeRow> = sqlx::query_as!(
+        StatisticCodeRow,
+        r#"select code as "code!" from statistic"#,
+    )
+    .fetch_all(executor)
+    .await?;
+
+    Ok(rows.into_iter().map(|statistic_code_row| statistic_code_row.code).collect())
+}
+
+pub async fn insert_artifact_version<'e>(
+    executor: impl PgExecutor<'e>,
+    version_label: &str,
+    manifest_sha256: &str,
+    manifest_url: &str,
+    data_source_versions: &BTreeMap<String, String>,
+) -> Result<crate::artifact::artifact_model::ArtifactVersion, AppError> {
+    let data_source_versions_json: serde_json::Value = serde_json::to_value(data_source_versions)?;
+
+    let row: crate::artifact::artifact_model::ArtifactVersion = sqlx::query_as!(
+        crate::artifact::artifact_model::ArtifactVersion,
+        r#"
+        insert into artifact_version
+            (version_label, manifest_sha256, manifest_url, data_source_versions_jsonb)
+        values ($1, $2, $3, $4)
+        on conflict (version_label) do nothing
+        returning
+            id                         as "id!",
+            version_label              as "version_label!",
+            artifact_created           as "artifact_created!",
+            manifest_sha256            as "manifest_sha256!",
+            manifest_url               as "manifest_url!",
+            data_source_versions_jsonb as "data_source_versions_jsonb!",
+            notes
+        "#,
+        version_label,
+        manifest_sha256,
+        manifest_url,
+        data_source_versions_json,
+    )
+    .fetch_one(executor)
+    .await?;
+
+    Ok(row)
+}

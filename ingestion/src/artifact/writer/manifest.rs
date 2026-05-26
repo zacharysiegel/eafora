@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{HashedOutputs, HashedShard, HashedStatisticShard, LicenseShardClass, ShardOutput};
+use crate::artifact::artifact_model::{HashedOutputs, HashedShard, LicenseShardClass, ShardOutput};
 use crate::error::AppError;
 
 const MANIFEST_FILENAME: &str = "manifest.json";
@@ -127,6 +127,8 @@ fn hex_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::artifact::artifact_model::HashedStatisticShard;
 
     fn make_hashed_outputs() -> HashedOutputs {
         HashedOutputs {

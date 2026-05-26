@@ -1,9 +1,12 @@
 //! ingestion: the Eafora canonical-store CLI binary.
 
+use std::path::PathBuf;
+
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use sqlx::PgPool;
 
 use ingestion::adapter::AdapterOptions;
+use ingestion::artifact::{self, BuildOptions, LocalArtifactBuild};
 use ingestion::db;
 use ingestion::error::AppError;
 use ingestion::ingest::IngestReport;
@@ -120,8 +123,31 @@ fn log_report(source_code: &str, report: &IngestReport) {
     }
 }
 
-async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
-    Err(AppError::new("build: not yet implemented"))
+async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
+    let output_dir: PathBuf = matches
+        .get_one::<String>("output-dir")
+        .map(PathBuf::from)
+        .expect("output-dir arg is required");
+    let version_label: &String = matches
+        .get_one::<String>("version-label")
+        .expect("version-label arg is required");
+
+    let pool: PgPool = db::create_pool().await?;
+    let mut transaction: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+    let options: BuildOptions = BuildOptions::default();
+    let build: LocalArtifactBuild =
+        artifact::build_artifacts(&mut *transaction, &output_dir, version_label, options).await?;
+    transaction.commit().await?;
+
+    log::info!(
+        "build complete: version_label={} output_dir={:?} statistic_shards={} geometry_shard={:?} manifest={:?}",
+        build.version_label,
+        build.output_dir,
+        build.hashed.statistic_shards.len(),
+        build.hashed.geometry_shard.path,
+        build.manifest.path,
+    );
+    Ok(())
 }
 
 async fn dispatch_seed() -> Result<(), AppError> {
