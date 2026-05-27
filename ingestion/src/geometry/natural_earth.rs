@@ -52,8 +52,6 @@ fn read_named_entry(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, extension: &st
         .map_err(|err| AppError::from(format!("extract_shapefile_from_zip: {}: {}", entry_name, err)))?;
 
     let mut buffer: Vec<u8> = Vec::with_capacity(entry.size() as usize);
-    entry
-        .read_to_end(&mut buffer)
-        .map_err(|err| AppError::from(format!("extract_shapefile_from_zip: read {}: {}", entry_name, err)))?;
+    entry.read_to_end(&mut buffer)?;
     Ok(buffer)
 }

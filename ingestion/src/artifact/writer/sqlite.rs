@@ -26,8 +26,7 @@ pub fn emit_sqlite_shards(
     output_dir: &Path,
 ) -> Result<Vec<ShardOutput>, AppError> {
     let data_dir: PathBuf = output_dir.join(DATA_SUBDIR);
-    fs::create_dir_all(&data_dir)
-        .map_err(|err| AppError::from(format!("emit_sqlite_shards: create_dir {:?}: {}", data_dir, err)))?;
+    fs::create_dir_all(&data_dir)?;
 
     let mut grouped: BTreeMap<(String, LicenseShardClass), Vec<&MergedValue>> = BTreeMap::new();
     for merged_value in merged {
@@ -71,9 +70,7 @@ fn write_one_shard(
     create_schema(&connection)?;
     insert_rows(&mut connection, values)?;
 
-    let byte_count: u64 = fs::metadata(&path)
-        .map_err(|err| AppError::from(format!("emit_sqlite_shards: metadata {:?}: {}", path, err)))?
-        .len();
+    let byte_count: u64 = fs::metadata(&path)?.len();
 
     Ok(ShardOutput { path, byte_count })
 }

@@ -51,8 +51,7 @@ pub fn emit_manifest(
     let json: String = build_manifest_json(hashed, version_label, &artifact_created, data_source_versions)?;
 
     let path: PathBuf = output_dir.join(MANIFEST_FILENAME);
-    fs::write(&path, &json)
-        .map_err(|err| AppError::from(format!("emit_manifest: write {:?}: {}", path, err)))?;
+    fs::write(&path, &json)?;
 
     let mut hasher: Sha256 = Sha256::new();
     hasher.update(json.as_bytes());
@@ -99,8 +98,7 @@ fn build_manifest_json(
         source_versions: data_source_versions,
     };
 
-    let json: String = serde_json::to_string_pretty(&manifest)
-        .map_err(|err| AppError::from(format!("emit_manifest: serialize: {}", err)))?;
+    let json: String = serde_json::to_string_pretty(&manifest)?;
     Ok(json)
 }
 

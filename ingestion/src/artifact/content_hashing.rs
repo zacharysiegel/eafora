@@ -54,8 +54,7 @@ pub fn compute_content_hashes(
 }
 
 fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
-    let bytes: Vec<u8> = fs::read(path)
-        .map_err(|err| AppError::from(format!("compute_content_hashes: read {:?}: {}", path, err)))?;
+    let bytes: Vec<u8> = fs::read(path)?;
     let mut hasher: Sha256 = Sha256::new();
     hasher.update(&bytes);
     let digest: [u8; 32] = hasher.finalize().into();

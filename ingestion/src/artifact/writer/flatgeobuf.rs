@@ -30,7 +30,7 @@ use shapefile::{Reader, ShapeReader};
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
-use crate::artifact::artifact_db::read_country_iso3_to_name_en;
+use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::ShardOutput;
 use crate::error::AppError;
 use crate::geometry::natural_earth::{self, ShapefileBytes};
@@ -46,7 +46,7 @@ pub async fn emit_geometry_flatgeobuf<'e>(
     output_dir: &Path,
 ) -> Result<ShardOutput, AppError> {
     let iso3_to_name_en: BTreeMap<String, String> =
-        read_country_iso3_to_name_en(executor).await?;
+        artifact_db::read_country_iso3_to_name_en(executor).await?;
 
     let client: reqwest::Client = reqwest::Client::new();
     let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&client).await?;
@@ -60,8 +60,7 @@ fn write_flatgeobuf_to_disk(
     output_dir: &Path,
 ) -> Result<ShardOutput, AppError> {
     let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
-    fs::create_dir_all(&geometry_dir)
-        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: create_dir {:?}: {}", geometry_dir, err)))?;
+    fs::create_dir_all(&geometry_dir)?;
 
     let tmp_uuid: Uuid = Uuid::now_v7();
     let path: PathBuf = geometry_dir.join(format!("{}-tmp.{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
@@ -106,16 +105,13 @@ fn write_flatgeobuf_to_disk(
             .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: add_feature_geom {}: {}", iso3, err)))?;
     }
 
-    let file: File = File::create(&path)
-        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: create {:?}: {}", path, err)))?;
+    let file: File = File::create(&path)?;
     let mut buffered: BufWriter<File> = BufWriter::new(file);
     writer
         .write(&mut buffered)
         .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: write: {}", err)))?;
 
-    let byte_count: u64 = fs::metadata(&path)
-        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: metadata {:?}: {}", path, err)))?
-        .len();
+    let byte_count: u64 = fs::metadata(&path)?.len();
 
     Ok(ShardOutput { path, byte_count })
 }
