@@ -5,12 +5,14 @@
 
 use std::io::{Cursor, Read};
 
+use const_format::concatcp;
+
 use crate::error::AppError;
 
-pub const NATURAL_EARTH_URL: &str =
-    "https://naciscdn.org/naturalearth/50m/cultural/ne_50m_admin_0_countries.zip";
-
+const NATURAL_EARTH_BASE_URL: &str = "https://naciscdn.org/naturalearth/50m/cultural/";
 const SHAPEFILE_BASENAME: &str = "ne_50m_admin_0_countries";
+
+pub const NATURAL_EARTH_URL: &str = concatcp!(NATURAL_EARTH_BASE_URL, SHAPEFILE_BASENAME, ".zip");
 
 #[derive(Debug, Clone)]
 pub struct ShapefileBytes {
