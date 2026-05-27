@@ -47,8 +47,7 @@ pub async fn emit_geometry_flatgeobuf<'e>(
         read_country_iso3_to_name_en(executor).await?;
 
     let client: reqwest::Client = reqwest::Client::new();
-    let zip_bytes: Vec<u8> = natural_earth::download_pinned_release(&client).await?;
-    let shapefile_bytes: ShapefileBytes = natural_earth::extract_shapefile_from_zip(&zip_bytes)?;
+    let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&client).await?;
 
     write_flatgeobuf_to_disk(&shapefile_bytes, &iso3_to_name_en, output_dir)
 }
