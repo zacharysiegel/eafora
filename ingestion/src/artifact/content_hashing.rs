@@ -7,6 +7,8 @@
 //! one file fails, no file is left renamed — the next build can be re-run
 //! cleanly.
 
+use std::fs;
+use std::iter;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -22,7 +24,7 @@ pub fn compute_content_hashes(
 ) -> Result<HashedOutputs, AppError> {
     let mut hash_plan: Vec<(ShardOutput, String)> = Vec::with_capacity(shards.len() + 1);
 
-    for shard in shards.iter().chain(std::iter::once(&geometry)) {
+    for shard in shards.iter().chain(iter::once(&geometry)) {
         let sha256_hex: String = sha256_hex_of_file(&shard.path)?;
         hash_plan.push((shard.clone(), sha256_hex));
     }
@@ -52,7 +54,7 @@ pub fn compute_content_hashes(
 }
 
 fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
-    let bytes: Vec<u8> = std::fs::read(path)
+    let bytes: Vec<u8> = fs::read(path)
         .map_err(|err| AppError::from(format!("compute_content_hashes: read {:?}: {}", path, err)))?;
     let mut hasher: Sha256 = Sha256::new();
     hasher.update(&bytes);
@@ -62,7 +64,7 @@ fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
 
 fn rename_to_content_hashed(shard: ShardOutput, sha256_hex: &str) -> Result<HashedShard, AppError> {
     let new_path: PathBuf = build_hashed_path(&shard.path, sha256_hex)?;
-    std::fs::rename(&shard.path, &new_path).map_err(|err| {
+    fs::rename(&shard.path, &new_path).map_err(|err| {
         AppError::from(format!(
             "compute_content_hashes: rename {:?} -> {:?}: {}",
             shard.path, new_path, err,
@@ -159,7 +161,7 @@ mod tests {
 
     fn write_tmp_shard(temp_dir: &Path, filename: &str, contents: &[u8]) -> ShardOutput {
         let path: PathBuf = temp_dir.join(filename);
-        std::fs::write(&path, contents).unwrap();
+        fs::write(&path, contents).unwrap();
         ShardOutput {
             path,
             byte_count: contents.len() as u64,

@@ -5,6 +5,7 @@
 
 mod helpers;
 
+use std::fs;
 use std::path::PathBuf;
 
 use chrono::{NaiveDate, Utc};
@@ -68,7 +69,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
         .unwrap();
     assert!((value - 1.66).abs() < f64::EPSILON);
 
-    let manifest_text: String = std::fs::read_to_string(&build.manifest.path).unwrap();
+    let manifest_text: String = fs::read_to_string(&build.manifest.path).unwrap();
     let manifest_value: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
     assert_eq!(manifest_value["version"], "2026-05-26-test");
     assert!(manifest_value["statistics"]["tfr"]["base"]["url"].is_string());

@@ -10,6 +10,7 @@
 //! date-function support.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
@@ -25,7 +26,7 @@ pub fn emit_sqlite_shards(
     output_dir: &Path,
 ) -> Result<Vec<ShardOutput>, AppError> {
     let data_dir: PathBuf = output_dir.join(DATA_SUBDIR);
-    std::fs::create_dir_all(&data_dir)
+    fs::create_dir_all(&data_dir)
         .map_err(|err| AppError::from(format!("emit_sqlite_shards: create_dir {:?}: {}", data_dir, err)))?;
 
     let mut grouped: BTreeMap<(String, LicenseShardClass), Vec<&MergedValue>> = BTreeMap::new();
@@ -70,7 +71,7 @@ fn write_one_shard(
     create_schema(&connection)?;
     insert_rows(&mut connection, values)?;
 
-    let byte_count: u64 = std::fs::metadata(&path)
+    let byte_count: u64 = fs::metadata(&path)
         .map_err(|err| AppError::from(format!("emit_sqlite_shards: metadata {:?}: {}", path, err)))?
         .len();
 

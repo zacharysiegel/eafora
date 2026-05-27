@@ -5,6 +5,7 @@
 //! `LocalArtifactBuild` describing the on-disk state; nothing is uploaded.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -43,7 +44,7 @@ pub async fn build_artifacts(
         version_label, output_dir,
     );
 
-    std::fs::create_dir_all(output_dir)
+    fs::create_dir_all(output_dir)
         .map_err(|err| AppError::from(format!("build_artifacts: create_dir {:?}: {}", output_dir, err)))?;
 
     let candidate_values: Vec<CandidateValue> = read_candidate_values(&mut *connection).await?;
@@ -111,12 +112,12 @@ async fn warn_on_statistics_without_values<'e>(
 
 fn write_placeholder_geometry(output_dir: &Path) -> Result<ShardOutput, AppError> {
     let geometry_dir: PathBuf = output_dir.join("geometry");
-    std::fs::create_dir_all(&geometry_dir)
+    fs::create_dir_all(&geometry_dir)
         .map_err(|err| AppError::from(format!("build_artifacts: create geometry dir: {}", err)))?;
 
     let placeholder_path: PathBuf = geometry_dir.join(format!("world-50m-tmp.{}.fgb", Uuid::now_v7()));
     let placeholder_bytes: &[u8] = b"FGB-PLACEHOLDER";
-    std::fs::write(&placeholder_path, placeholder_bytes)
+    fs::write(&placeholder_path, placeholder_bytes)
         .map_err(|err| AppError::from(format!("build_artifacts: write placeholder: {}", err)))?;
 
     Ok(ShardOutput {

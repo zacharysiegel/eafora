@@ -18,7 +18,9 @@
 //! starts looking too coarse and we want to step up to 1:10m (~5× larger
 //! pre-compression).
 
-use std::io::Cursor;
+use std::collections::BTreeMap;
+use std::fs::{self, File};
+use std::io::{BufWriter, Cursor};
 use std::path::{Path, PathBuf};
 
 use flatgeobuf::{ColumnType, FgbWriter, GeometryType};
@@ -43,7 +45,7 @@ pub async fn emit_geometry_flatgeobuf<'e>(
     executor: impl PgExecutor<'e>,
     output_dir: &Path,
 ) -> Result<ShardOutput, AppError> {
-    let iso3_to_name_en: std::collections::BTreeMap<String, String> =
+    let iso3_to_name_en: BTreeMap<String, String> =
         read_country_iso3_to_name_en(executor).await?;
 
     let client: reqwest::Client = reqwest::Client::new();
@@ -54,11 +56,11 @@ pub async fn emit_geometry_flatgeobuf<'e>(
 
 fn write_flatgeobuf_to_disk(
     shapefile_bytes: &ShapefileBytes,
-    iso3_to_name_en: &std::collections::BTreeMap<String, String>,
+    iso3_to_name_en: &BTreeMap<String, String>,
     output_dir: &Path,
 ) -> Result<ShardOutput, AppError> {
     let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
-    std::fs::create_dir_all(&geometry_dir)
+    fs::create_dir_all(&geometry_dir)
         .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: create_dir {:?}: {}", geometry_dir, err)))?;
 
     let tmp_uuid: Uuid = Uuid::now_v7();
@@ -104,14 +106,14 @@ fn write_flatgeobuf_to_disk(
             .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: add_feature_geom {}: {}", iso3, err)))?;
     }
 
-    let file: std::fs::File = std::fs::File::create(&path)
+    let file: File = File::create(&path)
         .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: create {:?}: {}", path, err)))?;
-    let mut buffered: std::io::BufWriter<std::fs::File> = std::io::BufWriter::new(file);
+    let mut buffered: BufWriter<File> = BufWriter::new(file);
     writer
         .write(&mut buffered)
         .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: write: {}", err)))?;
 
-    let byte_count: u64 = std::fs::metadata(&path)
+    let byte_count: u64 = fs::metadata(&path)
         .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: metadata {:?}: {}", path, err)))?
         .len();
 

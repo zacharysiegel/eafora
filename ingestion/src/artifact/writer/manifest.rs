@@ -8,6 +8,7 @@
 //! so its sha256 lands in `artifact_version.manifest_sha256`.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -50,7 +51,7 @@ pub fn emit_manifest(
     let json: String = build_manifest_json(hashed, version_label, &artifact_created, data_source_versions)?;
 
     let path: PathBuf = output_dir.join(MANIFEST_FILENAME);
-    std::fs::write(&path, &json)
+    fs::write(&path, &json)
         .map_err(|err| AppError::from(format!("emit_manifest: write {:?}: {}", path, err)))?;
 
     let mut hasher: Sha256 = Sha256::new();
@@ -235,7 +236,7 @@ mod tests {
             emit_manifest(&hashed, "2026-05-18", &data_source_versions, temp_dir.path()).unwrap();
 
         assert!(emission.output.path.exists());
-        let bytes_on_disk: Vec<u8> = std::fs::read(&emission.output.path).unwrap();
+        let bytes_on_disk: Vec<u8> = fs::read(&emission.output.path).unwrap();
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(&bytes_on_disk);
         let computed: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
