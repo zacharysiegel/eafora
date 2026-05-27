@@ -4,6 +4,19 @@
 //! `ADM0_A3` resolves to a known country. Unknown ADM0_A3 codes get a
 //! warning logged and the feature dropped — Natural Earth ships entries
 //! like `KOS` (Kosovo) that some downstream consumers don't recognize.
+//!
+//! Output is uncompressed. FlatGeobuf is already a packed binary format, but
+//! a brotli pass over the finished `.fgb` still nets ~50–65% reduction
+//! because coordinate sequences and the R-tree have residual structural
+//! redundancy. The right place to add that is at publish time via HTTP
+//! `Content-Encoding: br` (transparent to the browser, no client change) —
+//! not at write time, since the local artifact on disk is more useful as a
+//! plain `.fgb` (loadable in QGIS, inspectable with `fgb info`). The
+//! trade-off is that `Content-Encoding`-compressed bodies break FlatGeobuf's
+//! HTTP-range-request streaming mode; v1 downloads the whole geometry shard
+//! at startup so this doesn't bite. Worth revisiting if the 1:50m geometry
+//! starts looking too coarse and we want to step up to 1:10m (~5× larger
+//! pre-compression).
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
