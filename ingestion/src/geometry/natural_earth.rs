@@ -34,8 +34,7 @@ pub async fn download_pinned_release(client: &reqwest::Client) -> Result<Shapefi
 
 fn extract_shapefile_from_zip(zip_bytes: &[u8]) -> Result<ShapefileBytes, AppError> {
     let cursor: Cursor<&[u8]> = Cursor::new(zip_bytes);
-    let mut archive: zip::ZipArchive<Cursor<&[u8]>> = zip::ZipArchive::new(cursor)
-        .map_err(|err| AppError::from(format!("extract_shapefile_from_zip: open: {}", err)))?;
+    let mut archive: zip::ZipArchive<Cursor<&[u8]>> = zip::ZipArchive::new(cursor)?;
 
     Ok(ShapefileBytes {
         shp: read_named_entry(&mut archive, "shp")?,
@@ -47,9 +46,7 @@ fn extract_shapefile_from_zip(zip_bytes: &[u8]) -> Result<ShapefileBytes, AppErr
 
 fn read_named_entry(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, extension: &str) -> Result<Vec<u8>, AppError> {
     let entry_name: String = format!("{}.{}", SHAPEFILE_BASENAME, extension);
-    let mut entry: ZipFile<'_, Cursor<&[u8]>> = archive
-        .by_name(&entry_name)
-        .map_err(|err| AppError::from(format!("extract_shapefile_from_zip: {}: {}", entry_name, err)))?;
+    let mut entry: ZipFile<'_, Cursor<&[u8]>> = archive.by_name(&entry_name)?;
 
     let mut buffer: Vec<u8> = Vec::with_capacity(entry.size() as usize);
     entry.read_to_end(&mut buffer)?;

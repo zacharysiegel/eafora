@@ -65,16 +65,14 @@ fn write_flatgeobuf_to_disk(
     let tmp_uuid: Uuid = Uuid::now_v7();
     let path: PathBuf = geometry_dir.join(format!("{}-tmp.{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
 
-    let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)
-        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: FgbWriter::create: {}", err)))?;
+    let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
     writer.add_column("iso3", ColumnType::String, |_fbb, _col| {});
     writer.add_column("name_en", ColumnType::String, |_fbb, _col| {});
 
     let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(shapefile_bytes)?;
 
     for shape_and_record in reader.iter_shapes_and_records() {
-        let (shape, record) = shape_and_record
-            .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: read feature: {}", err)))?;
+        let (shape, record) = shape_and_record?;
 
         let Some(iso3) = read_character_field(&record, ADM0_A3_FIELD) else {
             continue;
@@ -87,29 +85,20 @@ fn write_flatgeobuf_to_disk(
             continue;
         };
 
-        let geometry: geo_types::Geometry<f64> = geo_types::Geometry::try_from(shape)
-            .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: shape→geo_types {}: {}", iso3, err)))?;
+        let geometry: geo_types::Geometry<f64> = geo_types::Geometry::try_from(shape)?;
 
         let iso3_property: String = iso3.clone();
         let name_en_property: String = name_en.clone();
 
-        writer
-            .add_feature_geom(geometry, |feature| {
-                feature
-                    .property(0, "iso3", &ColumnValue::String(&iso3_property))
-                    .ok();
-                feature
-                    .property(1, "name_en", &ColumnValue::String(&name_en_property))
-                    .ok();
-            })
-            .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: add_feature_geom {}: {}", iso3, err)))?;
+        writer.add_feature_geom(geometry, |feature| {
+            feature.property(0, "iso3", &ColumnValue::String(&iso3_property)).ok();
+            feature.property(1, "name_en", &ColumnValue::String(&name_en_property)).ok();
+        })?;
     }
 
     let file: File = File::create(&path)?;
     let mut buffered: BufWriter<File> = BufWriter::new(file);
-    writer
-        .write(&mut buffered)
-        .map_err(|err| AppError::from(format!("emit_geometry_flatgeobuf: write: {}", err)))?;
+    writer.write(&mut buffered)?;
 
     let byte_count: u64 = fs::metadata(&path)?.len();
 
@@ -123,10 +112,8 @@ fn build_shapefile_reader<'a>(
     let shx_cursor: Cursor<&'a [u8]> = Cursor::new(shapefile_bytes.shx.as_slice());
     let dbf_cursor: Cursor<&'a [u8]> = Cursor::new(shapefile_bytes.dbf.as_slice());
 
-    let shape_reader: ShapeReader<Cursor<&'a [u8]>> = ShapeReader::with_shx(shape_cursor, shx_cursor)
-        .map_err(|err| AppError::from(format!("build_shapefile_reader: ShapeReader: {}", err)))?;
-    let dbase_reader: shapefile::dbase::Reader<Cursor<&'a [u8]>> = shapefile::dbase::Reader::new(dbf_cursor)
-        .map_err(|err| AppError::from(format!("build_shapefile_reader: dbase::Reader: {}", err)))?;
+    let shape_reader: ShapeReader<Cursor<&'a [u8]>> = ShapeReader::with_shx(shape_cursor, shx_cursor)?;
+    let dbase_reader: shapefile::dbase::Reader<Cursor<&'a [u8]>> = shapefile::dbase::Reader::new(dbf_cursor)?;
 
     Ok(Reader::new(shape_reader, dbase_reader))
 }

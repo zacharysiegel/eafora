@@ -61,11 +61,8 @@ fn write_one_shard(
     );
     let path: PathBuf = data_dir.join(&filename);
 
-    let mut connection: Connection = Connection::open(&path)
-        .map_err(|err| AppError::from(format!("emit_sqlite_shards: open {:?}: {}", path, err)))?;
-    connection
-        .pragma_update(None, "journal_mode", "MEMORY")
-        .map_err(|err| AppError::from(format!("emit_sqlite_shards: journal_mode: {}", err)))?;
+    let mut connection: Connection = Connection::open(&path)?;
+    connection.pragma_update(None, "journal_mode", "MEMORY")?;
 
     create_schema(&connection)?;
     insert_rows(&mut connection, values)?;
@@ -76,62 +73,53 @@ fn write_one_shard(
 }
 
 fn create_schema(connection: &Connection) -> Result<(), AppError> {
-    connection
-        .execute_batch(
-            r#"
-            create table statistic_value (
-                region_iso3          text not null,
-                region_id            blob not null,
-                period_start         text not null,
-                period_end           text not null,
-                value                real not null,
-                data_status          text not null,
-                data_source_code     text not null,
-                data_source_revision text not null,
-                primary key (region_iso3, period_start, period_end)
-            );
-            create index statistic_value_by_region on statistic_value (region_id);
-            "#,
-        )
-        .map_err(|err| AppError::from(format!("emit_sqlite_shards: create_schema: {}", err)))?;
+    connection.execute_batch(
+        r#"
+        create table statistic_value (
+            region_iso3          text not null,
+            region_id            blob not null,
+            period_start         text not null,
+            period_end           text not null,
+            value                real not null,
+            data_status          text not null,
+            data_source_code     text not null,
+            data_source_revision text not null,
+            primary key (region_iso3, period_start, period_end)
+        );
+        create index statistic_value_by_region on statistic_value (region_id);
+        "#,
+    )?;
     Ok(())
 }
 
 fn insert_rows(connection: &mut Connection, values: &[&MergedValue]) -> Result<(), AppError> {
-    let transaction: rusqlite::Transaction =
-        connection.transaction().map_err(|err| AppError::from(format!("emit_sqlite_shards: begin: {}", err)))?;
+    let transaction: rusqlite::Transaction = connection.transaction()?;
 
     {
-        let mut statement: rusqlite::Statement = transaction
-            .prepare(
-                r#"
-                insert into statistic_value
-                    (region_iso3, region_id, period_start, period_end, value,
-                     data_status, data_source_code, data_source_revision)
-                values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-                "#,
-            )
-            .map_err(|err| AppError::from(format!("emit_sqlite_shards: prepare: {}", err)))?;
+        let mut statement: rusqlite::Statement = transaction.prepare(
+            r#"
+            insert into statistic_value
+                (region_iso3, region_id, period_start, period_end, value,
+                 data_status, data_source_code, data_source_revision)
+            values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "#,
+        )?;
 
         for merged_value in values {
-            statement
-                .execute(params![
-                    merged_value.region_iso3,
-                    merged_value.region_id.as_bytes().as_slice(),
-                    merged_value.period.start.format("%Y-%m-%d").to_string(),
-                    merged_value.period.end.format("%Y-%m-%d").to_string(),
-                    merged_value.value,
-                    merged_value.data_status,
-                    merged_value.data_source_code,
-                    merged_value.data_source_revision,
-                ])
-                .map_err(|err| AppError::from(format!("emit_sqlite_shards: insert: {}", err)))?;
+            statement.execute(params![
+                merged_value.region_iso3,
+                merged_value.region_id.as_bytes().as_slice(),
+                merged_value.period.start.format("%Y-%m-%d").to_string(),
+                merged_value.period.end.format("%Y-%m-%d").to_string(),
+                merged_value.value,
+                merged_value.data_status,
+                merged_value.data_source_code,
+                merged_value.data_source_revision,
+            ])?;
         }
     }
 
-    transaction
-        .commit()
-        .map_err(|err| AppError::from(format!("emit_sqlite_shards: commit: {}", err)))?;
+    transaction.commit()?;
 
     Ok(())
 }
