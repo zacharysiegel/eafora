@@ -105,7 +105,7 @@ impl DataStatus {
 pub enum LicenseClass {
     PublicDomain,
     Attribution,
-    AttributionSa,
+    AttributionShareAlike,
     NonCommercial,
 }
 
@@ -114,7 +114,7 @@ impl LicenseClass {
         match self {
             LicenseClass::PublicDomain => "public_domain",
             LicenseClass::Attribution => "attribution",
-            LicenseClass::AttributionSa => "attribution_sa",
+            LicenseClass::AttributionShareAlike => "attribution_share_alike",
             LicenseClass::NonCommercial => "noncommercial",
         }
     }
@@ -123,7 +123,7 @@ impl LicenseClass {
         match value {
             "public_domain" => Ok(LicenseClass::PublicDomain),
             "attribution" => Ok(LicenseClass::Attribution),
-            "attribution_sa" => Ok(LicenseClass::AttributionSa),
+            "attribution_share_alike" => Ok(LicenseClass::AttributionShareAlike),
             "noncommercial" => Ok(LicenseClass::NonCommercial),
             other => Err(AppError::from(format!("LicenseClass::parse_str: unknown value {:?}", other))),
         }

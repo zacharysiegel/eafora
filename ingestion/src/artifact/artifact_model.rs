@@ -47,7 +47,7 @@ impl LicenseShardClass {
     pub fn from_license_class(license_class: LicenseClass) -> LicenseShardClass {
         match license_class {
             LicenseClass::PublicDomain | LicenseClass::Attribution => LicenseShardClass::Base,
-            LicenseClass::AttributionSa => LicenseShardClass::ShareAlike,
+            LicenseClass::AttributionShareAlike => LicenseShardClass::ShareAlike,
             LicenseClass::NonCommercial => LicenseShardClass::NonCommercial,
         }
     }
