@@ -5,7 +5,6 @@ use std::io::{Cursor, Read};
 use crate::error::AppError;
 use const_format::concatcp;
 use zip::read::ZipFile;
-use crate::geometry::natural_earth;
 
 const SHAPEFILE_BASENAME: &str = "ne_50m_admin_0_countries";
 const NATURAL_EARTH_URL: &str = concatcp!(
