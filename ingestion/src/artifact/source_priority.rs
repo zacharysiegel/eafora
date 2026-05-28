@@ -7,7 +7,7 @@
 //!
 //! The grouping key includes `license_shard_class` so a Base-licensed
 //! source never displaces a NonCommercial-licensed source in the Base
-//! shard, and vice versa — every shard tells a self-consistent story.
+//! shard, and vice versa. Every shard tells a self-consistent story.
 
 use std::collections::BTreeMap;
 

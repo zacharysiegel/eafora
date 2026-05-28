@@ -1,16 +1,3 @@
-//! Canonical-store writes shared across every source adapter: publication
-//! insert-or-match, the find/insert/supersede triplet that drives the
-//! append-with-supersede semantics, and `read_latest_publication_revision`.
-//!
-//! These are NOT part of the adapter layer — adapters end with
-//! `NormalizedStatisticValue` in memory. The ingest layer takes those normalized rows
-//! and persists them to the canonical store. Source-specific SQL (e.g. an
-//! adapter's own staging table) belongs in `<source>/<source>_db.rs`.
-//!
-//! Every function takes `impl PgExecutor<'_>` so the same code paths handle
-//! production (`&pool`) and tests (`&mut *tx` re-borrow against a per-test
-//! transaction that gets rolled back).
-
 use chrono::{DateTime, Utc};
 use sqlx::PgExecutor;
 use uuid::Uuid;

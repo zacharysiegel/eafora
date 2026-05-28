@@ -1,5 +1,3 @@
-//! Artifact-builder data model.
-
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};

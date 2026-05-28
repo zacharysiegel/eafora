@@ -1,9 +1,3 @@
-//! WB WDI adapter: normalizes parsed WB rows into the canonical
-//! `NormalizedStatisticValue` shape and orchestrates the full pipeline
-//! (client → adapter → ingest) under one transaction. The fetch + parse
-//! steps live in `world_bank_wdi_client`; the persistence step lives in
-//! `crate::ingest`.
-
 use chrono::Utc;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -21,11 +15,10 @@ use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiRe
 
 const WB_WDI_DATA_SOURCE_CODE: &str = "wb_wdi";
 
-/// Joins parsed rows to canonical-store IDs and computes period bounds.
-/// Rows whose country isn't in our seed produce an `UnknownCountry` warning
-/// and are dropped from the normalized output. Rows with `value: None`
-/// produce an `NaValue` warning and are dropped (we only persist published
-/// values; `None` means the source has no figure to publish for that cell).
+/// Rows whose country isn't in the canonical seed produce an
+/// `UnknownCountry` warning and are dropped. Rows with `value: None`
+/// produce a `NotApplicableValue` warning and are dropped: we only persist
+/// published values, and `None` means the source had no figure for that cell.
 pub async fn normalize(
     connection: &mut PgConnection,
     parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue>,
@@ -81,12 +74,8 @@ async fn normalize_row(
     }))
 }
 
-/// Adapter orchestrator. Opens a single transaction, then chains
-/// `read_latest_publication_revision` (informational only; WB has no
-/// native incremental query) → client::fetch_upstream → client::parse_response
-/// → normalize → ingest::record_statistic_values under that transaction. The whole
-/// batch commits atomically or rolls back together, so a mid-run failure
-/// can't leave the canonical store with partial publication state.
+/// Runs the full client + normalize + ingest pipeline under one transaction
+/// so a mid-run failure leaves the canonical store untouched.
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
 

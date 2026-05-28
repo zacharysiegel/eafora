@@ -1,6 +1,6 @@
 //! Hashing is split from renaming in two phases: every file is hashed
 //! first, and only if the entire batch succeeded do we rename. If one
-//! file fails, no file is left renamed — the next build can be re-run
+//! file fails, no file is left renamed; the next build can be re-run
 //! cleanly.
 
 use std::fs;

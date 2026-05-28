@@ -1,8 +1,3 @@
-//! Types for the WB WDI HTTP response shape and the WB-specific intermediate
-//! representation used between `parse_response` and `normalize`. Cross-adapter
-//! types (`AdapterOptions`, `IngestReport`, `NormalizedStatisticValue`, etc.) live in
-//! `adapter`.
-
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

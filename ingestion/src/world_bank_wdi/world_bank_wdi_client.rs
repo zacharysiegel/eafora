@@ -1,12 +1,3 @@
-//! WB WDI external HTTP client + response deserialization. This file's only
-//! responsibility is talking to the World Bank API and turning the response
-//! into the parser's intermediate `ParsedWdiStatisticValue` shape. Canonical-store
-//! normalization lives in `world_bank_wdi_adapter`; persistence lives in
-//! `crate::ingest`.
-//!
-//! Pure-logic helpers (`parse_response`) are unit-tested in this file's
-//! `mod tests` block.
-
 use crate::adapter::AdapterOptions;
 use crate::error::AppError;
 use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse, WdiStatisticValue};
@@ -14,10 +5,9 @@ use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiRe
 const WB_WDI_API_URL: &str =
     "https://api.worldbank.org/v2/country/all/indicator/SP.DYN.TFRT.IN?format=json&per_page=20000";
 
-/// Calls the WB WDI HTTP API for the TFR indicator across every country and
-/// every available year. WB has no native incremental query for this
-/// indicator, so we always pull the full set; the per-row supersede logic in
-/// `ingest::record_statistic_values` keeps writes proportional to actual changes.
+/// WB has no native incremental query for TFR, so we always pull the full
+/// set. The per-row supersede logic in `ingest::record_statistic_values`
+/// keeps writes proportional to actual changes.
 pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, AppError> {
     let response: reqwest::Response = reqwest::get(WB_WDI_API_URL).await?;
     if !response.status().is_success() {
@@ -31,19 +21,15 @@ pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, App
     Ok(parsed)
 }
 
-/// Converts a deserialized WB WDI response into the parser's intermediate
-/// shape. Pure function — no I/O. Per-row parse failures (non-numeric
-/// `date`, missing iso3) become `AppError`s rather than silent skips so
-/// the caller can decide how to handle them; today the pipeline aborts on
-/// any parse error, but a future relaxation could treat them as warnings.
 pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, AppError> {
     let WdiResponse(_metadata, raw_wdi_statistic_values) = raw;
     let mut parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = Vec::with_capacity(raw_wdi_statistic_values.len());
 
     for raw_wdi_statistic_value in raw_wdi_statistic_values {
-        // WB intermixes regional aggregates (e.g. country.id="XD" "Late-demographic dividend")
-        // with country rows. Aggregates have empty `countryiso3code` — they aren't country
-        // data and we don't ingest them. Drop them here so normalize never sees them.
+        // WB intermixes regional aggregates (e.g. country.id="XD"
+        // "Late-demographic dividend") with country rows. Aggregates have
+        // empty `countryiso3code` and aren't country data, so drop them
+        // before normalize sees them.
         if raw_wdi_statistic_value.countryiso3code.is_empty() {
             continue;
         }

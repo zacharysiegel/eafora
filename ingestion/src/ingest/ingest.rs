@@ -1,8 +1,3 @@
-//! Ingest layer: takes `NormalizedStatisticValue` batches from any source adapter and
-//! persists them to the canonical store with append-with-supersede
-//! semantics. Source-agnostic — every adapter calls `record_statistic_values` with
-//! the same signature.
-
 use chrono::{DateTime, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -13,17 +8,13 @@ use crate::error::AppError;
 use crate::ingest::ingest_db;
 use crate::ingest::{IngestReport, RecordOutcome};
 
-/// Persists a batch of normalized rows under a single publication. The
-/// publication is INSERTed (or matched against an existing row with the same
-/// `(data_source_id, revision_label)`) before any value writes; every
-/// inserted statistic_value row points at the resulting publication id.
+/// For each `(region, statistic, period, data_source)` cell, the existing
+/// `superseded is null` row is compared against the new value:
 ///
-/// For each normalized row we look up the current `superseded is null` row
-/// for `(region_id, statistic_id, period_start, period_end, data_source_id)`:
-/// - no current row: INSERT the new row, count `values_added`
-/// - current row matches new value + status: skip, count `values_skipped`
-/// - current row differs: set the old row's `superseded = now()`, INSERT a
-///   new row pointing at the new publication, count `values_revised`
+/// - no current row: INSERT the new row, count `values_added`.
+/// - current row matches new value + status: skip, count `values_skipped`.
+/// - current row differs: stamp the old row's `superseded`, INSERT a new
+///   row pointing at the new publication, count `values_revised`.
 pub async fn record_statistic_values(
     connection: &mut PgConnection,
     data_source_id: Uuid,
@@ -62,13 +53,13 @@ pub async fn record_statistic_value(
     let current: Option<StatisticValue> =
         ingest_db::find_current_value(&mut *connection, normalized_statistic_value, data_source_id).await?;
 
-    if let Some(current_row) = current {
-        if current_row.value == normalized_statistic_value.value
-            && current_row.data_status == normalized_statistic_value.data_status.as_str()
+    if let Some(current_record) = current {
+        if current_record.value == normalized_statistic_value.value
+            && current_record.data_status == normalized_statistic_value.data_status.as_str()
         {
             return Ok(RecordOutcome::Skipped);
         }
-        ingest_db::set_superseded(&mut *connection, current_row.id, Utc::now()).await?;
+        ingest_db::set_superseded(&mut *connection, current_record.id, Utc::now()).await?;
         ingest_db::insert_statistic_value(
             &mut *connection,
             normalized_statistic_value,

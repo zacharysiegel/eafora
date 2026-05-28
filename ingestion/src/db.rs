@@ -1,6 +1,3 @@
-//! PgPool bootstrap. Reads `DATABASE_URL` from the environment, creates a
-//! configured pool, returns it.
-
 use std::env;
 
 use sqlx::postgres::{PgPool, PgPoolOptions};

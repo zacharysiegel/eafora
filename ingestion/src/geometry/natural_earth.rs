@@ -1,4 +1,4 @@
-//! Held in memory — no temp files between download and FlatGeobuf emission.
+//! Held in memory. No temp files between download and FlatGeobuf emission.
 
 use std::io::{Cursor, Read};
 

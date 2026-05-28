@@ -1,5 +1,3 @@
-//! ingestion: the Eafora canonical-store CLI binary.
-
 use std::path::PathBuf;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
