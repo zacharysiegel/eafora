@@ -63,7 +63,7 @@ create table if not exists data_source (
 );
 
 comment on column data_source.code             is 'short identifier (''wb_wdi'', ''eurostat_demo_fer'', ''hfd'')';
-comment on column data_source.license_class    is 'one of: public_domain | attribution | attribution_sa | noncommercial';
+comment on column data_source.license_class    is 'one of: public_domain | attribution | attribution_share_alike | noncommercial';
 comment on column data_source.license_name     is 'e.g. ''CC BY 4.0'', ''Open Government Licence v3.0''';
 comment on column data_source.attribution_text is 'exact display string for UI citations';
 comment on column data_source.preference_rank  is 'drives data-source-preference merge; lower wins; ties broken deterministically by data_source.id';

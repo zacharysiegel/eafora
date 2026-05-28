@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
-use crate::canonical::canonical_model::LicenseClass;
+use crate::canonical::canonical_model::{DataStatus, LicenseClass};
 
 #[derive(Debug, Clone)]
 pub struct CandidateValue {
@@ -14,7 +14,7 @@ pub struct CandidateValue {
     pub statistic_code: String,
     pub period: NaiveDatePeriod,
     pub value: f64,
-    pub data_status: String,
+    pub data_status: DataStatus,
     pub data_source_id: Uuid,
     pub data_source_code: String,
     pub data_source_revision: String,
@@ -30,7 +30,7 @@ pub struct MergedValue {
     pub statistic_code: String,
     pub period: NaiveDatePeriod,
     pub value: f64,
-    pub data_status: String,
+    pub data_status: DataStatus,
     pub data_source_code: String,
     pub data_source_revision: String,
     pub license_shard_class: LicenseShardClass,

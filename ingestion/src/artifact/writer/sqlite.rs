@@ -107,7 +107,7 @@ fn insert_rows(connection: &mut Connection, values: &[&MergedValue]) -> Result<(
                 merged_value.period.start.format("%Y-%m-%d").to_string(),
                 merged_value.period.end.format("%Y-%m-%d").to_string(),
                 merged_value.value,
-                merged_value.data_status,
+                merged_value.data_status.as_str(),
                 merged_value.data_source_code,
                 merged_value.data_source_revision,
             ])?;
@@ -124,6 +124,7 @@ mod tests {
     use super::*;
 
     use crate::adapter::adapter_model::NaiveDatePeriod;
+    use crate::canonical::canonical_model::DataStatus;
 
     fn make_merged(
         statistic_code: &str,
@@ -139,7 +140,7 @@ mod tests {
             statistic_code: statistic_code.to_string(),
             period: NaiveDatePeriod::from_year(year).unwrap(),
             value,
-            data_status: "final".to_string(),
+            data_status: DataStatus::Final,
             data_source_code: "wb_wdi".to_string(),
             data_source_revision: "2024-Q4".to_string(),
             license_shard_class,

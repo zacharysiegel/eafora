@@ -55,7 +55,7 @@ pub async fn record_statistic_value(
 
     if let Some(current_record) = current {
         if current_record.value == normalized_statistic_value.value
-            && current_record.data_status == normalized_statistic_value.data_status.as_str()
+            && current_record.data_status == normalized_statistic_value.data_status
         {
             return Ok(RecordOutcome::Skipped);
         }

@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
 use crate::artifact::artifact_model::{CandidateValue, LicenseShardClass, MergedValue};
+use crate::canonical::canonical_model::DataStatus;
 
 pub fn apply_source_priority(candidates: Vec<CandidateValue>) -> Vec<MergedValue> {
     let mut groups: BTreeMap<MergeKey, CandidateValue> = BTreeMap::new();
@@ -82,7 +83,7 @@ fn candidate_outranks(challenger: &CandidateValue, incumbent: &CandidateValue) -
 }
 
 fn ranking_key(candidate: &CandidateValue) -> (u8, i32, Uuid) {
-    let status_tier: u8 = if candidate.data_status == "final" { 0 } else { 1 };
+    let status_tier: u8 = if candidate.data_status == DataStatus::Final { 0 } else { 1 };
     (
         status_tier,
         candidate.data_source_preference_rank,
@@ -103,7 +104,7 @@ mod tests {
     fn make_candidate(
         data_source_id_low_byte: u128,
         preference_rank: i32,
-        data_status: &str,
+        data_status: DataStatus,
         license_class: LicenseClass,
         value: f64,
     ) -> CandidateValue {
@@ -114,7 +115,7 @@ mod tests {
             statistic_code: "tfr".to_string(),
             period: period_2024(),
             value,
-            data_status: data_status.to_string(),
+            data_status,
             data_source_id: Uuid::from_u128(data_source_id_low_byte),
             data_source_code: format!("source_{}", data_source_id_low_byte),
             data_source_revision: "rev1".to_string(),
@@ -125,7 +126,7 @@ mod tests {
 
     #[test]
     fn apply_source_priority_single_candidate_returns_unchanged_value() {
-        let candidates: Vec<CandidateValue> = vec![make_candidate(10, 5, "final", LicenseClass::Attribution, 1.5)];
+        let candidates: Vec<CandidateValue> = vec![make_candidate(10, 5, DataStatus::Final, LicenseClass::Attribution, 1.5)];
 
         let merged: Vec<MergedValue> = apply_source_priority(candidates);
 
@@ -138,8 +139,8 @@ mod tests {
     #[test]
     fn apply_source_priority_lower_preference_rank_wins() {
         let candidates: Vec<CandidateValue> = vec![
-            make_candidate(20, 9, "final", LicenseClass::Attribution, 1.0),
-            make_candidate(10, 1, "final", LicenseClass::Attribution, 2.0),
+            make_candidate(20, 9, DataStatus::Final, LicenseClass::Attribution, 1.0),
+            make_candidate(10, 1, DataStatus::Final, LicenseClass::Attribution, 2.0),
         ];
 
         let merged: Vec<MergedValue> = apply_source_priority(candidates);
@@ -152,8 +153,8 @@ mod tests {
     #[test]
     fn apply_source_priority_equal_preference_rank_breaks_tie_by_data_source_id() {
         let candidates: Vec<CandidateValue> = vec![
-            make_candidate(99, 5, "final", LicenseClass::Attribution, 1.0),
-            make_candidate(7, 5, "final", LicenseClass::Attribution, 2.0),
+            make_candidate(99, 5, DataStatus::Final, LicenseClass::Attribution, 1.0),
+            make_candidate(7, 5, DataStatus::Final, LicenseClass::Attribution, 2.0),
         ];
 
         let merged: Vec<MergedValue> = apply_source_priority(candidates);
@@ -166,22 +167,22 @@ mod tests {
     #[test]
     fn apply_source_priority_final_status_overrides_lower_preference_rank() {
         let candidates: Vec<CandidateValue> = vec![
-            make_candidate(10, 1, "provisional", LicenseClass::Attribution, 1.0),
-            make_candidate(20, 9, "final", LicenseClass::Attribution, 2.0),
+            make_candidate(10, 1, DataStatus::Provisional, LicenseClass::Attribution, 1.0),
+            make_candidate(20, 9, DataStatus::Final, LicenseClass::Attribution, 2.0),
         ];
 
         let merged: Vec<MergedValue> = apply_source_priority(candidates);
 
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].value, 2.0);
-        assert_eq!(merged[0].data_status, "final");
+        assert_eq!(merged[0].data_status, DataStatus::Final);
     }
 
     #[test]
     fn apply_source_priority_different_license_classes_emit_separate_outputs() {
         let candidates: Vec<CandidateValue> = vec![
-            make_candidate(10, 1, "final", LicenseClass::Attribution, 1.0),
-            make_candidate(20, 1, "final", LicenseClass::NonCommercial, 2.0),
+            make_candidate(10, 1, DataStatus::Final, LicenseClass::Attribution, 1.0),
+            make_candidate(20, 1, DataStatus::Final, LicenseClass::NonCommercial, 2.0),
         ];
 
         let merged: Vec<MergedValue> = apply_source_priority(candidates);
@@ -204,11 +205,11 @@ mod tests {
         let candidates: Vec<CandidateValue> = vec![
             CandidateValue {
                 data_source_revision: "2024-Q3".to_string(),
-                ..make_candidate(10, 1, "final", LicenseClass::Attribution, 1.0)
+                ..make_candidate(10, 1, DataStatus::Final, LicenseClass::Attribution, 1.0)
             },
             CandidateValue {
                 data_source_revision: "2024-Q4".to_string(),
-                ..make_candidate(10, 1, "final", LicenseClass::Attribution, 2.0)
+                ..make_candidate(10, 1, DataStatus::Final, LicenseClass::Attribution, 2.0)
             },
         ];
 

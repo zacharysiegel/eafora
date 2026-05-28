@@ -56,7 +56,7 @@ pub struct StatisticValue {
     pub value: f64,
     pub data_source_id: Uuid,
     pub data_source_publication_id: Uuid,
-    pub data_status: String,
+    pub data_status: DataStatus,
     pub superseded: Option<DateTime<Utc>>,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
@@ -97,6 +97,18 @@ impl DataStatus {
             DataStatus::Projection => "projection",
             DataStatus::Imputed => "imputed",
             DataStatus::Interpolated => "interpolated",
+        }
+    }
+
+    pub fn parse_str(value: &str) -> Result<DataStatus, AppError> {
+        match value {
+            "final" => Ok(DataStatus::Final),
+            "provisional" => Ok(DataStatus::Provisional),
+            "preliminary" => Ok(DataStatus::Preliminary),
+            "projection" => Ok(DataStatus::Projection),
+            "imputed" => Ok(DataStatus::Imputed),
+            "interpolated" => Ok(DataStatus::Interpolated),
+            other => Err(AppError::from(format!("DataStatus::parse_str: unknown value {:?}", other))),
         }
     }
 }

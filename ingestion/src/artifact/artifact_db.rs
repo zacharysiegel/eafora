@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
 use crate::artifact::artifact_model::{ArtifactVersion, CandidateValue};
-use crate::canonical::canonical_model::LicenseClass;
+use crate::canonical::canonical_model::{DataStatus, LicenseClass};
 use crate::error::AppError;
 
 struct CandidateRecord {
@@ -68,7 +68,7 @@ pub async fn read_candidate_values<'e>(
                     end: candidate_record.period_end,
                 },
                 value: candidate_record.value,
-                data_status: candidate_record.data_status,
+                data_status: DataStatus::parse_str(&candidate_record.data_status)?,
                 data_source_id: candidate_record.data_source_id,
                 data_source_code: candidate_record.data_source_code,
                 data_source_revision: candidate_record.data_source_revision,
