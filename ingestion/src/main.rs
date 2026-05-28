@@ -5,6 +5,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 
 use ingestion::adapter::AdapterOptions;
 use ingestion::artifact::{self, BuildOptions, LocalArtifactBuild};
+use ingestion::canonical::canonical_model::DataSourceCode;
 use ingestion::db;
 use ingestion::error::AppError;
 use ingestion::ingest::IngestReport;
@@ -12,7 +13,7 @@ use ingestion::world_bank_wdi::world_bank_wdi_adapter;
 
 /// Registered source adapters. Adding a new source = one entry here plus
 /// the source's per-feature module + a `data_source` seed row.
-const REGISTERED_SOURCES: &[&str] = &["wb_wdi"];
+const REGISTERED_SOURCES: &[DataSourceCode] = &[DataSourceCode::WorldBankWDI];
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -64,7 +65,8 @@ fn build_cli() -> Command {
 }
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
-    let source_code: &String = require_arg(matches, "source")?;
+    let source_code_str: &String = require_arg(matches, "source")?;
+    let source_code: DataSourceCode = DataSourceCode::parse_str(source_code_str)?;
     let force_full_refetch: bool = matches.get_flag("force-full-refetch");
     let options: AdapterOptions = AdapterOptions { force_full_refetch };
 
@@ -82,11 +84,11 @@ async fn dispatch_all() -> Result<(), AppError> {
     let mut failure_count: usize = 0;
 
     for source_code in REGISTERED_SOURCES {
-        log::info!("source {} starting", source_code);
-        match run_source(&pool, source_code, options).await {
-            Ok(report) => log_report(source_code, &report),
+        log::info!("source {} starting", source_code.as_str());
+        match run_source(&pool, *source_code, options).await {
+            Ok(report) => log_report(*source_code, &report),
             Err(error) => {
-                log::error!("source {} failed: {}", source_code, error);
+                log::error!("source {} failed: {}", source_code.as_str(), error);
                 failure_count += 1;
             }
         }
@@ -103,26 +105,25 @@ async fn dispatch_all() -> Result<(), AppError> {
 
 async fn run_source(
     pool: &PgPool,
-    source_code: &str,
+    source_code: DataSourceCode,
     options: AdapterOptions,
 ) -> Result<IngestReport, AppError> {
     match source_code {
-        "wb_wdi" => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
-        other => Err(AppError::from(format!("unknown source code: {other:?}"))),
+        DataSourceCode::WorldBankWDI => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
     }
 }
 
-fn log_report(source_code: &str, report: &IngestReport) {
+fn log_report(source_code: DataSourceCode, report: &IngestReport) {
     log::info!(
         "source {} complete: added={} revised={} skipped={} warnings={}",
-        source_code,
+        source_code.as_str(),
         report.values_added,
         report.values_revised,
         report.values_skipped,
         report.warnings.len(),
     );
     for warning in &report.warnings {
-        log::warn!("source {} {:?}: {}", source_code, warning.kind, warning.message);
+        log::warn!("source {} {:?}: {}", source_code.as_str(), warning.kind, warning.message);
     }
 }
 

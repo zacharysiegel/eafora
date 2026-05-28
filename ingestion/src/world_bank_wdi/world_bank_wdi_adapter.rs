@@ -6,14 +6,14 @@ use crate::adapter::{
     AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue, NaiveDatePeriod,
 };
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{Country, DataSource, DataStatus, Statistic, StatisticCode};
+use crate::canonical::canonical_model::{Country, DataSource, DataSourceCode, DataStatus, Statistic, StatisticCode};
 use crate::error::AppError;
 use crate::ingest;
 use crate::ingest::IngestReport;
 use crate::world_bank_wdi::world_bank_wdi_client;
 use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse};
 
-const WB_WDI_DATA_SOURCE_CODE: &str = "wb_wdi";
+const WB_WDI_DATA_SOURCE_CODE: DataSourceCode = DataSourceCode::WorldBankWDI;
 
 /// Rows whose country isn't in the canonical seed produce an
 /// `UnknownCountry` warning and are dropped. Rows with `value: None`

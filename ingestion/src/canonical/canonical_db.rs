@@ -1,6 +1,6 @@
 use sqlx::PgExecutor;
 
-use crate::canonical::canonical_model::{Country, DataSource, LicenseClass, Statistic};
+use crate::canonical::canonical_model::{Country, DataSource, DataSourceCode, LicenseClass, Statistic};
 use crate::error::AppError;
 
 pub async fn find_country_by_iso3<'e>(
@@ -41,7 +41,7 @@ pub async fn find_statistic_by_code<'e>(
 
 pub async fn find_data_source_by_code<'e>(
     executor: impl PgExecutor<'e>,
-    code: &str,
+    code: DataSourceCode,
 ) -> Result<Option<DataSource>, AppError> {
     struct DataSourceRecord {
         id: uuid::Uuid,
@@ -64,7 +64,7 @@ pub async fn find_data_source_by_code<'e>(
         from data_source
         where code = $1
         "#,
-        code,
+        code.as_str(),
     )
     .fetch_optional(executor)
     .await?;
@@ -73,7 +73,7 @@ pub async fn find_data_source_by_code<'e>(
         .map(|data_source_record| {
             Ok(DataSource {
                 id: data_source_record.id,
-                code: data_source_record.code,
+                code: DataSourceCode::parse_str(&data_source_record.code)?,
                 name_en: data_source_record.name_en,
                 homepage_url: data_source_record.homepage_url,
                 license_class: LicenseClass::parse_str(&data_source_record.license_class)?,

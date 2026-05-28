@@ -7,12 +7,13 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::canonical::canonical_db;
+use ingestion::canonical::canonical_model::DataSourceCode;
 
-pub async fn get_data_source_id(transaction: &mut Transaction<'static, Postgres>, code: &str) -> Uuid {
+pub async fn get_data_source_id(transaction: &mut Transaction<'static, Postgres>, code: DataSourceCode) -> Uuid {
     canonical_db::find_data_source_by_code(&mut **transaction, code)
         .await
-        .unwrap_or_else(|err| panic!("find data_source {code}: {err}"))
-        .unwrap_or_else(|| panic!("data_source {code} not seeded"))
+        .unwrap_or_else(|err| panic!("find data_source {:?}: {err}", code))
+        .unwrap_or_else(|| panic!("data_source {:?} not seeded", code))
         .id
 }
 

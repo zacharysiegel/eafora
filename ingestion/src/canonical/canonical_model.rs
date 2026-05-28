@@ -35,7 +35,7 @@ pub struct Statistic {
 
 pub struct DataSource {
     pub id: Uuid,
-    pub code: String,
+    pub code: DataSourceCode,
     pub name_en: String,
     pub homepage_url: String,
     pub license_class: LicenseClass,
@@ -74,6 +74,36 @@ impl StatisticCode {
     pub fn as_str(self) -> &'static str {
         match self {
             StatisticCode::Tfr => "tfr",
+        }
+    }
+
+    pub fn parse_str(value: &str) -> Result<StatisticCode, AppError> {
+        match value {
+            "tfr" => Ok(StatisticCode::Tfr),
+            other => Err(AppError::from(format!("StatisticCode::parse_str: unknown value {:?}", other))),
+        }
+    }
+}
+
+/// Enumerates the `data_source.code` values seeded in the canonical store.
+/// New sources get a variant here AND a seed migration row; the two stay
+/// in sync by convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DataSourceCode {
+    WorldBankWDI,
+}
+
+impl DataSourceCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DataSourceCode::WorldBankWDI => "wb_wdi",
+        }
+    }
+
+    pub fn parse_str(value: &str) -> Result<DataSourceCode, AppError> {
+        match value {
+            "wb_wdi" => Ok(DataSourceCode::WorldBankWDI),
+            other => Err(AppError::from(format!("DataSourceCode::parse_str: unknown value {:?}", other))),
         }
     }
 }
