@@ -9,10 +9,11 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
-use crate::artifact::artifact_model::CandidateValue;
+use crate::artifact::artifact_model::{ArtifactVersion, CandidateValue};
+use crate::canonical::canonical_model::LicenseClass;
 use crate::error::AppError;
 
-struct CandidateRow {
+struct CandidateRecord {
     region_id: Uuid,
     region_iso3: String,
     statistic_id: Uuid,
@@ -31,8 +32,8 @@ struct CandidateRow {
 pub async fn read_candidate_values<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<Vec<CandidateValue>, AppError> {
-    let rows: Vec<CandidateRow> = sqlx::query_as!(
-        CandidateRow,
+    let candidate_records: Vec<CandidateRecord> = sqlx::query_as!(
+        CandidateRecord,
         r#"
         select
             statistic_value.region_id            as "region_id!",
@@ -59,40 +60,40 @@ pub async fn read_candidate_values<'e>(
     .fetch_all(executor)
     .await?;
 
-    let candidate_values: Vec<CandidateValue> = rows
+    candidate_records
         .into_iter()
-        .map(|row| CandidateValue {
-            region_id: row.region_id,
-            region_iso3: row.region_iso3,
-            statistic_id: row.statistic_id,
-            statistic_code: row.statistic_code,
-            period: NaiveDatePeriod {
-                start: row.period_start,
-                end: row.period_end,
-            },
-            value: row.value,
-            data_status: row.data_status,
-            data_source_id: row.data_source_id,
-            data_source_code: row.data_source_code,
-            data_source_revision: row.data_source_revision,
-            data_source_preference_rank: row.data_source_preference_rank,
-            license_class: row.license_class,
+        .map(|candidate_record| {
+            Ok(CandidateValue {
+                region_id: candidate_record.region_id,
+                region_iso3: candidate_record.region_iso3,
+                statistic_id: candidate_record.statistic_id,
+                statistic_code: candidate_record.statistic_code,
+                period: NaiveDatePeriod {
+                    start: candidate_record.period_start,
+                    end: candidate_record.period_end,
+                },
+                value: candidate_record.value,
+                data_status: candidate_record.data_status,
+                data_source_id: candidate_record.data_source_id,
+                data_source_code: candidate_record.data_source_code,
+                data_source_revision: candidate_record.data_source_revision,
+                data_source_preference_rank: candidate_record.data_source_preference_rank,
+                license_class: LicenseClass::parse_str(&candidate_record.license_class)?,
+            })
         })
-        .collect();
-
-    Ok(candidate_values)
+        .collect()
 }
 
 pub async fn read_country_iso3_to_name_en<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<BTreeMap<String, String>, AppError> {
-    struct CountryNameRow {
+    struct CountryNameRecord {
         iso3: String,
         name_en: String,
     }
 
-    let rows: Vec<CountryNameRow> = sqlx::query_as!(
-        CountryNameRow,
+    let country_name_records: Vec<CountryNameRecord> = sqlx::query_as!(
+        CountryNameRecord,
         r#"
         select country.iso3 as "iso3!", region.name_en as "name_en!"
         from country
@@ -103,9 +104,9 @@ pub async fn read_country_iso3_to_name_en<'e>(
     .fetch_all(executor)
     .await?;
 
-    let iso3_to_name_en: BTreeMap<String, String> = rows
+    let iso3_to_name_en: BTreeMap<String, String> = country_name_records
         .into_iter()
-        .map(|country_name_row| (country_name_row.iso3, country_name_row.name_en))
+        .map(|country_name_record| (country_name_record.iso3, country_name_record.name_en))
         .collect();
 
     Ok(iso3_to_name_en)
@@ -114,18 +115,21 @@ pub async fn read_country_iso3_to_name_en<'e>(
 pub async fn read_all_statistic_codes<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<Vec<String>, AppError> {
-    struct StatisticCodeRow {
+    struct StatisticCodeRecord {
         code: String,
     }
 
-    let rows: Vec<StatisticCodeRow> = sqlx::query_as!(
-        StatisticCodeRow,
+    let statistic_code_records: Vec<StatisticCodeRecord> = sqlx::query_as!(
+        StatisticCodeRecord,
         r#"select code as "code!" from statistic"#,
     )
     .fetch_all(executor)
     .await?;
 
-    Ok(rows.into_iter().map(|statistic_code_row| statistic_code_row.code).collect())
+    Ok(statistic_code_records
+        .into_iter()
+        .map(|statistic_code_record| statistic_code_record.code)
+        .collect())
 }
 
 pub async fn insert_artifact_version<'e>(
@@ -134,11 +138,11 @@ pub async fn insert_artifact_version<'e>(
     manifest_sha256: &str,
     manifest_url: &str,
     data_source_versions: &BTreeMap<String, String>,
-) -> Result<crate::artifact::artifact_model::ArtifactVersion, AppError> {
+) -> Result<ArtifactVersion, AppError> {
     let data_source_versions_json: serde_json::Value = serde_json::to_value(data_source_versions)?;
 
-    let row: crate::artifact::artifact_model::ArtifactVersion = sqlx::query_as!(
-        crate::artifact::artifact_model::ArtifactVersion,
+    let artifact_version_record: ArtifactVersion = sqlx::query_as!(
+        ArtifactVersion,
         r#"
         insert into artifact_version
             (version_label, manifest_sha256, manifest_url, data_source_versions_jsonb)
@@ -161,5 +165,5 @@ pub async fn insert_artifact_version<'e>(
     .fetch_one(executor)
     .await?;
 
-    Ok(row)
+    Ok(artifact_version_record)
 }

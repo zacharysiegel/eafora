@@ -10,6 +10,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
+use crate::canonical::canonical_model::LicenseClass;
 
 /// One canonical-store row joined with its data_source + statistic + region
 /// metadata. Produced by `read_candidate_values`; consumed by
@@ -28,7 +29,7 @@ pub struct CandidateValue {
     pub data_source_code: String,
     pub data_source_revision: String,
     pub data_source_preference_rank: i32,
-    pub license_class: String,
+    pub license_class: LicenseClass,
 }
 
 /// One winning row per (region, statistic, period, license_class) cell after
@@ -59,12 +60,11 @@ pub enum LicenseShardClass {
 }
 
 impl LicenseShardClass {
-    pub fn from_license_class(license_class: &str) -> LicenseShardClass {
+    pub fn from_license_class(license_class: LicenseClass) -> LicenseShardClass {
         match license_class {
-            "public_domain" | "attribution" => LicenseShardClass::Base,
-            "attribution_sa" => LicenseShardClass::ShareAlike,
-            "noncommercial" => LicenseShardClass::NonCommercial,
-            _ => LicenseShardClass::Base,
+            LicenseClass::PublicDomain | LicenseClass::Attribution => LicenseShardClass::Base,
+            LicenseClass::AttributionSa => LicenseShardClass::ShareAlike,
+            LicenseClass::NonCommercial => LicenseShardClass::NonCommercial,
         }
     }
 

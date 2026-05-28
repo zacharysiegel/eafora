@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use crate::error::AppError;
+
 pub struct Region {
     pub id: Uuid,
     pub code: String,
@@ -36,7 +38,7 @@ pub struct DataSource {
     pub code: String,
     pub name_en: String,
     pub homepage_url: String,
-    pub license_class: String,
+    pub license_class: LicenseClass,
     pub license_name: String,
     pub license_url: String,
     pub attribution_text: String,
@@ -98,6 +100,38 @@ impl DataStatus {
             DataStatus::Projection => "projection",
             DataStatus::Imputed => "imputed",
             DataStatus::Interpolated => "interpolated",
+        }
+    }
+}
+
+/// Enumerates the `data_source.license_class` values per the schema's
+/// `comment on column`: public_domain | attribution | attribution_sa |
+/// noncommercial. Parsed from the column on read; written via `as_str`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LicenseClass {
+    PublicDomain,
+    Attribution,
+    AttributionSa,
+    NonCommercial,
+}
+
+impl LicenseClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LicenseClass::PublicDomain => "public_domain",
+            LicenseClass::Attribution => "attribution",
+            LicenseClass::AttributionSa => "attribution_sa",
+            LicenseClass::NonCommercial => "noncommercial",
+        }
+    }
+
+    pub fn parse_str(value: &str) -> Result<LicenseClass, AppError> {
+        match value {
+            "public_domain" => Ok(LicenseClass::PublicDomain),
+            "attribution" => Ok(LicenseClass::Attribution),
+            "attribution_sa" => Ok(LicenseClass::AttributionSa),
+            "noncommercial" => Ok(LicenseClass::NonCommercial),
+            other => Err(AppError::from(format!("LicenseClass::parse_str: unknown value {:?}", other))),
         }
     }
 }

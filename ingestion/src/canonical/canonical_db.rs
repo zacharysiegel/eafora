@@ -9,7 +9,7 @@
 
 use sqlx::PgExecutor;
 
-use crate::canonical::canonical_model::{Country, DataSource, Statistic};
+use crate::canonical::canonical_model::{Country, DataSource, LicenseClass, Statistic};
 use crate::error::AppError;
 
 pub async fn find_country_by_iso3<'e>(
@@ -52,8 +52,22 @@ pub async fn find_data_source_by_code<'e>(
     executor: impl PgExecutor<'e>,
     code: &str,
 ) -> Result<Option<DataSource>, AppError> {
-    let data_source_row: Option<DataSource> = sqlx::query_as!(
-        DataSource,
+    struct DataSourceRow {
+        id: uuid::Uuid,
+        code: String,
+        name_en: String,
+        homepage_url: String,
+        license_class: String,
+        license_name: String,
+        license_url: String,
+        attribution_text: String,
+        preference_rank: i32,
+        created: chrono::DateTime<chrono::Utc>,
+        modified: chrono::DateTime<chrono::Utc>,
+    }
+
+    let row: Option<DataSourceRow> = sqlx::query_as!(
+        DataSourceRow,
         r#"
         select id, code, name_en, homepage_url, license_class, license_name, license_url, attribution_text, preference_rank, created, modified
         from data_source
@@ -63,5 +77,21 @@ pub async fn find_data_source_by_code<'e>(
     )
     .fetch_optional(executor)
     .await?;
-    Ok(data_source_row)
+
+    row.map(|data_source_row| {
+        Ok(DataSource {
+            id: data_source_row.id,
+            code: data_source_row.code,
+            name_en: data_source_row.name_en,
+            homepage_url: data_source_row.homepage_url,
+            license_class: LicenseClass::parse_str(&data_source_row.license_class)?,
+            license_name: data_source_row.license_name,
+            license_url: data_source_row.license_url,
+            attribution_text: data_source_row.attribution_text,
+            preference_rank: data_source_row.preference_rank,
+            created: data_source_row.created,
+            modified: data_source_row.modified,
+        })
+    })
+    .transpose()
 }
