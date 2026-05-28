@@ -1,11 +1,5 @@
-//! manifest.json emission.
-//!
-//! Builds the artifact's catalog file: version label, build timestamp,
-//! geometry shard pointer, statistic shards keyed `(statistic_code,
-//! license_shard_class)`, and source-version snapshot. Serialization order
-//! is deterministic (BTreeMap on every map) so two identical inputs produce
-//! byte-identical manifest.json files. The manifest itself is hashed last
-//! so its sha256 lands in `artifact_version.manifest_sha256`.
+//! Serialization order is deterministic (BTreeMap on every map) so two
+//! identical inputs produce byte-identical manifest.json files.
 
 use std::collections::BTreeMap;
 use std::fs;

@@ -1,18 +1,13 @@
-//! Source-priority merge: collapses many candidate values per cell down to
-//! one winner using the data_source preference ordering.
-//!
-//! Grouping key: `(region_id, statistic_id, period.start, period.end,
-//! license_shard_class)`. Within a group:
+//! Merge rules, in order:
 //!
 //! 1. `final` data_status outranks any non-final status; within the same
 //!    status tier, lower `preference_rank` wins.
 //! 2. Equal preference_rank ties break by `data_source_id` (ascending) so
 //!    builds are deterministic.
 //!
-//! Pure function. No I/O. The grouping key intentionally includes
-//! `license_shard_class` so a Base-licensed source never displaces a
-//! NonCommercial-licensed source in the Base shard, and vice versa — every
-//! shard tells a self-consistent story.
+//! The grouping key includes `license_shard_class` so a Base-licensed
+//! source never displaces a NonCommercial-licensed source in the Base
+//! shard, and vice versa — every shard tells a self-consistent story.
 
 use std::collections::BTreeMap;
 

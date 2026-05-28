@@ -1,10 +1,6 @@
-//! Content hashing + tmp-file rename.
-//!
-//! Writers emit files under `<name>-tmp.<uuid>.<ext>` so the rename to the
-//! final content-hashed `<name>-<sha8>.<ext>` only happens after hashing
-//! succeeds. Hashing is split from renaming in two phases: every file is
-//! hashed first, and only if the entire batch succeeded do we rename. If
-//! one file fails, no file is left renamed — the next build can be re-run
+//! Hashing is split from renaming in two phases: every file is hashed
+//! first, and only if the entire batch succeeded do we rename. If one
+//! file fails, no file is left renamed — the next build can be re-run
 //! cleanly.
 
 use std::fs;
@@ -104,8 +100,6 @@ fn build_hashed_path(tmp_path: &Path, sha256_hex: &str) -> Result<PathBuf, AppEr
 }
 
 fn trim_tmp_uuid_segment(name_part: &str) -> Option<&str> {
-    // name_part is like `tfr-base-tmp.<uuid>` (the .ext was already split off);
-    // we want `tfr-base`.
     let (stem, _uuid_part): (&str, &str) = name_part.rsplit_once("-tmp.")?;
     Some(stem)
 }

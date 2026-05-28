@@ -78,9 +78,6 @@ impl StatisticCode {
     }
 }
 
-/// Enumerates the `statistic_value.data_status` values per the schema's
-/// `comment on column`: final | provisional | preliminary | projection |
-/// imputed | interpolated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataStatus {
     Final,
@@ -104,9 +101,6 @@ impl DataStatus {
     }
 }
 
-/// Enumerates the `data_source.license_class` values per the schema's
-/// `comment on column`: public_domain | attribution | attribution_sa |
-/// noncommercial. Parsed from the column on read; written via `as_str`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LicenseClass {
     PublicDomain,

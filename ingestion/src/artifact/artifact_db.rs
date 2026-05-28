@@ -1,8 +1,3 @@
-//! sqlx queries that bridge the canonical store and the artifact pipeline.
-//! `read_candidate_values` drives the build; `insert_artifact_version` lands
-//! after a successful publish. Both take `impl PgExecutor<'_>` so callers
-//! pass either `&PgPool` or `&mut *tx`.
-
 use std::collections::BTreeMap;
 
 use sqlx::PgExecutor;

@@ -1,8 +1,3 @@
-//! SQLite shard writer. Emits one file per `(statistic_code,
-//! license_shard_class)` group, written first to a `*-tmp.<uuid>.sqlite`
-//! filename so the content-hashing phase can rename to the final
-//! `<name>-<sha8>.sqlite` after hashing succeeds.
-//!
 //! Schema mirrors the Postgres `statistic_value` shape but is denormalized
 //! for client-side reads: `region_iso3` is duplicated for human-readable
 //! queries, `region_id` is kept as a BLOB for the rare cross-shard joins,

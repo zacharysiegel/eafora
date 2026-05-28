@@ -1,9 +1,3 @@
-//! End-to-end orchestrator for `build`. Reads candidate values from the
-//! canonical store, applies the source-priority merge, emits per-statistic
-//! per-license-class SQLite shards plus a FlatGeobuf geometry shard,
-//! content-hashes everything, writes manifest.json. Returns a
-//! `LocalArtifactBuild` describing the on-disk state; nothing is uploaded.
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,10 +16,8 @@ use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {
-    /// If true, skip the Natural Earth download and emit a stub geometry
-    /// shard instead. Used by tests that exercise the orchestrator without
-    /// live HTTP. The stub is hashed + renamed like a real shard, so the
-    /// manifest stays well-formed.
+    /// Skip the Natural Earth download and emit a stub `.fgb` instead.
+    /// Tests use this to exercise the orchestrator without live HTTP.
     pub use_placeholder_geometry: bool,
 }
 

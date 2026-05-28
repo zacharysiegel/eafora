@@ -1,9 +1,6 @@
-//! FlatGeobuf geometry writer. Pulls the pinned Natural Earth release,
-//! parses each country feature in-memory, joins to the canonical store's
-//! `country.iso3`, and emits one `.fgb` containing every feature whose
-//! `ADM0_A3` resolves to a known country. Unknown ADM0_A3 codes get a
-//! warning logged and the feature dropped — Natural Earth ships entries
-//! like `KOS` (Kosovo) that some downstream consumers don't recognize.
+//! Unknown ADM0_A3 codes get a warning logged and the feature dropped —
+//! Natural Earth ships entries like `KOS` (Kosovo) that some downstream
+//! consumers don't recognize.
 //!
 //! Output is uncompressed. FlatGeobuf is already a packed binary format, but
 //! a brotli pass over the finished `.fgb` still nets ~50–65% reduction

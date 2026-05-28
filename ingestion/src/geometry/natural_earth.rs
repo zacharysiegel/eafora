@@ -1,7 +1,4 @@
-//! Pinned-release fetch + in-memory unzip of the Natural Earth 50m admin-0
-//! countries dataset. The artifact builder consumes the four shapefile
-//! components (`.shp`, `.shx`, `.dbf`, `.prj`) without ever touching disk
-//! between download and FlatGeobuf emission.
+//! Held in memory — no temp files between download and FlatGeobuf emission.
 
 use std::io::{Cursor, Read};
 
