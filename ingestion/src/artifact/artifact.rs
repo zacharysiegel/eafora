@@ -12,6 +12,7 @@ use crate::artifact::artifact_model::{
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::artifact::writer::manifest::ManifestEmission;
+use crate::canonical::canonical_model::DataSourceKind;
 use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -40,7 +41,7 @@ pub async fn build_artifacts(
 
     warn_on_statistics_without_values(&mut *connection, &candidate_values).await?;
 
-    let data_source_versions: BTreeMap<String, String> = source_priority::collect_data_source_versions(&candidate_values);
+    let data_source_versions: BTreeMap<DataSourceKind, String> = source_priority::collect_data_source_versions(&candidate_values);
     let merged_values: Vec<MergedValue> = source_priority::apply_source_priority(candidate_values);
     log::info!("build_artifacts: merged into {} values", merged_values.len());
 

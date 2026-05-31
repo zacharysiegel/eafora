@@ -3,7 +3,7 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::adapter::NormalizedStatisticValue;
-use crate::canonical::canonical_model::{DataStatus, StatisticValue};
+use crate::canonical::canonical_model::{StatisticValue, StatisticValueEntity};
 use crate::error::AppError;
 
 pub async fn read_latest_publication_revision<'e>(
@@ -53,23 +53,8 @@ pub async fn find_current_value<'e>(
     normalized_statistic_value: &NormalizedStatisticValue,
     data_source_id: Uuid,
 ) -> Result<Option<StatisticValue>, AppError> {
-    struct StatisticValueRecord {
-        id: Uuid,
-        region_id: Uuid,
-        statistic_id: Uuid,
-        period_start: chrono::NaiveDate,
-        period_end: chrono::NaiveDate,
-        value: f64,
-        data_source_id: Uuid,
-        data_source_publication_id: Uuid,
-        data_status: String,
-        superseded: Option<DateTime<Utc>>,
-        created: DateTime<Utc>,
-        modified: DateTime<Utc>,
-    }
-
-    let statistic_value_record: Option<StatisticValueRecord> = sqlx::query_as!(
-        StatisticValueRecord,
+    let record: Option<StatisticValueEntity> = sqlx::query_as!(
+        StatisticValueEntity,
         r#"
         select id, region_id, statistic_id, period_start, period_end, value, data_source_id, data_source_publication_id, data_status, superseded, created, modified
         from statistic_value
@@ -89,24 +74,7 @@ pub async fn find_current_value<'e>(
     .fetch_optional(executor)
     .await?;
 
-    statistic_value_record
-        .map(|statistic_value_record| {
-            Ok(StatisticValue {
-                id: statistic_value_record.id,
-                region_id: statistic_value_record.region_id,
-                statistic_id: statistic_value_record.statistic_id,
-                period_start: statistic_value_record.period_start,
-                period_end: statistic_value_record.period_end,
-                value: statistic_value_record.value,
-                data_source_id: statistic_value_record.data_source_id,
-                data_source_publication_id: statistic_value_record.data_source_publication_id,
-                data_status: DataStatus::parse_str(&statistic_value_record.data_status)?,
-                superseded: statistic_value_record.superseded,
-                created: statistic_value_record.created,
-                modified: statistic_value_record.modified,
-            })
-        })
-        .transpose()
+    record.map(StatisticValue::try_from).transpose()
 }
 
 pub async fn insert_statistic_value<'e>(

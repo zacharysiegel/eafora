@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
 use crate::artifact::artifact_model::{CandidateValue, LicenseShardClass, MergedValue};
-use crate::canonical::canonical_model::DataStatus;
+use crate::canonical::canonical_model::{DataSourceKind, DataStatus};
 
 pub fn apply_source_priority(candidates: Vec<CandidateValue>) -> Vec<MergedValue> {
     let mut groups: BTreeMap<MergeKey, CandidateValue> = BTreeMap::new();
@@ -55,11 +55,11 @@ pub fn apply_source_priority(candidates: Vec<CandidateValue>) -> Vec<MergedValue
         .collect()
 }
 
-pub fn collect_data_source_versions(candidates: &[CandidateValue]) -> BTreeMap<String, String> {
-    let mut versions: BTreeMap<String, String> = BTreeMap::new();
+pub fn collect_data_source_versions(candidates: &[CandidateValue]) -> BTreeMap<DataSourceKind, String> {
+    let mut versions: BTreeMap<DataSourceKind, String> = BTreeMap::new();
     for candidate in candidates {
         let entry: &mut String = versions
-            .entry(candidate.data_source_code.as_str().to_string())
+            .entry(candidate.data_source_code)
             .or_default();
         if candidate.data_source_revision.as_str() > entry.as_str() {
             *entry = candidate.data_source_revision.clone();
@@ -95,7 +95,7 @@ fn ranking_key(candidate: &CandidateValue) -> (u8, i32, Uuid) {
 mod tests {
     use super::*;
 
-    use crate::canonical::canonical_model::{DataSourceCode, LicenseClass};
+    use crate::canonical::canonical_model::{DataSourceKind, LicenseClass};
 
     fn period_2024() -> NaiveDatePeriod {
         NaiveDatePeriod::from_year(2024).expect("valid year")
@@ -117,7 +117,7 @@ mod tests {
             value,
             data_status,
             data_source_id: Uuid::from_u128(data_source_id_low_byte),
-            data_source_code: DataSourceCode::WorldBankWDI,
+            data_source_code: DataSourceKind::WorldBankWDI,
             data_source_revision: "rev1".to_string(),
             data_source_preference_rank: preference_rank,
             license_class,
@@ -132,7 +132,7 @@ mod tests {
 
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].value, 1.5);
-        assert_eq!(merged[0].data_source_code, DataSourceCode::WorldBankWDI);
+        assert_eq!(merged[0].data_source_code, DataSourceKind::WorldBankWDI);
         assert_eq!(merged[0].license_shard_class, LicenseShardClass::Base);
     }
 
@@ -211,8 +211,8 @@ mod tests {
             },
         ];
 
-        let versions: BTreeMap<String, String> = collect_data_source_versions(&candidates);
+        let versions: BTreeMap<DataSourceKind, String> = collect_data_source_versions(&candidates);
 
-        assert_eq!(versions.get("wb_wdi").map(String::as_str), Some("2024-Q4"));
+        assert_eq!(versions.get(&DataSourceKind::WorldBankWDI).map(String::as_str), Some("2024-Q4"));
     }
 }

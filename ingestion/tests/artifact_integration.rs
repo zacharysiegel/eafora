@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use ingestion::artifact::{self, BuildOptions, LocalArtifactBuild};
 use ingestion::artifact::artifact_model::ShardOutput;
-use ingestion::canonical::canonical_model::DataSourceCode;
+use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::artifact::writer::flatgeobuf::emit_geometry_flatgeobuf;
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
@@ -26,7 +26,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     let pool: PgPool = test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceCode::WorldBankWDI).await;
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
     let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
     let region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
     let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-Q4").await;

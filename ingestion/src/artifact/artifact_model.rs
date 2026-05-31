@@ -1,10 +1,12 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
-use crate::canonical::canonical_model::{DataSourceCode, DataStatus, LicenseClass};
+use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass};
+use crate::error::AppError;
 
 #[derive(Debug, Clone)]
 pub struct CandidateValue {
@@ -16,10 +18,57 @@ pub struct CandidateValue {
     pub value: f64,
     pub data_status: DataStatus,
     pub data_source_id: Uuid,
-    pub data_source_code: DataSourceCode,
+    pub data_source_code: DataSourceKind,
     pub data_source_revision: String,
     pub data_source_preference_rank: i32,
     pub license_class: LicenseClass,
+}
+
+#[derive(Debug, Clone)]
+pub struct CandidateValueEntity {
+    pub region_id: Uuid,
+    pub region_iso3: String,
+    pub statistic_id: Uuid,
+    pub statistic_code: String,
+    pub period_start: NaiveDate,
+    pub period_end: NaiveDate,
+    pub value: f64,
+    pub data_status: String,
+    pub data_source_id: Uuid,
+    pub data_source_code: String,
+    pub data_source_revision: String,
+    pub data_source_preference_rank: i32,
+    pub license_class: String,
+}
+
+impl TryFrom<CandidateValueEntity> for CandidateValue {
+    type Error = AppError;
+
+    fn try_from(entity: CandidateValueEntity) -> Result<Self, Self::Error> {
+        Ok(CandidateValue {
+            region_id: entity.region_id,
+            region_iso3: entity.region_iso3,
+            statistic_id: entity.statistic_id,
+            statistic_code: entity.statistic_code,
+            period: NaiveDatePeriod {
+                start: entity.period_start,
+                end: entity.period_end,
+            },
+            value: entity.value,
+            data_status: DataStatus::from_str(&entity.data_status)?,
+            data_source_id: entity.data_source_id,
+            data_source_code: DataSourceKind::from_str(&entity.data_source_code)?,
+            data_source_revision: entity.data_source_revision,
+            data_source_preference_rank: entity.data_source_preference_rank,
+            license_class: LicenseClass::from_str(&entity.license_class)?,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CountryNameProjection {
+    pub iso3: String,
+    pub name_en: String,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +80,7 @@ pub struct MergedValue {
     pub period: NaiveDatePeriod,
     pub value: f64,
     pub data_status: DataStatus,
-    pub data_source_code: DataSourceCode,
+    pub data_source_code: DataSourceKind,
     pub data_source_revision: String,
     pub license_shard_class: LicenseShardClass,
 }

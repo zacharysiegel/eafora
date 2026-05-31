@@ -6,14 +6,14 @@ use crate::adapter::{
     AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue, NaiveDatePeriod,
 };
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{Country, DataSource, DataSourceCode, DataStatus, Statistic, StatisticCode};
+use crate::canonical::canonical_model::{Country, DataSource, DataSourceKind, DataStatus, Statistic, StatisticKind};
 use crate::error::AppError;
 use crate::ingest;
 use crate::ingest::IngestReport;
 use crate::world_bank_wdi::world_bank_wdi_client;
 use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse};
 
-const WB_WDI_DATA_SOURCE_CODE: DataSourceCode = DataSourceCode::WorldBankWDI;
+const WB_WDI_DATA_SOURCE_CODE: DataSourceKind = DataSourceKind::WorldBankWDI;
 
 /// Rows whose country isn't in the canonical seed produce an
 /// `UnknownCountry` warning and are dropped. Rows with `value: None`
@@ -24,12 +24,12 @@ pub async fn normalize(
     parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue>,
 ) -> Result<(Vec<NormalizedStatisticValue>, Vec<IngestWarning>), AppError> {
     let statistic: Statistic =
-        canonical_db::find_statistic_by_code(&mut *connection, StatisticCode::Tfr.as_str())
+        canonical_db::find_statistic_by_code(&mut *connection, StatisticKind::Tfr.code())
             .await?
             .ok_or_else(|| {
                 AppError::from(format!(
                     "wb_wdi: statistic {:?} missing from canonical store (run dbmate up)",
-                    StatisticCode::Tfr.as_str(),
+                    StatisticKind::Tfr.code(),
                 ))
             })?;
     let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::with_capacity(parsed_wdi_statistic_values.len());

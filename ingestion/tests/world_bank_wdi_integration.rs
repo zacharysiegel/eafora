@@ -10,7 +10,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::adapter::*;
-use ingestion::canonical::canonical_model::{DataSourceCode, StatisticValue};
+use ingestion::canonical::canonical_model::{DataSourceKind, StatisticValue};
 use ingestion::ingest;
 use ingestion::ingest::*;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;
@@ -98,7 +98,7 @@ async fn record_inserts_new_publication_and_value() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceCode::WorldBankWDI).await;
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
     let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
     let region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
 
@@ -124,7 +124,7 @@ async fn record_re_fetch_same_revision_matches_publication_and_skips() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceCode::WorldBankWDI).await;
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
     let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
     let region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
 
@@ -161,7 +161,7 @@ async fn record_revised_value_supersedes_old_and_inserts_new() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceCode::WorldBankWDI).await;
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
     let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
     let region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
 
