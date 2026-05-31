@@ -17,7 +17,7 @@ use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {
-    pub offline: bool,
+    pub test_offline: bool,
 }
 
 pub async fn build_artifacts(
@@ -46,7 +46,7 @@ pub async fn build_artifacts(
     let sqlite_shards: Vec<ShardOutput> = sqlite::emit_sqlite_shards(&merged_values, output_dir)?;
     log::info!("build_artifacts: emitted {} sqlite shards", sqlite_shards.len());
 
-    let geometry_shard: ShardOutput = if options.offline {
+    let geometry_shard: ShardOutput = if options.test_offline {
         write_placeholder_geometry(output_dir)?
     } else {
         flatgeobuf::emit_geometry_flatgeobuf(&mut *connection, output_dir).await?
