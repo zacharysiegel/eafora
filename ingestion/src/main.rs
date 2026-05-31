@@ -34,12 +34,6 @@ async fn main() -> Result<(), AppError> {
     }
 }
 
-fn require_arg<'a>(matches: &'a ArgMatches, name: &str) -> Result<&'a String, AppError> {
-    matches
-        .get_one::<String>(name)
-        .ok_or_else(|| AppError::from(format!("missing required argument: {name}")))
-}
-
 fn build_cli() -> Command {
     Command::new("ingestion")
         .about("Eafora canonical-store CLI")
@@ -66,7 +60,7 @@ fn build_cli() -> Command {
 }
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
-    let source_code_str: &String = require_arg(matches, "source")?;
+    let source_code_str: &String = matches.get_one::<String>("source").expect("source is required via clap");
     let source_code: DataSourceKind = DataSourceKind::from_str(source_code_str)?;
     let force_full_refetch: bool = matches.get_flag("force-full-refetch");
     let options: AdapterOptions = AdapterOptions { force_full_refetch };
@@ -129,8 +123,8 @@ fn log_report(source_code: DataSourceKind, report: &IngestReport) {
 }
 
 async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
-    let output_dir: PathBuf = PathBuf::from(require_arg(matches, "output-dir")?);
-    let version_label: &String = require_arg(matches, "version-label")?;
+    let output_dir: PathBuf = PathBuf::from(matches.get_one::<String>("output-dir").expect("output-dir is required via clap"));
+    let version_label: &String = matches.get_one::<String>("version-label").expect("version-label is required via clap");
 
     let pool: PgPool = db::create_pool().await?;
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
