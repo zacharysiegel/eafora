@@ -86,9 +86,3 @@ That said: **type naming is the load-bearing part of this spec; variable naming 
 - Callers in db.rs use:
   - `account_entity.map(Account::try_from).transpose()` (or `from`) for `Option<Entity>`
   - `account_entities.into_iter().map(Account::try_from).collect()` (or `from`) for `Vec<Entity>`
-
-## Audit checklist (run after any type rename or shape change)
-
-1. Grep for `*_code`, `*_id`, `*_str`, `by_code`-style names that may now hold a different type.
-2. Variable/field name should describe the type that's there now, not the type that was there before.
-3. Const definitions whose value is a single enum variant are usually redundant — inline.
