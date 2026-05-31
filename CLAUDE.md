@@ -50,6 +50,18 @@ This project uses two complementary tool layers:
 Project-wide research/positioning docs that don't fit the per-feature mold
 (product plan, data-source survey, architecture overview) go in `docs/`.
 
+## Conventions
+
+Cross-cutting coding rules live in `docs/conventions/`. The README there is
+the index. Read the relevant doc before writing code in that area:
+
+- `docs/conventions/types.md` — Rust type naming (Model + Entity/Projection/Serial pairs,
+  enum `Kind` suffix, `TryFrom<&str>` parsing, db.rs variable naming).
+
+These take precedence over Singularity's conventions where they diverge (per
+the doc's "Where Eafora diverges" notes). The constitution (`.specify/memory/constitution.md`)
+holds principles; these docs operationalize them.
+
 ## Decisions locked
 
 - **Name**: Eafora (Old English for *son, descendant, heir*).
