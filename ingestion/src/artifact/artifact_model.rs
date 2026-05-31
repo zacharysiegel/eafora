@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
@@ -25,7 +24,7 @@ pub struct CandidateValue {
 }
 
 #[derive(Debug, Clone)]
-pub struct CandidateValueEntity {
+pub struct CandidateValueProjection {
     pub region_id: Uuid,
     pub region_iso3: String,
     pub statistic_id: Uuid,
@@ -41,26 +40,26 @@ pub struct CandidateValueEntity {
     pub license_class: String,
 }
 
-impl TryFrom<CandidateValueEntity> for CandidateValue {
+impl TryFrom<CandidateValueProjection> for CandidateValue {
     type Error = AppError;
 
-    fn try_from(entity: CandidateValueEntity) -> Result<Self, Self::Error> {
+    fn try_from(projection: CandidateValueProjection) -> Result<Self, Self::Error> {
         Ok(CandidateValue {
-            region_id: entity.region_id,
-            region_iso3: entity.region_iso3,
-            statistic_id: entity.statistic_id,
-            statistic_code: entity.statistic_code,
+            region_id: projection.region_id,
+            region_iso3: projection.region_iso3,
+            statistic_id: projection.statistic_id,
+            statistic_code: projection.statistic_code,
             period: NaiveDatePeriod {
-                start: entity.period_start,
-                end: entity.period_end,
+                start: projection.period_start,
+                end: projection.period_end,
             },
-            value: entity.value,
-            data_status: DataStatus::from_str(&entity.data_status)?,
-            data_source_id: entity.data_source_id,
-            data_source_kind: DataSourceKind::from_str(&entity.data_source_code)?,
-            data_source_revision: entity.data_source_revision,
-            data_source_preference_rank: entity.data_source_preference_rank,
-            license_class: LicenseClass::from_str(&entity.license_class)?,
+            value: projection.value,
+            data_status: DataStatus::try_from(projection.data_status.as_str())?,
+            data_source_id: projection.data_source_id,
+            data_source_kind: DataSourceKind::try_from(projection.data_source_code.as_str())?,
+            data_source_revision: projection.data_source_revision,
+            data_source_preference_rank: projection.data_source_preference_rank,
+            license_class: LicenseClass::try_from(projection.license_class.as_str())?,
         })
     }
 }
@@ -153,4 +152,29 @@ pub struct ArtifactVersion {
     pub manifest_url: String,
     pub data_source_versions_jsonb: serde_json::Value,
     pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArtifactVersionEntity {
+    pub id: Uuid,
+    pub version_label: String,
+    pub artifact_created: DateTime<Utc>,
+    pub manifest_sha256: String,
+    pub manifest_url: String,
+    pub data_source_versions_jsonb: serde_json::Value,
+    pub notes: Option<String>,
+}
+
+impl From<ArtifactVersionEntity> for ArtifactVersion {
+    fn from(entity: ArtifactVersionEntity) -> Self {
+        ArtifactVersion {
+            id: entity.id,
+            version_label: entity.version_label,
+            artifact_created: entity.artifact_created,
+            manifest_sha256: entity.manifest_sha256,
+            manifest_url: entity.manifest_url,
+            data_source_versions_jsonb: entity.data_source_versions_jsonb,
+            notes: entity.notes,
+        }
+    }
 }

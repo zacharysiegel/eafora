@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -61,7 +60,7 @@ fn build_cli() -> Command {
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
     let source_kind_str: &String = matches.get_one::<String>("source").expect("source is required via clap");
-    let source_kind: DataSourceKind = DataSourceKind::from_str(source_kind_str)?;
+    let source_kind: DataSourceKind = DataSourceKind::try_from(source_kind_str.as_str())?;
     let force_full_refetch: bool = matches.get_flag("force-full-refetch");
     let options: AdapterOptions = AdapterOptions { force_full_refetch };
 

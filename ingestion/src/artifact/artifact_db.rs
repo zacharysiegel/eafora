@@ -2,15 +2,17 @@ use std::collections::BTreeMap;
 
 use sqlx::PgExecutor;
 
-use crate::artifact::artifact_model::{ArtifactVersion, CandidateValue, CandidateValueEntity, CountryNameProjection};
+use crate::artifact::artifact_model::{
+    ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryNameProjection,
+};
 use crate::canonical::canonical_model::DataSourceKind;
 use crate::error::AppError;
 
 pub async fn read_candidate_values<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<Vec<CandidateValue>, AppError> {
-    let records: Vec<CandidateValueEntity> = sqlx::query_as!(
-        CandidateValueEntity,
+    let projections: Vec<CandidateValueProjection> = sqlx::query_as!(
+        CandidateValueProjection,
         r#"
         select
             statistic_value.region_id              as "region_id!",
@@ -37,13 +39,13 @@ pub async fn read_candidate_values<'e>(
     .fetch_all(executor)
     .await?;
 
-    records.into_iter().map(CandidateValue::try_from).collect()
+    projections.into_iter().map(CandidateValue::try_from).collect()
 }
 
 pub async fn read_country_iso3_to_name_en<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<BTreeMap<String, String>, AppError> {
-    let records: Vec<CountryNameProjection> = sqlx::query_as!(
+    let projections: Vec<CountryNameProjection> = sqlx::query_as!(
         CountryNameProjection,
         r#"
         select country.iso3, region.name_en
@@ -55,18 +57,16 @@ pub async fn read_country_iso3_to_name_en<'e>(
     .fetch_all(executor)
     .await?;
 
-    Ok(records.into_iter().map(|record| (record.iso3, record.name_en)).collect())
+    Ok(projections.into_iter().map(|projection| (projection.iso3, projection.name_en)).collect())
 }
 
 pub async fn read_all_statistic_codes<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<Vec<String>, AppError> {
-    let records: Vec<String> = sqlx::query_scalar!(
-        r#"select code as "code!" from statistic"#,
-    )
-    .fetch_all(executor)
-    .await?;
-    Ok(records)
+    let codes: Vec<String> = sqlx::query_scalar!("select code from statistic")
+        .fetch_all(executor)
+        .await?;
+    Ok(codes)
 }
 
 pub async fn insert_artifact_version<'e>(
@@ -82,8 +82,8 @@ pub async fn insert_artifact_version<'e>(
         .collect();
     let data_source_versions_json: serde_json::Value = serde_json::to_value(serializable)?;
 
-    let record: ArtifactVersion = sqlx::query_as!(
-        ArtifactVersion,
+    let artifact_version_entity: ArtifactVersionEntity = sqlx::query_as!(
+        ArtifactVersionEntity,
         r#"
         insert into artifact_version
             (version_label, manifest_sha256, manifest_url, data_source_versions_jsonb)
@@ -106,5 +106,5 @@ pub async fn insert_artifact_version<'e>(
     .fetch_one(executor)
     .await?;
 
-    Ok(record)
+    Ok(ArtifactVersion::from(artifact_version_entity))
 }

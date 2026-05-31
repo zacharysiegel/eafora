@@ -1,14 +1,16 @@
 use sqlx::PgExecutor;
 
-use crate::canonical::canonical_model::{Country, DataSource, DataSourceKind, DataSourceEntity, Statistic};
+use crate::canonical::canonical_model::{
+    Country, CountryEntity, DataSource, DataSourceEntity, DataSourceKind, Statistic, StatisticEntity,
+};
 use crate::error::AppError;
 
 pub async fn find_country_by_iso3<'e>(
     executor: impl PgExecutor<'e>,
     iso3: &str,
 ) -> Result<Option<Country>, AppError> {
-    let record: Option<Country> = sqlx::query_as!(
-        Country,
+    let country_entity: Option<CountryEntity> = sqlx::query_as!(
+        CountryEntity,
         r#"
         select region_id, iso3, iso2, created, modified, deleted
         from country
@@ -18,15 +20,15 @@ pub async fn find_country_by_iso3<'e>(
     )
     .fetch_optional(executor)
     .await?;
-    Ok(record)
+    Ok(country_entity.map(Country::from))
 }
 
 pub async fn find_statistic_by_code<'e>(
     executor: impl PgExecutor<'e>,
     code: &str,
 ) -> Result<Option<Statistic>, AppError> {
-    let record: Option<Statistic> = sqlx::query_as!(
-        Statistic,
+    let statistic_entity: Option<StatisticEntity> = sqlx::query_as!(
+        StatisticEntity,
         r#"
         select id, code, name_en, description, units, created, modified
         from statistic
@@ -36,14 +38,14 @@ pub async fn find_statistic_by_code<'e>(
     )
     .fetch_optional(executor)
     .await?;
-    Ok(record)
+    Ok(statistic_entity.map(Statistic::from))
 }
 
 pub async fn find_data_source_by_kind<'e>(
     executor: impl PgExecutor<'e>,
     kind: DataSourceKind,
 ) -> Result<Option<DataSource>, AppError> {
-    let record: Option<DataSourceEntity> = sqlx::query_as!(
+    let data_source_entity: Option<DataSourceEntity> = sqlx::query_as!(
         DataSourceEntity,
         r#"
         select id, code, name_en, homepage_url, license_class, license_name, license_url, attribution_text, preference_rank, created, modified
@@ -55,5 +57,5 @@ pub async fn find_data_source_by_kind<'e>(
     .fetch_optional(executor)
     .await?;
 
-    record.map(DataSource::try_from).transpose()
+    data_source_entity.map(DataSource::try_from).transpose()
 }

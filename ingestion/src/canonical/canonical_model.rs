@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
@@ -16,6 +14,32 @@ pub struct Region {
     pub modified: DateTime<Utc>,
 }
 
+pub struct RegionEntity {
+    pub id: Uuid,
+    pub code: String,
+    pub name_en: String,
+    pub level: String,
+    pub parent_region_id: Option<Uuid>,
+    pub m49_code: Option<String>,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
+
+impl From<RegionEntity> for Region {
+    fn from(entity: RegionEntity) -> Self {
+        Region {
+            id: entity.id,
+            code: entity.code,
+            name_en: entity.name_en,
+            level: entity.level,
+            parent_region_id: entity.parent_region_id,
+            m49_code: entity.m49_code,
+            created: entity.created,
+            modified: entity.modified,
+        }
+    }
+}
+
 pub struct Country {
     pub region_id: Uuid,
     pub iso3: String,
@@ -23,6 +47,28 @@ pub struct Country {
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
     pub deleted: Option<DateTime<Utc>>,
+}
+
+pub struct CountryEntity {
+    pub region_id: Uuid,
+    pub iso3: String,
+    pub iso2: String,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+    pub deleted: Option<DateTime<Utc>>,
+}
+
+impl From<CountryEntity> for Country {
+    fn from(entity: CountryEntity) -> Self {
+        Country {
+            region_id: entity.region_id,
+            iso3: entity.iso3,
+            iso2: entity.iso2,
+            created: entity.created,
+            modified: entity.modified,
+            deleted: entity.deleted,
+        }
+    }
 }
 
 pub struct Statistic {
@@ -33,6 +79,30 @@ pub struct Statistic {
     pub units: String,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
+}
+
+pub struct StatisticEntity {
+    pub id: Uuid,
+    pub code: String,
+    pub name_en: String,
+    pub description: String,
+    pub units: String,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
+
+impl From<StatisticEntity> for Statistic {
+    fn from(entity: StatisticEntity) -> Self {
+        Statistic {
+            id: entity.id,
+            code: entity.code,
+            name_en: entity.name_en,
+            description: entity.description,
+            units: entity.units,
+            created: entity.created,
+            modified: entity.modified,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -71,10 +141,10 @@ impl TryFrom<DataSourceEntity> for DataSource {
     fn try_from(entity: DataSourceEntity) -> Result<Self, Self::Error> {
         Ok(DataSource {
             id: entity.id,
-            code: DataSourceKind::from_str(&entity.code)?,
+            code: DataSourceKind::try_from(entity.code.as_str())?,
             name_en: entity.name_en,
             homepage_url: entity.homepage_url,
-            license_class: LicenseClass::from_str(&entity.license_class)?,
+            license_class: LicenseClass::try_from(entity.license_class.as_str())?,
             license_name: entity.license_name,
             license_url: entity.license_url,
             attribution_text: entity.attribution_text,
@@ -130,7 +200,7 @@ impl TryFrom<StatisticValueEntity> for StatisticValue {
             value: entity.value,
             data_source_id: entity.data_source_id,
             data_source_publication_id: entity.data_source_publication_id,
-            data_status: DataStatus::from_str(&entity.data_status)?,
+            data_status: DataStatus::try_from(entity.data_status.as_str())?,
             superseded: entity.superseded,
             created: entity.created,
             modified: entity.modified,
@@ -154,13 +224,13 @@ impl StatisticKind {
     }
 }
 
-impl FromStr for StatisticKind {
-    type Err = AppError;
+impl TryFrom<&str> for StatisticKind {
+    type Error = AppError;
 
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "tfr" => Ok(StatisticKind::Tfr),
-            other => Err(AppError::from(format!("StatisticKind::from_str: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("StatisticKind::try_from: unknown value {:?}", other))),
         }
     }
 }
@@ -181,13 +251,13 @@ impl DataSourceKind {
     }
 }
 
-impl FromStr for DataSourceKind {
-    type Err = AppError;
+impl TryFrom<&str> for DataSourceKind {
+    type Error = AppError;
 
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "wb_wdi" => Ok(DataSourceKind::WorldBankWDI),
-            other => Err(AppError::from(format!("DataSourceKind::from_str: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("DataSourceKind::try_from: unknown value {:?}", other))),
         }
     }
 }
@@ -215,10 +285,10 @@ impl DataStatus {
     }
 }
 
-impl FromStr for DataStatus {
-    type Err = AppError;
+impl TryFrom<&str> for DataStatus {
+    type Error = AppError;
 
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "final" => Ok(DataStatus::Final),
             "provisional" => Ok(DataStatus::Provisional),
@@ -226,7 +296,7 @@ impl FromStr for DataStatus {
             "projection" => Ok(DataStatus::Projection),
             "imputed" => Ok(DataStatus::Imputed),
             "interpolated" => Ok(DataStatus::Interpolated),
-            other => Err(AppError::from(format!("DataStatus::from_str: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("DataStatus::try_from: unknown value {:?}", other))),
         }
     }
 }
@@ -250,16 +320,16 @@ impl LicenseClass {
     }
 }
 
-impl FromStr for LicenseClass {
-    type Err = AppError;
+impl TryFrom<&str> for LicenseClass {
+    type Error = AppError;
 
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "public_domain" => Ok(LicenseClass::PublicDomain),
             "attribution" => Ok(LicenseClass::Attribution),
             "attribution_share_alike" => Ok(LicenseClass::AttributionShareAlike),
             "noncommercial" => Ok(LicenseClass::NonCommercial),
-            other => Err(AppError::from(format!("LicenseClass::from_str: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("LicenseClass::try_from: unknown value {:?}", other))),
         }
     }
 }
