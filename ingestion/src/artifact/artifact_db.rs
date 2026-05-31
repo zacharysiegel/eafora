@@ -46,7 +46,7 @@ pub async fn read_country_iso3_to_name_en<'e>(
     let records: Vec<CountryNameProjection> = sqlx::query_as!(
         CountryNameProjection,
         r#"
-        select country.iso3 as "iso3!", region.name_en as "name_en!"
+        select country.iso3, region.name_en
         from country
         join region on region.id = country.region_id
         where country.deleted is null
@@ -61,11 +61,9 @@ pub async fn read_country_iso3_to_name_en<'e>(
 pub async fn read_all_statistic_codes<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<Vec<String>, AppError> {
-    let records: Vec<String> = sqlx::query_scalar!(
-        r#"select code as "code!" from statistic"#,
-    )
-    .fetch_all(executor)
-    .await?;
+    let records: Vec<String> = sqlx::query_scalar!("select code from statistic")
+        .fetch_all(executor)
+        .await?;
     Ok(records)
 }
 
