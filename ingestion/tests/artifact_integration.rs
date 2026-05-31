@@ -42,7 +42,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     ).await;
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let options: BuildOptions = BuildOptions { use_placeholder_geometry: true };
+    let options: BuildOptions = BuildOptions { offline: true };
     let build: LocalArtifactBuild =
         artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-05-26-test", options)
             .await

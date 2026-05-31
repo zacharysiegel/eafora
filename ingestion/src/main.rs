@@ -74,7 +74,9 @@ async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
 
 async fn dispatch_all() -> Result<(), AppError> {
     let pool: PgPool = db::create_pool().await?;
-    let options: AdapterOptions = AdapterOptions { force_full_refetch: false };
+    let options: AdapterOptions = AdapterOptions {
+        force_full_refetch: false,
+    };
 
     let mut failure_count: usize = 0;
 
@@ -123,13 +125,16 @@ fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
 }
 
 async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
-    let output_dir: PathBuf = PathBuf::from(matches.get_one::<String>("output-dir").expect("output-dir is required via clap"));
-    let version_label: &String = matches.get_one::<String>("version-label").expect("version-label is required via clap");
+    let output_dir: PathBuf =
+        PathBuf::from(matches.get_one::<String>("output-dir").expect("output-dir is required via clap"));
+    let version_label: &String =
+        matches.get_one::<String>("version-label").expect("version-label is required via clap");
 
     let pool: PgPool = db::create_pool().await?;
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
     let options: BuildOptions = BuildOptions::default();
-    let build: LocalArtifactBuild = artifact::build_artifacts(&mut *transaction, &output_dir, version_label, options).await?;
+    let build: LocalArtifactBuild =
+        artifact::build_artifacts(&mut *transaction, &output_dir, version_label, options).await?;
     transaction.commit().await?;
 
     log::info!(
