@@ -61,9 +61,11 @@ pub async fn read_country_iso3_to_name_en<'e>(
 pub async fn read_all_statistic_codes<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<Vec<String>, AppError> {
-    let records: Vec<String> = sqlx::query_scalar!("select code from statistic")
-        .fetch_all(executor)
-        .await?;
+    let records: Vec<String> = sqlx::query_scalar!(
+        r#"select code as "code!" from statistic"#,
+    )
+    .fetch_all(executor)
+    .await?;
     Ok(records)
 }
 
