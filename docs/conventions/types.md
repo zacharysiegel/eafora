@@ -10,10 +10,10 @@ The **variable-naming guidance** at the end is softer — a default to fall back
 
 Every DB-touched type has two shapes:
 
-- **Domain** — what application code uses. Typed enums for constrained text columns. Bare-named (`Country`, `DataSource`, `CandidateValue`).
+- **Model** — what application code uses. Typed enums for constrained text columns. Bare-named (`Country`, `DataSource`, `CandidateValue`).
 - **Wire** — what the database round-trips. `String` for text columns, primitive types for everything else. Suffixed (`Entity` for table-row mirrors, `Projection` for joins).
 
-The two shapes are always two distinct structs, even when their fields are identical. The conversion lives next to the wire type as `From<Wire> for Domain` (infallible) or `TryFrom<Wire> for Domain` (when any field needs parsing into a typed enum).
+The two shapes are always two distinct structs, even when their fields are identical. The conversion lives next to the wire type as `From<Wire> for Model` (infallible) or `TryFrom<Wire> for Model` (when any field needs parsing into a typed enum).
 
 The reason for keeping the pair even when fields are identical: uniformity. Reading any `_model.rs` file, you can scan for the `Entity` types and immediately see "these are the table mirrors, here's where parsing lives." Skipping the `Entity` for parse-free types makes that reading harder. The trivial `From` impl is the right amount of ceremony for the parse-free case.
 
@@ -21,12 +21,12 @@ The reason for keeping the pair even when fields are identical: uniformity. Read
 
 ```
 Is it a 1:1 mirror of a table row?
-├── yes → `<Name>` (domain) + `<Name>Entity` (wire)
-│         + `(Try)From<Entity> for Domain`
+├── yes → `<Name>` (model) + `<Name>Entity` (wire)
+│         + `(Try)From<Entity> for Model`
 └── no (join, subset, or computed projection) →
-    Is the projection meaningful as a domain object (used by name elsewhere)?
-    ├── yes → `<Name>` (domain) + `<Name>Projection` (wire)
-    │         + `(Try)From<Projection> for Domain`
+    Is the projection meaningful as a model object (used by name elsewhere)?
+    ├── yes → `<Name>` (model) + `<Name>Projection` (wire)
+    │         + `(Try)From<Projection> for Model`
     └── no  → `<Name>Projection` only (consumed inline at the call site,
               fields read directly into something else like a `BTreeMap`)
 ```
@@ -39,13 +39,13 @@ No struct. Use `query_scalar!` and bind to the primitive type directly.
 
 Direction is the primary axis. Redaction is a secondary modifier and composes onto direction:
 
-- `<Domain>SerialOut` — server → client (response bodies).
-- `<Domain>SerialIn` — client → server (request bodies). Often differs from `Out` because the client doesn't supply server-generated fields like `id` or `created`.
-- `<Domain>Serial` — only when In and Out are byte-identical for a given endpoint. Don't reach for this just to save a struct; if there's any chance In and Out will diverge later, write them separately from the start.
-- `<Domain>PublicSerialOut`, `<Domain>InternalSerialOut`, etc. — context modifiers for redaction. Don't introduce these speculatively; wait until there's a real second consumer.
+- `<Model>SerialOut` — server → client (response bodies).
+- `<Model>SerialIn` — client → server (request bodies). Often differs from `Out` because the client doesn't supply server-generated fields like `id` or `created`.
+- `<Model>Serial` — only when In and Out are byte-identical for a given endpoint. Don't reach for this just to save a struct; if there's any chance In and Out will diverge later, write them separately from the start.
+- `<Model>PublicSerialOut`, `<Model>InternalSerialOut`, etc. — context modifiers for redaction. Don't introduce these speculatively; wait until there's a real second consumer.
 - Conversions:
-  - `impl From<&Domain> for DomainSerialOut` (always infallible)
-  - `impl TryFrom<DomainSerialIn> for Domain` (client input can fail validation)
+  - `impl From<&Model> for ModelSerialOut` (always infallible)
+  - `impl TryFrom<ModelSerialIn> for Model` (client input can fail validation)
 
 This diverges from Singularity, which uses `Serial` for outbound and `PublicSerial` for the redacted variant. The In/Out split is more honest about why two structs exist when they do.
 
@@ -61,7 +61,7 @@ Method naming for the wire-string direction:
 - `<column>()` — when the enum maps cleanly to a single named column whose name reads naturally as a method (`code()` for a `code` column). Examples: `DataSourceKind::code()`, `StatisticKind::code()`.
 - `as_str()` — fallback for everything else. Examples: `LicenseClass::as_str()`, `DataStatus::as_str()`, `LicenseShardClass::as_str()`.
 
-Always implement `TryFrom<&str>` for the wire-string → enum direction. This keeps the wire→domain idiom uniform across boundaries: `Domain::try_from(wire)` works whether `wire` is an `Entity`, a `Projection`, or a `&str` column value. Don't implement `FromStr` instead — the `parse::<T>()` shortcut isn't load-bearing here, and having two near-equivalent traits (`FromStr` for strings, `TryFrom<&str>` for everything else) just splits the codebase's idiom in half.
+Always implement `TryFrom<&str>` for the wire-string → enum direction. This keeps the wire→model idiom uniform across boundaries: `Model::try_from(wire)` works whether `wire` is an `Entity`, a `Projection`, or a `&str` column value. Don't implement `FromStr` instead — the `parse::<T>()` shortcut isn't load-bearing here, and having two near-equivalent traits (`FromStr` for strings, `TryFrom<&str>` for everything else) just splits the codebase's idiom in half.
 
 ## Variable naming inside `<feature>_db.rs` (guidance, not strict)
 
