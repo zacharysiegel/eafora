@@ -13,7 +13,7 @@ Every DB-touched type has two shapes:
 - **Model** — what application code uses. Typed enums for constrained text columns. Bare-named (`Country`, `DataSource`, `CandidateValue`).
 - **Wire** — what the database round-trips. `String` for text columns, primitive types for everything else. Suffixed (`Entity` for table-row mirrors, `Projection` for joins).
 
-The two shapes are always two distinct structs, even when their fields are identical. The conversion lives next to the wire type as `From<Wire> for Model` (infallible) or `TryFrom<Wire> for Model` (when any field needs parsing into a typed enum).
+The two shapes are always two distinct structs, even when their fields are identical. The conversion lives next to the wire type as `From<Wire> for Model` (infallible) or `TryFrom<Wire> for Model` (fallible — e.g. when any field needs parsing into a typed enum).
 
 The reason for keeping the pair even when fields are identical: uniformity. Reading any `_model.rs` file, you can scan for the `Entity` types and immediately see "these are the table mirrors, here's where parsing lives." Skipping the `Entity` for parse-free types makes that reading harder. The trivial `From` impl is the right amount of ceremony for the parse-free case.
 
@@ -82,7 +82,7 @@ That said: **type naming is the load-bearing part of this spec; variable naming 
 ## Conversion impl placement
 
 - In `<feature>_model.rs`, immediately after the wire-format type.
-- `From` when infallible. `TryFrom` when any field needs parsing.
+- `From` when infallible. `TryFrom` when conversion can fail (e.g. parsing a String into a typed enum).
 - Callers in db.rs use:
   - `account_entity.map(Account::try_from).transpose()` (or `from`) for `Option<Entity>`
   - `account_entities.into_iter().map(Account::try_from).collect()` (or `from`) for `Vec<Entity>`
