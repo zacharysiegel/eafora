@@ -2,6 +2,10 @@
 
 Source of truth for how Rust types are named and laid out across the Eafora codebase. Memory files reference this document; they don't restate it.
 
+The **type-naming rules** below are strict: same struct shape always gets the same suffix (`Entity`, `Projection`, `SerialOut`, etc.). Drift here makes a `_model.rs` file unreadable.
+
+The **variable-naming guidance** at the end is softer — a default to fall back to, not a rule to enforce in code review.
+
 ## Core dichotomy
 
 Every DB-touched type has two shapes:
@@ -59,9 +63,9 @@ Method naming for the wire-string direction:
 
 Always implement `TryFrom<&str>` for the wire-string → enum direction. This keeps the wire→domain idiom uniform across boundaries: `Domain::try_from(wire)` works whether `wire` is an `Entity`, a `Projection`, or a `&str` column value. Don't implement `FromStr` instead — the `parse::<T>()` shortcut isn't load-bearing here, and having two near-equivalent traits (`FromStr` for strings, `TryFrom<&str>` for everything else) just splits the codebase's idiom in half.
 
-## Variable naming inside `<feature>_db.rs`
+## Variable naming inside `<feature>_db.rs` (guidance, not strict)
 
-Name variables after the type they hold, lowercase, plural for collections. The wire-format suffix (`Entity`, `Projection`) is part of the variable name; this avoids the redundancy of `record: AccountEntity` (where "record" and "Entity" both signal "DB-row-shape").
+When in doubt, name variables after the type they hold, lowercase, plural for collections. The wire-format suffix (`Entity`, `Projection`) is part of the variable name; this avoids the redundancy of `record: AccountEntity` (where "record" and "Entity" both signal "DB-row-shape").
 
 ```rust
 let account_entity: Option<AccountEntity> = sqlx::query_as!(...).fetch_optional(executor).await?;
@@ -69,12 +73,11 @@ account_entity.map(Account::try_from).transpose()
 
 let account_entities: Vec<AccountEntity> = sqlx::query_as!(...).fetch_all(executor).await?;
 account_entities.into_iter().map(Account::try_from).collect()
-
-let candidate_value_projection: Option<CandidateValueProjection> = ...;
-let candidate_value_projections: Vec<CandidateValueProjection> = ...;
 ```
 
 This is just the typed-prefix rule from `~/.claude/CLAUDE.md` applied without a special carve-out. Diverges from Singularity (which uses bare `record`/`records`) because Singularity didn't have to differentiate `Entity` vs `Projection`; the redundancy didn't bite there.
+
+That said: **type naming is the load-bearing part of this spec; variable naming is preference.** A bare `record` inside a small db.rs function is fine if it reads cleanly. Don't burn review time on variable-rename churn.
 
 ## Conversion impl placement
 
