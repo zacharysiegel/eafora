@@ -49,23 +49,40 @@ This diverges from Singularity, which uses `Serial` for outbound and `PublicSeri
 
 Two flavors:
 
-- **`<Noun>Kind`** when the enum enumerates the values of a `code`-style column. Method `code()` returns the wire string. Examples: `DataSourceKind`, `StatisticKind`.
-- **Bare descriptive name** when the type name already conveys the role. Method `as_str()` returns the wire string. Examples: `LicenseClass`, `DataStatus`, `LicenseShardClass`.
+- **`<Noun>Kind`** — when the bare name would shadow or be confused for a related struct. Without the suffix, a reader seeing `DataSource` (or `Statistic`, `Region`, etc.) reasonably assumes a data-bearing struct; the `Kind` suffix is the signal that this is an enumeration of variant tags. Use `Kind` whenever a related struct of the bare name exists, OR when the bare name would otherwise read as a noun-describing-a-thing rather than a noun-describing-a-classification.
+- **Bare descriptive name** — when the type name already unambiguously reads as "an enumeration of values": `LicenseClass`, `DataStatus`, `LicenseShardClass`. The `Class` / `Status` / etc. suffix is doing the work `Kind` would. No `Kind` needed.
 
-Always implement `FromStr` — gives both `T::from_str(s)` and `s.parse::<T>()`.
+Method naming for the wire-string direction:
+
+- `<column>()` — when the enum maps cleanly to a single named column whose name reads naturally as a method (`code()` for a `code` column). Examples: `DataSourceKind::code()`, `StatisticKind::code()`.
+- `as_str()` — fallback for everything else. Examples: `LicenseClass::as_str()`, `DataStatus::as_str()`, `LicenseShardClass::as_str()`.
+
+Always implement `TryFrom<&str>` for the wire-string → enum direction. This keeps the wire→domain idiom uniform across boundaries: `Domain::try_from(wire)` works whether `wire` is an `Entity`, a `Projection`, or a `&str` column value. Don't implement `FromStr` instead — the `parse::<T>()` shortcut isn't load-bearing here, and having two near-equivalent traits (`FromStr` for strings, `TryFrom<&str>` for everything else) just splits the codebase's idiom in half.
 
 ## Variable naming inside `<feature>_db.rs`
 
-- `record` (singleton) and `records` (collection) for sqlx query results, bare.
-- Scoped to db.rs files only. Elsewhere the typed-prefix rule from `~/.claude/CLAUDE.md` applies (`country_records`, etc.).
+Name variables after the type they hold, lowercase, plural for collections. The wire-format suffix (`Entity`, `Projection`) is part of the variable name; this avoids the redundancy of `record: AccountEntity` (where "record" and "Entity" both signal "DB-row-shape").
+
+```rust
+let account_entity: Option<AccountEntity> = sqlx::query_as!(...).fetch_optional(executor).await?;
+account_entity.map(Account::try_from).transpose()
+
+let account_entities: Vec<AccountEntity> = sqlx::query_as!(...).fetch_all(executor).await?;
+account_entities.into_iter().map(Account::try_from).collect()
+
+let candidate_value_projection: Option<CandidateValueProjection> = ...;
+let candidate_value_projections: Vec<CandidateValueProjection> = ...;
+```
+
+This is just the typed-prefix rule from `~/.claude/CLAUDE.md` applied without a special carve-out. Diverges from Singularity (which uses bare `record`/`records`) because Singularity didn't have to differentiate `Entity` vs `Projection`; the redundancy didn't bite there.
 
 ## Conversion impl placement
 
 - In `<feature>_model.rs`, immediately after the wire-format type.
 - `From` when infallible. `TryFrom` when any field needs parsing.
 - Callers in db.rs use:
-  - `record.map(Domain::from).transpose()` (or `try_from`) for `Option<Entity>`
-  - `records.into_iter().map(Domain::from).collect()` (or `try_from`) for `Vec<Entity>`
+  - `account_entity.map(Account::try_from).transpose()` (or `from`) for `Option<Entity>`
+  - `account_entities.into_iter().map(Account::try_from).collect()` (or `from`) for `Vec<Entity>`
 
 ## Audit checklist (run after any type rename or shape change)
 
