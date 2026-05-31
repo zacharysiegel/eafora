@@ -42,7 +42,7 @@ Direction is the primary axis. Redaction is a secondary modifier and composes on
 - `<Model>SerialOut` — server → client (response bodies).
 - `<Model>SerialIn` — client → server (request bodies). Often differs from `Out` because the client doesn't supply server-generated fields like `id` or `created`.
 - `<Model>Serial` — only when In and Out are byte-identical for a given endpoint. Don't reach for this just to save a struct; if there's any chance In and Out will diverge later, write them separately from the start.
-- `<Model>PublicSerialOut`, `<Model>InternalSerialOut`, etc. — context modifiers for redaction. Don't introduce these speculatively; wait until there's a real second consumer.
+- `<Model>SerialOutPublic`, `<Model>SerialOutInternal`, etc. — context modifiers for redaction, suffixed after the direction so every variant of the same direction shares a common prefix (`<Model>SerialOut...`). Don't introduce these speculatively; wait until there's a real second consumer.
 - Conversions:
   - `impl From<&Model> for ModelSerialOut` (always infallible)
   - `impl TryFrom<ModelSerialIn> for Model` (client input can fail validation)
