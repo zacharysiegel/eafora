@@ -63,7 +63,7 @@ Method naming for the wire-string direction:
 
 Always implement `TryFrom<&str>` for the wire-string → enum direction. This keeps the wire→model idiom uniform across boundaries: `Model::try_from(wire)` works whether `wire` is an `Entity`, a `Projection`, or a `&str` column value. Don't implement `FromStr` instead — the `parse::<T>()` shortcut isn't load-bearing here, and having two near-equivalent traits (`FromStr` for strings, `TryFrom<&str>` for everything else) just splits the codebase's idiom in half.
 
-## Variable naming inside `<feature>_db.rs` (guidance, not strict)
+## Variable naming (guidance, not strict)
 
 When in doubt, name variables after the type they hold, lowercase, plural for collections. The wire-format suffix (`Entity`, `Projection`) is part of the variable name; this avoids the redundancy of `record: AccountEntity` (where "record" and "Entity" both signal "DB-row-shape").
 
@@ -75,9 +75,9 @@ let account_entities: Vec<AccountEntity> = sqlx::query_as!(...).fetch_all(execut
 account_entities.into_iter().map(Account::try_from).collect()
 ```
 
-This is just the typed-prefix rule from `~/.claude/CLAUDE.md` applied without a special carve-out. Diverges from Singularity (which uses bare `record`/`records`) because Singularity didn't have to differentiate `Entity` vs `Projection`; the redundancy didn't bite there.
+This is just the typed-prefix rule from `~/.claude/CLAUDE.md` applied without a special carve-out. Diverges from Singularity (which uses bare `record`/`records` in db.rs) because Singularity didn't have to differentiate `Entity` vs `Projection`; the redundancy didn't bite there.
 
-That said: **type naming is the load-bearing part of this spec; variable naming is preference.** A bare `record` inside a small db.rs function is fine if it reads cleanly. Don't burn review time on variable-rename churn.
+That said: **type naming is the load-bearing part of this spec; variable naming is preference.** A bare `record` inside a small function is fine if it reads cleanly. Don't burn review time on variable-rename churn.
 
 ## Conversion impl placement
 
