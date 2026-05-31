@@ -6,6 +6,18 @@ The **type-naming rules** below are strict: same struct shape always gets the sa
 
 The **variable-naming guidance** at the end is softer — a default to fall back to, not a rule to enforce in code review.
 
+## Underlying heuristic: hierarchical naming
+
+The rules below all share one underlying preference: **hierarchical naming over English-sounding naming.** Most-significant noun first; modifiers and qualifiers after. Concretely for types:
+
+- The model name comes first; the wire-shape suffix follows: `AccountEntity`, not `EntityForAccount`.
+- Direction comes before redaction context: `AccountSerialOutPublic`, not `PublicAccountSerialOut`. Every same-direction variant shares the `AccountSerialOut...` prefix.
+- Enum disambiguators trail the noun: `DataSourceKind`, not `KindOfDataSource`.
+
+Why: items sharing a hierarchical axis sort and grep together. `grep "AccountSerialOut"` finds every outbound variant of Account; an alphabetical listing puts every model's `Entity` and `Projection` and `SerialOut*` adjacent. English-sounding orderings scatter related types across the namespace.
+
+This same principle governs file naming and branch naming elsewhere in the project; see `feedback_naming_convention_entity_first.md` in memory for the file/branch form.
+
 ## Core dichotomy
 
 Every DB-touched type has two shapes:
