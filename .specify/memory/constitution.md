@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 1.3.2 → 1.3.3 (PATCH — two unrelated housekeeping changes bundled into the same amendment because the doc-architecture-ingestion PR that introduces them couples them in scope: (a) Principle IV locked-pick swap: PostgreSQL runtime changed from "Podman Compose" to "Homebrew + launchd on the host". This is a deviation from Singularity's container-based local stack, accepted because Eafora through v1 runs only on a personal Mac mini plus one developer machine; host-installed Postgres removes a tooling dependency (Podman) without losing anything that matters at this scale. Principle IV's binding rule ("default to Singularity, deviations justified in spec/plan") is unchanged — this amendment exercises the deviation clause and records the result inline so future readers see Eafora's actual stack at a glance. Containerization may return for cloud deployment post-v2. The owner has noted Singularity itself may move the same direction. (b) Renamed `scripts/pr-merge.sh` → `scripts/pr-integrate.sh` to better describe what the script does (it rebases the branch onto master rather than merging via the GitHub UI's "rebase and merge" button); behavior unchanged; all constitution references to the script name updated.)
+Version: 1.3.3 → 1.4.0 (MINOR — adds Principle IV §Convention specs, a new clause that pulls per-topic operational rule docs (`docs/conventions/`) under the constitution's umbrella. The Constitution Check gate in `plan-template.md` now reaches both the constitution itself AND any applicable convention doc, without requiring a separate "Conventions Check" gate. Triggered by needing somewhere durable to anchor a per-topic convention so future plans automatically consult it. Reference is by directory, not by individual file, so adding/renaming/splitting docs in `docs/conventions/` does NOT require constitutional amendments.)
 Earlier amendments:
   - 1.0.0 (2026-05-21): initial ratification (8 principles + governance: license, versioning, boundary recognition, app code language, git workflow, tooling discipline, amendments, compliance review)
   - 1.1.0 (2026-05-21): added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh
@@ -9,7 +9,8 @@ Earlier amendments:
   - 1.3.0 (2026-05-23): terminology rename, the user-facing concept previously called an "indicator" is now called a "statistic" throughout the constitution. Publisher-side terminology (World Development Indicators, etc.) is unchanged because it's quoted publisher language, not Eafora's voice.
   - 1.3.1 (2026-05-23): clarification — removed "semantic Q&A" from Principle VI's v3+ live-API examples list (the binding rule was unchanged).
   - 1.3.2 (2026-05-23): PMTiles → FlatGeobuf in Principle VI; rewrote Branch-marker explanatory paragraph for the rebase-based merge flow + `git log --grep` discovery; propagated PMTiles → FlatGeobuf to overview line 29.
-Current principles (unchanged in 1.3.3):
+  - 1.3.3 (2026-05-27): Postgres runtime moved to Homebrew + launchd (Singularity deviation); scripts/pr-merge.sh → scripts/pr-integrate.sh.
+Current principles (unchanged in 1.4.0):
   - I. Educational neutrality (NON-NEGOTIABLE)
   - II. Source provenance (NON-NEGOTIABLE)
   - III. Rust core, native UI shells
@@ -18,20 +19,17 @@ Current principles (unchanged in 1.3.3):
   - VI. CDN-delivered data, no live data API through v2
   - VII. Test-first for core logic
   - VIII. Workflow discipline
-Modified prose in 1.3.3:
-  - Principle IV §Locked picks for PostgreSQL: "**PostgreSQL** via Podman Compose, ..." → "**PostgreSQL** installed via Homebrew on the host and managed via `launchd` (Singularity deviation, see SYNC IMPACT note above), ...".
-  - Governance §Git workflow §Branch marker, §Merge strategy, and §Tooling discipline §Currently registered scripts: every reference to `scripts/pr-merge.sh` updated to `scripts/pr-integrate.sh`.
+Added prose in 1.4.0:
+  - Principle IV: new §Convention specs sub-section pointing at `docs/conventions/`. Constitution Check gate scope extended in prose to cover applicable convention docs.
+Modified prose in 1.4.0: N/A (existing principles unchanged).
 Removed sections: N/A
 Templates requiring updates:
-  - none from this amendment (no template invalidation).
+  - `.specify/templates/plan-template.md` — no structural change required; the existing Constitution Check gate's scope is widened by the new principle clause itself, not by template edits.
 Propagation in this amendment:
-  - `docs/architecture/overview.md` §Workspace and crate layout: removed `compose.template.yaml` and `compose.yaml` entries; updated the Singularity-parity note to acknowledge the Postgres runtime deviation; renamed the `pr-merge.sh` reference in §Things to verify to `pr-integrate.sh`.
-  - `docs/architecture/overview.md` §Local development: rewrote the bullets for Homebrew + launchd Postgres.
-  - `docs/architecture/ingestion.md` §Local development: replaced §Compose + Podman with §Postgres on the host.
-  - `scripts/pr-merge.sh` renamed to `scripts/pr-integrate.sh` (file rename via `git mv`; the script's internal header comment and usage lines updated to the new name).
-Resolved follow-up TODOs (from prior SYNC IMPACT REPORTs):
-  - "Confirm GitHub repo settings preserve empty commits during rebase and merge" → RESOLVED in v1.2.0
-  - "Enable GitHub's 'Automatically delete head branches' setting" → RESOLVED in v1.2.0
+  - `docs/conventions/README.md` (new): index for the conventions area.
+  - `docs/conventions/` (new directory): seeded with the first per-topic convention doc.
+  - `CLAUDE.md`: new §Conventions section pointing at `docs/conventions/`.
+Resolved follow-up TODOs (from prior SYNC IMPACT REPORTs): N/A
 Follow-up TODOs (still pending):
   - License revisit before any public source release (Governance §License)
   - Replace placeholder `eafora` crate (currently 0.0.x on crates.io) with a real crate from inside the monorepo when workspace structure lands (Governance §Versioning)
@@ -80,6 +78,8 @@ Locked picks confirmed for Eafora (which match Singularity except where noted):
 - Rust edition: **2024**, `rustfmt` configured to `max_width = 120`, `chain_width = 100`, `remove_nested_parens = true`
 
 **Rationale**: Consistency between Eafora and Singularity is itself a goal of building Eafora. Lessons learned in one project must transfer cleanly to the other.
+
+**§Convention specs.** Per-topic operational rules that elaborate on these principles live in `docs/conventions/`; the directory's own `README.md` is the index. Topics covered evolve as the project matures (e.g. type naming, error handling, testing patterns). The Constitution Check gate in the plan template MUST verify against any convention doc applicable to the feature, in addition to the principles above. Convention docs are the documented form of Singularity-parity deviations: where Eafora and Singularity diverge on a topic, the divergence is recorded in the relevant convention doc with a "Where Eafora diverges from Singularity" note. Adding, renaming, or splitting docs in `docs/conventions/` does NOT require a constitutional amendment; the reference here is by directory, not by individual file.
 
 ### V. Explicit over implicit
 
@@ -218,6 +218,6 @@ Every spec produced via `/speckit-specify` MUST include a "Constitution Check" s
 
 ---
 
-**Version**: 1.3.3
+**Version**: 1.4.0
 **Ratified**: 2026-05-21
-**Last amended**: 2026-05-23
+**Last amended**: 2026-05-31
