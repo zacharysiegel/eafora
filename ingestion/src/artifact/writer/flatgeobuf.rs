@@ -102,6 +102,22 @@ fn write_flatgeobuf_to_disk(
     Ok(ShardOutput { path, byte_count })
 }
 
+const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
+
+pub fn emit_placeholder_geometry(output_dir: &Path) -> Result<ShardOutput, AppError> {
+    let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
+    fs::create_dir_all(&geometry_dir)?;
+
+    let tmp_uuid: Uuid = Uuid::now_v7();
+    let path: PathBuf = geometry_dir.join(format!("{}-tmp.{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
+    fs::write(&path, PLACEHOLDER_GEOMETRY_BYTES)?;
+
+    Ok(ShardOutput {
+        path,
+        byte_count: PLACEHOLDER_GEOMETRY_BYTES.len() as u64,
+    })
+}
+
 fn build_shapefile_reader<'a>(
     shapefile_bytes: &'a ShapefileBytes,
 ) -> Result<Reader<Cursor<&'a [u8]>, Cursor<&'a [u8]>>, AppError> {

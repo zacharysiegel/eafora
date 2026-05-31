@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
 use crate::artifact::artifact_model::{CandidateValue, LicenseShardClass, MergedValue};
-use crate::canonical::canonical_model::{DataSourceKind, DataStatus};
+use crate::canonical::canonical_model::DataStatus;
 
 pub fn apply_source_priority(candidates: Vec<CandidateValue>) -> Vec<MergedValue> {
     let mut groups: BTreeMap<MergeKey, CandidateValue> = BTreeMap::new();
@@ -53,19 +53,6 @@ pub fn apply_source_priority(candidates: Vec<CandidateValue>) -> Vec<MergedValue
             license_shard_class: key.license_shard_class,
         })
         .collect()
-}
-
-pub fn collect_data_source_versions(candidates: &[CandidateValue]) -> BTreeMap<DataSourceKind, String> {
-    let mut versions: BTreeMap<DataSourceKind, String> = BTreeMap::new();
-    for candidate in candidates {
-        let entry: &mut String = versions
-            .entry(candidate.data_source_kind)
-            .or_default();
-        if candidate.data_source_revision.as_str() > entry.as_str() {
-            *entry = candidate.data_source_revision.clone();
-        }
-    }
-    versions
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -196,23 +183,5 @@ mod tests {
             .expect("non-commercial shard present");
         assert_eq!(base.value, 1.0);
         assert_eq!(non_commercial.value, 2.0);
-    }
-
-    #[test]
-    fn collect_data_source_versions_picks_highest_revision_per_source() {
-        let candidates: Vec<CandidateValue> = vec![
-            CandidateValue {
-                data_source_revision: "2024-Q3".to_string(),
-                ..make_candidate(10, 1, DataStatus::Final, LicenseClass::Attribution, 1.0)
-            },
-            CandidateValue {
-                data_source_revision: "2024-Q4".to_string(),
-                ..make_candidate(10, 1, DataStatus::Final, LicenseClass::Attribution, 2.0)
-            },
-        ];
-
-        let versions: BTreeMap<DataSourceKind, String> = collect_data_source_versions(&candidates);
-
-        assert_eq!(versions.get(&DataSourceKind::WorldBankWDI).map(String::as_str), Some("2024-Q4"));
     }
 }

@@ -1,10 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 
 use sqlx::{PgConnection, PgExecutor};
-use uuid::Uuid;
 
 use crate::artifact::{artifact_db, content_hashing, source_priority};
 use crate::artifact::artifact_model::{
@@ -12,8 +11,10 @@ use crate::artifact::artifact_model::{
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::artifact::writer::manifest::ManifestEmission;
+use crate::canonical::canonical_db;
 use crate::canonical::canonical_model::DataSourceKind;
 use crate::error::AppError;
+use crate::ingest::ingest_db;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {
@@ -39,7 +40,8 @@ pub async fn build_artifacts(
 
     warn_on_statistics_without_values(&mut *connection, &candidate_values).await?;
 
-    let data_source_versions: BTreeMap<DataSourceKind, String> = source_priority::collect_data_source_versions(&candidate_values);
+    let data_source_versions: BTreeMap<DataSourceKind, String> =
+        read_data_source_versions(&mut *connection, &candidate_values).await?;
     let merged_values: Vec<MergedValue> = source_priority::apply_source_priority(candidate_values);
     log::info!("build_artifacts: merged into {} values", merged_values.len());
 
@@ -47,7 +49,7 @@ pub async fn build_artifacts(
     log::info!("build_artifacts: emitted {} sqlite shards", sqlite_shards.len());
 
     let geometry_shard: ShardOutput = if options.test_offline {
-        write_placeholder_geometry(output_dir)?
+        flatgeobuf::emit_placeholder_geometry(output_dir)?
     } else {
         flatgeobuf::emit_geometry_flatgeobuf(&mut *connection, output_dir).await?
     };
@@ -76,6 +78,26 @@ pub async fn build_artifacts(
     })
 }
 
+async fn read_data_source_versions(
+    connection: &mut PgConnection,
+    candidate_values: &[CandidateValue],
+) -> Result<BTreeMap<DataSourceKind, String>, AppError> {
+    let kinds: BTreeSet<DataSourceKind> = candidate_values.iter().map(|candidate| candidate.data_source_kind).collect();
+
+    let mut versions: BTreeMap<DataSourceKind, String> = BTreeMap::new();
+    for kind in kinds {
+        let data_source = canonical_db::find_data_source_by_kind(&mut *connection, kind)
+            .await?
+            .ok_or_else(|| AppError::from(format!("read_data_source_versions: data_source {:?} missing from canonical store", kind)))?;
+        let revision_label = ingest_db::read_latest_publication_revision(&mut *connection, data_source.id)
+            .await?
+            .ok_or_else(|| AppError::from(format!("read_data_source_versions: no publication recorded for {:?}", kind)))?;
+        versions.insert(kind, revision_label);
+    }
+
+    Ok(versions)
+}
+
 async fn warn_on_statistics_without_values<'e>(
     executor: impl PgExecutor<'e>,
     candidates: &[CandidateValue],
@@ -95,18 +117,4 @@ async fn warn_on_statistics_without_values<'e>(
         }
     }
     Ok(())
-}
-
-fn write_placeholder_geometry(output_dir: &Path) -> Result<ShardOutput, AppError> {
-    let geometry_dir: PathBuf = output_dir.join("geometry");
-    fs::create_dir_all(&geometry_dir)?;
-
-    let placeholder_path: PathBuf = geometry_dir.join(format!("world-50m-tmp.{}.fgb", Uuid::now_v7()));
-    let placeholder_bytes: &[u8] = b"FGB-PLACEHOLDER";
-    fs::write(&placeholder_path, placeholder_bytes)?;
-
-    Ok(ShardOutput {
-        path: placeholder_path,
-        byte_count: placeholder_bytes.len() as u64,
-    })
 }

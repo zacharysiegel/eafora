@@ -76,11 +76,11 @@ pub async fn insert_artifact_version<'e>(
     manifest_url: &str,
     data_source_versions: &BTreeMap<DataSourceKind, String>,
 ) -> Result<ArtifactVersion, AppError> {
-    let serializable: BTreeMap<&str, &str> = data_source_versions
+    let data_source_versions: BTreeMap<&str, &str> = data_source_versions
         .iter()
         .map(|(kind, revision)| (kind.code(), revision.as_str()))
         .collect();
-    let data_source_versions_json: serde_json::Value = serde_json::to_value(serializable)?;
+    let data_source_versions: serde_json::Value = serde_json::to_value(data_source_versions)?;
 
     let artifact_version_entity: ArtifactVersionEntity = sqlx::query_as!(
         ArtifactVersionEntity,
@@ -101,7 +101,7 @@ pub async fn insert_artifact_version<'e>(
         version_label,
         manifest_sha256,
         manifest_url,
-        data_source_versions_json,
+        data_source_versions,
     )
     .fetch_one(executor)
     .await?;
