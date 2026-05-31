@@ -60,15 +60,15 @@ fn build_cli() -> Command {
 }
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
-    let source_code_str: &String = matches.get_one::<String>("source").expect("source is required via clap");
-    let source_code: DataSourceKind = DataSourceKind::from_str(source_code_str)?;
+    let source_kind_str: &String = matches.get_one::<String>("source").expect("source is required via clap");
+    let source_kind: DataSourceKind = DataSourceKind::from_str(source_kind_str)?;
     let force_full_refetch: bool = matches.get_flag("force-full-refetch");
     let options: AdapterOptions = AdapterOptions { force_full_refetch };
 
     let pool: PgPool = db::create_pool().await?;
-    let report: IngestReport = run_source(&pool, source_code, options).await?;
+    let report: IngestReport = run_source(&pool, source_kind, options).await?;
 
-    log_report(source_code, &report);
+    log_report(source_kind, &report);
     Ok(())
 }
 
@@ -78,12 +78,12 @@ async fn dispatch_all() -> Result<(), AppError> {
 
     let mut failure_count: usize = 0;
 
-    for source_code in REGISTERED_SOURCES {
-        log::info!("source {} starting", source_code.code());
-        match run_source(&pool, *source_code, options).await {
-            Ok(report) => log_report(*source_code, &report),
+    for source_kind in REGISTERED_SOURCES {
+        log::info!("source {} starting", source_kind.code());
+        match run_source(&pool, *source_kind, options).await {
+            Ok(report) => log_report(*source_kind, &report),
             Err(error) => {
-                log::error!("source {} failed: {}", source_code.code(), error);
+                log::error!("source {} failed: {}", source_kind.code(), error);
                 failure_count += 1;
             }
         }
@@ -100,25 +100,25 @@ async fn dispatch_all() -> Result<(), AppError> {
 
 async fn run_source(
     pool: &PgPool,
-    source_code: DataSourceKind,
+    source_kind: DataSourceKind,
     options: AdapterOptions,
 ) -> Result<IngestReport, AppError> {
-    match source_code {
+    match source_kind {
         DataSourceKind::WorldBankWDI => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
     }
 }
 
-fn log_report(source_code: DataSourceKind, report: &IngestReport) {
+fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
     log::info!(
         "source {} complete: added={} revised={} skipped={} warnings={}",
-        source_code.code(),
+        source_kind.code(),
         report.values_added,
         report.values_revised,
         report.values_skipped,
         report.warnings.len(),
     );
     for warning in &report.warnings {
-        log::warn!("source {} {:?}: {}", source_code.code(), warning.kind, warning.message);
+        log::warn!("source {} {:?}: {}", source_kind.code(), warning.kind, warning.message);
     }
 }
 

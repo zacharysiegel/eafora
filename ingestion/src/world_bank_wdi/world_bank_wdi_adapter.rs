@@ -13,8 +13,6 @@ use crate::ingest::IngestReport;
 use crate::world_bank_wdi::world_bank_wdi_client;
 use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse};
 
-const WB_WDI_DATA_SOURCE_CODE: DataSourceKind = DataSourceKind::WorldBankWDI;
-
 /// Rows whose country isn't in the canonical seed produce an
 /// `UnknownCountry` warning and are dropped. Rows with `value: None`
 /// produce a `NotApplicableValue` warning and are dropped: we only persist
@@ -79,12 +77,12 @@ async fn normalize_row(
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
 
-    let data_source: DataSource = canonical_db::find_data_source_by_code(&mut *transaction, WB_WDI_DATA_SOURCE_CODE)
+    let data_source: DataSource = canonical_db::find_data_source_by_kind(&mut *transaction, DataSourceKind::WorldBankWDI)
         .await?
         .ok_or_else(|| {
             AppError::from(format!(
                 "wb_wdi: data_source {:?} missing from canonical store",
-                WB_WDI_DATA_SOURCE_CODE,
+                DataSourceKind::WorldBankWDI,
             ))
         })?;
     let _last_seen: Option<String> =

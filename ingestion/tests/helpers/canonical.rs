@@ -9,11 +9,11 @@ use uuid::Uuid;
 use ingestion::canonical::canonical_db;
 use ingestion::canonical::canonical_model::DataSourceKind;
 
-pub async fn get_data_source_id(transaction: &mut Transaction<'static, Postgres>, code: DataSourceKind) -> Uuid {
-    canonical_db::find_data_source_by_code(&mut **transaction, code)
+pub async fn get_data_source_id(transaction: &mut Transaction<'static, Postgres>, kind: DataSourceKind) -> Uuid {
+    canonical_db::find_data_source_by_kind(&mut **transaction, kind)
         .await
-        .unwrap_or_else(|err| panic!("find data_source {:?}: {err}", code))
-        .unwrap_or_else(|| panic!("data_source {:?} not seeded", code))
+        .unwrap_or_else(|err| panic!("find data_source {:?}: {err}", kind))
+        .unwrap_or_else(|| panic!("data_source {:?} not seeded", kind))
         .id
 }
 

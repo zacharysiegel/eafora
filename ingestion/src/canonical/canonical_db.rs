@@ -39,9 +39,9 @@ pub async fn find_statistic_by_code<'e>(
     Ok(record)
 }
 
-pub async fn find_data_source_by_code<'e>(
+pub async fn find_data_source_by_kind<'e>(
     executor: impl PgExecutor<'e>,
-    code: DataSourceKind,
+    kind: DataSourceKind,
 ) -> Result<Option<DataSource>, AppError> {
     let record: Option<DataSourceEntity> = sqlx::query_as!(
         DataSourceEntity,
@@ -50,7 +50,7 @@ pub async fn find_data_source_by_code<'e>(
         from data_source
         where code = $1
         "#,
-        code.code(),
+        kind.code(),
     )
     .fetch_optional(executor)
     .await?;

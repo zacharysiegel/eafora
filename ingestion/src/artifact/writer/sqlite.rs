@@ -108,7 +108,7 @@ fn insert_rows(connection: &mut Connection, values: &[&MergedValue]) -> Result<(
                 merged_value.period.end.format("%Y-%m-%d").to_string(),
                 merged_value.value,
                 merged_value.data_status.as_str(),
-                merged_value.data_source_code.code(),
+                merged_value.data_source_kind.code(),
                 merged_value.data_source_revision,
             ])?;
         }
@@ -141,7 +141,7 @@ mod tests {
             period: NaiveDatePeriod::from_year(year).unwrap(),
             value,
             data_status: DataStatus::Final,
-            data_source_code: DataSourceKind::WorldBankWDI,
+            data_source_kind: DataSourceKind::WorldBankWDI,
             data_source_revision: "2024-Q4".to_string(),
             license_shard_class,
         }

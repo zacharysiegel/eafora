@@ -48,7 +48,7 @@ pub fn apply_source_priority(candidates: Vec<CandidateValue>) -> Vec<MergedValue
             period: winner.period,
             value: winner.value,
             data_status: winner.data_status,
-            data_source_code: winner.data_source_code,
+            data_source_kind: winner.data_source_kind,
             data_source_revision: winner.data_source_revision,
             license_shard_class: key.license_shard_class,
         })
@@ -59,7 +59,7 @@ pub fn collect_data_source_versions(candidates: &[CandidateValue]) -> BTreeMap<D
     let mut versions: BTreeMap<DataSourceKind, String> = BTreeMap::new();
     for candidate in candidates {
         let entry: &mut String = versions
-            .entry(candidate.data_source_code)
+            .entry(candidate.data_source_kind)
             .or_default();
         if candidate.data_source_revision.as_str() > entry.as_str() {
             *entry = candidate.data_source_revision.clone();
@@ -117,7 +117,7 @@ mod tests {
             value,
             data_status,
             data_source_id: Uuid::from_u128(data_source_id_low_byte),
-            data_source_code: DataSourceKind::WorldBankWDI,
+            data_source_kind: DataSourceKind::WorldBankWDI,
             data_source_revision: "rev1".to_string(),
             data_source_preference_rank: preference_rank,
             license_class,
@@ -132,7 +132,7 @@ mod tests {
 
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].value, 1.5);
-        assert_eq!(merged[0].data_source_code, DataSourceKind::WorldBankWDI);
+        assert_eq!(merged[0].data_source_kind, DataSourceKind::WorldBankWDI);
         assert_eq!(merged[0].license_shard_class, LicenseShardClass::Base);
     }
 
