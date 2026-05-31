@@ -127,7 +127,7 @@ COMMENT ON COLUMN public.data_source.code IS 'short identifier (''wb_wdi'', ''eu
 -- Name: COLUMN data_source.license_class; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.data_source.license_class IS 'one of: public_domain | attribution | attribution_sa | noncommercial';
+COMMENT ON COLUMN public.data_source.license_class IS 'one of: public_domain | attribution | attribution_share_alike | noncommercial';
 
 
 --
