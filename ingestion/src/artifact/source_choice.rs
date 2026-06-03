@@ -20,7 +20,7 @@ use crate::canonical::canonical_model::{LicenseShardClass, SourceChoice};
 use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct CellKey {
+struct SeriesKey {
     region_id: Uuid,
     statistic_id: Uuid,
     license_shard_class: LicenseShardClass,
@@ -66,10 +66,10 @@ pub fn resolve_candidates(
 ) -> Result<Vec<ResolvedValue>, AppError> {
     let resolver: SourceChoiceResolver = SourceChoiceResolver::build(source_choices);
 
-    let mut groups: BTreeMap<CellKey, Vec<CandidateValue>> = BTreeMap::new();
+    let mut groups: BTreeMap<SeriesKey, Vec<CandidateValue>> = BTreeMap::new();
     for candidate in candidates {
         let license_shard_class: LicenseShardClass = LicenseShardClass::from_license_class(candidate.license_class);
-        let key: CellKey = CellKey {
+        let key: SeriesKey = SeriesKey {
             region_id: candidate.region_id,
             statistic_id: candidate.statistic_id,
             license_shard_class,
@@ -78,20 +78,20 @@ pub fn resolve_candidates(
     }
 
     let mut resolved_values: Vec<ResolvedValue> = Vec::new();
-    for (cell_key, cell_candidates) in groups {
+    for (series_key, series_candidates) in groups {
         let chosen_data_source_id: Uuid = resolver
-            .resolve_chosen(cell_key.region_id, cell_key.statistic_id, cell_key.license_shard_class)
+            .resolve_chosen(series_key.region_id, series_key.statistic_id, series_key.license_shard_class)
             .ok_or_else(|| {
                 AppError::from(format!(
                     "resolve_candidates: no source_choice configured for region={} statistic={} shard={:?}",
-                    cell_key.region_id, cell_key.statistic_id, cell_key.license_shard_class,
+                    series_key.region_id, series_key.statistic_id, series_key.license_shard_class,
                 ))
             })?;
         let default_data_source_id: Option<Uuid> =
-            resolver.resolve_global_default(cell_key.statistic_id, cell_key.license_shard_class);
+            resolver.resolve_global_default(series_key.statistic_id, series_key.license_shard_class);
 
         resolved_values.extend(
-            select_per_period(&cell_candidates, chosen_data_source_id, default_data_source_id, cell_key.license_shard_class)
+            select_per_period(&series_candidates, chosen_data_source_id, default_data_source_id, series_key.license_shard_class)
         );
     }
 
