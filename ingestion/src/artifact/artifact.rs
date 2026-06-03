@@ -7,12 +7,12 @@ use sqlx::{PgConnection, PgExecutor};
 
 use crate::artifact::{artifact_db, content_hashing, source_choice};
 use crate::artifact::artifact_model::{
-    CandidateValue, HashedOutputs, HashedShard, LocalArtifactBuild, MergedValue, ShardOutput,
+    CandidateValue, HashedOutputs, HashedShard, LocalArtifactBuild, ResolvedValue, ShardOutput,
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::artifact::writer::manifest::ManifestEmission;
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{DataSourceKind, SourceChoice};
+use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision};
 use crate::error::AppError;
 use crate::ingest::ingest_db;
 
@@ -40,13 +40,13 @@ pub async fn build_artifacts(
 
     warn_on_statistics_without_values(&mut *connection, &candidate_values).await?;
 
-    let data_source_versions: BTreeMap<DataSourceKind, String> =
-        read_data_source_versions(&mut *connection, &candidate_values).await?;
+    let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
+        read_data_source_revisions(&mut *connection, &candidate_values).await?;
     let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
-    let merged_values: Vec<MergedValue> = source_choice::apply_source_choice(candidate_values, &source_choices)?;
-    log::info!("build_artifacts: merged into {} values", merged_values.len());
+    let resolved_values: Vec<ResolvedValue> = source_choice::resolve_candidates(candidate_values, &source_choices)?;
+    log::info!("build_artifacts: merged into {} values", resolved_values.len());
 
-    let sqlite_shards: Vec<ShardOutput> = sqlite::emit_sqlite_shards(&merged_values, output_dir)?;
+    let sqlite_shards: Vec<ShardOutput> = sqlite::emit_sqlite_shards(&resolved_values, output_dir)?;
     log::info!("build_artifacts: emitted {} sqlite shards", sqlite_shards.len());
 
     let geometry_shard: ShardOutput = if options.test_offline {
@@ -59,7 +59,7 @@ pub async fn build_artifacts(
     let hashed: HashedOutputs = content_hashing::compute_content_hashes(sqlite_shards, geometry_shard)?;
 
     let manifest_emission: ManifestEmission =
-        manifest::emit_manifest(&hashed, version_label, &data_source_versions, output_dir)?;
+        manifest::emit_manifest(&hashed, version_label, &data_source_revisions, output_dir)?;
     let manifest: HashedShard = HashedShard {
         path: manifest_emission.output.path,
         byte_count: manifest_emission.output.byte_count,
@@ -79,24 +79,24 @@ pub async fn build_artifacts(
     })
 }
 
-async fn read_data_source_versions(
+async fn read_data_source_revisions(
     connection: &mut PgConnection,
     candidate_values: &[CandidateValue],
-) -> Result<BTreeMap<DataSourceKind, String>, AppError> {
+) -> Result<BTreeMap<DataSourceKind, SourceRevision>, AppError> {
     let kinds: BTreeSet<DataSourceKind> = candidate_values.iter().map(|candidate| candidate.data_source_kind).collect();
 
-    let mut versions: BTreeMap<DataSourceKind, String> = BTreeMap::new();
+    let mut revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
     for kind in kinds {
         let data_source = canonical_db::find_data_source_by_kind(&mut *connection, kind)
             .await?
-            .ok_or_else(|| AppError::from(format!("read_data_source_versions: data_source {:?} missing from canonical store", kind)))?;
-        let revision_label = ingest_db::read_latest_publication_revision(&mut *connection, data_source.id)
+            .ok_or_else(|| AppError::from(format!("read_data_source_revisions: data_source {:?} missing from canonical store", kind)))?;
+        let revision = ingest_db::read_latest_publication(&mut *connection, data_source.id)
             .await?
-            .ok_or_else(|| AppError::from(format!("read_data_source_versions: no publication recorded for {:?}", kind)))?;
-        versions.insert(kind, revision_label);
+            .ok_or_else(|| AppError::from(format!("read_data_source_revisions: no publication recorded for {:?}", kind)))?;
+        revisions.insert(kind, revision);
     }
 
-    Ok(versions)
+    Ok(revisions)
 }
 
 async fn warn_on_statistics_without_values<'e>(

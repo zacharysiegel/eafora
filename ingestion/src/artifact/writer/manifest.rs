@@ -10,7 +10,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use crate::artifact::artifact_model::{HashedOutputs, HashedShard, ShardOutput};
-use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass};
+use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision};
 use crate::error::AppError;
 
 const MANIFEST_FILENAME: &str = "manifest.json";
@@ -21,7 +21,7 @@ struct ManifestSerializer<'a> {
     artifact_created: String,
     geometry: ManifestEntry<'a>,
     statistics: BTreeMap<String, BTreeMap<String, ManifestEntry<'a>>>,
-    source_versions: BTreeMap<&'a str, &'a str>,
+    source_revisions: BTreeMap<&'a str, &'a SourceRevision>,
 }
 
 #[derive(Debug, Serialize)]
@@ -39,11 +39,11 @@ pub struct ManifestEmission {
 pub fn emit_manifest(
     hashed: &HashedOutputs,
     version_label: &str,
-    data_source_versions: &BTreeMap<DataSourceKind, String>,
+    data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
     output_dir: &Path,
 ) -> Result<ManifestEmission, AppError> {
     let artifact_created: DateTime<Utc> = Utc::now();
-    let json: String = build_manifest_json(hashed, version_label, &artifact_created, data_source_versions)?;
+    let json: String = build_manifest_json(hashed, version_label, &artifact_created, data_source_revisions)?;
 
     let path: PathBuf = output_dir.join(MANIFEST_FILENAME);
     fs::write(&path, &json)?;
@@ -64,7 +64,7 @@ fn build_manifest_json(
     hashed: &HashedOutputs,
     version_label: &str,
     artifact_created: &DateTime<Utc>,
-    data_source_versions: &BTreeMap<DataSourceKind, String>,
+    data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<String, AppError> {
     let geometry: ManifestEntry<'_> = ManifestEntry {
         url: relative_url(&hashed.geometry_shard, "geometry")?,
@@ -85,9 +85,9 @@ fn build_manifest_json(
             .insert(license_label(statistic_shard.license_shard_class).to_string(), entry);
     }
 
-    let source_versions: BTreeMap<&str, &str> = data_source_versions
+    let source_revisions: BTreeMap<&str, &SourceRevision> = data_source_revisions
         .iter()
-        .map(|(kind, revision)| (kind.code(), revision.as_str()))
+        .map(|(kind, revision)| (kind.code(), revision))
         .collect();
 
     let manifest: ManifestSerializer<'_> = ManifestSerializer {
@@ -95,7 +95,7 @@ fn build_manifest_json(
         artifact_created: artifact_created.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
         geometry,
         statistics,
-        source_versions,
+        source_revisions,
     };
 
     let json: String = serde_json::to_string_pretty(&manifest)?;
@@ -171,12 +171,12 @@ mod tests {
     #[test]
     fn build_manifest_json_sorts_statistics_alphabetically() {
         let hashed: HashedOutputs = make_hashed_outputs();
-        let data_source_versions: BTreeMap<DataSourceKind, String> = BTreeMap::from([
-            (DataSourceKind::WorldBankWDI, "2024-Q4".to_string()),
+        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
+            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_versions).unwrap();
+        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
         let cbr_position: usize = json.find("\"cbr\"").expect("cbr present");
         let tfr_position: usize = json.find("\"tfr\"").expect("tfr present");
@@ -186,10 +186,10 @@ mod tests {
     #[test]
     fn build_manifest_json_sorts_license_classes_alphabetically_within_statistic() {
         let hashed: HashedOutputs = make_hashed_outputs();
-        let data_source_versions: BTreeMap<DataSourceKind, String> = BTreeMap::new();
+        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_versions).unwrap();
+        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
         let base_position: usize = json.find("\"base\"").expect("base present");
         let noncommercial_position: usize = json.find("\"noncommercial\"").expect("noncommercial present");
@@ -199,10 +199,10 @@ mod tests {
     #[test]
     fn build_manifest_json_emits_relative_urls_under_geometry_and_data() {
         let hashed: HashedOutputs = make_hashed_outputs();
-        let data_source_versions: BTreeMap<DataSourceKind, String> = BTreeMap::new();
+        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_versions).unwrap();
+        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
         assert!(json.contains("\"url\": \"geometry/world-50m-ab12cd34.fgb\""));
         assert!(json.contains("\"url\": \"data/tfr-base-ef561234.sqlite\""));
@@ -212,14 +212,14 @@ mod tests {
     #[test]
     fn build_manifest_json_is_deterministic_byte_for_byte() {
         let hashed: HashedOutputs = make_hashed_outputs();
-        let data_source_versions: BTreeMap<DataSourceKind, String> = BTreeMap::from([
-            (DataSourceKind::WorldBankWDI, "2024-Q4".to_string()),
-            (DataSourceKind::WorldBankWDI, "2026-w20".to_string()),
+        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
+            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
+            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2026-w20".to_string(), fetched: "2026-05-15T00:00:00Z".parse().unwrap() }),
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json_one: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_versions).unwrap();
-        let json_two: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_versions).unwrap();
+        let json_one: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json_two: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
         assert_eq!(json_one, json_two);
     }
@@ -228,10 +228,10 @@ mod tests {
     fn emit_manifest_writes_file_and_returns_consistent_sha256() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let hashed: HashedOutputs = make_hashed_outputs();
-        let data_source_versions: BTreeMap<DataSourceKind, String> = BTreeMap::new();
+        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
 
         let emission: ManifestEmission =
-            emit_manifest(&hashed, "2026-05-18", &data_source_versions, temp_dir.path()).unwrap();
+            emit_manifest(&hashed, "2026-05-18", &data_source_revisions, temp_dir.path()).unwrap();
 
         assert!(emission.output.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&emission.output.path).unwrap();

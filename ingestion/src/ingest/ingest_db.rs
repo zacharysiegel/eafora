@@ -3,16 +3,22 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::adapter::NormalizedStatisticValue;
-use crate::canonical::canonical_model::{StatisticValue, StatisticValueEntity};
+use crate::canonical::canonical_model::{SourceRevision, StatisticValue, StatisticValueEntity};
 use crate::error::AppError;
 
-pub async fn read_latest_publication_revision<'e>(
+pub async fn read_latest_publication<'e>(
     executor: impl PgExecutor<'e>,
     data_source_id: Uuid,
-) -> Result<Option<String>, AppError> {
-    let revision_label: Option<String> = sqlx::query_scalar!(
+) -> Result<Option<SourceRevision>, AppError> {
+    struct LatestPublicationProjection {
+        revision_label: String,
+        fetched: DateTime<Utc>,
+    }
+
+    let projection: Option<LatestPublicationProjection> = sqlx::query_as!(
+        LatestPublicationProjection,
         r#"
-        select revision_label
+        select revision_label as "revision_label!", fetched as "fetched!"
         from data_source_publication
         where data_source_id = $1
         order by fetched desc
@@ -22,7 +28,11 @@ pub async fn read_latest_publication_revision<'e>(
     )
     .fetch_optional(executor)
     .await?;
-    Ok(revision_label)
+
+    Ok(projection.map(|projection| SourceRevision {
+        revision: projection.revision_label,
+        fetched: projection.fetched,
+    }))
 }
 
 pub async fn insert_publication_or_match<'e>(

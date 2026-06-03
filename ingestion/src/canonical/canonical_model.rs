@@ -1,4 +1,5 @@
 use chrono::{DateTime, NaiveDate, Utc};
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -408,4 +409,10 @@ impl TryFrom<SourceChoiceEntity> for SourceChoice {
             modified: entity.modified,
         })
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceRevision {
+    pub revision: String,
+    pub fetched: DateTime<Utc>,
 }

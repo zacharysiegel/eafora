@@ -68,7 +68,7 @@ pub struct CountryNameProjection {
 }
 
 #[derive(Debug, Clone)]
-pub struct MergedValue {
+pub struct ResolvedValue {
     pub region_id: Uuid,
     pub region_iso3: String,
     pub statistic_id: Uuid,
@@ -122,7 +122,7 @@ pub struct ArtifactVersion {
     pub artifact_created: DateTime<Utc>,
     pub manifest_sha256: String,
     pub manifest_url: String,
-    pub data_source_versions_jsonb: serde_json::Value,
+    pub data_source_revisions_jsonb: serde_json::Value,
     pub notes: Option<String>,
 }
 
@@ -133,7 +133,7 @@ pub struct ArtifactVersionEntity {
     pub artifact_created: DateTime<Utc>,
     pub manifest_sha256: String,
     pub manifest_url: String,
-    pub data_source_versions_jsonb: serde_json::Value,
+    pub data_source_revisions_jsonb: serde_json::Value,
     pub notes: Option<String>,
 }
 
@@ -145,7 +145,7 @@ impl From<ArtifactVersionEntity> for ArtifactVersion {
             artifact_created: entity.artifact_created,
             manifest_sha256: entity.manifest_sha256,
             manifest_url: entity.manifest_url,
-            data_source_versions_jsonb: entity.data_source_versions_jsonb,
+            data_source_revisions_jsonb: entity.data_source_revisions_jsonb,
             notes: entity.notes,
         }
     }

@@ -5,7 +5,7 @@ use sqlx::PgExecutor;
 use crate::artifact::artifact_model::{
     ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryNameProjection,
 };
-use crate::canonical::canonical_model::DataSourceKind;
+use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 
 pub async fn read_candidate_values<'e>(
@@ -73,34 +73,34 @@ pub async fn insert_artifact_version<'e>(
     version_label: &str,
     manifest_sha256: &str,
     manifest_url: &str,
-    data_source_versions: &BTreeMap<DataSourceKind, String>,
+    data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<ArtifactVersion, AppError> {
-    let data_source_versions: BTreeMap<&str, &str> = data_source_versions
+    let data_source_revisions: BTreeMap<&str, &SourceRevision> = data_source_revisions
         .iter()
-        .map(|(kind, revision)| (kind.code(), revision.as_str()))
+        .map(|(kind, revision)| (kind.code(), revision))
         .collect();
-    let data_source_versions: serde_json::Value = serde_json::to_value(data_source_versions)?;
+    let data_source_revisions: serde_json::Value = serde_json::to_value(data_source_revisions)?;
 
     let artifact_version_entity: ArtifactVersionEntity = sqlx::query_as!(
         ArtifactVersionEntity,
         r#"
         insert into artifact_version
-            (version_label, manifest_sha256, manifest_url, data_source_versions_jsonb)
+            (version_label, manifest_sha256, manifest_url, data_source_revisions_jsonb)
         values ($1, $2, $3, $4)
         on conflict (version_label) do nothing
         returning
-            id                         as "id!",
-            version_label              as "version_label!",
-            artifact_created           as "artifact_created!",
-            manifest_sha256            as "manifest_sha256!",
-            manifest_url               as "manifest_url!",
-            data_source_versions_jsonb as "data_source_versions_jsonb!",
+            id                          as "id!",
+            version_label               as "version_label!",
+            artifact_created            as "artifact_created!",
+            manifest_sha256             as "manifest_sha256!",
+            manifest_url                as "manifest_url!",
+            data_source_revisions_jsonb as "data_source_revisions_jsonb!",
             notes
         "#,
         version_label,
         manifest_sha256,
         manifest_url,
-        data_source_versions,
+        data_source_revisions,
     )
     .fetch_one(executor)
     .await?;

@@ -79,7 +79,7 @@ create table if not exists data_source_publication (
     unique (data_source_id, revision_label)
 );
 
-comment on column data_source_publication.revision_label is 'the source''s own revision label for this publication event (WB WDI ''2024-Q4'', Eurostat ''2026-w20'', HFD ''2025-12'', WPP ''WPP-2024-rev1''); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter''s read_latest_publication_revision step for incremental fetches; aggregated per-source into the manifest''s data_source_versions_jsonb at artifact-build time';
+comment on column data_source_publication.revision_label is 'the source''s own revision label for this publication event (WB WDI ''2024-Q4'', Eurostat ''2026-w20'', HFD ''2025-12'', WPP ''WPP-2024-rev1''); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter''s read_latest_publication_revision step for incremental fetches; aggregated per-source into the manifest''s data_source_revisions_jsonb at artifact-build time';
 comment on column data_source_publication.published      is 'source''s own publication timestamp where derivable (often only a year or version label, hence nullable)';
 comment on column data_source_publication.fetched        is 'wall-clock instant our adapter captured this publication';
 
@@ -118,14 +118,14 @@ create table if not exists artifact_version (
     artifact_created           timestamp with time zone not null default now(),
     manifest_sha256            text                     not null,
     manifest_url               text                     not null,
-    data_source_versions_jsonb jsonb                    not null,
+    data_source_revisions_jsonb jsonb                    not null,
     notes                      text
 );
 
 comment on column artifact_version.version_label              is 'ISO date of the scheduled build (e.g. ''2026-05-18''); disambiguating suffix added if two builds land the same day';
 comment on column artifact_version.manifest_sha256            is 'content hash of manifest.json';
 comment on column artifact_version.manifest_url               is 'CDN URL of manifest.json';
-comment on column artifact_version.data_source_versions_jsonb is 'snapshot of every data_source''s data_source_revision at build time: {"wb_wdi": "2024-Q4", "hfd": "2025-12"}; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile';
+comment on column artifact_version.data_source_revisions_jsonb is 'snapshot of every data_source''s latest publication at build time, keyed by data_source.code: {"wb_wdi": {"revision": "2024-Q4", "fetched": "2026-05-26T03:00:00Z"}, "hfd": {"revision": "2025-12", "fetched": "2026-05-26T03:00:00Z"}}; revision is the source''s own label, fetched is when ingestion captured the publication; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile';
 
 -- migrate:down
 

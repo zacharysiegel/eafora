@@ -6,7 +6,7 @@ use crate::adapter::{
     AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue, NaiveDatePeriod,
 };
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{Country, DataSource, DataSourceKind, DataStatus, Statistic, StatisticKind};
+use crate::canonical::canonical_model::{Country, DataSource, DataSourceKind, DataStatus, SourceRevision, Statistic, StatisticKind};
 use crate::error::AppError;
 use crate::ingest;
 use crate::ingest::IngestReport;
@@ -85,8 +85,8 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
                 DataSourceKind::WorldBankWDI,
             ))
         })?;
-    let _last_seen: Option<String> =
-        ingest::ingest_db::read_latest_publication_revision(&mut *transaction, data_source.id).await?;
+    let _last_seen: Option<SourceRevision> =
+        ingest::ingest_db::read_latest_publication(&mut *transaction, data_source.id).await?;
 
     let raw: WdiResponse = world_bank_wdi_client::fetch_upstream(options).await?;
     let revision_label: String = raw.0.lastupdated.clone();
