@@ -1,14 +1,14 @@
 //! Merge rules:
 //!
-//! 1. For each (region, statistic, license_shard_class) cell, resolve the
-//!    chosen `data_source_id`: per-region override if present, else global
-//!    default.
-//! 2. For each period: emit the chosen source's value. If the chosen source
-//!    has no value for that period AND the chosen source differs from the
-//!    global default AND the default has a value, fall back to the default's
-//!    value and log a warning. Else emit nothing.
-//! 3. If neither override nor global default exists for a cell, error: the
-//!    editorial config is incomplete.
+//! 1. For each `(region, statistic, license_shard_class)` series, resolve
+//!    the chosen `data_source_id`: per-region override if present, else
+//!    global default.
+//! 2. For each period in the series: emit the chosen source's value. If the
+//!    chosen source has no value for that period AND the chosen source
+//!    differs from the global default AND the default has a value, fall
+//!    back to the default's value and log a warning. Else emit nothing.
+//! 3. If neither override nor global default exists for a series, error:
+//!    the editorial config is incomplete.
 
 use std::collections::BTreeMap;
 
@@ -270,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn errors_when_no_choice_configured_for_cell() {
+    fn errors_when_no_choice_configured_for_series() {
         let candidates: Vec<CandidateValue> = vec![make_candidate(SOURCE_WB, 2022, 1.66)];
 
         let result: Result<Vec<ResolvedValue>, AppError> = resolve_candidates(candidates, &[]);
