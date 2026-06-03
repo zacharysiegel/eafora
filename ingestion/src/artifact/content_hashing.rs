@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{HashedOutputs, HashedShard, HashedStatisticShard, LicenseShardClass, ShardOutput};
+use crate::artifact::artifact_model::{HashedOutputs, HashedShard, HashedStatisticShard, ShardOutput};
+use crate::canonical::canonical_model::LicenseShardClass;
 use crate::error::AppError;
 
 const SHA_PREFIX_LEN: usize = 8;

@@ -1,7 +1,8 @@
 use sqlx::PgExecutor;
 
 use crate::canonical::canonical_model::{
-    Country, CountryEntity, DataSource, DataSourceEntity, DataSourceKind, Statistic, StatisticEntity,
+    Country, CountryEntity, DataSource, DataSourceEntity, DataSourceKind, SourceChoice, SourceChoiceEntity,
+    Statistic, StatisticEntity,
 };
 use crate::error::AppError;
 
@@ -58,4 +59,18 @@ pub async fn find_data_source_by_kind<'e>(
     .await?;
 
     data_source_entity.map(DataSource::try_from).transpose()
+}
+
+pub async fn read_source_choices<'e>(executor: impl PgExecutor<'e>) -> Result<Vec<SourceChoice>, AppError> {
+    let source_choice_entities: Vec<SourceChoiceEntity> = sqlx::query_as!(
+        SourceChoiceEntity,
+        r#"
+        select id, region_id, statistic_id, license_shard_class, data_source_id, created, modified
+        from source_choice
+        "#,
+    )
+    .fetch_all(executor)
+    .await?;
+
+    source_choice_entities.into_iter().map(SourceChoice::try_from).collect()
 }

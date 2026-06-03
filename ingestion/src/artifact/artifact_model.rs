@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
-use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass};
+use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass};
 use crate::error::AppError;
 
 #[derive(Debug, Clone)]
@@ -19,7 +19,6 @@ pub struct CandidateValue {
     pub data_source_id: Uuid,
     pub data_source_kind: DataSourceKind,
     pub data_source_revision: String,
-    pub data_source_preference_rank: i32,
     pub license_class: LicenseClass,
 }
 
@@ -36,7 +35,6 @@ pub struct CandidateValueProjection {
     pub data_source_id: Uuid,
     pub data_source_code: String,
     pub data_source_revision: String,
-    pub data_source_preference_rank: i32,
     pub license_class: String,
 }
 
@@ -58,7 +56,6 @@ impl TryFrom<CandidateValueProjection> for CandidateValue {
             data_source_id: projection.data_source_id,
             data_source_kind: DataSourceKind::try_from(projection.data_source_code.as_str())?,
             data_source_revision: projection.data_source_revision,
-            data_source_preference_rank: projection.data_source_preference_rank,
             license_class: LicenseClass::try_from(projection.license_class.as_str())?,
         })
     }
@@ -82,31 +79,6 @@ pub struct MergedValue {
     pub data_source_kind: DataSourceKind,
     pub data_source_revision: String,
     pub license_shard_class: LicenseShardClass,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum LicenseShardClass {
-    Base,
-    ShareAlike,
-    NonCommercial,
-}
-
-impl LicenseShardClass {
-    pub fn from_license_class(license_class: LicenseClass) -> LicenseShardClass {
-        match license_class {
-            LicenseClass::PublicDomain | LicenseClass::Attribution => LicenseShardClass::Base,
-            LicenseClass::AttributionShareAlike => LicenseShardClass::ShareAlike,
-            LicenseClass::NonCommercial => LicenseShardClass::NonCommercial,
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            LicenseShardClass::Base => "base",
-            LicenseShardClass::ShareAlike => "share_alike",
-            LicenseShardClass::NonCommercial => "noncommercial",
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

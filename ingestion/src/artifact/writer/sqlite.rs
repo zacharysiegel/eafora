@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, params};
 use uuid::Uuid;
 
-use crate::artifact::artifact_model::{LicenseShardClass, MergedValue, ShardOutput};
+use crate::artifact::artifact_model::{MergedValue, ShardOutput};
+use crate::canonical::canonical_model::LicenseShardClass;
 use crate::error::AppError;
 
 const DATA_SUBDIR: &str = "data";

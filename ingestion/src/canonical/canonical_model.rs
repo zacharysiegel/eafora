@@ -333,3 +333,79 @@ impl TryFrom<&str> for LicenseClass {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum LicenseShardClass {
+    Base,
+    ShareAlike,
+    NonCommercial,
+}
+
+impl LicenseShardClass {
+    pub fn from_license_class(license_class: LicenseClass) -> LicenseShardClass {
+        match license_class {
+            LicenseClass::PublicDomain | LicenseClass::Attribution => LicenseShardClass::Base,
+            LicenseClass::AttributionShareAlike => LicenseShardClass::ShareAlike,
+            LicenseClass::NonCommercial => LicenseShardClass::NonCommercial,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LicenseShardClass::Base => "base",
+            LicenseShardClass::ShareAlike => "share_alike",
+            LicenseShardClass::NonCommercial => "noncommercial",
+        }
+    }
+}
+
+impl TryFrom<&str> for LicenseShardClass {
+    type Error = AppError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "base" => Ok(LicenseShardClass::Base),
+            "share_alike" => Ok(LicenseShardClass::ShareAlike),
+            "noncommercial" => Ok(LicenseShardClass::NonCommercial),
+            other => Err(AppError::from(format!("LicenseShardClass::try_from: unknown value {:?}", other))),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceChoice {
+    pub id: Uuid,
+    pub region_id: Option<Uuid>,
+    pub statistic_id: Uuid,
+    pub license_shard_class: LicenseShardClass,
+    pub data_source_id: Uuid,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceChoiceEntity {
+    pub id: Uuid,
+    pub region_id: Option<Uuid>,
+    pub statistic_id: Uuid,
+    pub license_shard_class: String,
+    pub data_source_id: Uuid,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
+
+impl TryFrom<SourceChoiceEntity> for SourceChoice {
+    type Error = AppError;
+
+    fn try_from(entity: SourceChoiceEntity) -> Result<Self, Self::Error> {
+        Ok(SourceChoice {
+            id: entity.id,
+            region_id: entity.region_id,
+            statistic_id: entity.statistic_id,
+            license_shard_class: LicenseShardClass::try_from(entity.license_shard_class.as_str())?,
+            data_source_id: entity.data_source_id,
+            created: entity.created,
+            modified: entity.modified,
+        })
+    }
+}

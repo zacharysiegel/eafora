@@ -9,8 +9,8 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{HashedOutputs, HashedShard, LicenseShardClass, ShardOutput};
-use crate::canonical::canonical_model::DataSourceKind;
+use crate::artifact::artifact_model::{HashedOutputs, HashedShard, ShardOutput};
+use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass};
 use crate::error::AppError;
 
 const MANIFEST_FILENAME: &str = "manifest.json";

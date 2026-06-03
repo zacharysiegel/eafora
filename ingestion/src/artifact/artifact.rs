@@ -5,14 +5,14 @@ use std::time::Instant;
 
 use sqlx::{PgConnection, PgExecutor};
 
-use crate::artifact::{artifact_db, content_hashing, source_priority};
+use crate::artifact::{artifact_db, content_hashing, source_choice};
 use crate::artifact::artifact_model::{
     CandidateValue, HashedOutputs, HashedShard, LocalArtifactBuild, MergedValue, ShardOutput,
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::artifact::writer::manifest::ManifestEmission;
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::DataSourceKind;
+use crate::canonical::canonical_model::{DataSourceKind, SourceChoice};
 use crate::error::AppError;
 use crate::ingest::ingest_db;
 
@@ -42,7 +42,8 @@ pub async fn build_artifacts(
 
     let data_source_versions: BTreeMap<DataSourceKind, String> =
         read_data_source_versions(&mut *connection, &candidate_values).await?;
-    let merged_values: Vec<MergedValue> = source_priority::apply_source_priority(candidate_values);
+    let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
+    let merged_values: Vec<MergedValue> = source_choice::apply_source_choice(candidate_values, &source_choices)?;
     log::info!("build_artifacts: merged into {} values", merged_values.len());
 
     let sqlite_shards: Vec<ShardOutput> = sqlite::emit_sqlite_shards(&merged_values, output_dir)?;

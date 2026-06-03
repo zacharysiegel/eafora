@@ -26,7 +26,6 @@ pub async fn read_candidate_values<'e>(
             statistic_value.data_source_id         as "data_source_id!",
             data_source.code                       as "data_source_code!",
             data_source_publication.revision_label as "data_source_revision!",
-            data_source.preference_rank            as "data_source_preference_rank!",
             data_source.license_class              as "license_class!"
         from statistic_value
         join country on country.region_id = statistic_value.region_id
