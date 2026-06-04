@@ -26,37 +26,59 @@ struct SeriesKey {
     license_shard_class: LicenseShardClass,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct StatisticShardKey {
+    statistic_id: Uuid,
+    license_shard_class: LicenseShardClass,
+}
+
 struct SourceChoiceResolver {
-    overrides: BTreeMap<(Uuid, Uuid, LicenseShardClass), Uuid>,
-    globals: BTreeMap<(Uuid, LicenseShardClass), Uuid>,
+    overrides: BTreeMap<SeriesKey, Uuid>,
+    globals: BTreeMap<StatisticShardKey, Uuid>,
 }
 
 impl SourceChoiceResolver {
-    fn build(source_choices: &[SourceChoice]) -> Self {
-        let mut overrides: BTreeMap<(Uuid, Uuid, LicenseShardClass), Uuid> = BTreeMap::new();
-        let mut globals: BTreeMap<(Uuid, LicenseShardClass), Uuid> = BTreeMap::new();
+    fn from_slice(source_choices: &[SourceChoice]) -> Self {
+        let mut overrides: BTreeMap<SeriesKey, Uuid> = BTreeMap::new();
+        let mut globals: BTreeMap<StatisticShardKey, Uuid> = BTreeMap::new();
         for choice in source_choices {
             match choice.region_id {
                 Some(region_id) => {
-                    overrides.insert((region_id, choice.statistic_id, choice.license_shard_class), choice.data_source_id);
+                    overrides.insert(
+                        SeriesKey {
+                            region_id,
+                            statistic_id: choice.statistic_id,
+                            license_shard_class: choice.license_shard_class,
+                        },
+                        choice.data_source_id,
+                    );
                 }
                 None => {
-                    globals.insert((choice.statistic_id, choice.license_shard_class), choice.data_source_id);
+                    globals.insert(
+                        StatisticShardKey {
+                            statistic_id: choice.statistic_id,
+                            license_shard_class: choice.license_shard_class,
+                        },
+                        choice.data_source_id,
+                    );
                 }
             }
         }
         SourceChoiceResolver { overrides, globals }
     }
 
-    fn resolve_chosen(&self, region_id: Uuid, statistic_id: Uuid, license: LicenseShardClass) -> Option<Uuid> {
+    fn resolve_chosen(&self, region_id: Uuid, statistic_id: Uuid, license_shard_class: LicenseShardClass) -> Option<Uuid> {
+        let series_key: SeriesKey = SeriesKey { region_id, statistic_id, license_shard_class };
+        let statistic_shard_key: StatisticShardKey = StatisticShardKey { statistic_id, license_shard_class };
+
         self.overrides
-            .get(&(region_id, statistic_id, license))
+            .get(&series_key)
             .copied()
-            .or_else(|| self.globals.get(&(statistic_id, license)).copied())
+            .or_else(|| self.globals.get(&statistic_shard_key).copied())
     }
 
-    fn resolve_global_default(&self, statistic_id: Uuid, license: LicenseShardClass) -> Option<Uuid> {
-        self.globals.get(&(statistic_id, license)).copied()
+    fn resolve_global_default(&self, statistic_id: Uuid, license_shard_class: LicenseShardClass) -> Option<Uuid> {
+        self.globals.get(&StatisticShardKey { statistic_id, license_shard_class }).copied()
     }
 }
 
@@ -64,7 +86,7 @@ pub fn resolve_candidates(
     candidates: Vec<CandidateValue>,
     source_choices: &[SourceChoice],
 ) -> Result<Vec<ResolvedValue>, AppError> {
-    let resolver: SourceChoiceResolver = SourceChoiceResolver::build(source_choices);
+    let resolver: SourceChoiceResolver = SourceChoiceResolver::from_slice(source_choices);
 
     let mut groups: BTreeMap<SeriesKey, Vec<CandidateValue>> = BTreeMap::new();
     for candidate in candidates {
