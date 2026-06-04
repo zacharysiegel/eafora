@@ -1,12 +1,10 @@
 //! Selection rules:
 //!
 //! 1. For each `(region, statistic, license_shard_class)` series, resolve
-//!    the chosen `data_source_id`: per-region override if present, else
-//!    global default.
-//! 2. For each period in the series: emit the chosen source's value. If the
-//!    chosen source has no value for that period AND the chosen source
-//!    differs from the global default AND the default has a value, fall
-//!    back to the default's value and log a warning. Else emit nothing.
+//!    the chosen source: per-region override if present, else global default.
+//! 2. Emit the chosen source's value for every period it has. Periods the
+//!    chosen source doesn't cover emit nothing — never mix sources within a
+//!    series.
 //! 3. If neither override nor global default exists for a series, error:
 //!    the editorial config is incomplete.
 
@@ -20,16 +18,35 @@ use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, Sourc
 use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct SeriesKey {
-    region_id: Uuid,
-    statistic_kind: StatisticKind,
-    license_shard_class: LicenseShardClass,
+pub struct SeriesKey {
+    pub region_id: Uuid,
+    pub statistic_kind: StatisticKind,
+    pub license_shard_class: LicenseShardClass,
+}
+
+impl SeriesKey {
+    pub fn from_candidate(candidate: &CandidateValue) -> Self {
+        SeriesKey {
+            region_id: candidate.region_id,
+            statistic_kind: candidate.statistic_kind,
+            license_shard_class: LicenseShardClass::from_license_class(candidate.license_class),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct StatisticShardKey {
-    statistic_kind: StatisticKind,
-    license_shard_class: LicenseShardClass,
+pub struct StatisticShardKey {
+    pub statistic_kind: StatisticKind,
+    pub license_shard_class: LicenseShardClass,
+}
+
+impl StatisticShardKey {
+    pub fn from_resolved(resolved: &ResolvedValue) -> Self {
+        StatisticShardKey {
+            statistic_kind: resolved.statistic_kind,
+            license_shard_class: resolved.license_shard_class,
+        }
+    }
 }
 
 struct SourceChoiceResolver {
@@ -86,89 +103,37 @@ pub fn resolve_candidates(
     candidates: Vec<CandidateValue>,
     source_choices: &[SourceChoice],
 ) -> Result<Vec<ResolvedValue>, AppError> {
-    let resolver: SourceChoiceResolver = SourceChoiceResolver::from_slice(source_choices);
-
-    let mut groups: BTreeMap<SeriesKey, Vec<CandidateValue>> = BTreeMap::new();
-    for candidate in candidates {
-        let license_shard_class: LicenseShardClass = LicenseShardClass::from_license_class(candidate.license_class);
-        let key: SeriesKey = SeriesKey {
-            region_id: candidate.region_id,
-            statistic_kind: candidate.statistic_kind,
-            license_shard_class,
-        };
-        groups.entry(key).or_default().push(candidate);
-    }
+    let source_resolver: SourceChoiceResolver = SourceChoiceResolver::from_slice(source_choices);
+    let groups: BTreeMap<SeriesKey, Vec<CandidateValue>> = group_candidates(candidates);
 
     let mut resolved_values: Vec<ResolvedValue> = Vec::new();
     for (series_key, series_candidates) in groups {
-        let chosen_data_source_kind: DataSourceKind = resolver
+        let chosen_data_source_kind: DataSourceKind = source_resolver
             .choose(series_key)
             .ok_or_else(|| {
-                AppError::from(format!(
-                    "resolve_candidates: no source_choice configured for region={} statistic={:?} shard={:?}",
-                    series_key.region_id, series_key.statistic_kind, series_key.license_shard_class,
-                ))
+                AppError::from(format!("no source_choice configured for series key [{series_key:?}]"))
             })?;
-        let default_data_source_kind: Option<DataSourceKind> =
-            resolver.choose_default(StatisticShardKey {
-                statistic_kind: series_key.statistic_kind,
-                license_shard_class: series_key.license_shard_class,
-            });
 
         resolved_values.extend(
-            select_per_period(&series_candidates, chosen_data_source_kind, default_data_source_kind, series_key.license_shard_class)
+            series_candidates
+                .iter()
+                .filter(|candidate| candidate.data_source_kind == chosen_data_source_kind)
+                .map(|candidate| resolved_value_from(candidate, series_key.license_shard_class))
         );
     }
 
     Ok(resolved_values)
 }
 
-fn select_per_period(
-    candidates: &[CandidateValue],
-    chosen_data_source_kind: DataSourceKind,
-    default_data_source_kind: Option<DataSourceKind>,
-    license_shard_class: LicenseShardClass,
-) -> Vec<ResolvedValue> {
-    let mut by_period: BTreeMap<NaiveDatePeriod, Vec<&CandidateValue>> = BTreeMap::new();
+fn group_candidates(candidates: Vec<CandidateValue>) -> BTreeMap<SeriesKey, Vec<CandidateValue>> {
+    let mut groups: BTreeMap<SeriesKey, Vec<CandidateValue>> = BTreeMap::new();
     for candidate in candidates {
-        by_period.entry(candidate.period).or_default().push(candidate);
+        groups
+            .entry(SeriesKey::from_candidate(&candidate))
+            .or_default()
+            .push(candidate);
     }
-
-    let mut emitted: Vec<ResolvedValue> = Vec::with_capacity(by_period.len());
-    for (period, period_candidates) in by_period {
-        let chosen: Option<&CandidateValue> = period_candidates
-            .iter()
-            .copied()
-            .find(|candidate| candidate.data_source_kind == chosen_data_source_kind);
-
-        if let Some(candidate) = chosen {
-            emitted.push(resolved_value_from(candidate, license_shard_class));
-            continue;
-        }
-
-        let Some(default_data_source_kind) = default_data_source_kind else {
-            continue;
-        };
-        if default_data_source_kind == chosen_data_source_kind {
-            continue;
-        }
-        let Some(candidate) = period_candidates
-            .iter()
-            .copied()
-            .find(|candidate| candidate.data_source_kind == default_data_source_kind)
-        else {
-            continue;
-        };
-
-        log::warn!(
-            "resolve_candidates: region={} statistic={:?} period=[{},{}) fell back from chosen source {:?} to global default {:?}",
-            candidate.region_iso3, candidate.statistic_kind, period.start, period.end,
-            chosen_data_source_kind, default_data_source_kind,
-        );
-        emitted.push(resolved_value_from(candidate, license_shard_class));
-    }
-
-    emitted
+    groups
 }
 
 fn resolved_value_from(candidate: &CandidateValue, license_shard_class: LicenseShardClass) -> ResolvedValue {
@@ -266,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn override_falls_back_to_default_when_override_has_no_value_for_period() {
+    fn override_emits_only_periods_the_override_covers_no_default_mixing() {
         let candidates: Vec<CandidateValue> = vec![
             make_candidate(DataSourceKind::TestAlpha, 2021, 1.71),
             make_candidate(DataSourceKind::TestBeta, 2022, 1.70),
@@ -278,11 +243,9 @@ mod tests {
 
         let merged: Vec<ResolvedValue> = resolve_candidates(candidates, &choices).unwrap();
 
-        assert_eq!(merged.len(), 2);
-        let value_2021 = merged.iter().find(|m| m.period.start.format("%Y").to_string() == "2021").unwrap().value;
-        let value_2022 = merged.iter().find(|m| m.period.start.format("%Y").to_string() == "2022").unwrap().value;
-        assert!((value_2021 - 1.71).abs() < f64::EPSILON);
-        assert!((value_2022 - 1.70).abs() < f64::EPSILON);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].data_source_kind, DataSourceKind::TestBeta);
+        assert!((merged[0].value - 1.70).abs() < f64::EPSILON);
     }
 
     #[test]

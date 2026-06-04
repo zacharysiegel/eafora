@@ -10,7 +10,7 @@ use crate::artifact::artifact_model::{
     CandidateValue, HashedOutputs, HashedShard, LocalArtifactBuild, ResolvedValue, ShardOutput,
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
-use crate::artifact::writer::manifest::ManifestEmission;
+use crate::artifact::writer::manifest::HashedManifest;
 use crate::canonical::canonical_db;
 use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision, StatisticKind};
 use crate::error::AppError;
@@ -58,24 +58,24 @@ pub async fn build_artifacts(
 
     let hashed: HashedOutputs = content_hashing::compute_content_hashes(sqlite_shards, geometry_shard)?;
 
-    let manifest_emission: ManifestEmission =
+    let hashed_manifest: HashedManifest =
         manifest::emit_manifest(&hashed, version_label, &data_source_revisions, output_dir)?;
-    let manifest: HashedShard = HashedShard {
-        path: manifest_emission.output.path,
-        byte_count: manifest_emission.output.byte_count,
-        sha256_hex: manifest_emission.sha256_hex,
+    let manifest_shard: HashedShard = HashedShard {
+        path: hashed_manifest.output.path,
+        byte_count: hashed_manifest.output.byte_count,
+        sha256_hex: hashed_manifest.sha256_hex,
     };
 
     log::info!(
         "build_artifacts: complete in {:?}; manifest sha256={}",
-        started.elapsed(), manifest.sha256_hex,
+        started.elapsed(), manifest_shard.sha256_hex,
     );
 
     Ok(LocalArtifactBuild {
         output_dir: output_dir.to_path_buf(),
         version_label: version_label.to_string(),
         hashed,
-        manifest,
+        manifest: manifest_shard,
     })
 }
 

@@ -31,7 +31,7 @@ struct ManifestEntry<'a> {
     sha256: &'a str,
 }
 
-pub struct ManifestEmission {
+pub struct HashedManifest {
     pub output: ShardOutput,
     pub sha256_hex: String,
 }
@@ -41,7 +41,7 @@ pub fn emit_manifest(
     version_label: &str,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
     output_dir: &Path,
-) -> Result<ManifestEmission, AppError> {
+) -> Result<HashedManifest, AppError> {
     let artifact_created: DateTime<Utc> = Utc::now();
     let json: String = build_manifest_json(hashed, version_label, &artifact_created, data_source_revisions)?;
 
@@ -54,7 +54,7 @@ pub fn emit_manifest(
 
     let byte_count: u64 = json.as_bytes().len() as u64;
 
-    Ok(ManifestEmission {
+    Ok(HashedManifest {
         output: ShardOutput { path, byte_count },
         sha256_hex,
     })
@@ -230,7 +230,7 @@ mod tests {
         let hashed: HashedOutputs = make_hashed_outputs();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
 
-        let emission: ManifestEmission =
+        let emission: HashedManifest =
             emit_manifest(&hashed, "2026-05-18", &data_source_revisions, temp_dir.path()).unwrap();
 
         assert!(emission.output.path.exists());
