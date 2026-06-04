@@ -1,4 +1,4 @@
-//! Merge rules:
+//! Selection rules:
 //!
 //! 1. For each `(region, statistic, license_shard_class)` series, resolve
 //!    the chosen `data_source_id`: per-region override if present, else
@@ -67,18 +67,18 @@ impl SourceChoiceResolver {
         SourceChoiceResolver { overrides, globals }
     }
 
-    fn resolve_chosen(&self, region_id: Uuid, statistic_kind: StatisticKind, license_shard_class: LicenseShardClass) -> Option<DataSourceKind> {
-        let series_key: SeriesKey = SeriesKey { region_id, statistic_kind, license_shard_class };
-        let statistic_shard_key: StatisticShardKey = StatisticShardKey { statistic_kind, license_shard_class };
-
+    fn choose(&self, series_key: SeriesKey) -> Option<DataSourceKind> {
         self.overrides
             .get(&series_key)
             .copied()
-            .or_else(|| self.globals.get(&statistic_shard_key).copied())
+            .or_else(|| self.choose_default(StatisticShardKey {
+                statistic_kind: series_key.statistic_kind,
+                license_shard_class: series_key.license_shard_class,
+            }))
     }
 
-    fn resolve_global_default(&self, statistic_kind: StatisticKind, license_shard_class: LicenseShardClass) -> Option<DataSourceKind> {
-        self.globals.get(&StatisticShardKey { statistic_kind, license_shard_class }).copied()
+    fn choose_default(&self, statistic_shard_key: StatisticShardKey) -> Option<DataSourceKind> {
+        self.globals.get(&statistic_shard_key).copied()
     }
 }
 
@@ -102,7 +102,7 @@ pub fn resolve_candidates(
     let mut resolved_values: Vec<ResolvedValue> = Vec::new();
     for (series_key, series_candidates) in groups {
         let chosen_data_source_kind: DataSourceKind = resolver
-            .resolve_chosen(series_key.region_id, series_key.statistic_kind, series_key.license_shard_class)
+            .choose(series_key)
             .ok_or_else(|| {
                 AppError::from(format!(
                     "resolve_candidates: no source_choice configured for region={} statistic={:?} shard={:?}",
@@ -110,7 +110,10 @@ pub fn resolve_candidates(
                 ))
             })?;
         let default_data_source_kind: Option<DataSourceKind> =
-            resolver.resolve_global_default(series_key.statistic_kind, series_key.license_shard_class);
+            resolver.choose_default(StatisticShardKey {
+                statistic_kind: series_key.statistic_kind,
+                license_shard_class: series_key.license_shard_class,
+            });
 
         resolved_values.extend(
             select_per_period(&series_candidates, chosen_data_source_kind, default_data_source_kind, series_key.license_shard_class)
