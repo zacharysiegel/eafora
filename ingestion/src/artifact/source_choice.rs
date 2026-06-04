@@ -16,50 +16,50 @@ use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
 use crate::artifact::artifact_model::{CandidateValue, ResolvedValue};
-use crate::canonical::canonical_model::{LicenseShardClass, SourceChoice};
+use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceChoice, StatisticKind};
 use crate::error::AppError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct SeriesKey {
     region_id: Uuid,
-    statistic_id: Uuid,
+    statistic_kind: StatisticKind,
     license_shard_class: LicenseShardClass,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct StatisticShardKey {
-    statistic_id: Uuid,
+    statistic_kind: StatisticKind,
     license_shard_class: LicenseShardClass,
 }
 
 struct SourceChoiceResolver {
-    overrides: BTreeMap<SeriesKey, Uuid>,
-    globals: BTreeMap<StatisticShardKey, Uuid>,
+    overrides: BTreeMap<SeriesKey, DataSourceKind>,
+    globals: BTreeMap<StatisticShardKey, DataSourceKind>,
 }
 
 impl SourceChoiceResolver {
     fn from_slice(source_choices: &[SourceChoice]) -> Self {
-        let mut overrides: BTreeMap<SeriesKey, Uuid> = BTreeMap::new();
-        let mut globals: BTreeMap<StatisticShardKey, Uuid> = BTreeMap::new();
+        let mut overrides: BTreeMap<SeriesKey, DataSourceKind> = BTreeMap::new();
+        let mut globals: BTreeMap<StatisticShardKey, DataSourceKind> = BTreeMap::new();
         for choice in source_choices {
             match choice.region_id {
                 Some(region_id) => {
                     overrides.insert(
                         SeriesKey {
                             region_id,
-                            statistic_id: choice.statistic_id,
+                            statistic_kind: choice.statistic_kind,
                             license_shard_class: choice.license_shard_class,
                         },
-                        choice.data_source_id,
+                        choice.data_source_kind,
                     );
                 }
                 None => {
                     globals.insert(
                         StatisticShardKey {
-                            statistic_id: choice.statistic_id,
+                            statistic_kind: choice.statistic_kind,
                             license_shard_class: choice.license_shard_class,
                         },
-                        choice.data_source_id,
+                        choice.data_source_kind,
                     );
                 }
             }
@@ -67,9 +67,9 @@ impl SourceChoiceResolver {
         SourceChoiceResolver { overrides, globals }
     }
 
-    fn resolve_chosen(&self, region_id: Uuid, statistic_id: Uuid, license_shard_class: LicenseShardClass) -> Option<Uuid> {
-        let series_key: SeriesKey = SeriesKey { region_id, statistic_id, license_shard_class };
-        let statistic_shard_key: StatisticShardKey = StatisticShardKey { statistic_id, license_shard_class };
+    fn resolve_chosen(&self, region_id: Uuid, statistic_kind: StatisticKind, license_shard_class: LicenseShardClass) -> Option<DataSourceKind> {
+        let series_key: SeriesKey = SeriesKey { region_id, statistic_kind, license_shard_class };
+        let statistic_shard_key: StatisticShardKey = StatisticShardKey { statistic_kind, license_shard_class };
 
         self.overrides
             .get(&series_key)
@@ -77,8 +77,8 @@ impl SourceChoiceResolver {
             .or_else(|| self.globals.get(&statistic_shard_key).copied())
     }
 
-    fn resolve_global_default(&self, statistic_id: Uuid, license_shard_class: LicenseShardClass) -> Option<Uuid> {
-        self.globals.get(&StatisticShardKey { statistic_id, license_shard_class }).copied()
+    fn resolve_global_default(&self, statistic_kind: StatisticKind, license_shard_class: LicenseShardClass) -> Option<DataSourceKind> {
+        self.globals.get(&StatisticShardKey { statistic_kind, license_shard_class }).copied()
     }
 }
 
@@ -93,7 +93,7 @@ pub fn resolve_candidates(
         let license_shard_class: LicenseShardClass = LicenseShardClass::from_license_class(candidate.license_class);
         let key: SeriesKey = SeriesKey {
             region_id: candidate.region_id,
-            statistic_id: candidate.statistic_id,
+            statistic_kind: candidate.statistic_kind,
             license_shard_class,
         };
         groups.entry(key).or_default().push(candidate);
@@ -101,19 +101,19 @@ pub fn resolve_candidates(
 
     let mut resolved_values: Vec<ResolvedValue> = Vec::new();
     for (series_key, series_candidates) in groups {
-        let chosen_data_source_id: Uuid = resolver
-            .resolve_chosen(series_key.region_id, series_key.statistic_id, series_key.license_shard_class)
+        let chosen_data_source_kind: DataSourceKind = resolver
+            .resolve_chosen(series_key.region_id, series_key.statistic_kind, series_key.license_shard_class)
             .ok_or_else(|| {
                 AppError::from(format!(
-                    "resolve_candidates: no source_choice configured for region={} statistic={} shard={:?}",
-                    series_key.region_id, series_key.statistic_id, series_key.license_shard_class,
+                    "resolve_candidates: no source_choice configured for region={} statistic={:?} shard={:?}",
+                    series_key.region_id, series_key.statistic_kind, series_key.license_shard_class,
                 ))
             })?;
-        let default_data_source_id: Option<Uuid> =
-            resolver.resolve_global_default(series_key.statistic_id, series_key.license_shard_class);
+        let default_data_source_kind: Option<DataSourceKind> =
+            resolver.resolve_global_default(series_key.statistic_kind, series_key.license_shard_class);
 
         resolved_values.extend(
-            select_per_period(&series_candidates, chosen_data_source_id, default_data_source_id, series_key.license_shard_class)
+            select_per_period(&series_candidates, chosen_data_source_kind, default_data_source_kind, series_key.license_shard_class)
         );
     }
 
@@ -122,8 +122,8 @@ pub fn resolve_candidates(
 
 fn select_per_period(
     candidates: &[CandidateValue],
-    chosen_data_source_id: Uuid,
-    default_data_source_id: Option<Uuid>,
+    chosen_data_source_kind: DataSourceKind,
+    default_data_source_kind: Option<DataSourceKind>,
     license_shard_class: LicenseShardClass,
 ) -> Vec<ResolvedValue> {
     let mut by_period: BTreeMap<NaiveDatePeriod, Vec<&CandidateValue>> = BTreeMap::new();
@@ -136,31 +136,31 @@ fn select_per_period(
         let chosen: Option<&CandidateValue> = period_candidates
             .iter()
             .copied()
-            .find(|candidate| candidate.data_source_id == chosen_data_source_id);
+            .find(|candidate| candidate.data_source_kind == chosen_data_source_kind);
 
         if let Some(candidate) = chosen {
             emitted.push(resolved_value_from(candidate, license_shard_class));
             continue;
         }
 
-        let Some(default_data_source_id) = default_data_source_id else {
+        let Some(default_data_source_kind) = default_data_source_kind else {
             continue;
         };
-        if default_data_source_id == chosen_data_source_id {
+        if default_data_source_kind == chosen_data_source_kind {
             continue;
         }
         let Some(candidate) = period_candidates
             .iter()
             .copied()
-            .find(|candidate| candidate.data_source_id == default_data_source_id)
+            .find(|candidate| candidate.data_source_kind == default_data_source_kind)
         else {
             continue;
         };
 
         log::warn!(
-            "resolve_candidates: region={} statistic={} period=[{},{}) fell back from chosen source {} to global default {}",
-            candidate.region_iso3, candidate.statistic_code, period.start, period.end,
-            chosen_data_source_id, default_data_source_id,
+            "resolve_candidates: region={} statistic={:?} period=[{},{}) fell back from chosen source {:?} to global default {:?}",
+            candidate.region_iso3, candidate.statistic_kind, period.start, period.end,
+            chosen_data_source_kind, default_data_source_kind,
         );
         emitted.push(resolved_value_from(candidate, license_shard_class));
     }
@@ -172,8 +172,7 @@ fn resolved_value_from(candidate: &CandidateValue, license_shard_class: LicenseS
     ResolvedValue {
         region_id: candidate.region_id,
         region_iso3: candidate.region_iso3.clone(),
-        statistic_id: candidate.statistic_id,
-        statistic_code: candidate.statistic_code.clone(),
+        statistic_kind: candidate.statistic_kind,
         period: candidate.period,
         value: candidate.value,
         data_status: candidate.data_status,
@@ -189,52 +188,47 @@ mod tests {
 
     use chrono::{DateTime, Utc};
 
-    use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass};
+    use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, StatisticKind};
 
-    const STATISTIC_TFR: u128 = 100;
     const REGION_USA: u128 = 1;
-    const SOURCE_WB: u128 = 10;
-    const SOURCE_CENSUS: u128 = 20;
 
     fn now() -> DateTime<Utc> { "2026-05-30T00:00:00Z".parse().unwrap() }
 
     fn period_year(year: i32) -> NaiveDatePeriod { NaiveDatePeriod::from_year(year).unwrap() }
 
-    fn make_candidate(data_source_id: u128, year: i32, value: f64) -> CandidateValue {
+    fn make_candidate(data_source_kind: DataSourceKind, year: i32, value: f64) -> CandidateValue {
         CandidateValue {
             region_id: Uuid::from_u128(REGION_USA),
             region_iso3: "USA".to_string(),
-            statistic_id: Uuid::from_u128(STATISTIC_TFR),
-            statistic_code: "tfr".to_string(),
+            statistic_kind: StatisticKind::Tfr,
             period: period_year(year),
             value,
             data_status: DataStatus::Final,
-            data_source_id: Uuid::from_u128(data_source_id),
-            data_source_kind: DataSourceKind::WorldBankWDI,
+            data_source_kind,
             data_source_revision: "rev1".to_string(),
             license_class: LicenseClass::Attribution,
         }
     }
 
-    fn global_choice(data_source_id: u128) -> SourceChoice {
+    fn global_choice(data_source_kind: DataSourceKind) -> SourceChoice {
         SourceChoice {
             id: Uuid::now_v7(),
             region_id: None,
-            statistic_id: Uuid::from_u128(STATISTIC_TFR),
+            statistic_kind: StatisticKind::Tfr,
             license_shard_class: LicenseShardClass::Base,
-            data_source_id: Uuid::from_u128(data_source_id),
+            data_source_kind,
             created: now(),
             modified: now(),
         }
     }
 
-    fn override_choice(region: u128, data_source_id: u128) -> SourceChoice {
+    fn override_choice(region: u128, data_source_kind: DataSourceKind) -> SourceChoice {
         SourceChoice {
             id: Uuid::now_v7(),
             region_id: Some(Uuid::from_u128(region)),
-            statistic_id: Uuid::from_u128(STATISTIC_TFR),
+            statistic_kind: StatisticKind::Tfr,
             license_shard_class: LicenseShardClass::Base,
-            data_source_id: Uuid::from_u128(data_source_id),
+            data_source_kind,
             created: now(),
             modified: now(),
         }
@@ -243,20 +237,24 @@ mod tests {
     #[test]
     fn global_default_with_no_override_uses_default_for_every_period() {
         let candidates: Vec<CandidateValue> = vec![
-            make_candidate(SOURCE_WB, 2022, 1.66),
-            make_candidate(SOURCE_WB, 2023, 1.62),
+            make_candidate(DataSourceKind::TestAlpha, 2022, 1.66),
+            make_candidate(DataSourceKind::TestAlpha, 2023, 1.62),
         ];
-        let merged: Vec<ResolvedValue> = resolve_candidates(candidates, &[global_choice(SOURCE_WB)]).unwrap();
+        let merged: Vec<ResolvedValue> =
+            resolve_candidates(candidates, &[global_choice(DataSourceKind::TestAlpha)]).unwrap();
         assert_eq!(merged.len(), 2);
     }
 
     #[test]
     fn override_wins_over_global_default_when_override_has_value() {
         let candidates: Vec<CandidateValue> = vec![
-            make_candidate(SOURCE_WB, 2022, 1.66),
-            make_candidate(SOURCE_CENSUS, 2022, 1.70),
+            make_candidate(DataSourceKind::TestAlpha, 2022, 1.66),
+            make_candidate(DataSourceKind::TestBeta, 2022, 1.70),
         ];
-        let choices: Vec<SourceChoice> = vec![global_choice(SOURCE_WB), override_choice(REGION_USA, SOURCE_CENSUS)];
+        let choices: Vec<SourceChoice> = vec![
+            global_choice(DataSourceKind::TestAlpha),
+            override_choice(REGION_USA, DataSourceKind::TestBeta),
+        ];
 
         let merged: Vec<ResolvedValue> = resolve_candidates(candidates, &choices).unwrap();
 
@@ -267,10 +265,13 @@ mod tests {
     #[test]
     fn override_falls_back_to_default_when_override_has_no_value_for_period() {
         let candidates: Vec<CandidateValue> = vec![
-            make_candidate(SOURCE_WB, 2021, 1.71),
-            make_candidate(SOURCE_CENSUS, 2022, 1.70),
+            make_candidate(DataSourceKind::TestAlpha, 2021, 1.71),
+            make_candidate(DataSourceKind::TestBeta, 2022, 1.70),
         ];
-        let choices: Vec<SourceChoice> = vec![global_choice(SOURCE_WB), override_choice(REGION_USA, SOURCE_CENSUS)];
+        let choices: Vec<SourceChoice> = vec![
+            global_choice(DataSourceKind::TestAlpha),
+            override_choice(REGION_USA, DataSourceKind::TestBeta),
+        ];
 
         let merged: Vec<ResolvedValue> = resolve_candidates(candidates, &choices).unwrap();
 
@@ -283,8 +284,11 @@ mod tests {
 
     #[test]
     fn empty_when_neither_chosen_nor_default_has_a_value() {
-        let candidates: Vec<CandidateValue> = vec![make_candidate(99, 2022, 1.99)];
-        let choices: Vec<SourceChoice> = vec![global_choice(SOURCE_WB), override_choice(REGION_USA, SOURCE_CENSUS)];
+        let candidates: Vec<CandidateValue> = vec![make_candidate(DataSourceKind::WorldBankWDI, 2022, 1.99)];
+        let choices: Vec<SourceChoice> = vec![
+            global_choice(DataSourceKind::TestAlpha),
+            override_choice(REGION_USA, DataSourceKind::TestBeta),
+        ];
 
         let merged: Vec<ResolvedValue> = resolve_candidates(candidates, &choices).unwrap();
 
@@ -293,7 +297,7 @@ mod tests {
 
     #[test]
     fn errors_when_no_choice_configured_for_series() {
-        let candidates: Vec<CandidateValue> = vec![make_candidate(SOURCE_WB, 2022, 1.66)];
+        let candidates: Vec<CandidateValue> = vec![make_candidate(DataSourceKind::TestAlpha, 2022, 1.66)];
 
         let result: Result<Vec<ResolvedValue>, AppError> = resolve_candidates(candidates, &[]);
 

@@ -12,7 +12,7 @@ use rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::artifact::artifact_model::{ResolvedValue, ShardOutput};
-use crate::canonical::canonical_model::LicenseShardClass;
+use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
 const DATA_SUBDIR: &str = "data";
@@ -24,18 +24,18 @@ pub fn emit_sqlite_shards(
     let data_dir: PathBuf = output_dir.join(DATA_SUBDIR);
     fs::create_dir_all(&data_dir)?;
 
-    let mut grouped: BTreeMap<(String, LicenseShardClass), Vec<&ResolvedValue>> = BTreeMap::new();
+    let mut grouped: BTreeMap<(StatisticKind, LicenseShardClass), Vec<&ResolvedValue>> = BTreeMap::new();
     for resolved_value in merged {
-        let key: (String, LicenseShardClass) = (
-            resolved_value.statistic_code.clone(),
+        let key: (StatisticKind, LicenseShardClass) = (
+            resolved_value.statistic_kind,
             resolved_value.license_shard_class,
         );
         grouped.entry(key).or_default().push(resolved_value);
     }
 
     let mut shards: Vec<ShardOutput> = Vec::with_capacity(grouped.len());
-    for ((statistic_code, license_shard_class), values) in grouped {
-        let shard: ShardOutput = write_one_shard(&data_dir, &statistic_code, license_shard_class, &values)?;
+    for ((statistic_kind, license_shard_class), values) in grouped {
+        let shard: ShardOutput = write_one_shard(&data_dir, statistic_kind, license_shard_class, &values)?;
         shards.push(shard);
     }
 
@@ -44,14 +44,14 @@ pub fn emit_sqlite_shards(
 
 fn write_one_shard(
     data_dir: &Path,
-    statistic_code: &str,
+    statistic_kind: StatisticKind,
     license_shard_class: LicenseShardClass,
     values: &[&ResolvedValue],
 ) -> Result<ShardOutput, AppError> {
     let tmp_uuid: Uuid = Uuid::now_v7();
     let filename: String = format!(
         "{}-{}-tmp.{}.sqlite",
-        statistic_code,
+        statistic_kind.code(),
         license_shard_class.as_str(),
         tmp_uuid,
     );
@@ -128,7 +128,7 @@ mod tests {
     use crate::canonical::canonical_model::{DataSourceKind, DataStatus};
 
     fn make_merged(
-        statistic_code: &str,
+        statistic_kind: StatisticKind,
         license_shard_class: LicenseShardClass,
         region_iso3: &str,
         year: i32,
@@ -137,8 +137,7 @@ mod tests {
         ResolvedValue {
             region_id: Uuid::from_u128(year as u128),
             region_iso3: region_iso3.to_string(),
-            statistic_id: Uuid::from_u128(1),
-            statistic_code: statistic_code.to_string(),
+            statistic_kind,
             period: NaiveDatePeriod::from_year(year).unwrap(),
             value,
             data_status: DataStatus::Final,
@@ -152,10 +151,10 @@ mod tests {
     fn emit_sqlite_shards_creates_one_file_per_statistic_per_license_class() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![
-            make_merged("tfr", LicenseShardClass::Base, "USA", 2022, 1.66),
-            make_merged("tfr", LicenseShardClass::Base, "JPN", 2022, 1.30),
-            make_merged("tfr", LicenseShardClass::NonCommercial, "USA", 2022, 1.66),
-            make_merged("ctfr", LicenseShardClass::Base, "USA", 2022, 1.85),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "JPN", 2022, 1.30),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::NonCommercial, "USA", 2022, 1.66),
+            make_merged(StatisticKind::TestAlpha, LicenseShardClass::Base, "USA", 2022, 1.85),
         ];
 
         let shards: Vec<ShardOutput> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
@@ -174,8 +173,8 @@ mod tests {
     fn emit_sqlite_shards_writes_rows_with_expected_schema() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![
-            make_merged("tfr", LicenseShardClass::Base, "USA", 2022, 1.66),
-            make_merged("tfr", LicenseShardClass::Base, "JPN", 2022, 1.30),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "JPN", 2022, 1.30),
         ];
 
         let shards: Vec<ShardOutput> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
@@ -218,7 +217,7 @@ mod tests {
     #[test]
     fn emit_sqlite_shards_index_is_present() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let merged: Vec<ResolvedValue> = vec![make_merged("tfr", LicenseShardClass::Base, "USA", 2022, 1.66)];
+        let merged: Vec<ResolvedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66)];
 
         let shards: Vec<ShardOutput> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
@@ -237,7 +236,7 @@ mod tests {
     fn emit_sqlite_shards_uses_correct_filename_format() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![make_merged(
-            "tfr",
+            StatisticKind::Tfr,
             LicenseShardClass::ShareAlike,
             "USA",
             2022,

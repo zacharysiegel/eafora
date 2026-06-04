@@ -5,7 +5,7 @@ use sqlx::PgExecutor;
 use crate::artifact::artifact_model::{
     ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryNameProjection,
 };
-use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
+use crate::canonical::canonical_model::{DataSourceKind, SourceRevision, StatisticKind};
 use crate::error::AppError;
 
 pub async fn read_candidate_values<'e>(
@@ -17,13 +17,11 @@ pub async fn read_candidate_values<'e>(
         select
             statistic_value.region_id              as "region_id!",
             country.iso3                           as "region_iso3!",
-            statistic_value.statistic_id           as "statistic_id!",
             statistic.code                         as "statistic_code!",
             statistic_value.period_start           as "period_start!",
             statistic_value.period_end             as "period_end!",
             statistic_value.value                  as "value!",
             statistic_value.data_status            as "data_status!",
-            statistic_value.data_source_id         as "data_source_id!",
             data_source.code                       as "data_source_code!",
             data_source_publication.revision_label as "data_source_revision!",
             data_source.license_class              as "license_class!"
@@ -59,13 +57,13 @@ pub async fn read_country_iso3_to_name_en<'e>(
     Ok(projections.into_iter().map(|projection| (projection.iso3, projection.name_en)).collect())
 }
 
-pub async fn read_all_statistic_codes<'e>(
+pub async fn read_all_statistic_kinds<'e>(
     executor: impl PgExecutor<'e>,
-) -> Result<Vec<String>, AppError> {
+) -> Result<Vec<StatisticKind>, AppError> {
     let codes: Vec<String> = sqlx::query_scalar!("select code from statistic")
         .fetch_all(executor)
         .await?;
-    Ok(codes)
+    codes.iter().map(|code| StatisticKind::try_from(code.as_str())).collect()
 }
 
 pub async fn insert_artifact_version<'e>(

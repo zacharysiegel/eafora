@@ -12,7 +12,7 @@ use crate::artifact::artifact_model::{
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::artifact::writer::manifest::ManifestEmission;
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision};
+use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision, StatisticKind};
 use crate::error::AppError;
 use crate::ingest::ingest_db;
 
@@ -103,17 +103,17 @@ async fn warn_on_statistics_without_values<'e>(
     executor: impl PgExecutor<'e>,
     candidates: &[CandidateValue],
 ) -> Result<(), AppError> {
-    let known_codes: Vec<String> = artifact_db::read_all_statistic_codes(executor).await?;
-    let codes_with_values: BTreeSet<String> = candidates
+    let known_kinds: Vec<StatisticKind> = artifact_db::read_all_statistic_kinds(executor).await?;
+    let kinds_with_values: BTreeSet<StatisticKind> = candidates
         .iter()
-        .map(|candidate| candidate.statistic_code.clone())
+        .map(|candidate| candidate.statistic_kind)
         .collect();
 
-    for code in &known_codes {
-        if !codes_with_values.contains(code) {
+    for kind in &known_kinds {
+        if !kinds_with_values.contains(kind) {
             log::warn!(
-                "build_artifacts: statistic {} has no candidate values; shard will be missing from this build",
-                code,
+                "build_artifacts: statistic {:?} has no candidate values; shard will be missing from this build",
+                kind,
             );
         }
     }

@@ -109,7 +109,7 @@ impl From<StatisticEntity> for Statistic {
 #[derive(Debug, Clone)]
 pub struct DataSource {
     pub id: Uuid,
-    pub code: DataSourceKind,
+    pub kind: DataSourceKind,
     pub name_en: String,
     pub homepage_url: String,
     pub license_class: LicenseClass,
@@ -142,7 +142,7 @@ impl TryFrom<DataSourceEntity> for DataSource {
     fn try_from(entity: DataSourceEntity) -> Result<Self, Self::Error> {
         Ok(DataSource {
             id: entity.id,
-            code: DataSourceKind::try_from(entity.code.as_str())?,
+            kind: DataSourceKind::try_from(entity.code.as_str())?,
             name_en: entity.name_en,
             homepage_url: entity.homepage_url,
             license_class: LicenseClass::try_from(entity.license_class.as_str())?,
@@ -212,15 +212,19 @@ impl TryFrom<StatisticValueEntity> for StatisticValue {
 /// Enumerates the `statistic.code` values seeded in the canonical store.
 /// New statistics get a variant here AND a seed migration row; the two
 /// stay in sync by convention.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StatisticKind {
     Tfr,
+    #[cfg(test)]
+    TestAlpha,
 }
 
 impl StatisticKind {
     pub fn code(self) -> &'static str {
         match self {
             StatisticKind::Tfr => "tfr",
+            #[cfg(test)]
+            StatisticKind::TestAlpha => "_test_alpha",
         }
     }
 }
@@ -231,6 +235,8 @@ impl TryFrom<&str> for StatisticKind {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "tfr" => Ok(StatisticKind::Tfr),
+            #[cfg(test)]
+            "_test_alpha" => Ok(StatisticKind::TestAlpha),
             other => Err(AppError::from(format!("StatisticKind::try_from: unknown value {:?}", other))),
         }
     }
@@ -242,12 +248,20 @@ impl TryFrom<&str> for StatisticKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DataSourceKind {
     WorldBankWDI,
+    #[cfg(test)]
+    TestAlpha,
+    #[cfg(test)]
+    TestBeta,
 }
 
 impl DataSourceKind {
     pub fn code(self) -> &'static str {
         match self {
             DataSourceKind::WorldBankWDI => "wb_wdi",
+            #[cfg(test)]
+            DataSourceKind::TestAlpha => "_test_alpha",
+            #[cfg(test)]
+            DataSourceKind::TestBeta => "_test_beta",
         }
     }
 }
@@ -258,6 +272,10 @@ impl TryFrom<&str> for DataSourceKind {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "wb_wdi" => Ok(DataSourceKind::WorldBankWDI),
+            #[cfg(test)]
+            "_test_alpha" => Ok(DataSourceKind::TestAlpha),
+            #[cfg(test)]
+            "_test_beta" => Ok(DataSourceKind::TestBeta),
             other => Err(AppError::from(format!("DataSourceKind::try_from: unknown value {:?}", other))),
         }
     }
@@ -377,9 +395,9 @@ impl TryFrom<&str> for LicenseShardClass {
 pub struct SourceChoice {
     pub id: Uuid,
     pub region_id: Option<Uuid>,
-    pub statistic_id: Uuid,
+    pub statistic_kind: StatisticKind,
     pub license_shard_class: LicenseShardClass,
-    pub data_source_id: Uuid,
+    pub data_source_kind: DataSourceKind,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
 }
@@ -388,9 +406,9 @@ pub struct SourceChoice {
 pub struct SourceChoiceEntity {
     pub id: Uuid,
     pub region_id: Option<Uuid>,
-    pub statistic_id: Uuid,
+    pub statistic_code: String,
     pub license_shard_class: String,
-    pub data_source_id: Uuid,
+    pub data_source_code: String,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
 }
@@ -402,9 +420,9 @@ impl TryFrom<SourceChoiceEntity> for SourceChoice {
         Ok(SourceChoice {
             id: entity.id,
             region_id: entity.region_id,
-            statistic_id: entity.statistic_id,
+            statistic_kind: StatisticKind::try_from(entity.statistic_code.as_str())?,
             license_shard_class: LicenseShardClass::try_from(entity.license_shard_class.as_str())?,
-            data_source_id: entity.data_source_id,
+            data_source_kind: DataSourceKind::try_from(entity.data_source_code.as_str())?,
             created: entity.created,
             modified: entity.modified,
         })

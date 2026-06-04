@@ -65,8 +65,17 @@ pub async fn read_source_choices<'e>(executor: impl PgExecutor<'e>) -> Result<Ve
     let source_choice_entities: Vec<SourceChoiceEntity> = sqlx::query_as!(
         SourceChoiceEntity,
         r#"
-        select id, region_id, statistic_id, license_shard_class, data_source_id, created, modified
+        select
+            source_choice.id                  as "id!",
+            source_choice.region_id,
+            statistic.code                    as "statistic_code!",
+            source_choice.license_shard_class as "license_shard_class!",
+            data_source.code                  as "data_source_code!",
+            source_choice.created             as "created!",
+            source_choice.modified            as "modified!"
         from source_choice
+        join statistic on statistic.id = source_choice.statistic_id
+        join data_source on data_source.id = source_choice.data_source_id
         "#,
     )
     .fetch_all(executor)
