@@ -12,3 +12,4 @@ minimer::impl_from_error!(AppError, shapefile::Error);
 minimer::impl_from_error!(AppError, shapefile::dbase::Error);
 minimer::impl_from_error!(AppError, flatgeobuf::Error);
 minimer::impl_from_error!(AppError, geozero::error::GeozeroError);
+minimer::impl_from_error!(AppError, log::SetLoggerError);

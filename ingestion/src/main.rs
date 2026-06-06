@@ -18,8 +18,10 @@ const REGISTERED_SOURCES: &[DataSourceKind] = &[DataSourceKind::WorldBankWDI];
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     env_logger::builder()
+        .filter_level(log::LevelFilter::Debug)
         .format_source_path(true)
-        .init();
+        .format_timestamp_millis()
+        .try_init()?;
 
     let _ = dotenvy::dotenv();
 
