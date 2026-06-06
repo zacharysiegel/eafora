@@ -71,7 +71,7 @@ pub async fn read_all_statistic_kinds<'e>(
     codes.iter().map(|code| StatisticKind::try_from(code.as_str())).collect()
 }
 
-pub async fn get_latest_revisions(
+pub async fn read_latest_revisions(
     connection: &mut PgConnection,
     data_source_kinds: &BTreeSet<DataSourceKind>,
 ) -> Result<BTreeMap<DataSourceKind, SourceRevision>, AppError> {

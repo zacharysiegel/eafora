@@ -58,7 +58,7 @@ pub async fn build_artifacts(
     }
 
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
-        artifact_db::get_latest_revisions(&mut *connection, &data_source_kinds).await?;
+        artifact_db::read_latest_revisions(&mut *connection, &data_source_kinds).await?;
 
     let geometry: FileReference = if options.test_offline {
         flatgeobuf::write_placeholder_geometry(output_dir)?
