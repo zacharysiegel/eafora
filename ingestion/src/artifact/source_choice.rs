@@ -3,7 +3,7 @@
 //! 1. For each `(region, statistic, license_shard_class)` series, resolve
 //!    the chosen source: per-region override if present, else global default.
 //! 2. Emit the chosen source's value for every period it has. Periods the
-//!    chosen source doesn't cover emit nothing — never mix sources within a
+//!    chosen source doesn't cover emit nothing. Never mix sources within a
 //!    series.
 //! 3. If neither override nor global default exists for a series, error:
 //!    the editorial config is incomplete.
@@ -12,7 +12,6 @@ use std::collections::BTreeMap;
 
 use uuid::Uuid;
 
-use crate::adapter::adapter_model::NaiveDatePeriod;
 use crate::artifact::artifact_model::{CandidateValue, ResolvedValue};
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceChoice, StatisticKind};
 use crate::error::AppError;
@@ -142,6 +141,7 @@ mod tests {
 
     use chrono::{DateTime, Utc};
 
+    use crate::adapter::adapter_model::NaiveDatePeriod;
     use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, StatisticKind};
 
     const REGION_USA: u128 = 1;

@@ -8,6 +8,10 @@ use crate::artifact::SeriesKey;
 use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
+/// One value as it sits in the canonical store: a single source's
+/// reading for a `(region, statistic, period)` cell. Multiple candidates
+/// can exist for the same cell, one per data source that publishes it.
+/// Carries the source's `license_class`; the shard bin isn't decided yet.
 #[derive(Debug, Clone)]
 pub struct CandidateValue {
     pub region_id: Uuid,
@@ -62,6 +66,9 @@ pub struct CountryNameProjection {
     pub name_en: String,
 }
 
+/// A "resolved" `CandidateValue` (after data source selection). Exactly one
+/// `ResolvedValue` per `(region, statistic, period)` cell, drawn from the source
+/// chosen for that series.
 #[derive(Debug, Clone)]
 pub struct ResolvedValue {
     pub region_id: Uuid,
