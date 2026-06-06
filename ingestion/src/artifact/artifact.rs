@@ -52,9 +52,9 @@ pub async fn build_artifacts(
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
         let tmp_shards: Vec<FileReference> = sqlite::write_sqlite_shards(&resolved, output_dir)?;
-        let hashed: Vec<Shard> = content_hashing::hash_shards(tmp_shards)?;
-        log::info!("statistic {:?}: {} resolved values across {} shards", kind, resolved.len(), hashed.len());
-        shards.extend(hashed);
+        let hashed_shards: Vec<Shard> = content_hashing::hash_sqlite_shards(tmp_shards)?;
+        log::info!("statistic {:?}: {} resolved values across {} shards", kind, resolved.len(), hashed_shards.len());
+        shards.extend(hashed_shards);
     }
 
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
