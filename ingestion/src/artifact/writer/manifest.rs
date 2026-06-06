@@ -31,7 +31,7 @@ struct ManifestEntry<'a> {
     sha256: &'a str,
 }
 
-pub fn emit_manifest(
+pub fn write_manifest(
     hashed: &HashedArtifacts,
     version_label: &str,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
@@ -102,7 +102,7 @@ fn relative_url(hashed_file: &Hashed<FileReference>, subdir: &str) -> Result<Str
         .path
         .file_name()
         .and_then(|os| os.to_str())
-        .ok_or_else(|| AppError::from(format!("emit_manifest: bad path {:?}", hashed_file.path)))?;
+        .ok_or_else(|| AppError::from(format!("write_manifest: bad path {:?}", hashed_file.path)))?;
     Ok(format!("{}/{}", subdir, filename))
 }
 
@@ -225,13 +225,13 @@ mod tests {
     }
 
     #[test]
-    fn emit_manifest_writes_file_and_returns_consistent_sha256() {
+    fn write_manifest_writes_file_and_returns_consistent_sha256() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let hashed: HashedArtifacts = make_hashed_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
 
         let manifest: Hashed<FileReference> =
-            emit_manifest(&hashed, "2026-05-18", &data_source_revisions, temp_dir.path()).unwrap();
+            write_manifest(&hashed, "2026-05-18", &data_source_revisions, temp_dir.path()).unwrap();
 
         assert!(manifest.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&manifest.path).unwrap();

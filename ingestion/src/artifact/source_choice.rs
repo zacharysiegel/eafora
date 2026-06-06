@@ -98,6 +98,8 @@ impl SourceChoiceResolver {
     }
 }
 
+/// Resolve data source selection rules to reduce candidate values to only one per
+/// (region, statistic, period) cell
 pub fn resolve_candidates(
     candidates: Vec<CandidateValue>,
     source_choices: &[SourceChoice],

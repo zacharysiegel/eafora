@@ -16,7 +16,7 @@ use uuid::Uuid;
 use ingestion::artifact::{self, BuildOptions, ArtifactBuild};
 use ingestion::artifact::artifact_model::FileReference;
 use ingestion::canonical::canonical_model::DataSourceKind;
-use ingestion::artifact::writer::flatgeobuf::emit_geometry_flatgeobuf;
+use ingestion::artifact::writer::flatgeobuf::write_geometry_flatgeobuf;
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
 use helpers::test_db::test_pool;
@@ -85,13 +85,13 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
 /// `cargo test -p ingestion --test artifact_integration -- --ignored`.
 #[tokio::test]
 #[ignore]
-async fn emit_geometry_flatgeobuf_against_live_natural_earth_release() {
+async fn write_geometry_flatgeobuf_against_live_natural_earth_release() {
     let pool: PgPool = test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let geometry: FileReference =
-        emit_geometry_flatgeobuf(&mut *transaction, temp_dir.path())
+        write_geometry_flatgeobuf(&mut *transaction, temp_dir.path())
             .await
             .expect("geometry shard emitted");
 

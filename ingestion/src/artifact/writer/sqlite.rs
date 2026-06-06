@@ -18,7 +18,7 @@ use crate::error::AppError;
 
 const DATA_SUBDIR: &str = "data";
 
-pub fn emit_sqlite_shards(
+pub fn write_sqlite_shards(
     values: &[ResolvedValue],
     output_dir: &Path,
 ) -> Result<Vec<FileReference>, AppError> {
@@ -153,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn emit_sqlite_shards_creates_one_file_per_statistic_per_license_class() {
+    fn write_sqlite_shards_creates_one_file_per_statistic_per_license_class() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66),
@@ -162,7 +162,7 @@ mod tests {
             make_merged(StatisticKind::TestAlpha, LicenseShardClass::Base, "USA", 2022, 1.85),
         ];
 
-        let shards: Vec<FileReference> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<FileReference> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 3);
         for shard in &shards {
@@ -175,14 +175,14 @@ mod tests {
     }
 
     #[test]
-    fn emit_sqlite_shards_writes_rows_with_expected_schema() {
+    fn write_sqlite_shards_writes_rows_with_expected_schema() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66),
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "JPN", 2022, 1.30),
         ];
 
-        let shards: Vec<FileReference> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<FileReference> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 1);
         let connection: Connection = Connection::open(&shards[0].path).unwrap();
@@ -220,11 +220,11 @@ mod tests {
     }
 
     #[test]
-    fn emit_sqlite_shards_index_is_present() {
+    fn write_sqlite_shards_index_is_present() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66)];
 
-        let shards: Vec<FileReference> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<FileReference> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         let connection: Connection = Connection::open(&shards[0].path).unwrap();
         let index_count: i64 = connection
@@ -238,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn emit_sqlite_shards_uses_correct_filename_format() {
+    fn write_sqlite_shards_uses_correct_filename_format() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![make_merged(
             StatisticKind::Tfr,
@@ -248,7 +248,7 @@ mod tests {
             1.66,
         )];
 
-        let shards: Vec<FileReference> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<FileReference> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         let filename: &str = shards[0].path.file_name().unwrap().to_str().unwrap();
         assert!(filename.starts_with("tfr-share_alike-tmp."));

@@ -38,7 +38,7 @@ const GEOMETRY_FILENAME_STEM: &str = "world-50m";
 
 const ADM0_A3_FIELD: &str = "ADM0_A3";
 
-pub async fn emit_geometry_flatgeobuf<'e>(
+pub async fn write_geometry_flatgeobuf<'e>(
     executor: impl PgExecutor<'e>,
     output_dir: &Path,
 ) -> Result<FileReference, AppError> {
@@ -76,7 +76,7 @@ fn write_flatgeobuf_to_disk(
         };
         let Some(name_en) = iso3_to_name_en.get(&iso3) else {
             log::warn!(
-                "emit_geometry_flatgeobuf: dropping Natural Earth feature with unknown ADM0_A3={}",
+                "write_geometry_flatgeobuf: dropping Natural Earth feature with unknown ADM0_A3={}",
                 iso3,
             );
             continue;
@@ -104,7 +104,7 @@ fn write_flatgeobuf_to_disk(
 
 const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 
-pub fn emit_placeholder_geometry(output_dir: &Path) -> Result<FileReference, AppError> {
+pub fn write_placeholder_geometry(output_dir: &Path) -> Result<FileReference, AppError> {
     let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
     fs::create_dir_all(&geometry_dir)?;
 
