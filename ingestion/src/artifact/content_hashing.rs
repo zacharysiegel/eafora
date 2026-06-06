@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_statistic_shard_hashes_matches_sha256_over_file_bytes() {
+    fn hash_statistic_shards_matches_sha256_over_file_bytes() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, _geometry) = make_shard_files(temp_dir.path());
 
@@ -172,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_statistic_shard_hashes_renames_tmp_files_to_sha8_filenames() {
+    fn hash_statistic_shards_renames_tmp_files_to_sha8_filenames() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, _geometry) = make_shard_files(temp_dir.path());
         let original_shard_path: PathBuf = shards[0].path.clone();
@@ -195,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_geometry_hash_renames_tmp_file_to_sha8_filename() {
+    fn hash_geometry_renames_tmp_file_to_sha8_filename() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (_shards, geometry) = make_shard_files(temp_dir.path());
         let original_geometry_path: PathBuf = geometry.path.clone();
@@ -216,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_statistic_shard_hashes_is_idempotent_in_value_for_same_bytes() {
+    fn hash_statistic_shards_is_idempotent_in_value_for_same_bytes() {
         let temp_dir_one: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards_one, _geometry_one) = make_shard_files(temp_dir_one.path());
 
@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_statistic_shard_hashes_errors_when_file_missing() {
+    fn hash_statistic_shards_errors_when_file_missing() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let shards: Vec<FileReference> = vec![FileReference {
             path: temp_dir.path().join("missing-base-tmp.deadbeef.sqlite"),
