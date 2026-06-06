@@ -102,7 +102,7 @@ fn relative_url(hashed_file: &Hashed<FileReference>, subdir: &str) -> Result<Str
         .path
         .file_name()
         .and_then(|os| os.to_str())
-        .ok_or_else(|| AppError::from(format!("write_manifest: bad path {:?}", hashed_file.path)))?;
+        .ok_or_else(|| AppError::from(format!("bad path {:?}", hashed_file.path)))?;
     Ok(format!("{}/{}", subdir, filename))
 }
 

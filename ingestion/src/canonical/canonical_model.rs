@@ -237,7 +237,7 @@ impl TryFrom<&str> for StatisticKind {
             "tfr" => Ok(StatisticKind::Tfr),
             #[cfg(test)]
             "_test_alpha" => Ok(StatisticKind::TestAlpha),
-            other => Err(AppError::from(format!("StatisticKind::try_from: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }
 }
@@ -276,7 +276,7 @@ impl TryFrom<&str> for DataSourceKind {
             "_test_alpha" => Ok(DataSourceKind::TestAlpha),
             #[cfg(test)]
             "_test_beta" => Ok(DataSourceKind::TestBeta),
-            other => Err(AppError::from(format!("DataSourceKind::try_from: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }
 }
@@ -315,7 +315,7 @@ impl TryFrom<&str> for DataStatus {
             "projection" => Ok(DataStatus::Projection),
             "imputed" => Ok(DataStatus::Imputed),
             "interpolated" => Ok(DataStatus::Interpolated),
-            other => Err(AppError::from(format!("DataStatus::try_from: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }
 }
@@ -348,7 +348,7 @@ impl TryFrom<&str> for LicenseClass {
             "attribution" => Ok(LicenseClass::Attribution),
             "attribution_share_alike" => Ok(LicenseClass::AttributionShareAlike),
             "noncommercial" => Ok(LicenseClass::NonCommercial),
-            other => Err(AppError::from(format!("LicenseClass::try_from: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }
 }
@@ -386,7 +386,7 @@ impl TryFrom<&str> for LicenseShardClass {
             "base" => Ok(LicenseShardClass::Base),
             "share_alike" => Ok(LicenseShardClass::ShareAlike),
             "noncommercial" => Ok(LicenseShardClass::NonCommercial),
-            other => Err(AppError::from(format!("LicenseShardClass::try_from: unknown value {:?}", other))),
+            other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }
 }

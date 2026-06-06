@@ -21,9 +21,9 @@ pub struct NaiveDatePeriod {
 impl NaiveDatePeriod {
     pub fn from_year(year: i32) -> Result<NaiveDatePeriod, AppError> {
         let start: NaiveDate = NaiveDate::from_ymd_opt(year, 1, 1)
-            .ok_or_else(|| AppError::from(format!("NaiveDatePeriod::from_year: invalid year {}", year)))?;
+            .ok_or_else(|| AppError::from(format!("invalid year {}", year)))?;
         let end: NaiveDate = NaiveDate::from_ymd_opt(year + 1, 1, 1).ok_or_else(|| {
-            AppError::from(format!("NaiveDatePeriod::from_year: invalid year+1 from {}", year))
+            AppError::from(format!("invalid year+1 from {}", year))
         })?;
         Ok(NaiveDatePeriod { start, end })
     }

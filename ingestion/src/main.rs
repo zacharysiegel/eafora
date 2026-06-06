@@ -95,7 +95,7 @@ async fn dispatch_all() -> Result<(), AppError> {
 
     if failure_count > 0 {
         return Err(AppError::from(format!(
-            "all: {failure_count} of {} adapters failed",
+            "{failure_count} of {} adapters failed",
             REGISTERED_SOURCES.len(),
         )));
     }

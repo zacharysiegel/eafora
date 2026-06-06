@@ -12,7 +12,7 @@ pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, App
     let response: reqwest::Response = reqwest::get(WB_WDI_API_URL).await?;
     if !response.status().is_success() {
         return Err(AppError::from(format!(
-            "wb_wdi: fetch_upstream: status {} from {}",
+            "status {} from {}",
             response.status(),
             WB_WDI_API_URL,
         )));
@@ -43,7 +43,7 @@ pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, 
 fn parse_row(raw_wdi_statistic_value: &WdiStatisticValue) -> Result<ParsedWdiStatisticValue, AppError> {
     let year: i32 = raw_wdi_statistic_value.date.parse::<i32>().map_err(|err| {
         AppError::from(format!(
-            "wb_wdi: parse_row: non-numeric date {:?} for {}: {}",
+            "non-numeric date {:?} for {}: {}",
             raw_wdi_statistic_value.date, raw_wdi_statistic_value.countryiso3code, err,
         ))
     })?;

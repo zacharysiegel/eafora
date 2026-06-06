@@ -62,7 +62,7 @@ fn rename_to_content_hashed(tmp_file: FileReference, sha256_hex: &str) -> Result
     let new_path: PathBuf = build_hashed_path(&tmp_file.path, sha256_hex)?;
     fs::rename(&tmp_file.path, &new_path).map_err(|err| {
         AppError::from(format!(
-            "compute_content_hashes: rename {:?} -> {:?}: {}",
+            "rename {:?} -> {:?}: {}",
             tmp_file.path, new_path, err,
         ))
     })?;
@@ -77,27 +77,27 @@ fn rename_to_content_hashed(tmp_file: FileReference, sha256_hex: &str) -> Result
 
 fn build_hashed_path(tmp_path: &Path, sha256_hex: &str) -> Result<PathBuf, AppError> {
     let parent: &Path = tmp_path.parent().ok_or_else(|| {
-        AppError::from(format!("compute_content_hashes: no parent for {:?}", tmp_path))
+        AppError::from(format!("no parent for {:?}", tmp_path))
     })?;
     let filename: &str = tmp_path
         .file_name()
         .and_then(|os| os.to_str())
-        .ok_or_else(|| AppError::from(format!("compute_content_hashes: bad filename {:?}", tmp_path)))?;
+        .ok_or_else(|| AppError::from(format!("bad filename {:?}", tmp_path)))?;
 
     let (name_part, extension): (&str, &str) = filename
         .rsplit_once('.')
-        .ok_or_else(|| AppError::from(format!("compute_content_hashes: no extension in {:?}", filename)))?;
+        .ok_or_else(|| AppError::from(format!("no extension in {:?}", filename)))?;
 
     let stem_without_uuid: &str = trim_tmp_uuid_segment(name_part).ok_or_else(|| {
         AppError::from(format!(
-            "compute_content_hashes: filename {:?} missing -tmp.<uuid> segment",
+            "filename {:?} missing -tmp.<uuid> segment",
             filename,
         ))
     })?;
 
     let sha_prefix: &str = sha256_hex
         .get(..SHA_PREFIX_LEN)
-        .ok_or_else(|| AppError::from(format!("compute_content_hashes: short hash {}", sha256_hex)))?;
+        .ok_or_else(|| AppError::from(format!("short hash {}", sha256_hex)))?;
 
     Ok(parent.join(format!("{}-{}.{}", stem_without_uuid, sha_prefix, extension)))
 }
@@ -111,20 +111,20 @@ fn parse_statistic_shard_filename(path: &Path) -> Result<(StatisticKind, License
     let filename: &str = path
         .file_name()
         .and_then(|os| os.to_str())
-        .ok_or_else(|| AppError::from(format!("parse_statistic_shard_filename: bad path {:?}", path)))?;
+        .ok_or_else(|| AppError::from(format!("bad path {:?}", path)))?;
 
     let stem: &str = filename.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(filename);
     let stem_without_uuid: &str =
         trim_tmp_uuid_segment(stem).ok_or_else(|| {
             AppError::from(format!(
-                "parse_statistic_shard_filename: missing -tmp. in {}",
+                "missing -tmp. in {}",
                 filename,
             ))
         })?;
 
     let (statistic_code, license_part): (&str, &str) = stem_without_uuid
         .rsplit_once('-')
-        .ok_or_else(|| AppError::from(format!("parse_statistic_shard_filename: no license suffix in {}", filename)))?;
+        .ok_or_else(|| AppError::from(format!("no license suffix in {}", filename)))?;
 
     let statistic_kind: StatisticKind = StatisticKind::try_from(statistic_code)?;
     let license_shard_class: LicenseShardClass = LicenseShardClass::try_from(license_part)?;

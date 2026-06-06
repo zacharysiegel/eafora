@@ -26,7 +26,7 @@ pub async fn normalize(
             .await?
             .ok_or_else(|| {
                 AppError::from(format!(
-                    "wb_wdi: statistic {:?} missing from canonical store (run dbmate up)",
+                    "statistic {:?} missing from canonical store (run dbmate up)",
                     StatisticKind::Tfr.code(),
                 ))
             })?;
@@ -51,7 +51,7 @@ async fn normalize_row(
     let Some(value) = parsed_wdi_statistic_value.value else {
         return Ok(NormalizeOutcome::Warned(IngestWarning {
             kind: IngestWarningKind::NotApplicableValue,
-            message: format!("wb_wdi: NA value for {} {}", parsed_wdi_statistic_value.iso3, parsed_wdi_statistic_value.year),
+            message: format!("NA value for {} {}", parsed_wdi_statistic_value.iso3, parsed_wdi_statistic_value.year),
         }));
     };
     let Some(country): Option<Country> = canonical_db::find_country_by_iso3(&mut *connection, &parsed_wdi_statistic_value.iso3).await? else {
@@ -81,7 +81,7 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         .await?
         .ok_or_else(|| {
             AppError::from(format!(
-                "wb_wdi: data_source {:?} missing from canonical store",
+                "data_source {:?} missing from canonical store",
                 DataSourceKind::WorldBankWDI,
             ))
         })?;

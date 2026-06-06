@@ -81,10 +81,10 @@ async fn read_data_source_revisions(
     for kind in kinds {
         let data_source = canonical_db::find_data_source_by_kind(&mut *connection, kind)
             .await?
-            .ok_or_else(|| AppError::from(format!("read_data_source_revisions: data_source {:?} missing from canonical store", kind)))?;
+            .ok_or_else(|| AppError::from(format!("data_source {:?} missing from canonical store", kind)))?;
         let revision = ingest_db::read_latest_publication(&mut *connection, data_source.id)
             .await?
-            .ok_or_else(|| AppError::from(format!("read_data_source_revisions: no publication recorded for {:?}", kind)))?;
+            .ok_or_else(|| AppError::from(format!("no publication recorded for {:?}", kind)))?;
         revisions.insert(kind, revision);
     }
 
