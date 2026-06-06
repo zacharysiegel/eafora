@@ -28,14 +28,14 @@ pub async fn build_artifacts(
 ) -> Result<ArtifactBuild, AppError> {
     let started: Instant = Instant::now();
     log::info!(
-        "build_artifacts: starting version_label={} output_dir={:?}",
+        "starting version_label={} output_dir={:?}",
         version_label, output_dir,
     );
 
     fs::create_dir_all(output_dir)?;
 
     let candidate_values: Vec<CandidateValue> = artifact_db::read_candidate_values(&mut *connection).await?;
-    log::info!("build_artifacts: read {} candidate values", candidate_values.len());
+    log::info!("read {} candidate values", candidate_values.len());
 
     warn_on_statistics_without_values(&mut *connection, &candidate_values).await?;
 
@@ -43,23 +43,23 @@ pub async fn build_artifacts(
         read_data_source_revisions(&mut *connection, &candidate_values).await?;
     let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
     let resolved_values: Vec<ResolvedValue> = source_choice::resolve_candidates(candidate_values, &source_choices)?;
-    log::info!("build_artifacts: merged into {} values", resolved_values.len());
+    log::info!("merged into {} values", resolved_values.len());
 
     let sqlite_shards: Vec<FileReference> = sqlite::write_sqlite_shards(&resolved_values, output_dir)?;
-    log::info!("build_artifacts: wrote {} sqlite shards", sqlite_shards.len());
+    log::info!("wrote {} sqlite shards", sqlite_shards.len());
 
     let geometry: FileReference = if options.test_offline {
         flatgeobuf::write_placeholder_geometry(output_dir)?
     } else {
         flatgeobuf::write_geometry_flatgeobuf(&mut *connection, output_dir).await?
     };
-    log::info!("build_artifacts: wrote geometry {:?}", geometry.path);
+    log::info!("wrote geometry {:?}", geometry.path);
 
     let artifacts: HashedArtifacts = content_hashing::compute_content_hashes(sqlite_shards, geometry)?;
     let manifest: Hashed<FileReference> = manifest::write_manifest(&artifacts, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(
-        "build_artifacts: complete in {:?}; manifest sha256={}",
+        "complete in {:?}; manifest sha256={}",
         started.elapsed(), manifest.sha256_hex,
     );
 
@@ -104,7 +104,7 @@ async fn warn_on_statistics_without_values<'e>(
     for kind in &known_kinds {
         if !kinds_with_values.contains(kind) {
             log::warn!(
-                "build_artifacts: statistic {:?} has no candidate values; shard will be missing from this build",
+                "statistic {:?} has no candidate values; shard will be missing from this build",
                 kind,
             );
         }

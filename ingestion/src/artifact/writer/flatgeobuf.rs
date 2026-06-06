@@ -76,7 +76,7 @@ fn write_flatgeobuf_to_disk(
         };
         let Some(name_en) = iso3_to_name_en.get(&iso3) else {
             log::warn!(
-                "write_geometry_flatgeobuf: dropping Natural Earth feature with unknown ADM0_A3={}",
+                "dropping Natural Earth feature with unknown ADM0_A3={}",
                 iso3,
             );
             continue;

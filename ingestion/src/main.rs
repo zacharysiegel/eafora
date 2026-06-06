@@ -17,7 +17,10 @@ const REGISTERED_SOURCES: &[DataSourceKind] = &[DataSourceKind::WorldBankWDI];
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
-    env_logger::init();
+    env_logger::builder()
+        .format_source_path(true)
+        .init();
+
     let _ = dotenvy::dotenv();
 
     let matches: ArgMatches = build_cli().get_matches();
