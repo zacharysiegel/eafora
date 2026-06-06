@@ -116,21 +116,21 @@ impl<T> Deref for Hashed<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Shard {
+pub struct StatisticShard {
     pub statistic_kind: StatisticKind,
     pub license_shard_class: LicenseShardClass,
     pub hashed_file: Hashed<FileReference>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ShardKey {
+pub struct StatisticShardKey {
     pub statistic_kind: StatisticKind,
     pub license_shard_class: LicenseShardClass,
 }
 
-impl ShardKey {
+impl StatisticShardKey {
     pub fn from_resolved(resolved: &ResolvedValue) -> Self {
-        ShardKey {
+        StatisticShardKey {
             statistic_kind: resolved.statistic_kind,
             license_shard_class: resolved.license_shard_class,
         }
@@ -139,7 +139,7 @@ impl ShardKey {
 
 #[derive(Debug, Clone)]
 pub struct Artifacts {
-    pub shards: Vec<Shard>,
+    pub shards: Vec<StatisticShard>,
     pub geometry: Hashed<FileReference>,
     pub manifest: Hashed<FileReference>,
 }

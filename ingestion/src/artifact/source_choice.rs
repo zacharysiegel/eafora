@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use uuid::Uuid;
 
-use crate::artifact::artifact_model::{CandidateValue, ResolvedValue, ShardKey};
+use crate::artifact::artifact_model::{CandidateValue, ResolvedValue, StatisticShardKey};
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceChoice, StatisticKind};
 use crate::error::AppError;
 
@@ -37,13 +37,13 @@ impl SeriesKey {
 
 struct SourceChoiceResolver {
     overrides: BTreeMap<SeriesKey, DataSourceKind>,
-    globals: BTreeMap<ShardKey, DataSourceKind>,
+    globals: BTreeMap<StatisticShardKey, DataSourceKind>,
 }
 
 impl SourceChoiceResolver {
     fn from_slice(source_choices: &[SourceChoice]) -> Self {
         let mut overrides: BTreeMap<SeriesKey, DataSourceKind> = BTreeMap::new();
-        let mut globals: BTreeMap<ShardKey, DataSourceKind> = BTreeMap::new();
+        let mut globals: BTreeMap<StatisticShardKey, DataSourceKind> = BTreeMap::new();
         for choice in source_choices {
             match choice.region_id {
                 Some(region_id) => {
@@ -58,7 +58,7 @@ impl SourceChoiceResolver {
                 }
                 None => {
                     globals.insert(
-                        ShardKey {
+                        StatisticShardKey {
                             statistic_kind: choice.statistic_kind,
                             license_shard_class: choice.license_shard_class,
                         },
@@ -74,13 +74,13 @@ impl SourceChoiceResolver {
         self.overrides
             .get(&series_key)
             .copied()
-            .or_else(|| self.choose_default(ShardKey {
+            .or_else(|| self.choose_default(StatisticShardKey {
                 statistic_kind: series_key.statistic_kind,
                 license_shard_class: series_key.license_shard_class,
             }))
     }
 
-    fn choose_default(&self, shard_key: ShardKey) -> Option<DataSourceKind> {
+    fn choose_default(&self, shard_key: StatisticShardKey) -> Option<DataSourceKind> {
         self.globals.get(&shard_key).copied()
     }
 }

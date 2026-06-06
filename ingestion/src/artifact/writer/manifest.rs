@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::artifact::content_hashing;
-use crate::artifact::artifact_model::{FileReference, Hashed, Shard};
+use crate::artifact::artifact_model::{FileReference, Hashed, StatisticShard};
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 
@@ -32,7 +32,7 @@ struct ManifestEntry<'a> {
 }
 
 pub fn write_manifest(
-    shards: &[Shard],
+    shards: &[StatisticShard],
     geometry: &Hashed<FileReference>,
     version_label: &str,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
@@ -54,7 +54,7 @@ pub fn write_manifest(
 }
 
 fn build_manifest_json(
-    shards: &[Shard],
+    shards: &[StatisticShard],
     geometry: &Hashed<FileReference>,
     version_label: &str,
     artifact_created: &DateTime<Utc>,
@@ -109,12 +109,12 @@ fn relative_url(hashed_file: &Hashed<FileReference>, subdir: &str) -> Result<Str
 mod tests {
     use super::*;
 
-    use crate::artifact::artifact_model::Shard;
+    use crate::artifact::artifact_model::StatisticShard;
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 
-    fn make_pre_manifest_artifacts() -> (Vec<Shard>, Hashed<FileReference>) {
-        let shards: Vec<Shard> = vec![
-            Shard {
+    fn make_pre_manifest_artifacts() -> (Vec<StatisticShard>, Hashed<FileReference>) {
+        let shards: Vec<StatisticShard> = vec![
+            StatisticShard {
                 statistic_kind: StatisticKind::Tfr,
                 license_shard_class: LicenseShardClass::Base,
                 hashed_file: Hashed {
@@ -125,7 +125,7 @@ mod tests {
                     sha256_hex: "ef561234".repeat(8),
                 },
             },
-            Shard {
+            StatisticShard {
                 statistic_kind: StatisticKind::Tfr,
                 license_shard_class: LicenseShardClass::NonCommercial,
                 hashed_file: Hashed {
@@ -136,7 +136,7 @@ mod tests {
                     sha256_hex: "78ab9012".repeat(8),
                 },
             },
-            Shard {
+            StatisticShard {
                 statistic_kind: StatisticKind::TestAlpha,
                 license_shard_class: LicenseShardClass::Base,
                 hashed_file: Hashed {

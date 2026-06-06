@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{FileReference, Hashed, Shard};
+use crate::artifact::artifact_model::{FileReference, Hashed, StatisticShard};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
@@ -17,14 +17,14 @@ const SHA_PREFIX_LEN: usize = 8;
 
 pub fn hash_sqlite_shards(
     shards: Vec<FileReference>,
-) -> Result<Vec<Shard>, AppError> {
+) -> Result<Vec<StatisticShard>, AppError> {
     shards
         .into_iter()
         .map(|tmp_file| {
             let (statistic_kind, license_shard_class) = parse_statistic_shard_filename(&tmp_file.path)?;
             let sha256_hex: String = sha256_hex_of_file(&tmp_file.path)?;
             let renamed: Hashed<FileReference> = rename_to_content_hashed(tmp_file, &sha256_hex)?;
-            Ok(Shard {
+            Ok(StatisticShard {
                 statistic_kind,
                 license_shard_class,
                 hashed_file: renamed,
@@ -167,7 +167,7 @@ mod tests {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, _geometry) = make_shard_files(temp_dir.path());
 
-        let shards: Vec<Shard> = hash_sqlite_shards(shards).unwrap();
+        let shards: Vec<StatisticShard> = hash_sqlite_shards(shards).unwrap();
 
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
@@ -181,7 +181,7 @@ mod tests {
         let (shards, _geometry) = make_shard_files(temp_dir.path());
         let original_shard_path: PathBuf = shards[0].path.clone();
 
-        let shards: Vec<Shard> = hash_sqlite_shards(shards).unwrap();
+        let shards: Vec<StatisticShard> = hash_sqlite_shards(shards).unwrap();
 
         assert!(!original_shard_path.exists());
         assert!(shards[0].hashed_file.path.exists());
@@ -227,8 +227,8 @@ mod tests {
         let temp_dir_two: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards_two, _geometry_two) = make_shard_files(temp_dir_two.path());
 
-        let shards_one: Vec<Shard> = hash_sqlite_shards(shards_one).unwrap();
-        let shards_two: Vec<Shard> = hash_sqlite_shards(shards_two).unwrap();
+        let shards_one: Vec<StatisticShard> = hash_sqlite_shards(shards_one).unwrap();
+        let shards_two: Vec<StatisticShard> = hash_sqlite_shards(shards_two).unwrap();
 
         assert_eq!(
             shards_one[0].hashed_file.sha256_hex,

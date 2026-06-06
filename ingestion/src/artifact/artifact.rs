@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use sqlx::PgConnection;
 
-use crate::artifact::{artifact_db, content_hashing, source_choice, Shard};
+use crate::artifact::{artifact_db, content_hashing, source_choice, StatisticShard};
 use crate::artifact::artifact_model::{
     ArtifactBuildReport, Artifacts, CandidateValue, FileReference, Hashed, ResolvedValue,
 };
@@ -36,7 +36,7 @@ pub async fn build_artifacts(
     let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
     let statistic_kinds: Vec<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
-    let mut shards: Vec<Shard> = Vec::new();
+    let mut shards: Vec<StatisticShard> = Vec::new();
     let mut data_sources: BTreeSet<DataSourceKind> = BTreeSet::new();
 
     for kind in statistic_kinds {
@@ -52,7 +52,7 @@ pub async fn build_artifacts(
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
         let tmp_shards: Vec<FileReference> = sqlite::write_sqlite_shards(&resolved, output_dir)?;
-        let hashed_shards: Vec<Shard> = content_hashing::hash_sqlite_shards(tmp_shards)?;
+        let hashed_shards: Vec<StatisticShard> = content_hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!("statistic {:?}: {} resolved values across {} shards", kind, resolved.len(), hashed_shards.len());
         shards.extend(hashed_shards);
     }
