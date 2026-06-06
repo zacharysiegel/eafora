@@ -4,7 +4,6 @@ use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
-use crate::artifact::SeriesKey;
 use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
@@ -99,37 +98,37 @@ impl ResolvedValue {
 }
 
 #[derive(Debug, Clone)]
-pub struct ShardOutput {
+pub struct TmpFile {
     pub path: PathBuf,
     pub byte_count: u64,
 }
 
 #[derive(Debug, Clone)]
-pub struct HashedOutputs {
-    pub statistic_shards: Vec<HashedStatisticShard>,
-    pub geometry_shard: HashedShard,
-}
-
-#[derive(Debug, Clone)]
-pub struct HashedStatisticShard {
-    pub statistic_code: String,
-    pub license_shard_class: LicenseShardClass,
-    pub shard: HashedShard,
-}
-
-#[derive(Debug, Clone)]
-pub struct HashedShard {
+pub struct HashedFile {
     pub path: PathBuf,
     pub byte_count: u64,
     pub sha256_hex: String,
 }
 
 #[derive(Debug, Clone)]
-pub struct LocalArtifactBuild {
+pub struct StatisticShard {
+    pub statistic_kind: StatisticKind,
+    pub license_shard_class: LicenseShardClass,
+    pub file: HashedFile,
+}
+
+#[derive(Debug, Clone)]
+pub struct HashedArtifacts {
+    pub statistic_shards: Vec<StatisticShard>,
+    pub geometry: HashedFile,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArtifactBuild {
     pub output_dir: PathBuf,
     pub version_label: String,
-    pub hashed: HashedOutputs,
-    pub manifest: HashedShard,
+    pub artifacts: HashedArtifacts,
+    pub manifest: HashedFile,
 }
 
 #[derive(Debug, Clone)]

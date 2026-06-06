@@ -7,10 +7,9 @@ use sqlx::{PgConnection, PgExecutor};
 
 use crate::artifact::{artifact_db, content_hashing, source_choice};
 use crate::artifact::artifact_model::{
-    CandidateValue, HashedOutputs, HashedShard, LocalArtifactBuild, ResolvedValue, ShardOutput,
+    ArtifactBuild, CandidateValue, HashedArtifacts, HashedFile, ResolvedValue, TmpFile,
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
-use crate::artifact::writer::manifest::HashedManifest;
 use crate::canonical::canonical_db;
 use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision, StatisticKind};
 use crate::error::AppError;
@@ -26,7 +25,7 @@ pub async fn build_artifacts(
     output_dir: &Path,
     version_label: &str,
     options: BuildOptions,
-) -> Result<LocalArtifactBuild, AppError> {
+) -> Result<ArtifactBuild, AppError> {
     let started: Instant = Instant::now();
     log::info!(
         "build_artifacts: starting version_label={} output_dir={:?}",
@@ -46,36 +45,29 @@ pub async fn build_artifacts(
     let resolved_values: Vec<ResolvedValue> = source_choice::resolve_candidates(candidate_values, &source_choices)?;
     log::info!("build_artifacts: merged into {} values", resolved_values.len());
 
-    let sqlite_shards: Vec<ShardOutput> = sqlite::emit_sqlite_shards(&resolved_values, output_dir)?;
+    let sqlite_shards: Vec<TmpFile> = sqlite::emit_sqlite_shards(&resolved_values, output_dir)?;
     log::info!("build_artifacts: emitted {} sqlite shards", sqlite_shards.len());
 
-    let geometry_shard: ShardOutput = if options.test_offline {
+    let geometry: TmpFile = if options.test_offline {
         flatgeobuf::emit_placeholder_geometry(output_dir)?
     } else {
         flatgeobuf::emit_geometry_flatgeobuf(&mut *connection, output_dir).await?
     };
-    log::info!("build_artifacts: emitted geometry shard {:?}", geometry_shard.path);
+    log::info!("build_artifacts: emitted geometry {:?}", geometry.path);
 
-    let hashed: HashedOutputs = content_hashing::compute_content_hashes(sqlite_shards, geometry_shard)?;
-
-    let hashed_manifest: HashedManifest =
-        manifest::emit_manifest(&hashed, version_label, &data_source_revisions, output_dir)?;
-    let manifest_shard: HashedShard = HashedShard {
-        path: hashed_manifest.output.path,
-        byte_count: hashed_manifest.output.byte_count,
-        sha256_hex: hashed_manifest.sha256_hex,
-    };
+    let artifacts: HashedArtifacts = content_hashing::compute_content_hashes(sqlite_shards, geometry)?;
+    let manifest: HashedFile = manifest::emit_manifest(&artifacts, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(
         "build_artifacts: complete in {:?}; manifest sha256={}",
-        started.elapsed(), manifest_shard.sha256_hex,
+        started.elapsed(), manifest.sha256_hex,
     );
 
-    Ok(LocalArtifactBuild {
+    Ok(ArtifactBuild {
         output_dir: output_dir.to_path_buf(),
         version_label: version_label.to_string(),
-        hashed,
-        manifest: manifest_shard,
+        artifacts,
+        manifest,
     })
 }
 

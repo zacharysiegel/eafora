@@ -28,7 +28,7 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::artifact::artifact_db;
-use crate::artifact::artifact_model::ShardOutput;
+use crate::artifact::artifact_model::TmpFile;
 use crate::error::AppError;
 use crate::geometry::natural_earth::{self, ShapefileBytes};
 
@@ -41,7 +41,7 @@ const ADM0_A3_FIELD: &str = "ADM0_A3";
 pub async fn emit_geometry_flatgeobuf<'e>(
     executor: impl PgExecutor<'e>,
     output_dir: &Path,
-) -> Result<ShardOutput, AppError> {
+) -> Result<TmpFile, AppError> {
     let iso3_to_name_en: BTreeMap<String, String> =
         artifact_db::read_country_iso3_to_name_en(executor).await?;
 
@@ -55,7 +55,7 @@ fn write_flatgeobuf_to_disk(
     shapefile_bytes: &ShapefileBytes,
     iso3_to_name_en: &BTreeMap<String, String>,
     output_dir: &Path,
-) -> Result<ShardOutput, AppError> {
+) -> Result<TmpFile, AppError> {
     let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
     fs::create_dir_all(&geometry_dir)?;
 
@@ -99,12 +99,12 @@ fn write_flatgeobuf_to_disk(
 
     let byte_count: u64 = fs::metadata(&path)?.len();
 
-    Ok(ShardOutput { path, byte_count })
+    Ok(TmpFile { path, byte_count })
 }
 
 const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 
-pub fn emit_placeholder_geometry(output_dir: &Path) -> Result<ShardOutput, AppError> {
+pub fn emit_placeholder_geometry(output_dir: &Path) -> Result<TmpFile, AppError> {
     let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
     fs::create_dir_all(&geometry_dir)?;
 
@@ -112,7 +112,7 @@ pub fn emit_placeholder_geometry(output_dir: &Path) -> Result<ShardOutput, AppEr
     let path: PathBuf = geometry_dir.join(format!("{}-tmp.{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
     fs::write(&path, PLACEHOLDER_GEOMETRY_BYTES)?;
 
-    Ok(ShardOutput {
+    Ok(TmpFile {
         path,
         byte_count: PLACEHOLDER_GEOMETRY_BYTES.len() as u64,
     })
