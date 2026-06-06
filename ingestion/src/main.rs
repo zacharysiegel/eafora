@@ -4,7 +4,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use ingestion::adapter::AdapterOptions;
-use ingestion::artifact::{self, BuildOptions, ArtifactBuild};
+use ingestion::artifact::{self, BuildOptions, ArtifactBuildReport};
 use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::db;
 use ingestion::error::AppError;
@@ -137,7 +137,7 @@ async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
     let pool: PgPool = db::create_pool().await?;
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
     let options: BuildOptions = BuildOptions::default();
-    let build: ArtifactBuild =
+    let build: ArtifactBuildReport =
         artifact::build_artifacts(&mut *transaction, &output_dir, version_label, options).await?;
     transaction.commit().await?;
 

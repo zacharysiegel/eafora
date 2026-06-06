@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use ingestion::artifact::{self, BuildOptions, ArtifactBuild};
+use ingestion::artifact::{self, BuildOptions, ArtifactBuildReport};
 use ingestion::artifact::artifact_model::FileReference;
 use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::artifact::writer::flatgeobuf::write_geometry_flatgeobuf;
@@ -43,7 +43,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let options: BuildOptions = BuildOptions { test_offline: true };
-    let build: ArtifactBuild =
+    let build: ArtifactBuildReport =
         artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-05-26-test", options)
             .await
             .expect("build_artifacts succeeds");

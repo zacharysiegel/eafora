@@ -123,16 +123,16 @@ pub struct StatisticShard {
 }
 
 #[derive(Debug, Clone)]
-pub struct HashedArtifacts {
+pub struct Artifacts {
     pub statistic_shards: Vec<StatisticShard>,
     pub geometry: Hashed<FileReference>,
 }
 
 #[derive(Debug, Clone)]
-pub struct ArtifactBuild {
+pub struct ArtifactBuildReport {
     pub output_dir: PathBuf,
     pub version_label: String,
-    pub artifacts: HashedArtifacts,
+    pub artifacts: Artifacts,
     pub manifest: Hashed<FileReference>,
 }
 

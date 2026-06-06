@@ -7,7 +7,7 @@ use sqlx::{PgConnection, PgExecutor};
 
 use crate::artifact::{artifact_db, content_hashing, source_choice};
 use crate::artifact::artifact_model::{
-    ArtifactBuild, CandidateValue, HashedArtifacts, Hashed, ResolvedValue, FileReference,
+    ArtifactBuildReport, CandidateValue, Artifacts, Hashed, ResolvedValue, FileReference,
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::canonical::canonical_db;
@@ -25,7 +25,7 @@ pub async fn build_artifacts(
     output_dir: &Path,
     version_label: &str,
     options: BuildOptions,
-) -> Result<ArtifactBuild, AppError> {
+) -> Result<ArtifactBuildReport, AppError> {
     let started: Instant = Instant::now();
     log::info!(
         "starting version_label={} output_dir={:?}",
@@ -55,7 +55,7 @@ pub async fn build_artifacts(
     };
     log::info!("wrote geometry {:?}", geometry.path);
 
-    let artifacts: HashedArtifacts = content_hashing::compute_content_hashes(sqlite_shards, geometry)?;
+    let artifacts: Artifacts = content_hashing::compute_content_hashes(sqlite_shards, geometry)?;
     let manifest: Hashed<FileReference> = manifest::write_manifest(&artifacts, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(
@@ -63,7 +63,7 @@ pub async fn build_artifacts(
         started.elapsed(), manifest.sha256_hex,
     );
 
-    Ok(ArtifactBuild {
+    Ok(ArtifactBuildReport {
         output_dir: output_dir.to_path_buf(),
         version_label: version_label.to_string(),
         artifacts,

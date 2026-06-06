@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{FileReference, Hashed, HashedArtifacts};
+use crate::artifact::artifact_model::{FileReference, Hashed, Artifacts};
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 
@@ -32,7 +32,7 @@ struct ManifestEntry<'a> {
 }
 
 pub fn write_manifest(
-    hashed: &HashedArtifacts,
+    hashed: &Artifacts,
     version_label: &str,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
     output_dir: &Path,
@@ -56,7 +56,7 @@ pub fn write_manifest(
 }
 
 fn build_manifest_json(
-    hashed: &HashedArtifacts,
+    hashed: &Artifacts,
     version_label: &str,
     artifact_created: &DateTime<Utc>,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
@@ -121,8 +121,8 @@ mod tests {
     use crate::artifact::artifact_model::StatisticShard;
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 
-    fn make_hashed_artifacts() -> HashedArtifacts {
-        HashedArtifacts {
+    fn make_hashed_artifacts() -> Artifacts {
+        Artifacts {
             statistic_shards: vec![
                 StatisticShard {
                     statistic_kind: StatisticKind::Tfr,
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn build_manifest_json_sorts_statistics_alphabetically() {
-        let hashed: HashedArtifacts = make_hashed_artifacts();
+        let hashed: Artifacts = make_hashed_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
             (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
         ]);
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn build_manifest_json_sorts_license_classes_alphabetically_within_statistic() {
-        let hashed: HashedArtifacts = make_hashed_artifacts();
+        let hashed: Artifacts = make_hashed_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn build_manifest_json_emits_relative_urls_under_geometry_and_data() {
-        let hashed: HashedArtifacts = make_hashed_artifacts();
+        let hashed: Artifacts = make_hashed_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn build_manifest_json_is_deterministic_byte_for_byte() {
-        let hashed: HashedArtifacts = make_hashed_artifacts();
+        let hashed: Artifacts = make_hashed_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
             (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
             (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2026-w20".to_string(), fetched: "2026-05-15T00:00:00Z".parse().unwrap() }),
@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn write_manifest_writes_file_and_returns_consistent_sha256() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let hashed: HashedArtifacts = make_hashed_artifacts();
+        let hashed: Artifacts = make_hashed_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
 
         let manifest: Hashed<FileReference> =

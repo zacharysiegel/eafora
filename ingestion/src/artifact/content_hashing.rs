@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{HashedArtifacts, Hashed, StatisticShard, FileReference};
+use crate::artifact::artifact_model::{Artifacts, Hashed, StatisticShard, FileReference};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
@@ -18,7 +18,7 @@ const SHA_PREFIX_LEN: usize = 8;
 pub fn compute_content_hashes(
     shards: Vec<FileReference>,
     geometry: FileReference,
-) -> Result<HashedArtifacts, AppError> {
+) -> Result<Artifacts, AppError> {
     let mut hash_plan: Vec<(FileReference, String)> = Vec::with_capacity(shards.len() + 1);
 
     for shard in shards.iter().chain(iter::once(&geometry)) {
@@ -44,7 +44,7 @@ pub fn compute_content_hashes(
         })
         .collect::<Result<Vec<StatisticShard>, AppError>>()?;
 
-    Ok(HashedArtifacts {
+    Ok(Artifacts {
         statistic_shards,
         geometry,
     })
@@ -175,7 +175,7 @@ mod tests {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, geometry) = make_shard_files(temp_dir.path());
 
-        let hashed: HashedArtifacts = compute_content_hashes(shards, geometry).unwrap();
+        let hashed: Artifacts = compute_content_hashes(shards, geometry).unwrap();
 
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
@@ -190,7 +190,7 @@ mod tests {
         let original_shard_path: PathBuf = shards[0].path.clone();
         let original_geometry_path: PathBuf = geometry.path.clone();
 
-        let hashed: HashedArtifacts = compute_content_hashes(shards, geometry).unwrap();
+        let hashed: Artifacts = compute_content_hashes(shards, geometry).unwrap();
 
         assert!(!original_shard_path.exists());
         assert!(!original_geometry_path.exists());
@@ -227,8 +227,8 @@ mod tests {
         let temp_dir_two: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards_two, geometry_two) = make_shard_files(temp_dir_two.path());
 
-        let hashed_one: HashedArtifacts = compute_content_hashes(shards_one, geometry_one).unwrap();
-        let hashed_two: HashedArtifacts = compute_content_hashes(shards_two, geometry_two).unwrap();
+        let hashed_one: Artifacts = compute_content_hashes(shards_one, geometry_one).unwrap();
+        let hashed_two: Artifacts = compute_content_hashes(shards_two, geometry_two).unwrap();
 
         assert_eq!(
             hashed_one.statistic_shards[0].hashed_file.sha256_hex,
@@ -252,7 +252,7 @@ mod tests {
             byte_count: 0,
         });
 
-        let result: Result<HashedArtifacts, AppError> = compute_content_hashes(shards, geometry);
+        let result: Result<Artifacts, AppError> = compute_content_hashes(shards, geometry);
 
         assert!(result.is_err());
         assert!(surviving_path.exists());
