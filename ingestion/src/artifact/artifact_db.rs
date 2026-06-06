@@ -8,8 +8,9 @@ use crate::artifact::artifact_model::{
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision, StatisticKind};
 use crate::error::AppError;
 
-pub async fn read_candidate_values<'e>(
+pub async fn read_candidate_values_for_statistic<'e>(
     executor: impl PgExecutor<'e>,
+    statistic_kind: StatisticKind,
 ) -> Result<Vec<CandidateValue>, AppError> {
     let projections: Vec<CandidateValueProjection> = sqlx::query_as!(
         CandidateValueProjection,
@@ -31,7 +32,9 @@ pub async fn read_candidate_values<'e>(
         join data_source on data_source.id = statistic_value.data_source_id
         join data_source_publication on data_source_publication.id = statistic_value.data_source_publication_id
         where statistic_value.superseded is null
+          and statistic.code = $1
         "#,
+        statistic_kind.code(),
     )
     .fetch_all(executor)
     .await?;

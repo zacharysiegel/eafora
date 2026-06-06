@@ -3,11 +3,11 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
-use sqlx::{PgConnection, PgExecutor};
+use sqlx::PgConnection;
 
 use crate::artifact::{artifact_db, content_hashing, source_choice, Shard};
 use crate::artifact::artifact_model::{
-    ArtifactBuildReport, CandidateValue, Artifacts, Hashed, ResolvedValue, FileReference,
+    ArtifactBuildReport, Artifacts, CandidateValue, FileReference, Hashed, ResolvedValue,
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::canonical::canonical_db;
@@ -34,19 +34,32 @@ pub async fn build_artifacts(
 
     fs::create_dir_all(output_dir)?;
 
-    let candidate_values: Vec<CandidateValue> = artifact_db::read_candidate_values(&mut *connection).await?;
-    log::info!("read {} candidate values", candidate_values.len());
+    let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
+    let statistic_kinds: Vec<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
-    warn_on_statistics_without_values(&mut *connection, &candidate_values).await?;
+    let mut shards: Vec<Shard> = Vec::new();
+    let mut data_source_kinds: BTreeSet<DataSourceKind> = BTreeSet::new();
+
+    for kind in statistic_kinds {
+        let candidates: Vec<CandidateValue> =
+            artifact_db::read_candidate_values_for_statistic(&mut *connection, kind).await?;
+        if candidates.is_empty() {
+            log::warn!("statistic {:?} has no candidate values; shard will be missing from this build", kind);
+            continue;
+        }
+        for candidate in &candidates {
+            data_source_kinds.insert(candidate.data_source_kind);
+        }
+
+        let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
+        let tmp_shards: Vec<FileReference> = sqlite::write_sqlite_shards(&resolved, output_dir)?;
+        let hashed: Vec<Shard> = content_hashing::hash_shards(tmp_shards)?;
+        log::info!("statistic {:?}: {} resolved values across {} shards", kind, resolved.len(), hashed.len());
+        shards.extend(hashed);
+    }
 
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
-        read_data_source_revisions(&mut *connection, &candidate_values).await?;
-    let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
-    let resolved_values: Vec<ResolvedValue> = source_choice::resolve_candidates(candidate_values, &source_choices)?;
-    log::info!("merged into {} values", resolved_values.len());
-
-    let sqlite_shards: Vec<FileReference> = sqlite::write_sqlite_shards(&resolved_values, output_dir)?;
-    log::info!("wrote {} sqlite shards", sqlite_shards.len());
+        read_data_source_revisions(&mut *connection, &data_source_kinds).await?;
 
     let geometry: FileReference = if options.test_offline {
         flatgeobuf::write_placeholder_geometry(output_dir)?
@@ -54,10 +67,10 @@ pub async fn build_artifacts(
         flatgeobuf::write_geometry_flatgeobuf(&mut *connection, output_dir).await?
     };
     log::info!("wrote geometry {:?}", geometry.path);
-
-    let shards: Vec<Shard> = content_hashing::hash_shards(sqlite_shards)?;
     let geometry: Hashed<FileReference> = content_hashing::hash_geometry(geometry)?;
-    let manifest: Hashed<FileReference> = manifest::write_manifest(&shards, &geometry, version_label, &data_source_revisions, output_dir)?;
+
+    let manifest: Hashed<FileReference> =
+        manifest::write_manifest(&shards, &geometry, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(
         "complete in {:?}; manifest sha256={}",
@@ -73,41 +86,18 @@ pub async fn build_artifacts(
 
 async fn read_data_source_revisions(
     connection: &mut PgConnection,
-    candidate_values: &[CandidateValue],
+    data_source_kinds: &BTreeSet<DataSourceKind>,
 ) -> Result<BTreeMap<DataSourceKind, SourceRevision>, AppError> {
-    let kinds: BTreeSet<DataSourceKind> = candidate_values.iter().map(|candidate| candidate.data_source_kind).collect();
-
     let mut revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
-    for kind in kinds {
-        let data_source = canonical_db::find_data_source_by_kind(&mut *connection, kind)
+    for kind in data_source_kinds {
+        let data_source = canonical_db::find_data_source_by_kind(&mut *connection, *kind)
             .await?
             .ok_or_else(|| AppError::from(format!("data_source {:?} missing from canonical store", kind)))?;
         let revision = ingest_db::read_latest_publication(&mut *connection, data_source.id)
             .await?
             .ok_or_else(|| AppError::from(format!("no publication recorded for {:?}", kind)))?;
-        revisions.insert(kind, revision);
+        revisions.insert(*kind, revision);
     }
 
     Ok(revisions)
-}
-
-async fn warn_on_statistics_without_values<'e>(
-    executor: impl PgExecutor<'e>,
-    candidates: &[CandidateValue],
-) -> Result<(), AppError> {
-    let known_kinds: Vec<StatisticKind> = artifact_db::read_all_statistic_kinds(executor).await?;
-    let kinds_with_values: BTreeSet<StatisticKind> = candidates
-        .iter()
-        .map(|candidate| candidate.statistic_kind)
-        .collect();
-
-    for kind in &known_kinds {
-        if !kinds_with_values.contains(kind) {
-            log::warn!(
-                "statistic {:?} has no candidate values; shard will be missing from this build",
-                kind,
-            );
-        }
-    }
-    Ok(())
 }
