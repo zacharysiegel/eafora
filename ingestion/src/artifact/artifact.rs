@@ -55,8 +55,8 @@ pub async fn build_artifacts(
     };
     log::info!("wrote geometry {:?}", geometry.path);
 
-    let artifacts: Artifacts = content_hashing::compute_content_hashes(sqlite_shards, geometry)?;
-    let manifest: Hashed<FileReference> = manifest::write_manifest(&artifacts, version_label, &data_source_revisions, output_dir)?;
+    let (statistic_shards, geometry) = content_hashing::compute_content_hashes(sqlite_shards, geometry)?;
+    let manifest: Hashed<FileReference> = manifest::write_manifest(&statistic_shards, &geometry, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(
         "complete in {:?}; manifest sha256={}",
@@ -66,8 +66,7 @@ pub async fn build_artifacts(
     Ok(ArtifactBuildReport {
         output_dir: output_dir.to_path_buf(),
         version_label: version_label.to_string(),
-        artifacts,
-        manifest,
+        artifacts: Artifacts { statistic_shards, geometry, manifest },
     })
 }
 

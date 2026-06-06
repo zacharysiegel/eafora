@@ -126,6 +126,7 @@ pub struct StatisticShard {
 pub struct Artifacts {
     pub statistic_shards: Vec<StatisticShard>,
     pub geometry: Hashed<FileReference>,
+    pub manifest: Hashed<FileReference>,
 }
 
 #[derive(Debug, Clone)]
@@ -133,7 +134,6 @@ pub struct ArtifactBuildReport {
     pub output_dir: PathBuf,
     pub version_label: String,
     pub artifacts: Artifacts,
-    pub manifest: Hashed<FileReference>,
 }
 
 #[derive(Debug, Clone)]

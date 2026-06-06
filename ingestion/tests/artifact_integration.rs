@@ -50,8 +50,8 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
 
     assert_eq!(build.version_label, "2026-05-26-test");
     assert_eq!(build.artifacts.statistic_shards.len(), 1);
-    assert!(build.manifest.path.exists());
-    assert!(build.manifest.path.ends_with("manifest.json"));
+    assert!(build.artifacts.manifest.path.exists());
+    assert!(build.artifacts.manifest.path.ends_with("manifest.json"));
     assert!(build.artifacts.geometry.path.exists());
 
     let tfr_shard_path: PathBuf = build.artifacts.statistic_shards[0].hashed_file.path.clone();
@@ -70,7 +70,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
         .unwrap();
     assert!((value - 1.66).abs() < f64::EPSILON);
 
-    let manifest_text: String = fs::read_to_string(&build.manifest.path).unwrap();
+    let manifest_text: String = fs::read_to_string(&build.artifacts.manifest.path).unwrap();
     let manifest_value: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
     assert_eq!(manifest_value["version"], "2026-05-26-test");
     assert!(manifest_value["statistics"]["tfr"]["base"]["url"].is_string());

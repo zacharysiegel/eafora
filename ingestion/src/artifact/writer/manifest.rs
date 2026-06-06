@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{FileReference, Hashed, Artifacts};
+use crate::artifact::artifact_model::{FileReference, Hashed, StatisticShard};
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 
@@ -32,13 +32,14 @@ struct ManifestEntry<'a> {
 }
 
 pub fn write_manifest(
-    hashed: &Artifacts,
+    statistic_shards: &[StatisticShard],
+    geometry: &Hashed<FileReference>,
     version_label: &str,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
     output_dir: &Path,
 ) -> Result<Hashed<FileReference>, AppError> {
     let artifact_created: DateTime<Utc> = Utc::now();
-    let json: String = build_manifest_json(hashed, version_label, &artifact_created, data_source_revisions)?;
+    let json: String = build_manifest_json(statistic_shards, geometry, version_label, &artifact_created, data_source_revisions)?;
 
     let path: PathBuf = output_dir.join(MANIFEST_FILENAME);
     fs::write(&path, &json)?;
@@ -56,19 +57,20 @@ pub fn write_manifest(
 }
 
 fn build_manifest_json(
-    hashed: &Artifacts,
+    statistic_shards: &[StatisticShard],
+    geometry: &Hashed<FileReference>,
     version_label: &str,
     artifact_created: &DateTime<Utc>,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<String, AppError> {
-    let geometry: ManifestEntry<'_> = ManifestEntry {
-        url: relative_url(&hashed.geometry, "geometry")?,
-        size_bytes: hashed.geometry.byte_count,
-        sha256: &hashed.geometry.sha256_hex,
+    let geometry_entry: ManifestEntry<'_> = ManifestEntry {
+        url: relative_url(geometry, "geometry")?,
+        size_bytes: geometry.byte_count,
+        sha256: &geometry.sha256_hex,
     };
 
     let mut statistics: BTreeMap<&str, BTreeMap<&str, ManifestEntry<'_>>> = BTreeMap::new();
-    for statistic_shard in &hashed.statistic_shards {
+    for statistic_shard in statistic_shards {
         let entry: ManifestEntry<'_> = ManifestEntry {
             url: relative_url(&statistic_shard.hashed_file, "data")?,
             size_bytes: statistic_shard.hashed_file.byte_count,
@@ -88,7 +90,7 @@ fn build_manifest_json(
     let manifest: ManifestSerializer<'_> = ManifestSerializer {
         version: version_label,
         artifact_created: artifact_created.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
-        geometry,
+        geometry: geometry_entry,
         statistics,
         source_revisions,
     };
@@ -121,62 +123,61 @@ mod tests {
     use crate::artifact::artifact_model::StatisticShard;
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 
-    fn make_hashed_artifacts() -> Artifacts {
-        Artifacts {
-            statistic_shards: vec![
-                StatisticShard {
-                    statistic_kind: StatisticKind::Tfr,
-                    license_shard_class: LicenseShardClass::Base,
-                    hashed_file: Hashed {
-                        inner: FileReference {
-                            path: PathBuf::from("/tmp/eafora/data/tfr-base-ef561234.sqlite"),
-                            byte_count: 89000,
-                        },
-                        sha256_hex: "ef561234".repeat(8),
+    fn make_pre_manifest_artifacts() -> (Vec<StatisticShard>, Hashed<FileReference>) {
+        let statistic_shards: Vec<StatisticShard> = vec![
+            StatisticShard {
+                statistic_kind: StatisticKind::Tfr,
+                license_shard_class: LicenseShardClass::Base,
+                hashed_file: Hashed {
+                    inner: FileReference {
+                        path: PathBuf::from("/tmp/eafora/data/tfr-base-ef561234.sqlite"),
+                        byte_count: 89000,
                     },
+                    sha256_hex: "ef561234".repeat(8),
                 },
-                StatisticShard {
-                    statistic_kind: StatisticKind::Tfr,
-                    license_shard_class: LicenseShardClass::NonCommercial,
-                    hashed_file: Hashed {
-                        inner: FileReference {
-                            path: PathBuf::from("/tmp/eafora/data/tfr-noncommercial-78ab9012.sqlite"),
-                            byte_count: 4200,
-                        },
-                        sha256_hex: "78ab9012".repeat(8),
-                    },
-                },
-                StatisticShard {
-                    statistic_kind: StatisticKind::TestAlpha,
-                    license_shard_class: LicenseShardClass::Base,
-                    hashed_file: Hashed {
-                        inner: FileReference {
-                            path: PathBuf::from("/tmp/eafora/data/_test_alpha-base-cccc1111.sqlite"),
-                            byte_count: 50000,
-                        },
-                        sha256_hex: "cccc1111".repeat(8),
-                    },
-                },
-            ],
-            geometry: Hashed {
-                inner: FileReference {
-                    path: PathBuf::from("/tmp/eafora/geometry/world-50m-ab12cd34.fgb"),
-                    byte_count: 4380000,
-                },
-                sha256_hex: "ab12cd34".repeat(8),
             },
-        }
+            StatisticShard {
+                statistic_kind: StatisticKind::Tfr,
+                license_shard_class: LicenseShardClass::NonCommercial,
+                hashed_file: Hashed {
+                    inner: FileReference {
+                        path: PathBuf::from("/tmp/eafora/data/tfr-noncommercial-78ab9012.sqlite"),
+                        byte_count: 4200,
+                    },
+                    sha256_hex: "78ab9012".repeat(8),
+                },
+            },
+            StatisticShard {
+                statistic_kind: StatisticKind::TestAlpha,
+                license_shard_class: LicenseShardClass::Base,
+                hashed_file: Hashed {
+                    inner: FileReference {
+                        path: PathBuf::from("/tmp/eafora/data/_test_alpha-base-cccc1111.sqlite"),
+                        byte_count: 50000,
+                    },
+                    sha256_hex: "cccc1111".repeat(8),
+                },
+            },
+        ];
+        let geometry: Hashed<FileReference> = Hashed {
+            inner: FileReference {
+                path: PathBuf::from("/tmp/eafora/geometry/world-50m-ab12cd34.fgb"),
+                byte_count: 4380000,
+            },
+            sha256_hex: "ab12cd34".repeat(8),
+        };
+        (statistic_shards, geometry)
     }
 
     #[test]
     fn build_manifest_json_sorts_statistics_alphabetically() {
-        let hashed: Artifacts = make_hashed_artifacts();
+        let (statistic_shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
             (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&statistic_shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
         let test_alpha_position: usize = json.find("\"_test_alpha\"").expect("_test_alpha present");
         let tfr_position: usize = json.find("\"tfr\"").expect("tfr present");
@@ -185,11 +186,11 @@ mod tests {
 
     #[test]
     fn build_manifest_json_sorts_license_classes_alphabetically_within_statistic() {
-        let hashed: Artifacts = make_hashed_artifacts();
+        let (statistic_shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&statistic_shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
         let base_position: usize = json.find("\"base\"").expect("base present");
         let noncommercial_position: usize = json.find("\"noncommercial\"").expect("noncommercial present");
@@ -198,11 +199,11 @@ mod tests {
 
     #[test]
     fn build_manifest_json_emits_relative_urls_under_geometry_and_data() {
-        let hashed: Artifacts = make_hashed_artifacts();
+        let (statistic_shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&statistic_shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
         assert!(json.contains("\"url\": \"geometry/world-50m-ab12cd34.fgb\""));
         assert!(json.contains("\"url\": \"data/tfr-base-ef561234.sqlite\""));
@@ -211,15 +212,15 @@ mod tests {
 
     #[test]
     fn build_manifest_json_is_deterministic_byte_for_byte() {
-        let hashed: Artifacts = make_hashed_artifacts();
+        let (statistic_shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
             (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
             (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2026-w20".to_string(), fetched: "2026-05-15T00:00:00Z".parse().unwrap() }),
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json_one: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
-        let json_two: String = build_manifest_json(&hashed, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json_one: String = build_manifest_json(&statistic_shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json_two: String = build_manifest_json(&statistic_shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
         assert_eq!(json_one, json_two);
     }
@@ -227,11 +228,11 @@ mod tests {
     #[test]
     fn write_manifest_writes_file_and_returns_consistent_sha256() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let hashed: Artifacts = make_hashed_artifacts();
+        let (statistic_shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
 
         let manifest: Hashed<FileReference> =
-            write_manifest(&hashed, "2026-05-18", &data_source_revisions, temp_dir.path()).unwrap();
+            write_manifest(&statistic_shards, &geometry, "2026-05-18", &data_source_revisions, temp_dir.path()).unwrap();
 
         assert!(manifest.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&manifest.path).unwrap();

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{Artifacts, Hashed, StatisticShard, FileReference};
+use crate::artifact::artifact_model::{FileReference, Hashed, StatisticShard};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
@@ -18,7 +18,7 @@ const SHA_PREFIX_LEN: usize = 8;
 pub fn compute_content_hashes(
     shards: Vec<FileReference>,
     geometry: FileReference,
-) -> Result<Artifacts, AppError> {
+) -> Result<(Vec<StatisticShard>, Hashed<FileReference>), AppError> {
     let mut hash_plan: Vec<(FileReference, String)> = Vec::with_capacity(shards.len() + 1);
 
     for shard in shards.iter().chain(iter::once(&geometry)) {
@@ -44,10 +44,7 @@ pub fn compute_content_hashes(
         })
         .collect::<Result<Vec<StatisticShard>, AppError>>()?;
 
-    Ok(Artifacts {
-        statistic_shards,
-        geometry,
-    })
+    Ok((statistic_shards, geometry))
 }
 
 fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
@@ -175,12 +172,12 @@ mod tests {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, geometry) = make_shard_files(temp_dir.path());
 
-        let hashed: Artifacts = compute_content_hashes(shards, geometry).unwrap();
+        let (statistic_shards, _geometry) = compute_content_hashes(shards, geometry).unwrap();
 
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
         let expected: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
-        assert_eq!(hashed.statistic_shards[0].hashed_file.sha256_hex, expected);
+        assert_eq!(statistic_shards[0].hashed_file.sha256_hex, expected);
     }
 
     #[test]
@@ -190,14 +187,14 @@ mod tests {
         let original_shard_path: PathBuf = shards[0].path.clone();
         let original_geometry_path: PathBuf = geometry.path.clone();
 
-        let hashed: Artifacts = compute_content_hashes(shards, geometry).unwrap();
+        let (statistic_shards, geometry) = compute_content_hashes(shards, geometry).unwrap();
 
         assert!(!original_shard_path.exists());
         assert!(!original_geometry_path.exists());
-        assert!(hashed.statistic_shards[0].hashed_file.path.exists());
-        assert!(hashed.geometry.path.exists());
+        assert!(statistic_shards[0].hashed_file.path.exists());
+        assert!(geometry.path.exists());
 
-        let shard_filename: String = hashed.statistic_shards[0]
+        let shard_filename: String = statistic_shards[0]
             .hashed_file
             .path
             .file_name()
@@ -208,8 +205,7 @@ mod tests {
         assert!(shard_filename.ends_with(".sqlite"));
         assert!(!shard_filename.contains("-tmp."));
 
-        let geometry_filename: String = hashed
-            .geometry
+        let geometry_filename: String = geometry
             .path
             .file_name()
             .unwrap()
@@ -227,16 +223,16 @@ mod tests {
         let temp_dir_two: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards_two, geometry_two) = make_shard_files(temp_dir_two.path());
 
-        let hashed_one: Artifacts = compute_content_hashes(shards_one, geometry_one).unwrap();
-        let hashed_two: Artifacts = compute_content_hashes(shards_two, geometry_two).unwrap();
+        let (statistic_shards_one, geometry_one) = compute_content_hashes(shards_one, geometry_one).unwrap();
+        let (statistic_shards_two, geometry_two) = compute_content_hashes(shards_two, geometry_two).unwrap();
 
         assert_eq!(
-            hashed_one.statistic_shards[0].hashed_file.sha256_hex,
-            hashed_two.statistic_shards[0].hashed_file.sha256_hex,
+            statistic_shards_one[0].hashed_file.sha256_hex,
+            statistic_shards_two[0].hashed_file.sha256_hex,
         );
         assert_eq!(
-            hashed_one.geometry.sha256_hex,
-            hashed_two.geometry.sha256_hex,
+            geometry_one.sha256_hex,
+            geometry_two.sha256_hex,
         );
     }
 
@@ -252,7 +248,7 @@ mod tests {
             byte_count: 0,
         });
 
-        let result: Result<Artifacts, AppError> = compute_content_hashes(shards, geometry);
+        let result = compute_content_hashes(shards, geometry);
 
         assert!(result.is_err());
         assert!(surviving_path.exists());

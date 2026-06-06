@@ -147,7 +147,7 @@ async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
         build.output_dir,
         build.artifacts.statistic_shards.len(),
         build.artifacts.geometry.path,
-        build.manifest.path,
+        build.artifacts.manifest.path,
     );
     Ok(())
 }
