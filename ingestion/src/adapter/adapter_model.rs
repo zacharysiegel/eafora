@@ -1,4 +1,4 @@
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use uuid::Uuid;
 
 use crate::canonical::canonical_model::DataStatus;
@@ -26,6 +26,18 @@ impl NaiveDatePeriod {
             AppError::from(format!("invalid year+1 from {}", year))
         })?;
         Ok(NaiveDatePeriod { start, end })
+    }
+
+    #[allow(dead_code)]
+    pub fn to_year(&self) -> Option<i32> {
+        if self.start.month() != 1 || self.start.day() != 1 {
+            return None;
+        }
+        let expected_end: NaiveDate = NaiveDate::from_ymd_opt(self.start.year() + 1, 1, 1)?;
+        if self.end != expected_end {
+            return None;
+        }
+        Some(self.start.year())
     }
 }
 
