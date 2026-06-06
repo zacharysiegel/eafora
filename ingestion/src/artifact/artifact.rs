@@ -7,7 +7,7 @@ use sqlx::{PgConnection, PgExecutor};
 
 use crate::artifact::{artifact_db, content_hashing, source_choice};
 use crate::artifact::artifact_model::{
-    ArtifactBuild, CandidateValue, HashedArtifacts, HashedFile, ResolvedValue, TmpFile,
+    ArtifactBuild, CandidateValue, HashedArtifacts, Hashed, ResolvedValue, FileReference,
 };
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::canonical::canonical_db;
@@ -45,10 +45,10 @@ pub async fn build_artifacts(
     let resolved_values: Vec<ResolvedValue> = source_choice::resolve_candidates(candidate_values, &source_choices)?;
     log::info!("build_artifacts: merged into {} values", resolved_values.len());
 
-    let sqlite_shards: Vec<TmpFile> = sqlite::emit_sqlite_shards(&resolved_values, output_dir)?;
+    let sqlite_shards: Vec<FileReference> = sqlite::emit_sqlite_shards(&resolved_values, output_dir)?;
     log::info!("build_artifacts: emitted {} sqlite shards", sqlite_shards.len());
 
-    let geometry: TmpFile = if options.test_offline {
+    let geometry: FileReference = if options.test_offline {
         flatgeobuf::emit_placeholder_geometry(output_dir)?
     } else {
         flatgeobuf::emit_geometry_flatgeobuf(&mut *connection, output_dir).await?
@@ -56,7 +56,7 @@ pub async fn build_artifacts(
     log::info!("build_artifacts: emitted geometry {:?}", geometry.path);
 
     let artifacts: HashedArtifacts = content_hashing::compute_content_hashes(sqlite_shards, geometry)?;
-    let manifest: HashedFile = manifest::emit_manifest(&artifacts, version_label, &data_source_revisions, output_dir)?;
+    let manifest: Hashed<FileReference> = manifest::emit_manifest(&artifacts, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(
         "build_artifacts: complete in {:?}; manifest sha256={}",

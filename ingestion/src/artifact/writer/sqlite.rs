@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, params};
 use uuid::Uuid;
 
-use crate::artifact::artifact_model::{ResolvedValue, TmpFile};
+use crate::artifact::artifact_model::{ResolvedValue, FileReference};
 use crate::artifact::source_choice::StatisticShardKey;
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
@@ -21,12 +21,12 @@ const DATA_SUBDIR: &str = "data";
 pub fn emit_sqlite_shards(
     values: &[ResolvedValue],
     output_dir: &Path,
-) -> Result<Vec<TmpFile>, AppError> {
+) -> Result<Vec<FileReference>, AppError> {
     let data_dir: PathBuf = output_dir.join(DATA_SUBDIR);
     fs::create_dir_all(&data_dir)?;
 
     let groups: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = group_values(values);
-    let shards: Vec<TmpFile> = shard_values(&data_dir, groups)?;
+    let shards: Vec<FileReference> = shard_values(&data_dir, groups)?;
     Ok(shards)
 }
 
@@ -38,10 +38,10 @@ fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<StatisticShardKey, Vec<&
     grouped
 }
 
-fn shard_values(data_dir: &PathBuf, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<TmpFile>, AppError> {
-    let mut shards: Vec<TmpFile> = Vec::with_capacity(grouped.len());
+fn shard_values(data_dir: &PathBuf, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<FileReference>, AppError> {
+    let mut shards: Vec<FileReference> = Vec::with_capacity(grouped.len());
     for (statistic_shard_key, values) in grouped {
-        let shard: TmpFile = write_one_shard(&data_dir, statistic_shard_key.statistic_kind, statistic_shard_key.license_shard_class, &values)?;
+        let shard: FileReference = write_one_shard(&data_dir, statistic_shard_key.statistic_kind, statistic_shard_key.license_shard_class, &values)?;
         shards.push(shard);
     }
     Ok(shards)
@@ -52,7 +52,7 @@ fn write_one_shard(
     statistic_kind: StatisticKind,
     license_shard_class: LicenseShardClass,
     values: &[&ResolvedValue],
-) -> Result<TmpFile, AppError> {
+) -> Result<FileReference, AppError> {
     let tmp_uuid: Uuid = Uuid::now_v7();
     let filename: String = format!(
         "{}-{}-tmp.{}.sqlite",
@@ -70,7 +70,7 @@ fn write_one_shard(
 
     let byte_count: u64 = fs::metadata(&path)?.len();
 
-    Ok(TmpFile { path, byte_count })
+    Ok(FileReference { path, byte_count })
 }
 
 fn create_schema(connection: &Connection) -> Result<(), AppError> {
@@ -162,7 +162,7 @@ mod tests {
             make_merged(StatisticKind::TestAlpha, LicenseShardClass::Base, "USA", 2022, 1.85),
         ];
 
-        let shards: Vec<TmpFile> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<FileReference> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 3);
         for shard in &shards {
@@ -182,7 +182,7 @@ mod tests {
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "JPN", 2022, 1.30),
         ];
 
-        let shards: Vec<TmpFile> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<FileReference> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 1);
         let connection: Connection = Connection::open(&shards[0].path).unwrap();
@@ -224,7 +224,7 @@ mod tests {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66)];
 
-        let shards: Vec<TmpFile> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<FileReference> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         let connection: Connection = Connection::open(&shards[0].path).unwrap();
         let index_count: i64 = connection
@@ -248,7 +248,7 @@ mod tests {
             1.66,
         )];
 
-        let shards: Vec<TmpFile> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<FileReference> = emit_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         let filename: &str = shards[0].path.file_name().unwrap().to_str().unwrap();
         assert!(filename.starts_with("tfr-share_alike-tmp."));

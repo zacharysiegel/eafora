@@ -9,37 +9,37 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{HashedArtifacts, HashedFile, StatisticShard, TmpFile};
+use crate::artifact::artifact_model::{HashedArtifacts, Hashed, StatisticShard, FileReference};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
 const SHA_PREFIX_LEN: usize = 8;
 
 pub fn compute_content_hashes(
-    shards: Vec<TmpFile>,
-    geometry: TmpFile,
+    shards: Vec<FileReference>,
+    geometry: FileReference,
 ) -> Result<HashedArtifacts, AppError> {
-    let mut hash_plan: Vec<(TmpFile, String)> = Vec::with_capacity(shards.len() + 1);
+    let mut hash_plan: Vec<(FileReference, String)> = Vec::with_capacity(shards.len() + 1);
 
     for shard in shards.iter().chain(iter::once(&geometry)) {
         let sha256_hex: String = sha256_hex_of_file(&shard.path)?;
         hash_plan.push((shard.clone(), sha256_hex));
     }
 
-    let geometry_plan: (TmpFile, String) = hash_plan.pop().expect("geometry hash plan");
-    let statistic_plan: Vec<(TmpFile, String)> = hash_plan;
+    let geometry_plan: (FileReference, String) = hash_plan.pop().expect("geometry hash plan");
+    let statistic_plan: Vec<(FileReference, String)> = hash_plan;
 
-    let geometry: HashedFile = rename_to_content_hashed(geometry_plan.0, &geometry_plan.1)?;
+    let geometry: Hashed<FileReference> = rename_to_content_hashed(geometry_plan.0, &geometry_plan.1)?;
 
     let statistic_shards: Vec<StatisticShard> = statistic_plan
         .into_iter()
         .map(|(tmp_file, sha256_hex)| {
             let (statistic_kind, license_shard_class) = parse_statistic_shard_filename(&tmp_file.path)?;
-            let renamed: HashedFile = rename_to_content_hashed(tmp_file, &sha256_hex)?;
+            let renamed: Hashed<FileReference> = rename_to_content_hashed(tmp_file, &sha256_hex)?;
             Ok(StatisticShard {
                 statistic_kind,
                 license_shard_class,
-                file: renamed,
+                hashed_file: renamed,
             })
         })
         .collect::<Result<Vec<StatisticShard>, AppError>>()?;
@@ -58,7 +58,7 @@ fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
     Ok(hex_encode(&digest))
 }
 
-fn rename_to_content_hashed(tmp_file: TmpFile, sha256_hex: &str) -> Result<HashedFile, AppError> {
+fn rename_to_content_hashed(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashed<FileReference>, AppError> {
     let new_path: PathBuf = build_hashed_path(&tmp_file.path, sha256_hex)?;
     fs::rename(&tmp_file.path, &new_path).map_err(|err| {
         AppError::from(format!(
@@ -66,9 +66,11 @@ fn rename_to_content_hashed(tmp_file: TmpFile, sha256_hex: &str) -> Result<Hashe
             tmp_file.path, new_path, err,
         ))
     })?;
-    Ok(HashedFile {
-        path: new_path,
-        byte_count: tmp_file.byte_count,
+    Ok(Hashed {
+        inner: FileReference {
+            path: new_path,
+            byte_count: tmp_file.byte_count,
+        },
         sha256_hex: sha256_hex.to_string(),
     })
 }
@@ -144,23 +146,23 @@ mod tests {
 
     use uuid::Uuid;
 
-    fn write_tmp_shard(temp_dir: &Path, filename: &str, contents: &[u8]) -> TmpFile {
+    fn write_tmp_shard(temp_dir: &Path, filename: &str, contents: &[u8]) -> FileReference {
         let path: PathBuf = temp_dir.join(filename);
         fs::write(&path, contents).unwrap();
-        TmpFile {
+        FileReference {
             path,
             byte_count: contents.len() as u64,
         }
     }
 
-    fn make_shard_files(temp_dir: &Path) -> (Vec<TmpFile>, TmpFile) {
+    fn make_shard_files(temp_dir: &Path) -> (Vec<FileReference>, FileReference) {
         let tmp_uuid: Uuid = Uuid::now_v7();
-        let shard: TmpFile = write_tmp_shard(
+        let shard: FileReference = write_tmp_shard(
             temp_dir,
             &format!("tfr-base-tmp.{}.sqlite", tmp_uuid),
             b"SQLITE FAKE",
         );
-        let geometry: TmpFile = write_tmp_shard(
+        let geometry: FileReference = write_tmp_shard(
             temp_dir,
             &format!("world-50m-tmp.{}.fgb", tmp_uuid),
             b"FGB FAKE",
@@ -178,7 +180,7 @@ mod tests {
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
         let expected: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
-        assert_eq!(hashed.statistic_shards[0].file.sha256_hex, expected);
+        assert_eq!(hashed.statistic_shards[0].hashed_file.sha256_hex, expected);
     }
 
     #[test]
@@ -192,11 +194,11 @@ mod tests {
 
         assert!(!original_shard_path.exists());
         assert!(!original_geometry_path.exists());
-        assert!(hashed.statistic_shards[0].file.path.exists());
+        assert!(hashed.statistic_shards[0].hashed_file.path.exists());
         assert!(hashed.geometry.path.exists());
 
         let shard_filename: String = hashed.statistic_shards[0]
-            .file
+            .hashed_file
             .path
             .file_name()
             .unwrap()
@@ -229,8 +231,8 @@ mod tests {
         let hashed_two: HashedArtifacts = compute_content_hashes(shards_two, geometry_two).unwrap();
 
         assert_eq!(
-            hashed_one.statistic_shards[0].file.sha256_hex,
-            hashed_two.statistic_shards[0].file.sha256_hex,
+            hashed_one.statistic_shards[0].hashed_file.sha256_hex,
+            hashed_two.statistic_shards[0].hashed_file.sha256_hex,
         );
         assert_eq!(
             hashed_one.geometry.sha256_hex,
@@ -244,8 +246,8 @@ mod tests {
         let (shards, geometry) = make_shard_files(temp_dir.path());
         let surviving_path: PathBuf = shards[0].path.clone();
 
-        let mut shards: Vec<TmpFile> = shards;
-        shards.push(TmpFile {
+        let mut shards: Vec<FileReference> = shards;
+        shards.push(FileReference {
             path: temp_dir.path().join("missing-base-tmp.deadbeef.sqlite"),
             byte_count: 0,
         });

@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{HashedArtifacts, HashedFile};
+use crate::artifact::artifact_model::{FileReference, Hashed, HashedArtifacts};
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 
@@ -36,7 +36,7 @@ pub fn emit_manifest(
     version_label: &str,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
     output_dir: &Path,
-) -> Result<HashedFile, AppError> {
+) -> Result<Hashed<FileReference>, AppError> {
     let artifact_created: DateTime<Utc> = Utc::now();
     let json: String = build_manifest_json(hashed, version_label, &artifact_created, data_source_revisions)?;
 
@@ -49,7 +49,10 @@ pub fn emit_manifest(
 
     let byte_count: u64 = json.as_bytes().len() as u64;
 
-    Ok(HashedFile { path, byte_count, sha256_hex })
+    Ok(Hashed {
+        inner: FileReference { path, byte_count },
+        sha256_hex,
+    })
 }
 
 fn build_manifest_json(
@@ -67,9 +70,9 @@ fn build_manifest_json(
     let mut statistics: BTreeMap<&str, BTreeMap<&str, ManifestEntry<'_>>> = BTreeMap::new();
     for statistic_shard in &hashed.statistic_shards {
         let entry: ManifestEntry<'_> = ManifestEntry {
-            url: relative_url(&statistic_shard.file, "data")?,
-            size_bytes: statistic_shard.file.byte_count,
-            sha256: &statistic_shard.file.sha256_hex,
+            url: relative_url(&statistic_shard.hashed_file, "data")?,
+            size_bytes: statistic_shard.hashed_file.byte_count,
+            sha256: &statistic_shard.hashed_file.sha256_hex,
         };
         statistics
             .entry(statistic_shard.statistic_kind.code())
@@ -94,7 +97,7 @@ fn build_manifest_json(
     Ok(json)
 }
 
-fn relative_url(hashed_file: &HashedFile, subdir: &str) -> Result<String, AppError> {
+fn relative_url(hashed_file: &Hashed<FileReference>, subdir: &str) -> Result<String, AppError> {
     let filename: &str = hashed_file
         .path
         .file_name()
@@ -124,34 +127,42 @@ mod tests {
                 StatisticShard {
                     statistic_kind: StatisticKind::Tfr,
                     license_shard_class: LicenseShardClass::Base,
-                    file: HashedFile {
-                        path: PathBuf::from("/tmp/eafora/data/tfr-base-ef561234.sqlite"),
-                        byte_count: 89000,
+                    hashed_file: Hashed {
+                        inner: FileReference {
+                            path: PathBuf::from("/tmp/eafora/data/tfr-base-ef561234.sqlite"),
+                            byte_count: 89000,
+                        },
                         sha256_hex: "ef561234".repeat(8),
                     },
                 },
                 StatisticShard {
                     statistic_kind: StatisticKind::Tfr,
                     license_shard_class: LicenseShardClass::NonCommercial,
-                    file: HashedFile {
-                        path: PathBuf::from("/tmp/eafora/data/tfr-noncommercial-78ab9012.sqlite"),
-                        byte_count: 4200,
+                    hashed_file: Hashed {
+                        inner: FileReference {
+                            path: PathBuf::from("/tmp/eafora/data/tfr-noncommercial-78ab9012.sqlite"),
+                            byte_count: 4200,
+                        },
                         sha256_hex: "78ab9012".repeat(8),
                     },
                 },
                 StatisticShard {
                     statistic_kind: StatisticKind::TestAlpha,
                     license_shard_class: LicenseShardClass::Base,
-                    file: HashedFile {
-                        path: PathBuf::from("/tmp/eafora/data/_test_alpha-base-cccc1111.sqlite"),
-                        byte_count: 50000,
+                    hashed_file: Hashed {
+                        inner: FileReference {
+                            path: PathBuf::from("/tmp/eafora/data/_test_alpha-base-cccc1111.sqlite"),
+                            byte_count: 50000,
+                        },
                         sha256_hex: "cccc1111".repeat(8),
                     },
                 },
             ],
-            geometry: HashedFile {
-                path: PathBuf::from("/tmp/eafora/geometry/world-50m-ab12cd34.fgb"),
-                byte_count: 4380000,
+            geometry: Hashed {
+                inner: FileReference {
+                    path: PathBuf::from("/tmp/eafora/geometry/world-50m-ab12cd34.fgb"),
+                    byte_count: 4380000,
+                },
                 sha256_hex: "ab12cd34".repeat(8),
             },
         }
@@ -219,7 +230,7 @@ mod tests {
         let hashed: HashedArtifacts = make_hashed_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
 
-        let manifest: HashedFile =
+        let manifest: Hashed<FileReference> =
             emit_manifest(&hashed, "2026-05-18", &data_source_revisions, temp_dir.path()).unwrap();
 
         assert!(manifest.path.exists());

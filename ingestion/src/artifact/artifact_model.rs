@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use std::path::PathBuf;
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -98,29 +99,33 @@ impl ResolvedValue {
 }
 
 #[derive(Debug, Clone)]
-pub struct TmpFile {
+pub struct FileReference {
     pub path: PathBuf,
     pub byte_count: u64,
 }
 
 #[derive(Debug, Clone)]
-pub struct HashedFile {
-    pub path: PathBuf,
-    pub byte_count: u64,
+pub struct Hashed<T> {
+    pub inner: T,
     pub sha256_hex: String,
+}
+
+impl<T> Deref for Hashed<T> {
+    type Target = T;
+    fn deref(&self) -> &T { &self.inner }
 }
 
 #[derive(Debug, Clone)]
 pub struct StatisticShard {
     pub statistic_kind: StatisticKind,
     pub license_shard_class: LicenseShardClass,
-    pub file: HashedFile,
+    pub hashed_file: Hashed<FileReference>,
 }
 
 #[derive(Debug, Clone)]
 pub struct HashedArtifacts {
     pub statistic_shards: Vec<StatisticShard>,
-    pub geometry: HashedFile,
+    pub geometry: Hashed<FileReference>,
 }
 
 #[derive(Debug, Clone)]
@@ -128,7 +133,7 @@ pub struct ArtifactBuild {
     pub output_dir: PathBuf,
     pub version_label: String,
     pub artifacts: HashedArtifacts,
-    pub manifest: HashedFile,
+    pub manifest: Hashed<FileReference>,
 }
 
 #[derive(Debug, Clone)]

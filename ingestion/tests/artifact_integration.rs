@@ -14,7 +14,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::artifact::{self, BuildOptions, ArtifactBuild};
-use ingestion::artifact::artifact_model::TmpFile;
+use ingestion::artifact::artifact_model::FileReference;
 use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::artifact::writer::flatgeobuf::emit_geometry_flatgeobuf;
 
@@ -54,7 +54,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert!(build.manifest.path.ends_with("manifest.json"));
     assert!(build.artifacts.geometry.path.exists());
 
-    let tfr_shard_path: PathBuf = build.artifacts.statistic_shards[0].file.path.clone();
+    let tfr_shard_path: PathBuf = build.artifacts.statistic_shards[0].hashed_file.path.clone();
     let connection: Connection = Connection::open(&tfr_shard_path).unwrap();
     let row_count: i64 = connection
         .query_row("select count(*) from statistic_value", [], |row| row.get(0))
@@ -90,7 +90,7 @@ async fn emit_geometry_flatgeobuf_against_live_natural_earth_release() {
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let geometry: TmpFile =
+    let geometry: FileReference =
         emit_geometry_flatgeobuf(&mut *transaction, temp_dir.path())
             .await
             .expect("geometry shard emitted");
