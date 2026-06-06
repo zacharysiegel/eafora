@@ -18,8 +18,26 @@ const SHA_PREFIX_LEN: usize = 8;
 
 #[derive(Debug, Clone)]
 pub struct Hashed<T> {
-    pub inner: T,
-    pub sha256_hex: String,
+    inner: T,
+    sha256_hex: String,
+}
+
+impl<T> Hashed<T> {
+    pub fn new(inner: T, bytes: impl AsRef<[u8]>) -> Self {
+        Hashed {
+            inner,
+            sha256_hex: sha256_hex(bytes.as_ref()),
+        }
+    }
+
+    pub fn sha256_hex(&self) -> &str {
+        &self.sha256_hex
+    }
+
+    #[cfg(test)]
+    pub fn new_with_sha(inner: T, sha256_hex: String) -> Self {
+        Hashed { inner, sha256_hex }
+    }
 }
 
 impl<T> Deref for Hashed<T> {
@@ -184,7 +202,7 @@ mod tests {
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
         let expected: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
-        assert_eq!(shards[0].hashed_file.sha256_hex, expected);
+        assert_eq!(shards[0].hashed_file.sha256_hex(), expected);
     }
 
     #[test]
@@ -243,8 +261,8 @@ mod tests {
         let shards_two: Vec<StatisticShard> = hash_sqlite_shards(shards_two).unwrap();
 
         assert_eq!(
-            shards_one[0].hashed_file.sha256_hex,
-            shards_two[0].hashed_file.sha256_hex,
+            shards_one[0].hashed_file.sha256_hex(),
+            shards_two[0].hashed_file.sha256_hex(),
         );
     }
 

@@ -46,7 +46,7 @@ pub async fn build_artifacts(
     log::info!(
         "complete in {:?}; manifest sha256={}",
         started.elapsed(),
-        manifest.sha256_hex,
+        manifest.sha256_hex(),
     );
 
     Ok(ArtifactBuildReport {
