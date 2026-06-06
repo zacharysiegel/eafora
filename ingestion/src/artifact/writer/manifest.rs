@@ -26,7 +26,7 @@ struct ManifestSerializer<'a> {
 
 #[derive(Debug, Serialize)]
 struct ManifestEntry<'a> {
-    url: String,
+    relative_path: String,
     size_bytes: u64,
     sha256: &'a str,
 }
@@ -57,7 +57,7 @@ fn build_manifest_json(
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<String, AppError> {
     let geometry_entry: ManifestEntry<'_> = ManifestEntry {
-        url: relative_url(geometry, "geometry")?,
+        relative_path: relative_path(geometry, "geometry")?,
         size_bytes: geometry.byte_count,
         sha256: geometry.sha256_hex(),
     };
@@ -65,7 +65,7 @@ fn build_manifest_json(
     let mut statistics: BTreeMap<&str, BTreeMap<&str, ManifestEntry<'_>>> = BTreeMap::new();
     for statistic_shard in shards {
         let entry: ManifestEntry<'_> = ManifestEntry {
-            url: relative_url(&statistic_shard.hashed_file, "data")?,
+            relative_path: relative_path(&statistic_shard.hashed_file, "data")?,
             size_bytes: statistic_shard.hashed_file.byte_count,
             sha256: statistic_shard.hashed_file.sha256_hex(),
         };
@@ -92,7 +92,7 @@ fn build_manifest_json(
     Ok(json)
 }
 
-fn relative_url(hashed_file: &Hashed<FileReference>, subdir: &str) -> Result<String, AppError> {
+fn relative_path(hashed_file: &Hashed<FileReference>, subdir: &str) -> Result<String, AppError> {
     let filename: &str = hashed_file
         .path
         .file_name()
@@ -184,16 +184,16 @@ mod tests {
     }
 
     #[test]
-    fn build_manifest_json_emits_relative_urls_under_geometry_and_data() {
+    fn build_manifest_json_emits_relative_paths_under_geometry_and_data() {
         let (shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
         let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
-        assert!(json.contains("\"url\": \"geometry/world-50m-ab12cd34.fgb\""));
-        assert!(json.contains("\"url\": \"data/tfr-base-ef561234.sqlite\""));
-        assert!(json.contains("\"url\": \"data/_test_alpha-base-cccc1111.sqlite\""));
+        assert!(json.contains("\"relative_path\": \"geometry/world-50m-ab12cd34.fgb\""));
+        assert!(json.contains("\"relative_path\": \"data/tfr-base-ef561234.sqlite\""));
+        assert!(json.contains("\"relative_path\": \"data/_test_alpha-base-cccc1111.sqlite\""));
     }
 
     #[test]
