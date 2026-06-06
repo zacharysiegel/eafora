@@ -13,7 +13,6 @@ use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::canonical::canonical_db;
 use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision, StatisticKind};
 use crate::error::AppError;
-use crate::ingest::ingest_db;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {
@@ -59,7 +58,7 @@ pub async fn build_artifacts(
     }
 
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
-        read_data_source_revisions(&mut *connection, &data_source_kinds).await?;
+        artifact_db::get_latest_revisions(&mut *connection, &data_source_kinds).await?;
 
     let geometry: FileReference = if options.test_offline {
         flatgeobuf::write_placeholder_geometry(output_dir)?
@@ -82,22 +81,4 @@ pub async fn build_artifacts(
         version_label: version_label.to_string(),
         artifacts: Artifacts { shards, geometry, manifest },
     })
-}
-
-async fn read_data_source_revisions(
-    connection: &mut PgConnection,
-    data_source_kinds: &BTreeSet<DataSourceKind>,
-) -> Result<BTreeMap<DataSourceKind, SourceRevision>, AppError> {
-    let mut revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
-    for kind in data_source_kinds {
-        let data_source = canonical_db::find_data_source_by_kind(&mut *connection, *kind)
-            .await?
-            .ok_or_else(|| AppError::from(format!("data_source {:?} missing from canonical store", kind)))?;
-        let revision = ingest_db::read_latest_publication(&mut *connection, data_source.id)
-            .await?
-            .ok_or_else(|| AppError::from(format!("no publication recorded for {:?}", kind)))?;
-        revisions.insert(*kind, revision);
-    }
-
-    Ok(revisions)
 }

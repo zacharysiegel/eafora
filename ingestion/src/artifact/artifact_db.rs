@@ -1,12 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use sqlx::PgExecutor;
+use sqlx::{PgConnection, PgExecutor};
 
 use crate::artifact::artifact_model::{
     ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryNameProjection,
 };
-use crate::canonical::canonical_model::{DataSourceKind, SourceRevision, StatisticKind};
+use crate::canonical::canonical_db;
+use crate::canonical::canonical_model::{DataSource, DataSourceKind, SourceRevision, StatisticKind};
 use crate::error::AppError;
+use crate::ingest::ingest_db;
 
 pub async fn read_candidate_values_for_statistic<'e>(
     executor: impl PgExecutor<'e>,
@@ -67,6 +69,24 @@ pub async fn read_all_statistic_kinds<'e>(
         .fetch_all(executor)
         .await?;
     codes.iter().map(|code| StatisticKind::try_from(code.as_str())).collect()
+}
+
+pub async fn get_latest_revisions(
+    connection: &mut PgConnection,
+    data_source_kinds: &BTreeSet<DataSourceKind>,
+) -> Result<BTreeMap<DataSourceKind, SourceRevision>, AppError> {
+    let mut revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+    for kind in data_source_kinds {
+        let data_source: DataSource = canonical_db::find_data_source_by_kind(&mut *connection, *kind)
+            .await?
+            .ok_or_else(|| AppError::from(format!("data_source {:?} missing from canonical store", kind)))?;
+        let revision: SourceRevision = ingest_db::read_latest_publication(&mut *connection, data_source.id)
+            .await?
+            .ok_or_else(|| AppError::from(format!("no publication recorded for {:?}", kind)))?;
+        revisions.insert(*kind, revision);
+    }
+
+    Ok(revisions)
 }
 
 pub async fn insert_artifact_version<'e>(
