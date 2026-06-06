@@ -12,7 +12,7 @@ use rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::artifact::artifact_model::{ResolvedValue, FileReference};
-use crate::artifact::source_choice::StatisticShardKey;
+use crate::artifact::source_choice::ShardKey;
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
@@ -25,23 +25,23 @@ pub fn write_sqlite_shards(
     let data_dir: PathBuf = output_dir.join(DATA_SUBDIR);
     fs::create_dir_all(&data_dir)?;
 
-    let groups: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = group_values(values);
+    let groups: BTreeMap<ShardKey, Vec<&ResolvedValue>> = group_values(values);
     let shards: Vec<FileReference> = shard_values(&data_dir, groups)?;
     Ok(shards)
 }
 
-fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> {
-    let mut grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = BTreeMap::new();
+fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<ShardKey, Vec<&ResolvedValue>> {
+    let mut grouped: BTreeMap<ShardKey, Vec<&ResolvedValue>> = BTreeMap::new();
     for resolved_value in resolved {
-        grouped.entry(StatisticShardKey::from_resolved(resolved_value)).or_default().push(resolved_value);
+        grouped.entry(ShardKey::from_resolved(resolved_value)).or_default().push(resolved_value);
     }
     grouped
 }
 
-fn shard_values(data_dir: &PathBuf, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<FileReference>, AppError> {
+fn shard_values(data_dir: &PathBuf, grouped: BTreeMap<ShardKey, Vec<&ResolvedValue>>) -> Result<Vec<FileReference>, AppError> {
     let mut shards: Vec<FileReference> = Vec::with_capacity(grouped.len());
-    for (statistic_shard_key, values) in grouped {
-        let shard: FileReference = write_one_shard(&data_dir, statistic_shard_key.statistic_kind, statistic_shard_key.license_shard_class, &values)?;
+    for (shard_key, values) in grouped {
+        let shard: FileReference = write_one_shard(&data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
         shards.push(shard);
     }
     Ok(shards)

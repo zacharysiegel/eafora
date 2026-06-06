@@ -142,10 +142,10 @@ async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
     transaction.commit().await?;
 
     log::info!(
-        "build complete: version_label={} output_dir={:?} statistic_shards={} geometry={:?} manifest={:?}",
+        "build complete: version_label={} output_dir={:?} shards={} geometry={:?} manifest={:?}",
         build.version_label,
         build.output_dir,
-        build.artifacts.statistic_shards.len(),
+        build.artifacts.shards.len(),
         build.artifacts.geometry.path,
         build.artifacts.manifest.path,
     );

@@ -49,12 +49,12 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
             .expect("build_artifacts succeeds");
 
     assert_eq!(build.version_label, "2026-05-26-test");
-    assert_eq!(build.artifacts.statistic_shards.len(), 1);
+    assert_eq!(build.artifacts.shards.len(), 1);
     assert!(build.artifacts.manifest.path.exists());
     assert!(build.artifacts.manifest.path.ends_with("manifest.json"));
     assert!(build.artifacts.geometry.path.exists());
 
-    let tfr_shard_path: PathBuf = build.artifacts.statistic_shards[0].hashed_file.path.clone();
+    let tfr_shard_path: PathBuf = build.artifacts.shards[0].hashed_file.path.clone();
     let connection: Connection = Connection::open(&tfr_shard_path).unwrap();
     let row_count: i64 = connection
         .query_row("select count(*) from statistic_value", [], |row| row.get(0))

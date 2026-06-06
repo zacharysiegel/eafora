@@ -16,6 +16,8 @@ use crate::artifact::artifact_model::{CandidateValue, ResolvedValue};
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceChoice, StatisticKind};
 use crate::error::AppError;
 
+/// A series is the time series of one statistic for one region within
+/// one license-shard partition. We pick one source per series.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SeriesKey {
     pub region_id: Uuid,
@@ -34,14 +36,14 @@ impl SeriesKey {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StatisticShardKey {
+pub struct ShardKey {
     pub statistic_kind: StatisticKind,
     pub license_shard_class: LicenseShardClass,
 }
 
-impl StatisticShardKey {
+impl ShardKey {
     pub fn from_resolved(resolved: &ResolvedValue) -> Self {
-        StatisticShardKey {
+        ShardKey {
             statistic_kind: resolved.statistic_kind,
             license_shard_class: resolved.license_shard_class,
         }
@@ -50,13 +52,13 @@ impl StatisticShardKey {
 
 struct SourceChoiceResolver {
     overrides: BTreeMap<SeriesKey, DataSourceKind>,
-    globals: BTreeMap<StatisticShardKey, DataSourceKind>,
+    globals: BTreeMap<ShardKey, DataSourceKind>,
 }
 
 impl SourceChoiceResolver {
     fn from_slice(source_choices: &[SourceChoice]) -> Self {
         let mut overrides: BTreeMap<SeriesKey, DataSourceKind> = BTreeMap::new();
-        let mut globals: BTreeMap<StatisticShardKey, DataSourceKind> = BTreeMap::new();
+        let mut globals: BTreeMap<ShardKey, DataSourceKind> = BTreeMap::new();
         for choice in source_choices {
             match choice.region_id {
                 Some(region_id) => {
@@ -71,7 +73,7 @@ impl SourceChoiceResolver {
                 }
                 None => {
                     globals.insert(
-                        StatisticShardKey {
+                        ShardKey {
                             statistic_kind: choice.statistic_kind,
                             license_shard_class: choice.license_shard_class,
                         },
@@ -87,14 +89,14 @@ impl SourceChoiceResolver {
         self.overrides
             .get(&series_key)
             .copied()
-            .or_else(|| self.choose_default(StatisticShardKey {
+            .or_else(|| self.choose_default(ShardKey {
                 statistic_kind: series_key.statistic_kind,
                 license_shard_class: series_key.license_shard_class,
             }))
     }
 
-    fn choose_default(&self, statistic_shard_key: StatisticShardKey) -> Option<DataSourceKind> {
-        self.globals.get(&statistic_shard_key).copied()
+    fn choose_default(&self, shard_key: ShardKey) -> Option<DataSourceKind> {
+        self.globals.get(&shard_key).copied()
     }
 }
 

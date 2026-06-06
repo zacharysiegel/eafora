@@ -9,22 +9,22 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{FileReference, Hashed, StatisticShard};
+use crate::artifact::artifact_model::{FileReference, Hashed, Shard};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
 const SHA_PREFIX_LEN: usize = 8;
 
-pub fn hash_statistic_shards(
+pub fn hash_shards(
     shards: Vec<FileReference>,
-) -> Result<Vec<StatisticShard>, AppError> {
+) -> Result<Vec<Shard>, AppError> {
     shards
         .into_iter()
         .map(|tmp_file| {
             let (statistic_kind, license_shard_class) = parse_statistic_shard_filename(&tmp_file.path)?;
             let sha256_hex: String = sha256_hex_of_file(&tmp_file.path)?;
             let renamed: Hashed<FileReference> = rename_to_content_hashed(tmp_file, &sha256_hex)?;
-            Ok(StatisticShard {
+            Ok(Shard {
                 statistic_kind,
                 license_shard_class,
                 hashed_file: renamed,
@@ -163,30 +163,30 @@ mod tests {
     }
 
     #[test]
-    fn hash_statistic_shards_matches_sha256_over_file_bytes() {
+    fn hash_shards_matches_sha256_over_file_bytes() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, _geometry) = make_shard_files(temp_dir.path());
 
-        let statistic_shards: Vec<StatisticShard> = hash_statistic_shards(shards).unwrap();
+        let shards: Vec<Shard> = hash_shards(shards).unwrap();
 
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
         let expected: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
-        assert_eq!(statistic_shards[0].hashed_file.sha256_hex, expected);
+        assert_eq!(shards[0].hashed_file.sha256_hex, expected);
     }
 
     #[test]
-    fn hash_statistic_shards_renames_tmp_files_to_sha8_filenames() {
+    fn hash_shards_renames_tmp_files_to_sha8_filenames() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, _geometry) = make_shard_files(temp_dir.path());
         let original_shard_path: PathBuf = shards[0].path.clone();
 
-        let statistic_shards: Vec<StatisticShard> = hash_statistic_shards(shards).unwrap();
+        let shards: Vec<Shard> = hash_shards(shards).unwrap();
 
         assert!(!original_shard_path.exists());
-        assert!(statistic_shards[0].hashed_file.path.exists());
+        assert!(shards[0].hashed_file.path.exists());
 
-        let shard_filename: String = statistic_shards[0]
+        let shard_filename: String = shards[0]
             .hashed_file
             .path
             .file_name()
@@ -220,31 +220,31 @@ mod tests {
     }
 
     #[test]
-    fn hash_statistic_shards_is_idempotent_in_value_for_same_bytes() {
+    fn hash_shards_is_idempotent_in_value_for_same_bytes() {
         let temp_dir_one: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards_one, _geometry_one) = make_shard_files(temp_dir_one.path());
 
         let temp_dir_two: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards_two, _geometry_two) = make_shard_files(temp_dir_two.path());
 
-        let statistic_shards_one: Vec<StatisticShard> = hash_statistic_shards(shards_one).unwrap();
-        let statistic_shards_two: Vec<StatisticShard> = hash_statistic_shards(shards_two).unwrap();
+        let shards_one: Vec<Shard> = hash_shards(shards_one).unwrap();
+        let shards_two: Vec<Shard> = hash_shards(shards_two).unwrap();
 
         assert_eq!(
-            statistic_shards_one[0].hashed_file.sha256_hex,
-            statistic_shards_two[0].hashed_file.sha256_hex,
+            shards_one[0].hashed_file.sha256_hex,
+            shards_two[0].hashed_file.sha256_hex,
         );
     }
 
     #[test]
-    fn hash_statistic_shards_errors_when_file_missing() {
+    fn hash_shards_errors_when_file_missing() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let shards: Vec<FileReference> = vec![FileReference {
             path: temp_dir.path().join("missing-base-tmp.deadbeef.sqlite"),
             byte_count: 0,
         }];
 
-        let result = hash_statistic_shards(shards);
+        let result = hash_shards(shards);
 
         assert!(result.is_err());
     }

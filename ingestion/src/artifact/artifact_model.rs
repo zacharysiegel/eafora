@@ -116,7 +116,7 @@ impl<T> Deref for Hashed<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct StatisticShard {
+pub struct Shard {
     pub statistic_kind: StatisticKind,
     pub license_shard_class: LicenseShardClass,
     pub hashed_file: Hashed<FileReference>,
@@ -124,7 +124,7 @@ pub struct StatisticShard {
 
 #[derive(Debug, Clone)]
 pub struct Artifacts {
-    pub statistic_shards: Vec<StatisticShard>,
+    pub shards: Vec<Shard>,
     pub geometry: Hashed<FileReference>,
     pub manifest: Hashed<FileReference>,
 }

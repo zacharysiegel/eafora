@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use sqlx::{PgConnection, PgExecutor};
 
-use crate::artifact::{artifact_db, content_hashing, source_choice, StatisticShard};
+use crate::artifact::{artifact_db, content_hashing, source_choice, Shard};
 use crate::artifact::artifact_model::{
     ArtifactBuildReport, CandidateValue, Artifacts, Hashed, ResolvedValue, FileReference,
 };
@@ -55,9 +55,9 @@ pub async fn build_artifacts(
     };
     log::info!("wrote geometry {:?}", geometry.path);
 
-    let statistic_shards: Vec<StatisticShard> = content_hashing::hash_statistic_shards(sqlite_shards)?;
+    let shards: Vec<Shard> = content_hashing::hash_shards(sqlite_shards)?;
     let geometry: Hashed<FileReference> = content_hashing::hash_geometry(geometry)?;
-    let manifest: Hashed<FileReference> = manifest::write_manifest(&statistic_shards, &geometry, version_label, &data_source_revisions, output_dir)?;
+    let manifest: Hashed<FileReference> = manifest::write_manifest(&shards, &geometry, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(
         "complete in {:?}; manifest sha256={}",
@@ -67,7 +67,7 @@ pub async fn build_artifacts(
     Ok(ArtifactBuildReport {
         output_dir: output_dir.to_path_buf(),
         version_label: version_label.to_string(),
-        artifacts: Artifacts { statistic_shards, geometry, manifest },
+        artifacts: Artifacts { shards, geometry, manifest },
     })
 }
 
