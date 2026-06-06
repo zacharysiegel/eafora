@@ -75,6 +75,22 @@ pub struct ResolvedValue {
     pub license_shard_class: LicenseShardClass,
 }
 
+impl ResolvedValue {
+    pub fn from_candidate(candidate: &CandidateValue, license_shard_class: LicenseShardClass) -> Self {
+        ResolvedValue {
+            region_id: candidate.region_id,
+            region_iso3: candidate.region_iso3.clone(),
+            statistic_kind: candidate.statistic_kind,
+            period: candidate.period,
+            value: candidate.value,
+            data_status: candidate.data_status,
+            data_source_kind: candidate.data_source_kind,
+            data_source_revision: candidate.data_source_revision.clone(),
+            license_shard_class,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ShardOutput {
     pub path: PathBuf,

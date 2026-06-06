@@ -118,7 +118,7 @@ pub fn resolve_candidates(
             series_candidates
                 .iter()
                 .filter(|candidate| candidate.data_source_kind == chosen_data_source_kind)
-                .map(|candidate| resolved_value_from(candidate, series_key.license_shard_class))
+                .map(|candidate| ResolvedValue::from_candidate(candidate, series_key.license_shard_class))
         );
     }
 
@@ -134,20 +134,6 @@ fn group_candidates(candidates: Vec<CandidateValue>) -> BTreeMap<SeriesKey, Vec<
             .push(candidate);
     }
     groups
-}
-
-fn resolved_value_from(candidate: &CandidateValue, license_shard_class: LicenseShardClass) -> ResolvedValue {
-    ResolvedValue {
-        region_id: candidate.region_id,
-        region_iso3: candidate.region_iso3.clone(),
-        statistic_kind: candidate.statistic_kind,
-        period: candidate.period,
-        value: candidate.value,
-        data_status: candidate.data_status,
-        data_source_kind: candidate.data_source_kind,
-        data_source_revision: candidate.data_source_revision.clone(),
-        license_shard_class,
-    }
 }
 
 #[cfg(test)]
