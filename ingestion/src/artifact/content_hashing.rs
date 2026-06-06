@@ -38,12 +38,16 @@ pub fn hash_geometry(geometry: FileReference) -> Result<Hashed<FileReference>, A
     rename_to_content_hashed(geometry, &sha256_hex)
 }
 
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher: Sha256 = Sha256::new();
+    hasher.update(bytes);
+    let digest: [u8; 32] = hasher.finalize().into();
+    hex_encode(&digest)
+}
+
 fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
     let bytes: Vec<u8> = fs::read(path)?;
-    let mut hasher: Sha256 = Sha256::new();
-    hasher.update(&bytes);
-    let digest: [u8; 32] = hasher.finalize().into();
-    Ok(hex_encode(&digest))
+    Ok(sha256_hex(&bytes))
 }
 
 fn rename_to_content_hashed(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashed<FileReference>, AppError> {

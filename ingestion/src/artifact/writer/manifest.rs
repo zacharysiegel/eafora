@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
+use crate::artifact::content_hashing;
 use crate::artifact::artifact_model::{FileReference, Hashed, StatisticShard};
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
@@ -44,10 +44,7 @@ pub fn write_manifest(
     let path: PathBuf = output_dir.join(MANIFEST_FILENAME);
     fs::write(&path, &json)?;
 
-    let mut hasher: Sha256 = Sha256::new();
-    hasher.update(json.as_bytes());
-    let sha256_hex: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
-
+    let sha256_hex: String = content_hashing::sha256_hex(json.as_bytes());
     let byte_count: u64 = json.as_bytes().len() as u64;
 
     Ok(Hashed {
@@ -106,14 +103,6 @@ fn relative_url(hashed_file: &Hashed<FileReference>, subdir: &str) -> Result<Str
         .and_then(|os| os.to_str())
         .ok_or_else(|| AppError::from(format!("bad path {:?}", hashed_file.path)))?;
     Ok(format!("{}/{}", subdir, filename))
-}
-
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut hex_string: String = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        hex_string.push_str(&format!("{:02x}", byte));
-    }
-    hex_string
 }
 
 #[cfg(test)]
@@ -236,9 +225,7 @@ mod tests {
 
         assert!(manifest.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&manifest.path).unwrap();
-        let mut hasher: Sha256 = Sha256::new();
-        hasher.update(&bytes_on_disk);
-        let computed: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
+        let computed: String = content_hashing::sha256_hex(&bytes_on_disk);
         assert_eq!(computed, manifest.sha256_hex);
     }
 }
