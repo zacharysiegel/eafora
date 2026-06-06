@@ -5,15 +5,27 @@
 //! so cleanup is best-effort (wipe `output_dir` between builds).
 
 use std::fs;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::artifact::artifact_model::{FileReference, Hashed, StatisticShard};
+use crate::artifact::artifact_model::{FileReference, StatisticShard};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
 const SHA_PREFIX_LEN: usize = 8;
+
+#[derive(Debug, Clone)]
+pub struct Hashed<T> {
+    pub inner: T,
+    pub sha256_hex: String,
+}
+
+impl<T> Deref for Hashed<T> {
+    type Target = T;
+    fn deref(&self) -> &T { &self.inner }
+}
 
 pub fn hash_sqlite_shards(
     shards: Vec<FileReference>,

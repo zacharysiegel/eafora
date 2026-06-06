@@ -1,10 +1,10 @@
-use std::ops::Deref;
 use std::path::PathBuf;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
+use crate::artifact::content_hashing::Hashed;
 use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
@@ -102,17 +102,6 @@ impl ResolvedValue {
 pub struct FileReference {
     pub path: PathBuf,
     pub byte_count: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct Hashed<T> {
-    pub inner: T,
-    pub sha256_hex: String,
-}
-
-impl<T> Deref for Hashed<T> {
-    type Target = T;
-    fn deref(&self) -> &T { &self.inner }
 }
 
 #[derive(Debug, Clone)]

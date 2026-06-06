@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::artifact::content_hashing;
-use crate::artifact::artifact_model::{FileReference, Hashed, StatisticShard};
+use crate::artifact::artifact_model::{FileReference, StatisticShard};
+use crate::artifact::content_hashing::{self, Hashed};
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 

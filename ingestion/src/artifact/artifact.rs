@@ -6,8 +6,9 @@ use std::time::Instant;
 use sqlx::PgConnection;
 
 use crate::artifact::artifact_model::{
-    ArtifactBuildReport, Artifacts, CandidateValue, FileReference, Hashed, ResolvedValue,
+    ArtifactBuildReport, Artifacts, CandidateValue, FileReference, ResolvedValue,
 };
+use crate::artifact::content_hashing::Hashed;
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::artifact::{StatisticShard, artifact_db, content_hashing, source_choice};
 use crate::canonical::canonical_db;
