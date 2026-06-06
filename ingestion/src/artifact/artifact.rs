@@ -55,8 +55,8 @@ pub async fn build_artifacts(
     };
     log::info!("wrote geometry {:?}", geometry.path);
 
-    let statistic_shards: Vec<StatisticShard> = content_hashing::compute_statistic_shard_hashes(sqlite_shards)?;
-    let geometry: Hashed<FileReference> = content_hashing::compute_geometry_hash(geometry)?;
+    let statistic_shards: Vec<StatisticShard> = content_hashing::hash_statistic_shards(sqlite_shards)?;
+    let geometry: Hashed<FileReference> = content_hashing::hash_geometry(geometry)?;
     let manifest: Hashed<FileReference> = manifest::write_manifest(&statistic_shards, &geometry, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(

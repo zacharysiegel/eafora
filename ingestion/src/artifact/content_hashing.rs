@@ -15,7 +15,7 @@ use crate::error::AppError;
 
 const SHA_PREFIX_LEN: usize = 8;
 
-pub fn compute_statistic_shard_hashes(
+pub fn hash_statistic_shards(
     shards: Vec<FileReference>,
 ) -> Result<Vec<StatisticShard>, AppError> {
     shards
@@ -33,7 +33,7 @@ pub fn compute_statistic_shard_hashes(
         .collect()
 }
 
-pub fn compute_geometry_hash(geometry: FileReference) -> Result<Hashed<FileReference>, AppError> {
+pub fn hash_geometry(geometry: FileReference) -> Result<Hashed<FileReference>, AppError> {
     let sha256_hex: String = sha256_hex_of_file(&geometry.path)?;
     rename_to_content_hashed(geometry, &sha256_hex)
 }
@@ -163,7 +163,7 @@ mod tests {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, _geometry) = make_shard_files(temp_dir.path());
 
-        let statistic_shards: Vec<StatisticShard> = compute_statistic_shard_hashes(shards).unwrap();
+        let statistic_shards: Vec<StatisticShard> = hash_statistic_shards(shards).unwrap();
 
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
@@ -177,7 +177,7 @@ mod tests {
         let (shards, _geometry) = make_shard_files(temp_dir.path());
         let original_shard_path: PathBuf = shards[0].path.clone();
 
-        let statistic_shards: Vec<StatisticShard> = compute_statistic_shard_hashes(shards).unwrap();
+        let statistic_shards: Vec<StatisticShard> = hash_statistic_shards(shards).unwrap();
 
         assert!(!original_shard_path.exists());
         assert!(statistic_shards[0].hashed_file.path.exists());
@@ -200,7 +200,7 @@ mod tests {
         let (_shards, geometry) = make_shard_files(temp_dir.path());
         let original_geometry_path: PathBuf = geometry.path.clone();
 
-        let geometry: Hashed<FileReference> = compute_geometry_hash(geometry).unwrap();
+        let geometry: Hashed<FileReference> = hash_geometry(geometry).unwrap();
 
         assert!(!original_geometry_path.exists());
         assert!(geometry.path.exists());
@@ -223,8 +223,8 @@ mod tests {
         let temp_dir_two: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards_two, _geometry_two) = make_shard_files(temp_dir_two.path());
 
-        let statistic_shards_one: Vec<StatisticShard> = compute_statistic_shard_hashes(shards_one).unwrap();
-        let statistic_shards_two: Vec<StatisticShard> = compute_statistic_shard_hashes(shards_two).unwrap();
+        let statistic_shards_one: Vec<StatisticShard> = hash_statistic_shards(shards_one).unwrap();
+        let statistic_shards_two: Vec<StatisticShard> = hash_statistic_shards(shards_two).unwrap();
 
         assert_eq!(
             statistic_shards_one[0].hashed_file.sha256_hex,
@@ -240,7 +240,7 @@ mod tests {
             byte_count: 0,
         }];
 
-        let result = compute_statistic_shard_hashes(shards);
+        let result = hash_statistic_shards(shards);
 
         assert!(result.is_err());
     }
