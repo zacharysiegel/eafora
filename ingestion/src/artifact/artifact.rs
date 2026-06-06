@@ -37,7 +37,7 @@ pub async fn build_artifacts(
     let statistic_kinds: Vec<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
     let mut shards: Vec<Shard> = Vec::new();
-    let mut data_source_kinds: BTreeSet<DataSourceKind> = BTreeSet::new();
+    let mut data_sources: BTreeSet<DataSourceKind> = BTreeSet::new();
 
     for kind in statistic_kinds {
         let candidates: Vec<CandidateValue> =
@@ -47,7 +47,7 @@ pub async fn build_artifacts(
             continue;
         }
         for candidate in &candidates {
-            data_source_kinds.insert(candidate.data_source_kind);
+            data_sources.insert(candidate.data_source_kind);
         }
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
@@ -57,9 +57,6 @@ pub async fn build_artifacts(
         shards.extend(hashed_shards);
     }
 
-    let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
-        artifact_db::read_latest_revisions(&mut *connection, &data_source_kinds).await?;
-
     let geometry: FileReference = if options.test_offline {
         flatgeobuf::write_placeholder_geometry(output_dir)?
     } else {
@@ -68,6 +65,8 @@ pub async fn build_artifacts(
     log::info!("wrote geometry {:?}", geometry.path);
     let geometry: Hashed<FileReference> = content_hashing::hash_geometry(geometry)?;
 
+    let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
+        artifact_db::read_latest_revisions(&mut *connection, &data_sources).await?;
     let manifest: Hashed<FileReference> =
         manifest::write_manifest(&shards, &geometry, version_label, &data_source_revisions, output_dir)?;
 

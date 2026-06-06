@@ -12,7 +12,7 @@ use rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::artifact::artifact_model::{ResolvedValue, FileReference};
-use crate::artifact::source_choice::ShardKey;
+use crate::artifact::artifact_model::ShardKey;
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 

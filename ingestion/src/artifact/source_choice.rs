@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use uuid::Uuid;
 
-use crate::artifact::artifact_model::{CandidateValue, ResolvedValue};
+use crate::artifact::artifact_model::{CandidateValue, ResolvedValue, ShardKey};
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceChoice, StatisticKind};
 use crate::error::AppError;
 
@@ -31,21 +31,6 @@ impl SeriesKey {
             region_id: candidate.region_id,
             statistic_kind: candidate.statistic_kind,
             license_shard_class: LicenseShardClass::from_license_class(candidate.license_class),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ShardKey {
-    pub statistic_kind: StatisticKind,
-    pub license_shard_class: LicenseShardClass,
-}
-
-impl ShardKey {
-    pub fn from_resolved(resolved: &ResolvedValue) -> Self {
-        ShardKey {
-            statistic_kind: resolved.statistic_kind,
-            license_shard_class: resolved.license_shard_class,
         }
     }
 }

@@ -122,6 +122,21 @@ pub struct Shard {
     pub hashed_file: Hashed<FileReference>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ShardKey {
+    pub statistic_kind: StatisticKind,
+    pub license_shard_class: LicenseShardClass,
+}
+
+impl ShardKey {
+    pub fn from_resolved(resolved: &ResolvedValue) -> Self {
+        ShardKey {
+            statistic_kind: resolved.statistic_kind,
+            license_shard_class: resolved.license_shard_class,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Artifacts {
     pub shards: Vec<Shard>,
