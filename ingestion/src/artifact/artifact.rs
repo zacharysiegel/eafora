@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use sqlx::{PgConnection, PgExecutor};
 
-use crate::artifact::{artifact_db, content_hashing, source_choice};
+use crate::artifact::{artifact_db, content_hashing, source_choice, StatisticShard};
 use crate::artifact::artifact_model::{
     ArtifactBuildReport, CandidateValue, Artifacts, Hashed, ResolvedValue, FileReference,
 };
@@ -55,7 +55,8 @@ pub async fn build_artifacts(
     };
     log::info!("wrote geometry {:?}", geometry.path);
 
-    let (statistic_shards, geometry) = content_hashing::compute_content_hashes(sqlite_shards, geometry)?;
+    let statistic_shards: Vec<StatisticShard> = content_hashing::compute_statistic_shard_hashes(sqlite_shards)?;
+    let geometry: Hashed<FileReference> = content_hashing::compute_geometry_hash(geometry)?;
     let manifest: Hashed<FileReference> = manifest::write_manifest(&statistic_shards, &geometry, version_label, &data_source_revisions, output_dir)?;
 
     log::info!(

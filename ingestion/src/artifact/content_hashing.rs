@@ -1,10 +1,10 @@
-//! Hashing is split from renaming in two phases: every file is hashed
-//! first, and only if the entire batch succeeded do we rename. If one
-//! file fails, no file is left renamed; the next build can be re-run
-//! cleanly.
+//! Each file is hashed, then renamed from its tmp filename to a
+//! content-addressed name (sha256 prefix). A failed run leaves stray
+//! tmp or hashed files in the output directory; the next build writes
+//! fresh tmp files with new uuids and produces its own correct output,
+//! so cleanup is best-effort (wipe `output_dir` between builds).
 
 use std::fs;
-use std::iter;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -15,26 +15,14 @@ use crate::error::AppError;
 
 const SHA_PREFIX_LEN: usize = 8;
 
-pub fn compute_content_hashes(
+pub fn compute_statistic_shard_hashes(
     shards: Vec<FileReference>,
-    geometry: FileReference,
-) -> Result<(Vec<StatisticShard>, Hashed<FileReference>), AppError> {
-    let mut hash_plan: Vec<(FileReference, String)> = Vec::with_capacity(shards.len() + 1);
-
-    for shard in shards.iter().chain(iter::once(&geometry)) {
-        let sha256_hex: String = sha256_hex_of_file(&shard.path)?;
-        hash_plan.push((shard.clone(), sha256_hex));
-    }
-
-    let geometry_plan: (FileReference, String) = hash_plan.pop().expect("geometry hash plan");
-    let statistic_plan: Vec<(FileReference, String)> = hash_plan;
-
-    let geometry: Hashed<FileReference> = rename_to_content_hashed(geometry_plan.0, &geometry_plan.1)?;
-
-    let statistic_shards: Vec<StatisticShard> = statistic_plan
+) -> Result<Vec<StatisticShard>, AppError> {
+    shards
         .into_iter()
-        .map(|(tmp_file, sha256_hex)| {
+        .map(|tmp_file| {
             let (statistic_kind, license_shard_class) = parse_statistic_shard_filename(&tmp_file.path)?;
+            let sha256_hex: String = sha256_hex_of_file(&tmp_file.path)?;
             let renamed: Hashed<FileReference> = rename_to_content_hashed(tmp_file, &sha256_hex)?;
             Ok(StatisticShard {
                 statistic_kind,
@@ -42,9 +30,12 @@ pub fn compute_content_hashes(
                 hashed_file: renamed,
             })
         })
-        .collect::<Result<Vec<StatisticShard>, AppError>>()?;
+        .collect()
+}
 
-    Ok((statistic_shards, geometry))
+pub fn compute_geometry_hash(geometry: FileReference) -> Result<Hashed<FileReference>, AppError> {
+    let sha256_hex: String = sha256_hex_of_file(&geometry.path)?;
+    rename_to_content_hashed(geometry, &sha256_hex)
 }
 
 fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
@@ -168,11 +159,11 @@ mod tests {
     }
 
     #[test]
-    fn compute_content_hashes_matches_sha256_over_file_bytes() {
+    fn compute_statistic_shard_hashes_matches_sha256_over_file_bytes() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards, geometry) = make_shard_files(temp_dir.path());
+        let (shards, _geometry) = make_shard_files(temp_dir.path());
 
-        let (statistic_shards, _geometry) = compute_content_hashes(shards, geometry).unwrap();
+        let statistic_shards: Vec<StatisticShard> = compute_statistic_shard_hashes(shards).unwrap();
 
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
@@ -181,18 +172,15 @@ mod tests {
     }
 
     #[test]
-    fn compute_content_hashes_renames_tmp_files_to_sha8_filenames() {
+    fn compute_statistic_shard_hashes_renames_tmp_files_to_sha8_filenames() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards, geometry) = make_shard_files(temp_dir.path());
+        let (shards, _geometry) = make_shard_files(temp_dir.path());
         let original_shard_path: PathBuf = shards[0].path.clone();
-        let original_geometry_path: PathBuf = geometry.path.clone();
 
-        let (statistic_shards, geometry) = compute_content_hashes(shards, geometry).unwrap();
+        let statistic_shards: Vec<StatisticShard> = compute_statistic_shard_hashes(shards).unwrap();
 
         assert!(!original_shard_path.exists());
-        assert!(!original_geometry_path.exists());
         assert!(statistic_shards[0].hashed_file.path.exists());
-        assert!(geometry.path.exists());
 
         let shard_filename: String = statistic_shards[0]
             .hashed_file
@@ -204,6 +192,18 @@ mod tests {
         assert!(shard_filename.starts_with("tfr-base-"));
         assert!(shard_filename.ends_with(".sqlite"));
         assert!(!shard_filename.contains("-tmp."));
+    }
+
+    #[test]
+    fn compute_geometry_hash_renames_tmp_file_to_sha8_filename() {
+        let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+        let (_shards, geometry) = make_shard_files(temp_dir.path());
+        let original_geometry_path: PathBuf = geometry.path.clone();
+
+        let geometry: Hashed<FileReference> = compute_geometry_hash(geometry).unwrap();
+
+        assert!(!original_geometry_path.exists());
+        assert!(geometry.path.exists());
 
         let geometry_filename: String = geometry
             .path
@@ -216,42 +216,33 @@ mod tests {
     }
 
     #[test]
-    fn compute_content_hashes_is_idempotent_in_value_for_same_bytes() {
-        let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards_one, geometry_one) = make_shard_files(temp_dir.path());
+    fn compute_statistic_shard_hashes_is_idempotent_in_value_for_same_bytes() {
+        let temp_dir_one: tempfile::TempDir = tempfile::tempdir().unwrap();
+        let (shards_one, _geometry_one) = make_shard_files(temp_dir_one.path());
 
         let temp_dir_two: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards_two, geometry_two) = make_shard_files(temp_dir_two.path());
+        let (shards_two, _geometry_two) = make_shard_files(temp_dir_two.path());
 
-        let (statistic_shards_one, geometry_one) = compute_content_hashes(shards_one, geometry_one).unwrap();
-        let (statistic_shards_two, geometry_two) = compute_content_hashes(shards_two, geometry_two).unwrap();
+        let statistic_shards_one: Vec<StatisticShard> = compute_statistic_shard_hashes(shards_one).unwrap();
+        let statistic_shards_two: Vec<StatisticShard> = compute_statistic_shard_hashes(shards_two).unwrap();
 
         assert_eq!(
             statistic_shards_one[0].hashed_file.sha256_hex,
             statistic_shards_two[0].hashed_file.sha256_hex,
         );
-        assert_eq!(
-            geometry_one.sha256_hex,
-            geometry_two.sha256_hex,
-        );
     }
 
     #[test]
-    fn compute_content_hashes_aborts_without_renaming_if_one_file_missing() {
+    fn compute_statistic_shard_hashes_errors_when_file_missing() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards, geometry) = make_shard_files(temp_dir.path());
-        let surviving_path: PathBuf = shards[0].path.clone();
-
-        let mut shards: Vec<FileReference> = shards;
-        shards.push(FileReference {
+        let shards: Vec<FileReference> = vec![FileReference {
             path: temp_dir.path().join("missing-base-tmp.deadbeef.sqlite"),
             byte_count: 0,
-        });
+        }];
 
-        let result = compute_content_hashes(shards, geometry);
+        let result = compute_statistic_shard_hashes(shards);
 
         assert!(result.is_err());
-        assert!(surviving_path.exists());
     }
 
     #[test]
