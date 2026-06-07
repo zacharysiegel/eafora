@@ -49,7 +49,7 @@ pub fn hash_sqlite_shards(
         .into_iter()
         .map(|shard| {
             let sha256_hex: String = sha256_hex_of_file(&shard.file.path)?;
-            let hashed_file: Hashed<FileReference> = rename_to_content_hashed(shard.file, &sha256_hex)?;
+            let hashed_file: Hashed<FileReference> = rename_with_digest(shard.file, &sha256_hex)?;
             Ok(StatisticShard {
                 statistic_kind: shard.statistic_kind,
                 license_shard_class: shard.license_shard_class,
@@ -61,7 +61,7 @@ pub fn hash_sqlite_shards(
 
 pub fn hash_geometry(geometry: FileReference) -> Result<Hashed<FileReference>, AppError> {
     let sha256_hex: String = sha256_hex_of_file(&geometry.path)?;
-    rename_to_content_hashed(geometry, &sha256_hex)
+    rename_with_digest(geometry, &sha256_hex)
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -76,7 +76,7 @@ fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
     Ok(sha256_hex(&bytes))
 }
 
-fn rename_to_content_hashed(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashed<FileReference>, AppError> {
+fn rename_with_digest(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashed<FileReference>, AppError> {
     let new_path: PathBuf = build_hashed_path(&tmp_file.path, sha256_hex)?;
     fs::rename(&tmp_file.path, &new_path).map_err(|err| {
         AppError::from(format!(
