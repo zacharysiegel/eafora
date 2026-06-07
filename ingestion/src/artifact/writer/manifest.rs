@@ -32,7 +32,7 @@ struct ManifestEntry<'a> {
 }
 
 pub fn write_manifest(
-    shards: &[StatisticShard],
+    shards: &[StatisticShard<Hashed<FileReference>>],
     geometry: &Hashed<FileReference>,
     version_label: &str,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
@@ -50,7 +50,7 @@ pub fn write_manifest(
 }
 
 fn build_manifest_json(
-    shards: &[StatisticShard],
+    shards: &[StatisticShard<Hashed<FileReference>>],
     geometry: &Hashed<FileReference>,
     version_label: &str,
     artifact_created: &DateTime<Utc>,
@@ -65,9 +65,9 @@ fn build_manifest_json(
     let mut statistics: BTreeMap<&str, BTreeMap<&str, ManifestEntry<'_>>> = BTreeMap::new();
     for statistic_shard in shards {
         let entry: ManifestEntry<'_> = ManifestEntry {
-            relative_path: relative_path(&statistic_shard.hashed_file, "data")?,
-            size_bytes: statistic_shard.hashed_file.byte_count,
-            sha256: statistic_shard.hashed_file.sha256_hex(),
+            relative_path: relative_path(&statistic_shard.file, "data")?,
+            size_bytes: statistic_shard.file.byte_count,
+            sha256: statistic_shard.file.sha256_hex(),
         };
         statistics
             .entry(statistic_shard.statistic_kind.code())
@@ -109,12 +109,12 @@ mod tests {
     use crate::artifact::content_hashing;
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 
-    fn make_pre_manifest_artifacts() -> (Vec<StatisticShard>, Hashed<FileReference>) {
-        let shards: Vec<StatisticShard> = vec![
+    fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {
+        let shards: Vec<StatisticShard<Hashed<FileReference>>> = vec![
             StatisticShard {
                 statistic_kind: StatisticKind::Tfr,
                 license_shard_class: LicenseShardClass::Base,
-                hashed_file: Hashed::new_with_sha(
+                file: Hashed::new_with_sha(
                     FileReference {
                         path: PathBuf::from("/tmp/eafora/data/tfr-base-ef561234.sqlite"),
                         byte_count: 89000,
@@ -125,7 +125,7 @@ mod tests {
             StatisticShard {
                 statistic_kind: StatisticKind::Tfr,
                 license_shard_class: LicenseShardClass::NonCommercial,
-                hashed_file: Hashed::new_with_sha(
+                file: Hashed::new_with_sha(
                     FileReference {
                         path: PathBuf::from("/tmp/eafora/data/tfr-noncommercial-78ab9012.sqlite"),
                         byte_count: 4200,
@@ -136,7 +136,7 @@ mod tests {
             StatisticShard {
                 statistic_kind: StatisticKind::TestAlpha,
                 license_shard_class: LicenseShardClass::Base,
-                hashed_file: Hashed::new_with_sha(
+                file: Hashed::new_with_sha(
                     FileReference {
                         path: PathBuf::from("/tmp/eafora/data/_test_alpha-base-cccc1111.sqlite"),
                         byte_count: 50000,

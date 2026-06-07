@@ -11,8 +11,7 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, params};
 use uuid::Uuid;
 
-use crate::artifact::artifact_model::{ResolvedValue, FileReference};
-use crate::artifact::artifact_model::StatisticShardKey;
+use crate::artifact::artifact_model::{FileReference, ResolvedValue, StatisticShard, StatisticShardKey};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
@@ -21,12 +20,12 @@ const DATA_SUBDIR: &str = "data";
 pub fn write_sqlite_shards(
     values: &[ResolvedValue],
     output_dir: &Path,
-) -> Result<Vec<FileReference>, AppError> {
+) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
     let data_dir: PathBuf = output_dir.join(DATA_SUBDIR);
     fs::create_dir_all(&data_dir)?;
 
     let groups: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = group_values(values);
-    let shards: Vec<FileReference> = shard_values(&data_dir, groups)?;
+    let shards: Vec<StatisticShard<FileReference>> = shard_values(&data_dir, groups)?;
     Ok(shards)
 }
 
@@ -38,11 +37,15 @@ fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<StatisticShardKey, Vec<&
     grouped
 }
 
-fn shard_values(data_dir: &PathBuf, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<FileReference>, AppError> {
-    let mut shards: Vec<FileReference> = Vec::with_capacity(grouped.len());
+fn shard_values(data_dir: &PathBuf, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
+    let mut shards: Vec<StatisticShard<FileReference>> = Vec::with_capacity(grouped.len());
     for (shard_key, values) in grouped {
-        let shard: FileReference = write_one_shard(&data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
-        shards.push(shard);
+        let file: FileReference = write_one_shard(&data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
+        shards.push(StatisticShard {
+            statistic_kind: shard_key.statistic_kind,
+            license_shard_class: shard_key.license_shard_class,
+            file,
+        });
     }
     Ok(shards)
 }
@@ -162,13 +165,13 @@ mod tests {
             make_merged(StatisticKind::TestAlpha, LicenseShardClass::Base, "USA", 2022, 1.85),
         ];
 
-        let shards: Vec<FileReference> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 3);
         for shard in &shards {
-            assert!(shard.path.exists());
-            assert!(shard.byte_count > 0);
-            let filename: &str = shard.path.file_name().unwrap().to_str().unwrap();
+            assert!(shard.file.path.exists());
+            assert!(shard.file.byte_count > 0);
+            let filename: &str = shard.file.path.file_name().unwrap().to_str().unwrap();
             assert!(filename.contains("-tmp."));
             assert!(filename.ends_with(".sqlite"));
         }
@@ -182,10 +185,10 @@ mod tests {
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "JPN", 2022, 1.30),
         ];
 
-        let shards: Vec<FileReference> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 1);
-        let connection: Connection = Connection::open(&shards[0].path).unwrap();
+        let connection: Connection = Connection::open(&shards[0].file.path).unwrap();
         let row_count: i64 = connection
             .query_row("select count(*) from statistic_value", [], |row| row.get(0))
             .unwrap();
@@ -224,9 +227,9 @@ mod tests {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66)];
 
-        let shards: Vec<FileReference> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
-        let connection: Connection = Connection::open(&shards[0].path).unwrap();
+        let connection: Connection = Connection::open(&shards[0].file.path).unwrap();
         let index_count: i64 = connection
             .query_row(
                 "select count(*) from sqlite_master where type='index' and name='statistic_value_by_region'",
@@ -248,9 +251,9 @@ mod tests {
             1.66,
         )];
 
-        let shards: Vec<FileReference> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
-        let filename: &str = shards[0].path.file_name().unwrap().to_str().unwrap();
+        let filename: &str = shards[0].file.path.file_name().unwrap().to_str().unwrap();
         assert!(filename.starts_with("tfr-share_alike-tmp."));
     }
 }

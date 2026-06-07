@@ -54,7 +54,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert!(build.artifacts.manifest.path.ends_with("manifest.json"));
     assert!(build.artifacts.geometry.path.exists());
 
-    let tfr_shard_path: PathBuf = build.artifacts.shards[0].hashed_file.path.clone();
+    let tfr_shard_path: PathBuf = build.artifacts.shards[0].file.path.clone();
     let connection: Connection = Connection::open(&tfr_shard_path).unwrap();
     let row_count: i64 = connection
         .query_row("select count(*) from statistic_value", [], |row| row.get(0))
@@ -73,8 +73,8 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     let manifest_text: String = fs::read_to_string(&build.artifacts.manifest.path).unwrap();
     let manifest_value: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
     assert_eq!(manifest_value["version"], "2026-05-26-test");
-    assert!(manifest_value["statistics"]["tfr"]["base"]["url"].is_string());
-    assert!(manifest_value["geometry"]["url"].is_string());
+    assert!(manifest_value["statistics"]["tfr"]["base"]["relative_path"].is_string());
+    assert!(manifest_value["geometry"]["relative_path"].is_string());
 
     transaction.rollback().await.unwrap();
 }

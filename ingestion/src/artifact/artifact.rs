@@ -34,7 +34,7 @@ pub async fn build_artifacts(
     let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
     let statistic_kinds: Vec<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
-    let (shards, data_sources): (Vec<StatisticShard>, BTreeSet<DataSourceKind>) =
+    let (shards, data_sources): (Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>) =
         create_statistic_shards(connection, output_dir, &source_choices, statistic_kinds).await?;
     let geometry: Hashed<FileReference> = create_geometry(connection, output_dir, options).await?;
 
@@ -65,8 +65,8 @@ async fn create_statistic_shards(
     output_dir: &Path,
     source_choices: &Vec<SourceChoice>,
     statistic_kinds: Vec<StatisticKind>,
-) -> Result<(Vec<StatisticShard>, BTreeSet<DataSourceKind>), AppError> {
-    let mut shards: Vec<StatisticShard> = Vec::new();
+) -> Result<(Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>), AppError> {
+    let mut shards: Vec<StatisticShard<Hashed<FileReference>>> = Vec::new();
     let mut data_sources: BTreeSet<DataSourceKind> = BTreeSet::new();
 
     for kind in statistic_kinds {
@@ -85,8 +85,8 @@ async fn create_statistic_shards(
         }
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
-        let tmp_shards: Vec<FileReference> = sqlite::write_sqlite_shards(&resolved, output_dir)?;
-        let hashed_shards: Vec<StatisticShard> = content_hashing::hash_sqlite_shards(tmp_shards)?;
+        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, output_dir)?;
+        let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = content_hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!(
             "statistic {:?}: {} resolved values across {} shards",
             kind,

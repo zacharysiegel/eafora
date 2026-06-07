@@ -105,10 +105,10 @@ pub struct FileReference {
 }
 
 #[derive(Debug, Clone)]
-pub struct StatisticShard {
+pub struct StatisticShard<F> {
     pub statistic_kind: StatisticKind,
     pub license_shard_class: LicenseShardClass,
-    pub hashed_file: Hashed<FileReference>,
+    pub file: F,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -128,7 +128,7 @@ impl StatisticShardKey {
 
 #[derive(Debug, Clone)]
 pub struct Artifacts {
-    pub shards: Vec<StatisticShard>,
+    pub shards: Vec<StatisticShard<Hashed<FileReference>>>,
     pub geometry: Hashed<FileReference>,
     pub manifest: Hashed<FileReference>,
 }

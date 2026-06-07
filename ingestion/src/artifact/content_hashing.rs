@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::artifact::artifact_model::{FileReference, StatisticShard};
-use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
 const SHA_PREFIX_LEN: usize = 8;
@@ -46,18 +45,17 @@ impl<T> Deref for Hashed<T> {
 }
 
 pub fn hash_sqlite_shards(
-    shards: Vec<FileReference>,
-) -> Result<Vec<StatisticShard>, AppError> {
+    shards: Vec<StatisticShard<FileReference>>,
+) -> Result<Vec<StatisticShard<Hashed<FileReference>>>, AppError> {
     shards
         .into_iter()
-        .map(|tmp_file| {
-            let (statistic_kind, license_shard_class) = parse_statistic_shard_filename(&tmp_file.path)?;
-            let sha256_hex: String = sha256_hex_of_file(&tmp_file.path)?;
-            let renamed: Hashed<FileReference> = rename_to_content_hashed(tmp_file, &sha256_hex)?;
+        .map(|shard| {
+            let sha256_hex: String = sha256_hex_of_file(&shard.file.path)?;
+            let hashed_file: Hashed<FileReference> = rename_to_content_hashed(shard.file, &sha256_hex)?;
             Ok(StatisticShard {
-                statistic_kind,
-                license_shard_class,
-                hashed_file: renamed,
+                statistic_kind: shard.statistic_kind,
+                license_shard_class: shard.license_shard_class,
+                file: hashed_file,
             })
         })
         .collect()
@@ -129,31 +127,6 @@ fn trim_tmp_uuid_segment(name_part: &str) -> Option<&str> {
     Some(stem)
 }
 
-fn parse_statistic_shard_filename(path: &Path) -> Result<(StatisticKind, LicenseShardClass), AppError> {
-    let filename: &str = path
-        .file_name()
-        .and_then(|os| os.to_str())
-        .ok_or_else(|| AppError::from(format!("bad path {:?}", path)))?;
-
-    let stem: &str = filename.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(filename);
-    let stem_without_uuid: &str =
-        trim_tmp_uuid_segment(stem).ok_or_else(|| {
-            AppError::from(format!(
-                "missing -tmp. in {}",
-                filename,
-            ))
-        })?;
-
-    let (statistic_code, license_part): (&str, &str) = stem_without_uuid
-        .rsplit_once('-')
-        .ok_or_else(|| AppError::from(format!("no license suffix in {}", filename)))?;
-
-    let statistic_kind: StatisticKind = StatisticKind::try_from(statistic_code)?;
-    let license_shard_class: LicenseShardClass = LicenseShardClass::try_from(license_part)?;
-
-    Ok((statistic_kind, license_shard_class))
-}
-
 fn hex_encode(bytes: &[u8]) -> String {
     let mut hex_string: String = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -168,7 +141,9 @@ mod tests {
 
     use uuid::Uuid;
 
-    fn write_tmp_shard(temp_dir: &Path, filename: &str, contents: &[u8]) -> FileReference {
+    use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
+
+    fn write_tmp_file(temp_dir: &Path, filename: &str, contents: &[u8]) -> FileReference {
         let path: PathBuf = temp_dir.join(filename);
         fs::write(&path, contents).unwrap();
         FileReference {
@@ -177,14 +152,19 @@ mod tests {
         }
     }
 
-    fn make_shard_files(temp_dir: &Path) -> (Vec<FileReference>, FileReference) {
+    fn make_shard_and_geometry(temp_dir: &Path) -> (Vec<StatisticShard<FileReference>>, FileReference) {
         let tmp_uuid: Uuid = Uuid::now_v7();
-        let shard: FileReference = write_tmp_shard(
+        let shard_file: FileReference = write_tmp_file(
             temp_dir,
             &format!("tfr-base-tmp.{}.sqlite", tmp_uuid),
             b"SQLITE FAKE",
         );
-        let geometry: FileReference = write_tmp_shard(
+        let shard: StatisticShard<FileReference> = StatisticShard {
+            statistic_kind: StatisticKind::Tfr,
+            license_shard_class: LicenseShardClass::Base,
+            file: shard_file,
+        };
+        let geometry: FileReference = write_tmp_file(
             temp_dir,
             &format!("world-50m-tmp.{}.fgb", tmp_uuid),
             b"FGB FAKE",
@@ -193,31 +173,31 @@ mod tests {
     }
 
     #[test]
-    fn hash_shards_matches_sha256_over_file_bytes() {
+    fn hash_sqlite_shards_matches_sha256_over_file_bytes() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards, _geometry) = make_shard_files(temp_dir.path());
+        let (shards, _geometry) = make_shard_and_geometry(temp_dir.path());
 
-        let shards: Vec<StatisticShard> = hash_sqlite_shards(shards).unwrap();
+        let shards: Vec<StatisticShard<Hashed<FileReference>>> = hash_sqlite_shards(shards).unwrap();
 
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
         let expected: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
-        assert_eq!(shards[0].hashed_file.sha256_hex(), expected);
+        assert_eq!(shards[0].file.sha256_hex(), expected);
     }
 
     #[test]
-    fn hash_shards_renames_tmp_files_to_sha8_filenames() {
+    fn hash_sqlite_shards_renames_tmp_files_to_sha8_filenames() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards, _geometry) = make_shard_files(temp_dir.path());
-        let original_shard_path: PathBuf = shards[0].path.clone();
+        let (shards, _geometry) = make_shard_and_geometry(temp_dir.path());
+        let original_shard_path: PathBuf = shards[0].file.path.clone();
 
-        let shards: Vec<StatisticShard> = hash_sqlite_shards(shards).unwrap();
+        let shards: Vec<StatisticShard<Hashed<FileReference>>> = hash_sqlite_shards(shards).unwrap();
 
         assert!(!original_shard_path.exists());
-        assert!(shards[0].hashed_file.path.exists());
+        assert!(shards[0].file.path.exists());
 
         let shard_filename: String = shards[0]
-            .hashed_file
+            .file
             .path
             .file_name()
             .unwrap()
@@ -231,7 +211,7 @@ mod tests {
     #[test]
     fn hash_geometry_renames_tmp_file_to_sha8_filename() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (_shards, geometry) = make_shard_files(temp_dir.path());
+        let (_shards, geometry) = make_shard_and_geometry(temp_dir.path());
         let original_geometry_path: PathBuf = geometry.path.clone();
 
         let geometry: Hashed<FileReference> = hash_geometry(geometry).unwrap();
@@ -250,46 +230,36 @@ mod tests {
     }
 
     #[test]
-    fn hash_shards_is_idempotent_in_value_for_same_bytes() {
+    fn hash_sqlite_shards_is_idempotent_in_value_for_same_bytes() {
         let temp_dir_one: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards_one, _geometry_one) = make_shard_files(temp_dir_one.path());
+        let (shards_one, _geometry_one) = make_shard_and_geometry(temp_dir_one.path());
 
         let temp_dir_two: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let (shards_two, _geometry_two) = make_shard_files(temp_dir_two.path());
+        let (shards_two, _geometry_two) = make_shard_and_geometry(temp_dir_two.path());
 
-        let shards_one: Vec<StatisticShard> = hash_sqlite_shards(shards_one).unwrap();
-        let shards_two: Vec<StatisticShard> = hash_sqlite_shards(shards_two).unwrap();
+        let shards_one: Vec<StatisticShard<Hashed<FileReference>>> = hash_sqlite_shards(shards_one).unwrap();
+        let shards_two: Vec<StatisticShard<Hashed<FileReference>>> = hash_sqlite_shards(shards_two).unwrap();
 
         assert_eq!(
-            shards_one[0].hashed_file.sha256_hex(),
-            shards_two[0].hashed_file.sha256_hex(),
+            shards_one[0].file.sha256_hex(),
+            shards_two[0].file.sha256_hex(),
         );
     }
 
     #[test]
-    fn hash_shards_errors_when_file_missing() {
+    fn hash_sqlite_shards_errors_when_file_missing() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let shards: Vec<FileReference> = vec![FileReference {
-            path: temp_dir.path().join("missing-base-tmp.deadbeef.sqlite"),
-            byte_count: 0,
+        let shards: Vec<StatisticShard<FileReference>> = vec![StatisticShard {
+            statistic_kind: StatisticKind::Tfr,
+            license_shard_class: LicenseShardClass::Base,
+            file: FileReference {
+                path: temp_dir.path().join("tfr-base-tmp.deadbeef.sqlite"),
+                byte_count: 0,
+            },
         }];
 
         let result = hash_sqlite_shards(shards);
 
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn parse_statistic_shard_filename_recognizes_all_license_classes() {
-        let cases: [(&str, LicenseShardClass); 3] = [
-            ("tfr-base-tmp.x.sqlite", LicenseShardClass::Base),
-            ("tfr-share_alike-tmp.x.sqlite", LicenseShardClass::ShareAlike),
-            ("tfr-noncommercial-tmp.x.sqlite", LicenseShardClass::NonCommercial),
-        ];
-        for (filename, expected) in cases {
-            let path: PathBuf = PathBuf::from(filename);
-            let (_, license_shard_class) = parse_statistic_shard_filename(&path).unwrap();
-            assert_eq!(license_shard_class, expected);
-        }
     }
 }
