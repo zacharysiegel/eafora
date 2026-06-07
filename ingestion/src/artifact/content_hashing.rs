@@ -1,5 +1,5 @@
 //! Each file is hashed, then renamed from its tmp filename to a
-//! content-addressed name (sha256 prefix). A failed run leaves stray
+//! content-addressed name (full sha256 hex). A failed run leaves stray
 //! tmp or hashed files in the output directory; the next build writes
 //! fresh tmp files with new uuids and produces its own correct output,
 //! so cleanup is best-effort (wipe `output_dir` between builds).
@@ -12,8 +12,6 @@ use sha2::{Digest, Sha256};
 
 use crate::artifact::artifact_model::{FileReference, StatisticShard};
 use crate::error::AppError;
-
-const SHA_PREFIX_LEN: usize = 8;
 
 #[derive(Debug, Clone)]
 pub struct Hashed<T> {
@@ -115,11 +113,7 @@ fn build_hashed_path(tmp_path: &Path, sha256_hex: &str) -> Result<PathBuf, AppEr
         ))
     })?;
 
-    let sha_prefix: &str = sha256_hex
-        .get(..SHA_PREFIX_LEN)
-        .ok_or_else(|| AppError::from(format!("short hash {}", sha256_hex)))?;
-
-    Ok(parent.join(format!("{}-{}.{}", stem_without_uuid, sha_prefix, extension)))
+    Ok(parent.join(format!("{}-{}.{}", stem_without_uuid, sha256_hex, extension)))
 }
 
 fn trim_tmp_uuid_segment(name_part: &str) -> Option<&str> {
@@ -186,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn hash_sqlite_shards_renames_tmp_files_to_sha8_filenames() {
+    fn hash_sqlite_shards_renames_tmp_files_to_sha256_filenames() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, _geometry) = make_shard_and_geometry(temp_dir.path());
         let original_shard_path: PathBuf = shards[0].file.path.clone();
@@ -209,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn hash_geometry_renames_tmp_file_to_sha8_filename() {
+    fn hash_geometry_renames_tmp_file_to_sha256_filename() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (_shards, geometry) = make_shard_and_geometry(temp_dir.path());
         let original_geometry_path: PathBuf = geometry.path.clone();

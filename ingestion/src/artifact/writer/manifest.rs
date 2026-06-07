@@ -57,7 +57,7 @@ fn build_manifest_json(
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<String, AppError> {
     let geometry_entry: ManifestEntry<'_> = ManifestEntry {
-        relative_path: relative_path(geometry, "geometry")?,
+        relative_path: relative_path("geometry", geometry)?,
         size_bytes: geometry.byte_count,
         sha256: geometry.sha256_hex(),
     };
@@ -65,7 +65,7 @@ fn build_manifest_json(
     let mut statistics: BTreeMap<&str, BTreeMap<&str, ManifestEntry<'_>>> = BTreeMap::new();
     for statistic_shard in shards {
         let entry: ManifestEntry<'_> = ManifestEntry {
-            relative_path: relative_path(&statistic_shard.file, "data")?,
+            relative_path: relative_path("data", &statistic_shard.file)?,
             size_bytes: statistic_shard.file.byte_count,
             sha256: statistic_shard.file.sha256_hex(),
         };
@@ -92,12 +92,12 @@ fn build_manifest_json(
     Ok(json)
 }
 
-fn relative_path(hashed_file: &Hashed<FileReference>, subdir: &str) -> Result<String, AppError> {
+fn relative_path(subdir: &str, hashed_file: &Hashed<FileReference>) -> Result<String, AppError> {
     let filename: &str = hashed_file
         .path
         .file_name()
         .and_then(|os| os.to_str())
-        .ok_or_else(|| AppError::from(format!("bad path {:?}", hashed_file.path)))?;
+        .ok_or_else(|| AppError::new(&format!("bad path {:?}", hashed_file.path)))?;
     Ok(format!("{}/{}", subdir, filename))
 }
 
