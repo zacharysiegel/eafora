@@ -32,7 +32,7 @@ pub async fn build_artifacts(
     fs::create_dir_all(output_dir)?;
 
     let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
-    let statistic_kinds: Vec<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
+    let statistic_kinds: BTreeSet<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
     let (shards, data_sources): (Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>) =
         create_statistic_shards(connection, output_dir, &source_choices, statistic_kinds).await?;
@@ -64,7 +64,7 @@ async fn create_statistic_shards(
     connection: &mut PgConnection,
     output_dir: &Path,
     source_choices: &Vec<SourceChoice>,
-    statistic_kinds: Vec<StatisticKind>,
+    statistic_kinds: BTreeSet<StatisticKind>,
 ) -> Result<(Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>), AppError> {
     let mut shards: Vec<StatisticShard<Hashed<FileReference>>> = Vec::new();
     let mut data_sources: BTreeSet<DataSourceKind> = BTreeSet::new();

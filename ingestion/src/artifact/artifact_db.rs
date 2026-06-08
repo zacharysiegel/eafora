@@ -41,7 +41,9 @@ pub async fn read_candidate_values_for_statistic<'e>(
     .fetch_all(executor)
     .await?;
 
-    projections.into_iter().map(CandidateValue::try_from).collect()
+    projections.into_iter()
+        .map(CandidateValue::try_from)
+        .collect()
 }
 
 pub async fn read_country_iso3_to_name_en<'e>(
@@ -58,12 +60,15 @@ pub async fn read_country_iso3_to_name_en<'e>(
     .fetch_all(executor)
     .await?;
 
-    Ok(projections.into_iter().map(|projection| (projection.iso3, projection.name_en)).collect())
+    let map: BTreeMap<String, String> = projections.into_iter()
+        .map(|projection| (projection.iso3, projection.name_en))
+        .collect();
+    Ok(map)
 }
 
 pub async fn read_all_statistic_kinds<'e>(
     executor: impl PgExecutor<'e>,
-) -> Result<Vec<StatisticKind>, AppError> {
+) -> Result<BTreeSet<StatisticKind>, AppError> {
     let codes: Vec<String> = sqlx::query_scalar!("select code from statistic")
         .fetch_all(executor)
         .await?;
