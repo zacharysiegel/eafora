@@ -50,10 +50,17 @@ pub async fn write_geometry<'e>(
     executor: impl PgExecutor<'e>,
     output_dir: &Path,
 ) -> Result<FileReference, AppError> {
+    let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&http::HTTP_CLIENT).await?;
+    write_flatgeobuf_from_shapefile(executor, &shapefile_bytes, output_dir).await
+}
+
+pub async fn write_flatgeobuf_from_shapefile<'e>(
+    executor: impl PgExecutor<'e>,
+    shapefile_bytes: &ShapefileBytes,
+    output_dir: &Path,
+) -> Result<FileReference, AppError> {
     let iso3_to_name_en: BTreeMap<String, String> =
         artifact_db::read_country_iso3_to_name_en(executor).await?;
-
-    let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&http::HTTP_CLIENT).await?;
 
     let path: PathBuf = build_tmp_geometry_path(output_dir)?;
 
@@ -61,7 +68,7 @@ pub async fn write_geometry<'e>(
     writer.add_column(COLUMN_ISO3.name, ColumnType::String, |_fbb, _col| {});
     writer.add_column(COLUMN_NAME_EN.name, ColumnType::String, |_fbb, _col| {});
 
-    let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(&shapefile_bytes)?;
+    let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(shapefile_bytes)?;
 
     for shape_and_record in reader.iter_shapes_and_records() {
         let (shape, record) = shape_and_record?;

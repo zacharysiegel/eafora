@@ -18,11 +18,14 @@ use uuid::Uuid;
 use ingestion::artifact::{self, BuildOptions, ArtifactBuildReport};
 use ingestion::artifact::artifact_model::FileReference;
 use ingestion::canonical::canonical_model::DataSourceKind;
-use ingestion::artifact::writer::flatgeobuf::{write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME, PLACEHOLDER_GEOMETRY_BYTES};
+use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME, PLACEHOLDER_GEOMETRY_BYTES};
 use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
+use ingestion::geometry::natural_earth::{self, ShapefileBytes};
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
 use helpers::test_db::test_pool;
+
+const BUNDLED_NATURAL_EARTH_ZIP: &str = "samples/natural_earth/ne_50m_admin_0_countries.zip";
 
 #[tokio::test]
 async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_manifest() {
@@ -164,11 +167,40 @@ async fn write_geometry_flatgeobuf_against_live_natural_earth_release() {
             .await
             .expect("geometry shard emitted");
 
-    assert!(geometry.path.exists());
-    let bytes_on_disk: Vec<u8> = fs::read(&geometry.path).unwrap();
+    assert_geometry_fgb_well_formed(&geometry.path);
+
+    transaction.rollback().await.unwrap();
+}
+
+/// Offline counterpart to the live test: uses the bundled Natural Earth zip
+/// in `samples/natural_earth/` so CI exercises the FGB pipeline without
+/// hitting the network. The pinned shapefile is byte-stable, so the same
+/// feature count and layer assertions apply.
+#[tokio::test]
+async fn write_flatgeobuf_from_bundled_natural_earth_sample() {
+    let pool: PgPool = test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let zip_bytes: Vec<u8> = fs::read(BUNDLED_NATURAL_EARTH_ZIP).unwrap();
+    let shapefile_bytes: ShapefileBytes = natural_earth::extract_shapefile_from_zip(&zip_bytes).unwrap();
+
+    let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let geometry: FileReference =
+        write_flatgeobuf_from_shapefile(&mut *transaction, &shapefile_bytes, temp_dir.path())
+            .await
+            .expect("offline geometry shard emitted");
+
+    assert_geometry_fgb_well_formed(&geometry.path);
+
+    transaction.rollback().await.unwrap();
+}
+
+fn assert_geometry_fgb_well_formed(path: &std::path::Path) {
+    assert!(path.exists());
+    let bytes_on_disk: Vec<u8> = fs::read(path).unwrap();
     assert!(bytes_on_disk.starts_with(b"fgb\x03fgb\x00"));
 
-    let mut reader: BufReader<File> = BufReader::new(File::open(&geometry.path).unwrap());
+    let mut reader: BufReader<File> = BufReader::new(File::open(path).unwrap());
     let header_reader = FgbReader::open(&mut reader).expect("FGB header");
     let header = header_reader.header();
     assert_eq!(header.name(), Some(GEOMETRY_LAYER_NAME));
@@ -179,8 +211,6 @@ async fn write_geometry_flatgeobuf_against_live_natural_earth_release() {
         "feature count {} outside expected admin-0 range [200, 300]",
         features_count,
     );
-
-    transaction.rollback().await.unwrap();
 }
 
 async fn insert_data_source_publication(

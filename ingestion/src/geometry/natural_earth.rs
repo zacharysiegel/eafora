@@ -28,7 +28,7 @@ pub async fn download_pinned_release(client: &reqwest::Client) -> Result<Shapefi
     Ok(shapefile_bytes)
 }
 
-fn extract_shapefile_from_zip(zip_bytes: &[u8]) -> Result<ShapefileBytes, AppError> {
+pub fn extract_shapefile_from_zip(zip_bytes: &[u8]) -> Result<ShapefileBytes, AppError> {
     let cursor: Cursor<&[u8]> = Cursor::new(zip_bytes);
     let mut archive: zip::ZipArchive<Cursor<&[u8]>> = zip::ZipArchive::new(cursor)?;
 
