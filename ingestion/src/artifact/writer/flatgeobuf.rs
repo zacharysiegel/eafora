@@ -36,6 +36,7 @@ const GEOMETRY_SUBDIR: &str = "geometry";
 const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
 const GEOMETRY_FILENAME_STEM: &str = "world-50m";
 const ADM0_A3_FIELD: &str = "ADM0_A3";
+const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 
 pub async fn write_geometry<'e>(
     executor: impl PgExecutor<'e>,
@@ -88,8 +89,6 @@ pub async fn write_geometry<'e>(
 
     Ok(FileReference { path, byte_count })
 }
-
-const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 
 pub fn write_placeholder_geometry(output_dir: &Path) -> Result<FileReference, AppError> {
     let path: PathBuf = build_tmp_geometry_path(output_dir)?;
