@@ -47,11 +47,7 @@ pub async fn write_geometry<'e>(
     let client: reqwest::Client = reqwest::Client::new();
     let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&client).await?;
 
-    let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
-    fs::create_dir_all(&geometry_dir)?;
-
-    let tmp_uuid: Uuid = Uuid::now_v7();
-    let path: PathBuf = geometry_dir.join(format!("{}.tmp-{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
+    let path: PathBuf = build_tmp_geometry_path(output_dir)?;
 
     let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
     writer.add_column("iso3", ColumnType::String, |_fbb, _col| {});
@@ -96,17 +92,20 @@ pub async fn write_geometry<'e>(
 const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 
 pub fn write_placeholder_geometry(output_dir: &Path) -> Result<FileReference, AppError> {
-    let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
-    fs::create_dir_all(&geometry_dir)?;
-
-    let tmp_uuid: Uuid = Uuid::now_v7();
-    let path: PathBuf = geometry_dir.join(format!("{}.tmp-{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
+    let path: PathBuf = build_tmp_geometry_path(output_dir)?;
     fs::write(&path, PLACEHOLDER_GEOMETRY_BYTES)?;
 
     Ok(FileReference {
         path,
         byte_count: PLACEHOLDER_GEOMETRY_BYTES.len() as u64,
     })
+}
+
+fn build_tmp_geometry_path(output_dir: &Path) -> Result<PathBuf, AppError> {
+    let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
+    fs::create_dir_all(&geometry_dir)?;
+    let tmp_uuid: Uuid = Uuid::now_v7();
+    Ok(geometry_dir.join(format!("{}.tmp-{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid)))
 }
 
 fn build_shapefile_reader<'a>(
