@@ -8,19 +8,17 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use uuid::Uuid;
 
 use crate::artifact::artifact_model::{FileReference, ResolvedValue, StatisticShard, StatisticShardKey};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
-use super::manifest;
 
 pub fn write_sqlite_shards(
     values: &[ResolvedValue],
-    output_dir: &Path,
+    data_dir: &Path,
 ) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
-    let data_dir: PathBuf = output_dir.join(manifest::SUBDIR_DATA);
     fs::create_dir_all(&data_dir)?;
 
     let groups: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = group_values(values);
@@ -36,7 +34,7 @@ fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<StatisticShardKey, Vec<&
     grouped
 }
 
-fn shard_values(data_dir: &PathBuf, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
+fn shard_values(data_dir: &Path, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
     let mut shards: Vec<StatisticShard<FileReference>> = Vec::with_capacity(grouped.len());
     for (shard_key, values) in grouped {
         let file: FileReference = write_one_shard(&data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
