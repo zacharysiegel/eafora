@@ -28,8 +28,7 @@ create table if not exists country (
     iso3      text                     not null unique,
     iso2      text                     not null unique,
     created   timestamp with time zone not null default now(),
-    modified  timestamp with time zone not null default now(),
-    deleted   timestamp with time zone
+    modified  timestamp with time zone not null default now()
 );
 
 comment on column country.region_id is 'both PK and FK to region.id; enforces the strict 1:1 extension shape (every country row corresponds to exactly one region row at level=''country'', and vice versa)';

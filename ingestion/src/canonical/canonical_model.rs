@@ -47,7 +47,6 @@ pub struct Country {
     pub iso2: String,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
-    pub deleted: Option<DateTime<Utc>>,
 }
 
 pub struct CountryEntity {
@@ -56,7 +55,6 @@ pub struct CountryEntity {
     pub iso2: String,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
-    pub deleted: Option<DateTime<Utc>>,
 }
 
 impl From<CountryEntity> for Country {
@@ -67,7 +65,6 @@ impl From<CountryEntity> for Country {
             iso2: entity.iso2,
             created: entity.created,
             modified: entity.modified,
-            deleted: entity.deleted,
         }
     }
 }

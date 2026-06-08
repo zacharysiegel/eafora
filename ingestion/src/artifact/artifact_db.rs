@@ -53,7 +53,6 @@ pub async fn read_country_iso3_to_name_en<'e>(
         select country.iso3, region.name_en
         from country
         join region on region.id = country.region_id
-        where country.deleted is null
         "#,
     )
     .fetch_all(executor)
