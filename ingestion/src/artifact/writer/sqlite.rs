@@ -39,8 +39,7 @@ fn shard_values(data_dir: &Path, grouped: BTreeMap<StatisticShardKey, Vec<&Resol
     for (shard_key, values) in grouped {
         let file: FileReference = write_one_shard(&data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
         shards.push(StatisticShard {
-            statistic_kind: shard_key.statistic_kind,
-            license_shard_class: shard_key.license_shard_class,
+            key: shard_key,
             file,
         });
     }
@@ -167,7 +166,7 @@ mod tests {
             assert!(shard.file.path.exists());
             assert!(shard.file.byte_count > 0);
             let filename: &str = shard.file.path.file_name().unwrap().to_str().unwrap();
-            assert!(filename.contains("-tmp."));
+            assert!(filename.contains(".tmp-"));
             assert!(filename.ends_with(".sqlite"));
         }
     }
@@ -249,6 +248,6 @@ mod tests {
         let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         let filename: &str = shards[0].file.path.file_name().unwrap().to_str().unwrap();
-        assert!(filename.starts_with("tfr-share_alike-tmp."));
+        assert!(filename.starts_with("tfr-share_alike.tmp-"));
     }
 }

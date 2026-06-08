@@ -51,8 +51,7 @@ pub fn hash_sqlite_shards(
             let sha256_hex: String = sha256_hex_of_file(&shard.file.path)?;
             let hashed_file: Hashed<FileReference> = rename_with_digest(shard.file, &sha256_hex)?;
             Ok(StatisticShard {
-                statistic_kind: shard.statistic_kind,
-                license_shard_class: shard.license_shard_class,
+                key: shard.key,
                 file: hashed_file,
             })
         })
@@ -135,6 +134,7 @@ mod tests {
 
     use uuid::Uuid;
 
+    use crate::artifact::artifact_model::StatisticShardKey;
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 
     fn write_tmp_file(temp_dir: &Path, filename: &str, contents: &[u8]) -> FileReference {
@@ -154,8 +154,10 @@ mod tests {
             b"SQLITE FAKE",
         );
         let shard: StatisticShard<FileReference> = StatisticShard {
-            statistic_kind: StatisticKind::Tfr,
-            license_shard_class: LicenseShardClass::Base,
+            key: StatisticShardKey {
+                statistic_kind: StatisticKind::Tfr,
+                license_shard_class: LicenseShardClass::Base,
+            },
             file: shard_file,
         };
         let geometry: FileReference = write_tmp_file(
@@ -244,8 +246,10 @@ mod tests {
     fn hash_sqlite_shards_errors_when_file_missing() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let shards: Vec<StatisticShard<FileReference>> = vec![StatisticShard {
-            statistic_kind: StatisticKind::Tfr,
-            license_shard_class: LicenseShardClass::Base,
+            key: StatisticShardKey {
+                statistic_kind: StatisticKind::Tfr,
+                license_shard_class: LicenseShardClass::Base,
+            },
             file: FileReference {
                 path: temp_dir.path().join("tfr-base.tmp-deadbeef.sqlite"),
                 byte_count: 0,

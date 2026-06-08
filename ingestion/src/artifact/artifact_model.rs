@@ -106,8 +106,7 @@ pub struct FileReference {
 
 #[derive(Debug, Clone)]
 pub struct StatisticShard<F> {
-    pub statistic_kind: StatisticKind,
-    pub license_shard_class: LicenseShardClass,
+    pub key: StatisticShardKey,
     pub file: F,
 }
 

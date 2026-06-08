@@ -72,9 +72,9 @@ fn build_manifest_json(
             sha256: statistic_shard.file.sha256_hex(),
         };
         statistics
-            .entry(statistic_shard.statistic_kind.code())
+            .entry(statistic_shard.key.statistic_kind.code())
             .or_default()
-            .insert(statistic_shard.license_shard_class.as_str(), entry);
+            .insert(statistic_shard.key.license_shard_class.as_str(), entry);
     }
 
     let source_revisions: BTreeMap<&str, &SourceRevision> = data_source_revisions
@@ -107,15 +107,17 @@ fn relative_path(subdir: &str, hashed_file: &Hashed<FileReference>) -> Result<St
 mod tests {
     use super::*;
 
-    use crate::artifact::artifact_model::StatisticShard;
+    use crate::artifact::artifact_model::{StatisticShard, StatisticShardKey};
     use crate::artifact::content_hashing;
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 
     fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {
         let shards: Vec<StatisticShard<Hashed<FileReference>>> = vec![
             StatisticShard {
-                statistic_kind: StatisticKind::Tfr,
-                license_shard_class: LicenseShardClass::Base,
+                key: StatisticShardKey {
+                    statistic_kind: StatisticKind::Tfr,
+                    license_shard_class: LicenseShardClass::Base,
+                },
                 file: Hashed::new_with_sha(
                     FileReference {
                         path: PathBuf::from("/tmp/eafora/data/tfr-base-ef561234.sqlite"),
@@ -125,8 +127,10 @@ mod tests {
                 ),
             },
             StatisticShard {
-                statistic_kind: StatisticKind::Tfr,
-                license_shard_class: LicenseShardClass::NonCommercial,
+                key: StatisticShardKey {
+                    statistic_kind: StatisticKind::Tfr,
+                    license_shard_class: LicenseShardClass::NonCommercial,
+                },
                 file: Hashed::new_with_sha(
                     FileReference {
                         path: PathBuf::from("/tmp/eafora/data/tfr-noncommercial-78ab9012.sqlite"),
@@ -136,8 +140,10 @@ mod tests {
                 ),
             },
             StatisticShard {
-                statistic_kind: StatisticKind::TestAlpha,
-                license_shard_class: LicenseShardClass::Base,
+                key: StatisticShardKey {
+                    statistic_kind: StatisticKind::TestAlpha,
+                    license_shard_class: LicenseShardClass::Base,
+                },
                 file: Hashed::new_with_sha(
                     FileReference {
                         path: PathBuf::from("/tmp/eafora/data/_test_alpha-base-cccc1111.sqlite"),
