@@ -18,13 +18,11 @@ use uuid::Uuid;
 use ingestion::artifact::{self, BuildOptions, ArtifactBuildReport};
 use ingestion::artifact::artifact_model::FileReference;
 use ingestion::canonical::canonical_model::DataSourceKind;
-use ingestion::artifact::writer::flatgeobuf::{write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME};
+use ingestion::artifact::writer::flatgeobuf::{write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME, PLACEHOLDER_GEOMETRY_BYTES};
 use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
 use helpers::test_db::test_pool;
-
-const PLACEHOLDER_GEOMETRY_BYTE_COUNT: u64 = 15; // b"FGB-PLACEHOLDER".len()
 
 #[tokio::test]
 async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_manifest() {
@@ -72,7 +70,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert!(build.artifacts.manifest.byte_count > 0);
 
     assert!(build.artifacts.geometry.path.exists());
-    assert_eq!(build.artifacts.geometry.byte_count, PLACEHOLDER_GEOMETRY_BYTE_COUNT);
+    assert_eq!(build.artifacts.geometry.byte_count, PLACEHOLDER_GEOMETRY_BYTES.len() as u64);
     let geometry_filename: &str = build.artifacts.geometry.path.file_name().unwrap().to_str().unwrap();
     assert!(geometry_filename.starts_with(&format!("{}-", GEOMETRY_FILENAME_STEM)));
     assert!(geometry_filename.ends_with(".fgb"));

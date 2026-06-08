@@ -37,7 +37,7 @@ use crate::http;
 pub const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
 pub const GEOMETRY_FILENAME_STEM: &str = "world-50m";
 const ADM0_A3_FIELD: &str = "ADM0_A3";
-const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
+pub const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 const COLUMN_ISO3: Column = Column { index: 0, name: "iso3" };
 const COLUMN_NAME_EN: Column = Column { index: 1, name: "name_en" };
 
