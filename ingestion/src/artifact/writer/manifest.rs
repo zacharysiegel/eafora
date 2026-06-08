@@ -13,7 +13,9 @@ use crate::artifact::content_hashing::Hashed;
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 
-const MANIFEST_FILENAME: &str = "manifest.json";
+pub const MANIFEST_FILENAME: &str = "manifest.json";
+pub const SUBDIR_GEOMETRY: &str = "geometry";
+pub const SUBDIR_DATA: &str = "data";
 
 #[derive(Debug, Serialize)]
 struct ManifestSerializer<'a> {
@@ -57,7 +59,7 @@ fn build_manifest_json(
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<String, AppError> {
     let geometry_entry: ManifestEntry<'_> = ManifestEntry {
-        relative_path: relative_path("geometry", geometry)?,
+        relative_path: relative_path(SUBDIR_GEOMETRY, geometry)?,
         size_bytes: geometry.byte_count,
         sha256: geometry.sha256_hex(),
     };
@@ -65,7 +67,7 @@ fn build_manifest_json(
     let mut statistics: BTreeMap<&str, BTreeMap<&str, ManifestEntry<'_>>> = BTreeMap::new();
     for statistic_shard in shards {
         let entry: ManifestEntry<'_> = ManifestEntry {
-            relative_path: relative_path("data", &statistic_shard.file)?,
+            relative_path: relative_path(SUBDIR_DATA, &statistic_shard.file)?,
             size_bytes: statistic_shard.file.byte_count,
             sha256: statistic_shard.file.sha256_hex(),
         };

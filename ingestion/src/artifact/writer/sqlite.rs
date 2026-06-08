@@ -14,14 +14,13 @@ use uuid::Uuid;
 use crate::artifact::artifact_model::{FileReference, ResolvedValue, StatisticShard, StatisticShardKey};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
-
-const DATA_SUBDIR: &str = "data";
+use super::manifest;
 
 pub fn write_sqlite_shards(
     values: &[ResolvedValue],
     output_dir: &Path,
 ) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
-    let data_dir: PathBuf = output_dir.join(DATA_SUBDIR);
+    let data_dir: PathBuf = output_dir.join(manifest::SUBDIR_DATA);
     fs::create_dir_all(&data_dir)?;
 
     let groups: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = group_values(values);
