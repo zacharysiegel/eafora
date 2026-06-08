@@ -108,7 +108,7 @@ fn build_hashed_path(tmp_path: &Path, sha256_hex: &str) -> Result<PathBuf, AppEr
 
     let stem_without_uuid: &str = trim_tmp_uuid_segment(name_part).ok_or_else(|| {
         AppError::from(format!(
-            "filename {:?} missing -tmp.<uuid> segment",
+            "filename {:?} missing .tmp-<uuid> segment",
             filename,
         ))
     })?;
@@ -117,7 +117,7 @@ fn build_hashed_path(tmp_path: &Path, sha256_hex: &str) -> Result<PathBuf, AppEr
 }
 
 fn trim_tmp_uuid_segment(name_part: &str) -> Option<&str> {
-    let (stem, _uuid_part): (&str, &str) = name_part.rsplit_once("-tmp.")?;
+    let (stem, _uuid_part): (&str, &str) = name_part.rsplit_once(".tmp-")?;
     Some(stem)
 }
 
@@ -150,7 +150,7 @@ mod tests {
         let tmp_uuid: Uuid = Uuid::now_v7();
         let shard_file: FileReference = write_tmp_file(
             temp_dir,
-            &format!("tfr-base-tmp.{}.sqlite", tmp_uuid),
+            &format!("tfr-base.tmp-{}.sqlite", tmp_uuid),
             b"SQLITE FAKE",
         );
         let shard: StatisticShard<FileReference> = StatisticShard {
@@ -160,7 +160,7 @@ mod tests {
         };
         let geometry: FileReference = write_tmp_file(
             temp_dir,
-            &format!("world-50m-tmp.{}.fgb", tmp_uuid),
+            &format!("world-50m.tmp-{}.fgb", tmp_uuid),
             b"FGB FAKE",
         );
         (vec![shard], geometry)
@@ -199,7 +199,7 @@ mod tests {
             .into_owned();
         assert!(shard_filename.starts_with("tfr-base-"));
         assert!(shard_filename.ends_with(".sqlite"));
-        assert!(!shard_filename.contains("-tmp."));
+        assert!(!shard_filename.contains(".tmp-"));
     }
 
     #[test]
@@ -247,7 +247,7 @@ mod tests {
             statistic_kind: StatisticKind::Tfr,
             license_shard_class: LicenseShardClass::Base,
             file: FileReference {
-                path: temp_dir.path().join("tfr-base-tmp.deadbeef.sqlite"),
+                path: temp_dir.path().join("tfr-base.tmp-deadbeef.sqlite"),
                 byte_count: 0,
             },
         }];

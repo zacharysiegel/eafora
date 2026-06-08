@@ -55,7 +55,7 @@ fn write_one_shard(
 ) -> Result<FileReference, AppError> {
     let tmp_uuid: Uuid = Uuid::now_v7();
     let filename: String = format!(
-        "{}-{}-tmp.{}.sqlite",
+        "{}-{}.tmp-{}.sqlite",
         statistic_kind.code(),
         license_shard_class.as_str(),
         tmp_uuid,
@@ -167,7 +167,7 @@ mod tests {
             assert!(shard.file.path.exists());
             assert!(shard.file.byte_count > 0);
             let filename: &str = shard.file.path.file_name().unwrap().to_str().unwrap();
-            assert!(filename.contains("-tmp."));
+            assert!(filename.contains(".tmp-"));
             assert!(filename.ends_with(".sqlite"));
         }
     }
@@ -249,6 +249,6 @@ mod tests {
         let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         let filename: &str = shards[0].file.path.file_name().unwrap().to_str().unwrap();
-        assert!(filename.starts_with("tfr-share_alike-tmp."));
+        assert!(filename.starts_with("tfr-share_alike.tmp-"));
     }
 }

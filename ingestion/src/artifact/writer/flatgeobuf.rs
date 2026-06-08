@@ -60,7 +60,7 @@ fn write_flatgeobuf_to_disk(
     fs::create_dir_all(&geometry_dir)?;
 
     let tmp_uuid: Uuid = Uuid::now_v7();
-    let path: PathBuf = geometry_dir.join(format!("{}-tmp.{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
+    let path: PathBuf = geometry_dir.join(format!("{}.tmp-{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
 
     let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
     writer.add_column("iso3", ColumnType::String, |_fbb, _col| {});
@@ -109,7 +109,7 @@ pub fn write_placeholder_geometry(output_dir: &Path) -> Result<FileReference, Ap
     fs::create_dir_all(&geometry_dir)?;
 
     let tmp_uuid: Uuid = Uuid::now_v7();
-    let path: PathBuf = geometry_dir.join(format!("{}-tmp.{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
+    let path: PathBuf = geometry_dir.join(format!("{}.tmp-{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid));
     fs::write(&path, PLACEHOLDER_GEOMETRY_BYTES)?;
 
     Ok(FileReference {
