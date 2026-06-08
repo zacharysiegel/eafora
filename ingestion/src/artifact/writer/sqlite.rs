@@ -96,30 +96,29 @@ fn create_schema(connection: &Connection) -> Result<(), AppError> {
 fn insert_rows(connection: &mut Connection, values: &[&ResolvedValue]) -> Result<(), AppError> {
     let transaction: rusqlite::Transaction = connection.transaction()?;
 
-    {
-        let mut statement: rusqlite::Statement = transaction.prepare(
-            r#"
-            insert into statistic_value
-                (region_iso3, region_id, period_start, period_end, value,
-                 data_status, data_source_code, data_source_revision)
-            values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-            "#,
-        )?;
+    let mut statement: rusqlite::Statement = transaction.prepare(
+        r#"
+        insert into statistic_value
+            (region_iso3, region_id, period_start, period_end, value,
+             data_status, data_source_code, data_source_revision)
+        values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "#,
+    )?;
 
-        for resolved_value in values {
-            statement.execute((
-                &resolved_value.region_iso3,
-                resolved_value.region_id.as_bytes().as_slice(),
-                resolved_value.period.start.format("%Y-%m-%d").to_string(),
-                resolved_value.period.end.format("%Y-%m-%d").to_string(),
-                resolved_value.value,
-                resolved_value.data_status.as_str(),
-                resolved_value.data_source_kind.code(),
-                &resolved_value.data_source_revision,
-            ))?;
-        }
+    for resolved_value in values {
+        statement.execute((
+            &resolved_value.region_iso3,
+            resolved_value.region_id.as_bytes().as_slice(),
+            resolved_value.period.start.format("%Y-%m-%d").to_string(),
+            resolved_value.period.end.format("%Y-%m-%d").to_string(),
+            resolved_value.value,
+            resolved_value.data_status.as_str(),
+            resolved_value.data_source_kind.code(),
+            &resolved_value.data_source_revision,
+        ))?;
     }
 
+    drop(statement);
     transaction.commit()?;
     Ok(())
 }
