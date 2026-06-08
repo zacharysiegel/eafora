@@ -199,9 +199,9 @@ mod tests {
 
         let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
-        assert!(json.contains("\"relative_path\": \"geometry/world-50m-ab12cd34.fgb\""));
-        assert!(json.contains("\"relative_path\": \"data/tfr-base-ef561234.sqlite\""));
-        assert!(json.contains("\"relative_path\": \"data/_test_alpha-base-cccc1111.sqlite\""));
+        assert!(json.contains(&format!("\"relative_path\": \"{}/world-50m-ab12cd34.fgb\"", SUBDIR_GEOMETRY)));
+        assert!(json.contains(&format!("\"relative_path\": \"{}/tfr-base-ef561234.sqlite\"", SUBDIR_DATA)));
+        assert!(json.contains(&format!("\"relative_path\": \"{}/_test_alpha-base-cccc1111.sqlite\"", SUBDIR_DATA)));
     }
 
     #[test]

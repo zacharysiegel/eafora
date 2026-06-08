@@ -5,10 +5,12 @@
 
 mod helpers;
 
-use std::fs;
+use std::fs::{self, File};
+use std::io::BufReader;
 use std::path::PathBuf;
 
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
+use flatgeobuf::{FgbReader, GeometryType};
 use rusqlite::Connection;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -16,10 +18,13 @@ use uuid::Uuid;
 use ingestion::artifact::{self, BuildOptions, ArtifactBuildReport};
 use ingestion::artifact::artifact_model::FileReference;
 use ingestion::canonical::canonical_model::DataSourceKind;
-use ingestion::artifact::writer::flatgeobuf::write_geometry;
+use ingestion::artifact::writer::flatgeobuf::{write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME};
+use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
 use helpers::test_db::test_pool;
+
+const PLACEHOLDER_GEOMETRY_BYTE_COUNT: u64 = 15; // b"FGB-PLACEHOLDER".len()
 
 #[tokio::test]
 async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_manifest() {
@@ -49,39 +54,105 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
             .expect("build_artifacts succeeds");
 
     assert_eq!(build.version_label, "2026-05-26-test");
-    assert_eq!(build.artifacts.shards.len(), 1);
-    assert!(build.artifacts.manifest.path.exists());
-    assert!(build.artifacts.manifest.path.ends_with("manifest.json"));
-    assert!(build.artifacts.geometry.path.exists());
 
-    let tfr_shard_path: PathBuf = build.artifacts.shards[0].file.path.clone();
+    assert_eq!(build.artifacts.shards.len(), 1);
+    let tfr_base_shard = &build.artifacts.shards[0];
+    assert_eq!(tfr_base_shard.key.statistic_kind.code(), "tfr");
+    assert_eq!(tfr_base_shard.key.license_shard_class.as_str(), "base");
+    let tfr_base_filename: &str = tfr_base_shard.file.path.file_name().unwrap().to_str().unwrap();
+    assert!(tfr_base_filename.starts_with("tfr-base-"));
+    assert!(tfr_base_filename.ends_with(".sqlite"));
+    assert_eq!(tfr_base_shard.file.sha256_hex().len(), 64);
+    assert!(tfr_base_filename.contains(tfr_base_shard.file.sha256_hex()));
+    assert!(tfr_base_shard.file.byte_count > 0);
+
+    assert!(build.artifacts.manifest.path.exists());
+    assert!(build.artifacts.manifest.path.ends_with(MANIFEST_FILENAME));
+    assert_eq!(build.artifacts.manifest.sha256_hex().len(), 64);
+    assert!(build.artifacts.manifest.byte_count > 0);
+
+    assert!(build.artifacts.geometry.path.exists());
+    assert_eq!(build.artifacts.geometry.byte_count, PLACEHOLDER_GEOMETRY_BYTE_COUNT);
+    let geometry_filename: &str = build.artifacts.geometry.path.file_name().unwrap().to_str().unwrap();
+    assert!(geometry_filename.starts_with(&format!("{}-", GEOMETRY_FILENAME_STEM)));
+    assert!(geometry_filename.ends_with(".fgb"));
+    assert_eq!(build.artifacts.geometry.sha256_hex().len(), 64);
+    assert!(geometry_filename.contains(build.artifacts.geometry.sha256_hex()));
+
+    let tfr_shard_path: PathBuf = tfr_base_shard.file.path.clone();
     let connection: Connection = Connection::open(&tfr_shard_path).unwrap();
+
+    let (shard_kind, shard_class): (String, String) = connection
+        .query_row(
+            "select statistic_kind, license_shard_class from shard_key",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(shard_kind, "tfr");
+    assert_eq!(shard_class, "base");
+
     let row_count: i64 = connection
         .query_row("select count(*) from statistic_value", [], |row| row.get(0))
         .unwrap();
     assert_eq!(row_count, 1);
 
-    let value: f64 = connection
+    let (value, period_start, period_end, data_status, data_source_code, data_source_revision): (
+        f64,
+        String,
+        String,
+        String,
+        String,
+        String,
+    ) = connection
         .query_row(
-            "select value from statistic_value where region_iso3 = 'USA'",
+            "select value, period_start, period_end, data_status, data_source_code, data_source_revision \
+             from statistic_value where region_iso3 = 'USA'",
             [],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
         .unwrap();
     assert!((value - 1.66).abs() < f64::EPSILON);
+    assert_eq!(period_start, "2022-01-01");
+    assert_eq!(period_end, "2023-01-01");
+    assert_eq!(data_status, "final");
+    assert_eq!(data_source_code, "wb_wdi");
+    assert_eq!(data_source_revision, "2024-Q4");
 
     let manifest_text: String = fs::read_to_string(&build.artifacts.manifest.path).unwrap();
     let manifest_value: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
     assert_eq!(manifest_value["version"], "2026-05-26-test");
-    assert!(manifest_value["statistics"]["tfr"]["base"]["relative_path"].is_string());
-    assert!(manifest_value["geometry"]["relative_path"].is_string());
+
+    let artifact_created: &str = manifest_value["artifact_created"].as_str().expect("artifact_created");
+    DateTime::parse_from_rfc3339(artifact_created).expect("artifact_created RFC3339");
+
+    let manifest_tfr_base = &manifest_value["statistics"]["tfr"]["base"];
+    assert_eq!(
+        manifest_tfr_base["relative_path"].as_str().unwrap(),
+        format!("{}/{}", SUBDIR_DATA, tfr_base_filename),
+    );
+    assert_eq!(manifest_tfr_base["size_bytes"].as_u64().unwrap(), tfr_base_shard.file.byte_count);
+    assert_eq!(manifest_tfr_base["sha256"].as_str().unwrap(), tfr_base_shard.file.sha256_hex());
+
+    let manifest_geometry = &manifest_value["geometry"];
+    assert_eq!(
+        manifest_geometry["relative_path"].as_str().unwrap(),
+        format!("{}/{}", SUBDIR_GEOMETRY, geometry_filename),
+    );
+    assert_eq!(manifest_geometry["size_bytes"].as_u64().unwrap(), build.artifacts.geometry.byte_count);
+    assert_eq!(manifest_geometry["sha256"].as_str().unwrap(), build.artifacts.geometry.sha256_hex());
+
+    let wb_revision = &manifest_value["source_revisions"]["wb_wdi"];
+    assert_eq!(wb_revision["revision"].as_str().unwrap(), "2024-Q4");
+    let wb_fetched: &str = wb_revision["fetched"].as_str().expect("fetched");
+    DateTime::parse_from_rfc3339(wb_fetched).expect("fetched RFC3339");
 
     transaction.rollback().await.unwrap();
 }
 
 /// Live HTTP test: downloads the pinned Natural Earth release and confirms
-/// most features resolve to known canonical countries. Gated behind
-/// `#[ignore]` so CI doesn't depend on naciscdn.org availability; run via
+/// the FGB has the expected layer + features. Gated behind `#[ignore]` so
+/// CI doesn't depend on naciscdn.org availability; run via
 /// `cargo test -p ingestion --test artifact_integration -- --ignored`.
 #[tokio::test]
 #[ignore]
@@ -96,7 +167,20 @@ async fn write_geometry_flatgeobuf_against_live_natural_earth_release() {
             .expect("geometry shard emitted");
 
     assert!(geometry.path.exists());
-    assert!(geometry.byte_count > 100_000);
+    let bytes_on_disk: Vec<u8> = fs::read(&geometry.path).unwrap();
+    assert!(bytes_on_disk.starts_with(b"fgb\x03fgb\x00"));
+
+    let mut reader: BufReader<File> = BufReader::new(File::open(&geometry.path).unwrap());
+    let header_reader = FgbReader::open(&mut reader).expect("FGB header");
+    let header = header_reader.header();
+    assert_eq!(header.name(), Some(GEOMETRY_LAYER_NAME));
+    assert_eq!(header.geometry_type(), GeometryType::MultiPolygon);
+    let features_count: u64 = header.features_count();
+    assert!(
+        features_count >= 200 && features_count <= 300,
+        "feature count {} outside expected admin-0 range [200, 300]",
+        features_count,
+    );
 
     transaction.rollback().await.unwrap();
 }
