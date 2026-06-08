@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::artifact::artifact_model::{FileReference, StatisticShard};
-use crate::artifact::content_hashing::Hashed;
+use crate::artifact::hashing::Hashed;
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 
@@ -108,7 +108,7 @@ mod tests {
     use super::*;
 
     use crate::artifact::artifact_model::{StatisticShard, StatisticShardKey};
-    use crate::artifact::content_hashing;
+    use crate::artifact::hashing;
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 
     fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {
@@ -230,7 +230,7 @@ mod tests {
 
         assert!(manifest.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&manifest.path).unwrap();
-        let computed: String = content_hashing::sha256_hex(&bytes_on_disk);
+        let computed: String = hashing::sha256_hex(&bytes_on_disk);
         assert_eq!(computed, manifest.sha256_hex());
     }
 }

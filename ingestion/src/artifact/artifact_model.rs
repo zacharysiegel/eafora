@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
-use crate::artifact::content_hashing::Hashed;
+use crate::artifact::hashing::Hashed;
 use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 

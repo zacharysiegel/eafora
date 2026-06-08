@@ -8,9 +8,9 @@ use sqlx::PgConnection;
 use crate::artifact::artifact_model::{
     ArtifactBuildReport, Artifacts, CandidateValue, FileReference, ResolvedValue,
 };
-use crate::artifact::content_hashing::Hashed;
+use crate::artifact::hashing::Hashed;
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
-use crate::artifact::{artifact_db, content_hashing, source_choice, StatisticShard};
+use crate::artifact::{artifact_db, hashing, source_choice, StatisticShard};
 use crate::canonical::canonical_db;
 use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision, StatisticKind};
 use crate::error::AppError;
@@ -86,7 +86,7 @@ async fn create_statistic_shards(
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
         let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &output_dir.join(manifest::SUBDIR_DATA))?;
-        let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = content_hashing::hash_sqlite_shards(tmp_shards)?;
+        let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!(
             "statistic {:?}: {} resolved values across {} shards",
             kind,
@@ -110,6 +110,6 @@ async fn create_geometry(
         flatgeobuf::write_geometry(&mut *connection, output_dir).await?
     };
     log::info!("wrote geometry {:?}", geometry.path);
-    let geometry: Hashed<FileReference> = content_hashing::hash_geometry(geometry)?;
+    let geometry: Hashed<FileReference> = hashing::hash_geometry(geometry)?;
     Ok(geometry)
 }
