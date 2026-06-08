@@ -47,14 +47,6 @@ pub async fn write_geometry<'e>(
     let client: reqwest::Client = reqwest::Client::new();
     let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&client).await?;
 
-    write_flatgeobuf_to_disk(&shapefile_bytes, &iso3_to_name_en, output_dir)
-}
-
-fn write_flatgeobuf_to_disk(
-    shapefile_bytes: &ShapefileBytes,
-    iso3_to_name_en: &BTreeMap<String, String>,
-    output_dir: &Path,
-) -> Result<FileReference, AppError> {
     let geometry_dir: PathBuf = output_dir.join(GEOMETRY_SUBDIR);
     fs::create_dir_all(&geometry_dir)?;
 
@@ -65,7 +57,7 @@ fn write_flatgeobuf_to_disk(
     writer.add_column("iso3", ColumnType::String, |_fbb, _col| {});
     writer.add_column("name_en", ColumnType::String, |_fbb, _col| {});
 
-    let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(shapefile_bytes)?;
+    let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(&shapefile_bytes)?;
 
     for shape_and_record in reader.iter_shapes_and_records() {
         let (shape, record) = shape_and_record?;
