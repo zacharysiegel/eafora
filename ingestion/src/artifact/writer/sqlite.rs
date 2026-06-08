@@ -88,6 +88,11 @@ fn write_one_shard(
 fn create_schema(connection: &Connection) -> Result<(), AppError> {
     connection.execute_batch(
         r#"
+        create table shard_key (
+            statistic_kind      text not null,
+            license_shard_class text not null
+        );
+
         create table statistic_value (
             region_iso3          text not null,
             region_id            blob not null,
@@ -100,11 +105,6 @@ fn create_schema(connection: &Connection) -> Result<(), AppError> {
             primary key (region_iso3, period_start, period_end)
         );
         create index statistic_value_by_region on statistic_value (region_id);
-
-        create table shard_key (
-            statistic_kind      text not null,
-            license_shard_class text not null
-        );
         "#,
     )?;
     Ok(())
