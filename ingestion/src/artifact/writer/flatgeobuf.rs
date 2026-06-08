@@ -31,20 +31,20 @@ use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::FileReference;
 use crate::error::AppError;
 use crate::geometry::natural_earth::{self, ShapefileBytes};
+use crate::http;
 
 const GEOMETRY_SUBDIR: &str = "geometry";
 const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
 const GEOMETRY_FILENAME_STEM: &str = "world-50m";
 const ADM0_A3_FIELD: &str = "ADM0_A3";
 const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
+const COLUMN_ISO3: Column = Column { index: 0, name: "iso3" };
+const COLUMN_NAME_EN: Column = Column { index: 1, name: "name_en" };
 
 struct Column {
     index: usize,
     name: &'static str,
 }
-
-const COLUMN_ISO3: Column = Column { index: 0, name: "iso3" };
-const COLUMN_NAME_EN: Column = Column { index: 1, name: "name_en" };
 
 pub async fn write_geometry<'e>(
     executor: impl PgExecutor<'e>,
@@ -53,8 +53,7 @@ pub async fn write_geometry<'e>(
     let iso3_to_name_en: BTreeMap<String, String> =
         artifact_db::read_country_iso3_to_name_en(executor).await?;
 
-    let client: reqwest::Client = reqwest::Client::new();
-    let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&client).await?;
+    let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&http::HTTP_CLIENT).await?;
 
     let path: PathBuf = build_tmp_geometry_path(output_dir)?;
 

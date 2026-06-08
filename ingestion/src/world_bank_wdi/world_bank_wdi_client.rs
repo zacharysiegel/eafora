@@ -1,5 +1,6 @@
 use crate::adapter::AdapterOptions;
 use crate::error::AppError;
+use crate::http;
 use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse, WdiStatisticValue};
 
 const WB_WDI_API_URL: &str =
@@ -9,7 +10,7 @@ const WB_WDI_API_URL: &str =
 /// set. The per-row supersede logic in `ingest::record_statistic_values`
 /// keeps writes proportional to actual changes.
 pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, AppError> {
-    let response: reqwest::Response = reqwest::get(WB_WDI_API_URL).await?;
+    let response: reqwest::Response = http::HTTP_CLIENT.get(WB_WDI_API_URL).send().await?;
     if !response.status().is_success() {
         return Err(AppError::from(format!(
             "status {} from {}",
