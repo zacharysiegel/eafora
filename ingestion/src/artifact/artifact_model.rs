@@ -118,10 +118,10 @@ pub struct StatisticShardKey {
 }
 
 impl StatisticShardKey {
-    pub fn from_resolved(resolved: &ResolvedValue) -> Self {
+    pub fn from_value(value: &ResolvedValue) -> Self {
         StatisticShardKey {
-            statistic_kind: resolved.statistic_kind,
-            license_shard_class: resolved.license_shard_class,
+            statistic_kind: value.statistic_kind,
+            license_shard_class: value.license_shard_class,
         }
     }
 }

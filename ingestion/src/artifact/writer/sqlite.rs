@@ -29,7 +29,7 @@ pub fn write_sqlite_shards(
 fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> {
     let mut grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = BTreeMap::new();
     for resolved_value in resolved {
-        grouped.entry(StatisticShardKey::from_resolved(resolved_value)).or_default().push(resolved_value);
+        grouped.entry(StatisticShardKey::from_value(resolved_value)).or_default().push(resolved_value);
     }
     grouped
 }
@@ -167,7 +167,7 @@ mod tests {
             assert!(shard.file.path.exists());
             assert!(shard.file.byte_count > 0);
             let filename: &str = shard.file.path.file_name().unwrap().to_str().unwrap();
-            assert!(filename.contains(".tmp-"));
+            assert!(filename.contains("-tmp."));
             assert!(filename.ends_with(".sqlite"));
         }
     }
@@ -249,6 +249,6 @@ mod tests {
         let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         let filename: &str = shards[0].file.path.file_name().unwrap().to_str().unwrap();
-        assert!(filename.starts_with("tfr-share_alike.tmp-"));
+        assert!(filename.starts_with("tfr-share_alike-tmp."));
     }
 }
