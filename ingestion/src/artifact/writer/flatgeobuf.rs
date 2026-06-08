@@ -38,6 +38,14 @@ const GEOMETRY_FILENAME_STEM: &str = "world-50m";
 const ADM0_A3_FIELD: &str = "ADM0_A3";
 const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 
+struct Column {
+    index: usize,
+    name: &'static str,
+}
+
+const COLUMN_ISO3: Column = Column { index: 0, name: "iso3" };
+const COLUMN_NAME_EN: Column = Column { index: 1, name: "name_en" };
+
 pub async fn write_geometry<'e>(
     executor: impl PgExecutor<'e>,
     output_dir: &Path,
@@ -51,8 +59,8 @@ pub async fn write_geometry<'e>(
     let path: PathBuf = build_tmp_geometry_path(output_dir)?;
 
     let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
-    writer.add_column("iso3", ColumnType::String, |_fbb, _col| {});
-    writer.add_column("name_en", ColumnType::String, |_fbb, _col| {});
+    writer.add_column(COLUMN_ISO3.name, ColumnType::String, |_fbb, _col| {});
+    writer.add_column(COLUMN_NAME_EN.name, ColumnType::String, |_fbb, _col| {});
 
     let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(&shapefile_bytes)?;
 
@@ -76,8 +84,8 @@ pub async fn write_geometry<'e>(
         let name_en_property: String = name_en.clone();
 
         writer.add_feature_geom(geometry, |feature| {
-            feature.property(0, "iso3", &ColumnValue::String(&iso3_property)).ok();
-            feature.property(1, "name_en", &ColumnValue::String(&name_en_property)).ok();
+            feature.property(COLUMN_ISO3.index, COLUMN_ISO3.name, &ColumnValue::String(&iso3_property)).ok();
+            feature.property(COLUMN_NAME_EN.index, COLUMN_NAME_EN.name, &ColumnValue::String(&name_en_property)).ok();
         })?;
     }
 
