@@ -15,26 +15,15 @@ use crate::artifact::artifact_model::{FileReference, ResolvedValue, StatisticSha
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
-/// Application-level metadata written into SQLite's reserved header fields
-/// (offsets 60 and 68) at shard-creation time. Both fields are 32-bit ints
-/// that SQLite never reads itself; they're for the application to tag the
-/// file format and schema version so clients and tools can identify and
-/// dispatch on what they're holding.
-struct SqliteApplicationMetadata {
-    /// Magic number written into SQLite's `application_id` header field.
-    /// Spells `"eafo"` in ASCII so hex viewers and `file(1)` (with the
-    /// right magic-database entry) can identify Eafora shards independent
-    /// of filename or context.
-    application_id: i32,
-    /// Schema version stored in SQLite's `user_version` header field.
-    /// Bump when the shard schema changes in a way clients need to detect.
-    user_version: i32,
-}
+/// Magic number written into SQLite's 32-bit `application_id` header field
+/// at offset 60. Spells `"EAFO"` in ASCII so that hex viewers and tools like
+/// `file(1)` (with the right magic-database entry) can identify these as
+/// Eafora shards independent of filename or context.
+const SQLITE_APPLICATION_ID: i32 = 0x4541464F;
 
-const SQLITE_APPLICATION_METADATA: SqliteApplicationMetadata = SqliteApplicationMetadata {
-    application_id: 0x6561666f,
-    user_version: 0x1,
-};
+/// Schema version stored in SQLite's `user_version` header field at offset
+/// 68. Bump when the shard schema changes in a way clients need to detect.
+const SQLITE_USER_VERSION: i32 = 0x1;
 
 pub fn write_sqlite_shards(
     values: &[ResolvedValue],
@@ -84,10 +73,11 @@ fn write_one_shard(
 
     let mut connection: Connection = Connection::open(&path)?;
     connection.pragma_update(None, "journal_mode", "MEMORY")?;
-    connection.pragma_update(None, "application_id", SQLITE_APPLICATION_METADATA.application_id)?;
-    connection.pragma_update(None, "user_version", SQLITE_APPLICATION_METADATA.user_version)?;
+    connection.pragma_update(None, "application_id", SQLITE_APPLICATION_ID)?;
+    connection.pragma_update(None, "user_version", SQLITE_USER_VERSION)?;
 
     create_schema(&connection)?;
+    insert_shard_key(&connection, statistic_kind, license_shard_class)?;
     insert_rows(&mut connection, values)?;
 
     let byte_count: u64 = fs::metadata(&path)?.len();
@@ -110,7 +100,24 @@ fn create_schema(connection: &Connection) -> Result<(), AppError> {
             primary key (region_iso3, period_start, period_end)
         );
         create index statistic_value_by_region on statistic_value (region_id);
+
+        create table shard_key (
+            statistic_kind      text not null,
+            license_shard_class text not null
+        );
         "#,
+    )?;
+    Ok(())
+}
+
+fn insert_shard_key(
+    connection: &Connection,
+    statistic_kind: StatisticKind,
+    license_shard_class: LicenseShardClass,
+) -> Result<(), AppError> {
+    connection.execute(
+        "insert into shard_key (statistic_kind, license_shard_class) values (?1, ?2)",
+        (statistic_kind.code(), license_shard_class.as_str()),
     )?;
     Ok(())
 }
@@ -255,6 +262,41 @@ mod tests {
             )
             .unwrap();
         assert_eq!(index_count, 1);
+    }
+
+    #[test]
+    fn write_sqlite_shards_writes_header_and_shard_key() {
+        let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+        let merged: Vec<ResolvedValue> = vec![make_merged(
+            StatisticKind::Tfr,
+            LicenseShardClass::NonCommercial,
+            "USA",
+            2022,
+            1.66,
+        )];
+
+        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let connection: Connection = Connection::open(&shards[0].file.path).unwrap();
+
+        let application_id: i32 = connection
+            .pragma_query_value(None, "application_id", |row| row.get(0))
+            .unwrap();
+        assert_eq!(application_id, SQLITE_APPLICATION_ID);
+
+        let user_version: i32 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(user_version, SQLITE_USER_VERSION);
+
+        let (statistic_kind, license_shard_class): (String, String) = connection
+            .query_row(
+                "select statistic_kind, license_shard_class from shard_key",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(statistic_kind, "tfr");
+        assert_eq!(license_shard_class, "noncommercial");
     }
 
     #[test]
