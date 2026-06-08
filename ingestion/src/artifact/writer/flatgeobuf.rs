@@ -31,7 +31,6 @@ use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::FileReference;
 use crate::error::AppError;
 use crate::geometry::natural_earth::{self, ShapefileBytes};
-use crate::http;
 
 const GEOMETRY_SUBDIR: &str = "geometry";
 const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
@@ -53,7 +52,8 @@ pub async fn write_geometry<'e>(
     let iso3_to_name_en: BTreeMap<String, String> =
         artifact_db::read_country_iso3_to_name_en(executor).await?;
 
-    let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&http::HTTP_CLIENT).await?;
+    let client: reqwest::Client = reqwest::Client::new();
+    let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&client).await?;
 
     let path: PathBuf = build_tmp_geometry_path(output_dir)?;
 
@@ -78,7 +78,6 @@ pub async fn write_geometry<'e>(
         };
 
         let geometry: geo_types::Geometry<f64> = geo_types::Geometry::try_from(shape)?;
-
         let iso3_property: String = iso3.clone();
         let name_en_property: String = name_en.clone();
 
@@ -89,8 +88,8 @@ pub async fn write_geometry<'e>(
     }
 
     let file: File = File::create(&path)?;
-    let mut buffered: BufWriter<File> = BufWriter::new(file);
-    writer.write(&mut buffered)?;
+    let mut file_writer: BufWriter<File> = BufWriter::new(file);
+    writer.write(&mut file_writer)?;
 
     let byte_count: u64 = fs::metadata(&path)?.len();
 
