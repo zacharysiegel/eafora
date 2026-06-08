@@ -16,7 +16,7 @@ use uuid::Uuid;
 use ingestion::artifact::{self, BuildOptions, ArtifactBuildReport};
 use ingestion::artifact::artifact_model::FileReference;
 use ingestion::canonical::canonical_model::DataSourceKind;
-use ingestion::artifact::writer::flatgeobuf::write_geometry_flatgeobuf;
+use ingestion::artifact::writer::flatgeobuf::write_geometry;
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
 use helpers::test_db::test_pool;
@@ -91,7 +91,7 @@ async fn write_geometry_flatgeobuf_against_live_natural_earth_release() {
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let geometry: FileReference =
-        write_geometry_flatgeobuf(&mut *transaction, temp_dir.path())
+        write_geometry(&mut *transaction, temp_dir.path())
             .await
             .expect("geometry shard emitted");
 

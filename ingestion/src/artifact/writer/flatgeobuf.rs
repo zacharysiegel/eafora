@@ -35,10 +35,9 @@ use crate::geometry::natural_earth::{self, ShapefileBytes};
 const GEOMETRY_SUBDIR: &str = "geometry";
 const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
 const GEOMETRY_FILENAME_STEM: &str = "world-50m";
-
 const ADM0_A3_FIELD: &str = "ADM0_A3";
 
-pub async fn write_geometry_flatgeobuf<'e>(
+pub async fn write_geometry<'e>(
     executor: impl PgExecutor<'e>,
     output_dir: &Path,
 ) -> Result<FileReference, AppError> {
