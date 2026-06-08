@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::artifact::artifact_model::{FileReference, ResolvedValue, StatisticShard, StatisticShardKey};
@@ -107,21 +107,20 @@ fn insert_rows(connection: &mut Connection, values: &[&ResolvedValue]) -> Result
         )?;
 
         for resolved_value in values {
-            statement.execute(params![
-                resolved_value.region_iso3,
+            statement.execute((
+                &resolved_value.region_iso3,
                 resolved_value.region_id.as_bytes().as_slice(),
                 resolved_value.period.start.format("%Y-%m-%d").to_string(),
                 resolved_value.period.end.format("%Y-%m-%d").to_string(),
                 resolved_value.value,
                 resolved_value.data_status.as_str(),
                 resolved_value.data_source_kind.code(),
-                resolved_value.data_source_revision,
-            ])?;
+                &resolved_value.data_source_revision,
+            ))?;
         }
     }
 
     transaction.commit()?;
-
     Ok(())
 }
 
