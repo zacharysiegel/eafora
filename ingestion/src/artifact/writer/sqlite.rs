@@ -15,6 +15,27 @@ use crate::artifact::artifact_model::{FileReference, ResolvedValue, StatisticSha
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 
+/// Application-level metadata written into SQLite's reserved header fields
+/// (offsets 60 and 68) at shard-creation time. Both fields are 32-bit ints
+/// that SQLite never reads itself; they're for the application to tag the
+/// file format and schema version so clients and tools can identify and
+/// dispatch on what they're holding.
+struct SqliteApplicationMetadata {
+    /// Magic number written into SQLite's `application_id` header field.
+    /// Spells `"eafo"` in ASCII so hex viewers and `file(1)` (with the
+    /// right magic-database entry) can identify Eafora shards independent
+    /// of filename or context.
+    application_id: i32,
+    /// Schema version stored in SQLite's `user_version` header field.
+    /// Bump when the shard schema changes in a way clients need to detect.
+    user_version: i32,
+}
+
+const SQLITE_APPLICATION_METADATA: SqliteApplicationMetadata = SqliteApplicationMetadata {
+    application_id: 0x6561666f,
+    user_version: 0x1,
+};
+
 pub fn write_sqlite_shards(
     values: &[ResolvedValue],
     data_dir: &Path,
@@ -63,6 +84,8 @@ fn write_one_shard(
 
     let mut connection: Connection = Connection::open(&path)?;
     connection.pragma_update(None, "journal_mode", "MEMORY")?;
+    connection.pragma_update(None, "application_id", SQLITE_APPLICATION_METADATA.application_id)?;
+    connection.pragma_update(None, "user_version", SQLITE_APPLICATION_METADATA.user_version)?;
 
     create_schema(&connection)?;
     insert_rows(&mut connection, values)?;
