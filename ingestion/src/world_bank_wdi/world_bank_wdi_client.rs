@@ -1,9 +1,9 @@
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use chrono::{NaiveDate, NaiveTime};
 
 use crate::adapter::AdapterOptions;
 use crate::error::AppError;
 use crate::http;
-use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse, WdiStatisticValue};
+use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiPublication, ParsedWdiStatisticValue, WdiPagingMetadata, WdiResponse, WdiStatisticValue};
 
 const WB_WDI_API_URL: &str =
     "https://api.worldbank.org/v2/country/all/indicator/SP.DYN.TFRT.IN?format=json&per_page=20000";
@@ -24,20 +24,12 @@ pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, App
     Ok(parsed)
 }
 
-/// WB's `lastupdated` field is a `YYYY-MM-DD` date naming the day the
-/// indicator was refreshed in their database. We treat it as the
-/// publication date at midnight UTC.
-pub fn parse_published(lastupdated: &str) -> Result<DateTime<Utc>, AppError> {
-    let date: NaiveDate = NaiveDate::parse_from_str(lastupdated, "%Y-%m-%d").map_err(|err| {
-        AppError::from(format!("unparseable lastupdated {:?}: {}", lastupdated, err))
-    })?;
-    Ok(date.and_time(NaiveTime::MIN).and_utc())
-}
+pub fn parse_response(raw: WdiResponse) -> Result<(ParsedWdiPublication, Vec<ParsedWdiStatisticValue>), AppError> {
+    let WdiResponse(metadata, raw_wdi_statistic_values) = raw;
 
-pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, AppError> {
-    let WdiResponse(_metadata, raw_wdi_statistic_values) = raw;
+    let publication: ParsedWdiPublication = parse_publication(metadata)?;
+
     let mut parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = Vec::with_capacity(raw_wdi_statistic_values.len());
-
     for raw_wdi_statistic_value in raw_wdi_statistic_values {
         // WB intermixes regional aggregates (e.g. country.id="XD"
         // "Late-demographic dividend") with country rows. Aggregates have
@@ -50,7 +42,21 @@ pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, 
         parsed_wdi_statistic_values.push(parsed_wdi_statistic_value);
     }
 
-    Ok(parsed_wdi_statistic_values)
+    Ok((publication, parsed_wdi_statistic_values))
+}
+
+/// WB's `lastupdated` field is a `YYYY-MM-DD` date naming the day the
+/// indicator was refreshed in their database. We treat it as the
+/// publication date at midnight UTC and reuse the raw string as the
+/// revision label.
+fn parse_publication(metadata: WdiPagingMetadata) -> Result<ParsedWdiPublication, AppError> {
+    let date: NaiveDate = NaiveDate::parse_from_str(&metadata.lastupdated, "%Y-%m-%d").map_err(|err| {
+        AppError::from(format!("unparseable lastupdated {:?}: {}", metadata.lastupdated, err))
+    })?;
+    Ok(ParsedWdiPublication {
+        published: date.and_time(NaiveTime::MIN).and_utc(),
+        revision_label: metadata.lastupdated,
+    })
 }
 
 fn parse_row(raw_wdi_statistic_value: &WdiStatisticValue) -> Result<ParsedWdiStatisticValue, AppError> {
@@ -109,7 +115,10 @@ mod tests {
             metadata(),
             vec![row("USA", "2024", Some(1.66)), row("DEU", "2023", Some(1.36))],
         );
-        let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = parse_response(raw).expect("parse_response succeeds");
+        let (publication, parsed_wdi_statistic_values): (ParsedWdiPublication, Vec<ParsedWdiStatisticValue>) =
+            parse_response(raw).expect("parse_response succeeds");
+        assert_eq!(publication.revision_label, "2026-04-08");
+        assert_eq!(publication.published.to_rfc3339(), "2026-04-08T00:00:00+00:00");
         assert_eq!(parsed_wdi_statistic_values.len(), 2);
         assert_eq!(parsed_wdi_statistic_values[0].iso3, "USA");
         assert_eq!(parsed_wdi_statistic_values[0].year, 2024);
@@ -121,7 +130,8 @@ mod tests {
     #[test]
     fn parse_response_preserves_null_value() {
         let raw: WdiResponse = WdiResponse(metadata(), vec![row("USA", "2025", None)]);
-        let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = parse_response(raw).expect("parse_response succeeds");
+        let (_publication, parsed_wdi_statistic_values): (ParsedWdiPublication, Vec<ParsedWdiStatisticValue>) =
+            parse_response(raw).expect("parse_response succeeds");
         assert_eq!(parsed_wdi_statistic_values.len(), 1);
         assert_eq!(parsed_wdi_statistic_values[0].value, None);
     }
@@ -129,7 +139,7 @@ mod tests {
     #[test]
     fn parse_response_rejects_non_numeric_date() {
         let raw: WdiResponse = WdiResponse(metadata(), vec![row("USA", "twenty-twenty-four", Some(1.66))]);
-        let result: Result<Vec<ParsedWdiStatisticValue>, AppError> = parse_response(raw);
+        let result: Result<(ParsedWdiPublication, Vec<ParsedWdiStatisticValue>), AppError> = parse_response(raw);
         assert!(result.is_err());
     }
 
@@ -143,21 +153,36 @@ mod tests {
                 row("DEU", "2023", Some(1.36)),
             ],
         );
-        let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = parse_response(raw).expect("parse_response succeeds");
+        let (_publication, parsed_wdi_statistic_values): (ParsedWdiPublication, Vec<ParsedWdiStatisticValue>) =
+            parse_response(raw).expect("parse_response succeeds");
         assert_eq!(parsed_wdi_statistic_values.len(), 2);
         assert_eq!(parsed_wdi_statistic_values[0].iso3, "USA");
         assert_eq!(parsed_wdi_statistic_values[1].iso3, "DEU");
     }
 
     #[test]
-    fn parse_published_yyyy_mm_dd_to_midnight_utc() {
-        let published: DateTime<Utc> = parse_published("2026-04-08").unwrap();
-        assert_eq!(published.to_rfc3339(), "2026-04-08T00:00:00+00:00");
+    fn parse_response_rejects_unparseable_lastupdated() {
+        let mut bad_metadata: WdiPagingMetadata = metadata();
+        bad_metadata.lastupdated = "not a date".to_string();
+        let raw: WdiResponse = WdiResponse(bad_metadata, vec![row("USA", "2024", Some(1.66))]);
+        assert!(parse_response(raw).is_err());
     }
 
     #[test]
-    fn parse_published_rejects_garbage() {
-        assert!(parse_published("not a date").is_err());
-        assert!(parse_published("2026-13-01").is_err());
+    fn parse_publication_yyyy_mm_dd_to_midnight_utc() {
+        let publication: ParsedWdiPublication = parse_publication(metadata()).unwrap();
+        assert_eq!(publication.revision_label, "2026-04-08");
+        assert_eq!(publication.published.to_rfc3339(), "2026-04-08T00:00:00+00:00");
+    }
+
+    #[test]
+    fn parse_publication_rejects_garbage_lastupdated() {
+        let mut bad: WdiPagingMetadata = metadata();
+        bad.lastupdated = "not a date".to_string();
+        assert!(parse_publication(bad).is_err());
+
+        let mut bad: WdiPagingMetadata = metadata();
+        bad.lastupdated = "2026-13-01".to_string();
+        assert!(parse_publication(bad).is_err());
     }
 }

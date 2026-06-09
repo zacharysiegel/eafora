@@ -11,7 +11,7 @@ use crate::error::AppError;
 use crate::ingest;
 use crate::ingest::IngestReport;
 use crate::world_bank_wdi::world_bank_wdi_client;
-use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiStatisticValue, WdiResponse};
+use crate::world_bank_wdi::world_bank_wdi_model::{ParsedWdiPublication, ParsedWdiStatisticValue, WdiResponse};
 
 /// Rows whose country isn't in the canonical seed produce an
 /// `UnknownCountry` warning and are dropped. Rows with `value: None`
@@ -89,9 +89,8 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         ingest::ingest_db::read_latest_publication(&mut *transaction, data_source.id).await?;
 
     let raw: WdiResponse = world_bank_wdi_client::fetch_upstream(options).await?;
-    let revision_label: String = raw.0.lastupdated.clone();
-    let published: chrono::DateTime<Utc> = world_bank_wdi_client::parse_published(&raw.0.lastupdated)?;
-    let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = world_bank_wdi_client::parse_response(raw)?;
+    let (publication, parsed_wdi_statistic_values): (ParsedWdiPublication, Vec<ParsedWdiStatisticValue>) =
+        world_bank_wdi_client::parse_response(raw)?;
 
     let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
         normalize(&mut *transaction, parsed_wdi_statistic_values).await?;
@@ -99,8 +98,8 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     let mut report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source.id,
-        &revision_label,
-        Some(published),
+        &publication.revision_label,
+        Some(publication.published),
         Utc::now(),
         normalized_statistic_values,
     )

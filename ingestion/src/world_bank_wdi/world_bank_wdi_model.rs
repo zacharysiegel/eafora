@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +36,12 @@ pub struct WdiIndicator {
 pub struct WdiCountry {
     pub id: String,
     pub value: String,
+}
+
+#[derive(Debug)]
+pub struct ParsedWdiPublication {
+    pub revision_label: String,
+    pub published: DateTime<Utc>,
 }
 
 #[derive(Debug)]
