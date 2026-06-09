@@ -36,7 +36,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
     let region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
     let wb_published: DateTime<Utc> = "2024-12-31T00:00:00Z".parse().unwrap();
-    let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-Q4", wb_published).await;
+    let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-12-12", wb_published).await;
     insert_statistic_value(
         &mut transaction,
         region_id,
@@ -119,7 +119,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert_eq!(period_end, "2023-01-01");
     assert_eq!(data_status, "final");
     assert_eq!(data_source_code, "wb_wdi");
-    assert_eq!(data_source_revision, "2024-Q4");
+    assert_eq!(data_source_revision, "2024-12-12");
 
     let manifest_text: String = fs::read_to_string(&build.artifacts.manifest.path).unwrap();
     let manifest_value: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
@@ -145,7 +145,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert_eq!(manifest_geometry["sha256"].as_str().unwrap(), build.artifacts.geometry.sha256_hex());
 
     let wb_revision = &manifest_value["source_revisions"]["wb_wdi"];
-    assert_eq!(wb_revision["revision"].as_str().unwrap(), "2024-Q4");
+    assert_eq!(wb_revision["revision"].as_str().unwrap(), "2024-12-12");
     let wb_published_in_manifest: DateTime<Utc> = DateTime::parse_from_rfc3339(
         wb_revision["published"].as_str().expect("published"),
     ).expect("published RFC3339").with_timezone(&Utc);

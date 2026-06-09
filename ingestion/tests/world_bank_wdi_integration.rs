@@ -105,7 +105,7 @@ async fn record_inserts_new_publication_and_value() {
     let report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-record_inserts_new",
+        "2026-04-09",
         Some(Utc::now()),
         Utc::now(),
         vec![new_normalized_statistic_value(region_id, statistic_id, 2024, 1.66)],
@@ -134,7 +134,7 @@ async fn record_re_fetch_same_revision_matches_publication_and_skips() {
     ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-record_refetch",
+        "2026-04-10",
         Some(Utc::now()),
         Utc::now(),
         vec![usa_2024_166()],
@@ -145,7 +145,7 @@ async fn record_re_fetch_same_revision_matches_publication_and_skips() {
     let report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-record_refetch",
+        "2026-04-10",
         Some(Utc::now()),
         Utc::now(),
         vec![usa_2024_166()],
@@ -171,7 +171,7 @@ async fn record_revised_value_supersedes_old_and_inserts_new() {
     ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-record_revised-rev1",
+        "2026-03-15",
         Some(Utc::now()),
         Utc::now(),
         vec![new_normalized_statistic_value(region_id, statistic_id, 2024, 1.66)],
@@ -182,7 +182,7 @@ async fn record_revised_value_supersedes_old_and_inserts_new() {
     let report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source_id,
-        "test-record_revised-rev2",
+        "2026-04-08",
         Some(Utc::now()),
         Utc::now(),
         vec![new_normalized_statistic_value(region_id, statistic_id, 2024, 1.62)],
