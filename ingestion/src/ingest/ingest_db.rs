@@ -22,7 +22,7 @@ pub async fn read_latest_publication<'e>(
         select revision_label as "revision_label!", published, fetched as "fetched!"
         from data_source_publication
         where data_source_id = $1
-        order by coalesce(published, fetched) desc
+        order by published desc nulls last, fetched desc
         limit 1
         "#,
         data_source_id,
