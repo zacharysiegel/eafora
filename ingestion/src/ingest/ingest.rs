@@ -46,7 +46,7 @@ pub async fn record_statistic_values(
     Ok(report)
 }
 
-pub async fn record_statistic_value(
+async fn record_statistic_value(
     connection: &mut PgConnection,
     data_source_id: Uuid,
     publication_id: Uuid,
