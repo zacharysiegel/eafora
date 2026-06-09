@@ -5,12 +5,12 @@
 
 mod helpers;
 
-use chrono::{NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::adapter::*;
-use ingestion::canonical::canonical_model::{DataSourceKind, StatisticValue};
+use ingestion::canonical::canonical_model::{DataSourceKind, SourceRevision, StatisticValue};
 use ingestion::ingest;
 use ingestion::ingest::*;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;
@@ -215,4 +215,91 @@ async fn record_revised_value_supersedes_old_and_inserts_new() {
     assert_eq!(scoped_rows, 2);
 
     transaction.rollback().await.unwrap();
+}
+
+/// `read_latest_publication` orders by `published desc nulls last, fetched desc`.
+/// A null-published row must NOT win over a properly-published row even when
+/// its `fetched` timestamp is newer.
+#[tokio::test]
+async fn read_latest_publication_orders_by_published_then_fetched() {
+    let pool: PgPool = helpers::test_db::test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
+
+    let older_published: DateTime<Utc> = "2024-12-12T00:00:00Z".parse().unwrap();
+    let older_fetched:   DateTime<Utc> = "2025-01-01T00:00:00Z".parse().unwrap();
+    let null_published_but_newer_fetched: DateTime<Utc> = "2026-04-08T00:00:00Z".parse().unwrap();
+
+    insert_publication(&mut transaction, data_source_id, "2024-12-12", Some(older_published), older_fetched).await;
+    insert_publication(&mut transaction, data_source_id, "unparseable-revision", None, null_published_but_newer_fetched).await;
+
+    let latest: SourceRevision = ingest::ingest_db::read_latest_publication(&mut *transaction, data_source_id)
+        .await
+        .expect("read_latest_publication")
+        .expect("at least one row");
+
+    assert_eq!(latest.revision, "2024-12-12");
+    assert_eq!(latest.published, Some(older_published));
+
+    let newer_published: DateTime<Utc> = "2026-04-08T00:00:00Z".parse().unwrap();
+    insert_publication(&mut transaction, data_source_id, "2026-04-08", Some(newer_published), older_fetched).await;
+
+    let latest_after: SourceRevision = ingest::ingest_db::read_latest_publication(&mut *transaction, data_source_id)
+        .await
+        .expect("read_latest_publication")
+        .expect("at least one row");
+
+    assert_eq!(latest_after.revision, "2026-04-08");
+    assert_eq!(latest_after.published, Some(newer_published));
+
+    transaction.rollback().await.unwrap();
+}
+
+/// When every publication for a source has `published is null`, the
+/// fallback ordering by `fetched desc` picks the most recently fetched row.
+#[tokio::test]
+async fn read_latest_publication_falls_back_to_fetched_when_all_null() {
+    let pool: PgPool = helpers::test_db::test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
+
+    let older_fetched: DateTime<Utc> = "2025-01-01T00:00:00Z".parse().unwrap();
+    let newer_fetched: DateTime<Utc> = "2026-04-08T00:00:00Z".parse().unwrap();
+
+    insert_publication(&mut transaction, data_source_id, "rev-older", None, older_fetched).await;
+    insert_publication(&mut transaction, data_source_id, "rev-newer", None, newer_fetched).await;
+
+    let latest: SourceRevision = ingest::ingest_db::read_latest_publication(&mut *transaction, data_source_id)
+        .await
+        .expect("read_latest_publication")
+        .expect("at least one row");
+
+    assert_eq!(latest.revision, "rev-newer");
+    assert_eq!(latest.published, None);
+
+    transaction.rollback().await.unwrap();
+}
+
+async fn insert_publication(
+    transaction: &mut Transaction<'static, Postgres>,
+    data_source_id: Uuid,
+    revision_label: &str,
+    published: Option<DateTime<Utc>>,
+    fetched: DateTime<Utc>,
+) {
+    sqlx::query!(
+        r#"
+        insert into data_source_publication (data_source_id, revision_label, published, fetched)
+        values ($1, $2, $3, $4)
+        "#,
+        data_source_id,
+        revision_label,
+        published,
+        fetched,
+    )
+    .execute(&mut **transaction)
+    .await
+    .expect("insert publication");
 }
