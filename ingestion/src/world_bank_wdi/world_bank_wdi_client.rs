@@ -1,3 +1,5 @@
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+
 use crate::adapter::AdapterOptions;
 use crate::error::AppError;
 use crate::http;
@@ -20,6 +22,16 @@ pub async fn fetch_upstream(_options: AdapterOptions) -> Result<WdiResponse, App
     }
     let parsed: WdiResponse = response.json().await?;
     Ok(parsed)
+}
+
+/// WB's `lastupdated` field is a `YYYY-MM-DD` date naming the day the
+/// indicator was refreshed in their database. We treat it as the
+/// publication date at midnight UTC.
+pub fn parse_published(lastupdated: &str) -> Result<DateTime<Utc>, AppError> {
+    let date: NaiveDate = NaiveDate::parse_from_str(lastupdated, "%Y-%m-%d").map_err(|err| {
+        AppError::from(format!("unparseable lastupdated {:?}: {}", lastupdated, err))
+    })?;
+    Ok(date.and_time(NaiveTime::MIN).and_utc())
 }
 
 pub fn parse_response(raw: WdiResponse) -> Result<Vec<ParsedWdiStatisticValue>, AppError> {
@@ -135,5 +147,17 @@ mod tests {
         assert_eq!(parsed_wdi_statistic_values.len(), 2);
         assert_eq!(parsed_wdi_statistic_values[0].iso3, "USA");
         assert_eq!(parsed_wdi_statistic_values[1].iso3, "DEU");
+    }
+
+    #[test]
+    fn parse_published_yyyy_mm_dd_to_midnight_utc() {
+        let published: DateTime<Utc> = parse_published("2026-04-08").unwrap();
+        assert_eq!(published.to_rfc3339(), "2026-04-08T00:00:00+00:00");
+    }
+
+    #[test]
+    fn parse_published_rejects_garbage() {
+        assert!(parse_published("not a date").is_err());
+        assert!(parse_published("2026-13-01").is_err());
     }
 }

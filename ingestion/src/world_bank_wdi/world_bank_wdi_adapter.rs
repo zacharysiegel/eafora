@@ -90,6 +90,7 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
 
     let raw: WdiResponse = world_bank_wdi_client::fetch_upstream(options).await?;
     let revision_label: String = raw.0.lastupdated.clone();
+    let published: chrono::DateTime<Utc> = world_bank_wdi_client::parse_published(&raw.0.lastupdated)?;
     let parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue> = world_bank_wdi_client::parse_response(raw)?;
 
     let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
@@ -99,6 +100,7 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         &mut *transaction,
         data_source.id,
         &revision_label,
+        Some(published),
         Utc::now(),
         normalized_statistic_values,
     )

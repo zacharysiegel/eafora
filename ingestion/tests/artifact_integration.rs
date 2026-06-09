@@ -35,7 +35,8 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
     let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
     let region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
-    let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-Q4").await;
+    let wb_published: DateTime<Utc> = "2024-12-31T00:00:00Z".parse().unwrap();
+    let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-Q4", wb_published).await;
     insert_statistic_value(
         &mut transaction,
         region_id,
@@ -145,6 +146,10 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
 
     let wb_revision = &manifest_value["source_revisions"]["wb_wdi"];
     assert_eq!(wb_revision["revision"].as_str().unwrap(), "2024-Q4");
+    let wb_published_in_manifest: DateTime<Utc> = DateTime::parse_from_rfc3339(
+        wb_revision["published"].as_str().expect("published"),
+    ).expect("published RFC3339").with_timezone(&Utc);
+    assert_eq!(wb_published_in_manifest, wb_published);
     let wb_fetched: &str = wb_revision["fetched"].as_str().expect("fetched");
     DateTime::parse_from_rfc3339(wb_fetched).expect("fetched RFC3339");
 
@@ -217,17 +222,19 @@ async fn insert_data_source_publication(
     transaction: &mut Transaction<'static, Postgres>,
     data_source_id: Uuid,
     revision_label: &str,
+    published: DateTime<Utc>,
 ) -> Uuid {
     let publication_id: Uuid = Uuid::now_v7();
     sqlx::query!(
         r#"
         insert into data_source_publication
-            (id, data_source_id, revision_label, fetched)
-        values ($1, $2, $3, $4)
+            (id, data_source_id, revision_label, published, fetched)
+        values ($1, $2, $3, $4, $5)
         "#,
         publication_id,
         data_source_id,
         revision_label,
+        published,
         Utc::now(),
     )
     .execute(&mut **transaction)

@@ -429,5 +429,6 @@ impl TryFrom<SourceChoiceEntity> for SourceChoice {
 #[derive(Debug, Clone, Serialize)]
 pub struct SourceRevision {
     pub revision: String,
+    pub published: Option<DateTime<Utc>>,
     pub fetched: DateTime<Utc>,
 }

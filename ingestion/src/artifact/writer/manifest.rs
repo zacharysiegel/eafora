@@ -167,7 +167,7 @@ mod tests {
     fn build_manifest_json_sorts_statistics_alphabetically() {
         let (shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
-            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
+            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), published: None, fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
@@ -208,8 +208,8 @@ mod tests {
     fn build_manifest_json_is_deterministic_byte_for_byte() {
         let (shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
-            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
-            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2026-w20".to_string(), fetched: "2026-05-15T00:00:00Z".parse().unwrap() }),
+            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-Q4".to_string(), published: None, fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
+            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2026-w20".to_string(), published: None, fetched: "2026-05-15T00:00:00Z".parse().unwrap() }),
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 

@@ -12,16 +12,17 @@ pub async fn read_latest_publication<'e>(
 ) -> Result<Option<SourceRevision>, AppError> {
     struct LatestPublicationProjection {
         revision_label: String,
+        published: Option<DateTime<Utc>>,
         fetched: DateTime<Utc>,
     }
 
     let projection: Option<LatestPublicationProjection> = sqlx::query_as!(
         LatestPublicationProjection,
         r#"
-        select revision_label as "revision_label!", fetched as "fetched!"
+        select revision_label as "revision_label!", published, fetched as "fetched!"
         from data_source_publication
         where data_source_id = $1
-        order by fetched desc
+        order by coalesce(published, fetched) desc
         limit 1
         "#,
         data_source_id,
@@ -31,6 +32,7 @@ pub async fn read_latest_publication<'e>(
 
     Ok(projection.map(|projection| SourceRevision {
         revision: projection.revision_label,
+        published: projection.published,
         fetched: projection.fetched,
     }))
 }
@@ -39,18 +41,20 @@ pub async fn insert_publication_or_match<'e>(
     executor: impl PgExecutor<'e>,
     data_source_id: Uuid,
     revision_label: &str,
+    published: Option<DateTime<Utc>>,
     fetched: DateTime<Utc>,
 ) -> Result<Uuid, AppError> {
     let publication_id: Uuid = sqlx::query_scalar!(
         r#"
-        insert into data_source_publication (data_source_id, revision_label, fetched)
-        values ($1, $2, $3)
+        insert into data_source_publication (data_source_id, revision_label, published, fetched)
+        values ($1, $2, $3, $4)
         on conflict (data_source_id, revision_label) do update
             set revision_label = excluded.revision_label
         returning id
         "#,
         data_source_id,
         revision_label,
+        published,
         fetched,
     )
     .fetch_one(executor)

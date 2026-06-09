@@ -106,6 +106,7 @@ async fn record_inserts_new_publication_and_value() {
         &mut *transaction,
         data_source_id,
         "test-record_inserts_new",
+        Some(Utc::now()),
         Utc::now(),
         vec![new_normalized_statistic_value(region_id, statistic_id, 2024, 1.66)],
     )
@@ -134,6 +135,7 @@ async fn record_re_fetch_same_revision_matches_publication_and_skips() {
         &mut *transaction,
         data_source_id,
         "test-record_refetch",
+        Some(Utc::now()),
         Utc::now(),
         vec![usa_2024_166()],
     )
@@ -144,6 +146,7 @@ async fn record_re_fetch_same_revision_matches_publication_and_skips() {
         &mut *transaction,
         data_source_id,
         "test-record_refetch",
+        Some(Utc::now()),
         Utc::now(),
         vec![usa_2024_166()],
     )
@@ -169,6 +172,7 @@ async fn record_revised_value_supersedes_old_and_inserts_new() {
         &mut *transaction,
         data_source_id,
         "test-record_revised-rev1",
+        Some(Utc::now()),
         Utc::now(),
         vec![new_normalized_statistic_value(region_id, statistic_id, 2024, 1.66)],
     )
@@ -179,6 +183,7 @@ async fn record_revised_value_supersedes_old_and_inserts_new() {
         &mut *transaction,
         data_source_id,
         "test-record_revised-rev2",
+        Some(Utc::now()),
         Utc::now(),
         vec![new_normalized_statistic_value(region_id, statistic_id, 2024, 1.62)],
     )

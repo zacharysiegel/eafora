@@ -19,6 +19,7 @@ pub async fn record_statistic_values(
     connection: &mut PgConnection,
     data_source_id: Uuid,
     publication_revision_label: &str,
+    publication_published: Option<DateTime<Utc>>,
     publication_fetched: DateTime<Utc>,
     normalized_statistic_values: Vec<NormalizedStatisticValue>,
 ) -> Result<IngestReport, AppError> {
@@ -26,6 +27,7 @@ pub async fn record_statistic_values(
         &mut *connection,
         data_source_id,
         publication_revision_label,
+        publication_published,
         publication_fetched,
     )
     .await?;
