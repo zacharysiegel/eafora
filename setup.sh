@@ -37,7 +37,7 @@ source ./.env
 master_secret=
 if test -n "${1+set}"; then
     master_secret="${1}"
-elif test -n "${MASTER_SECRET+set}" && test -n "${MASTER_SECRET}"; then
+elif test -n "${MASTER_SECRET+set}" && test -n "${MASTER_SECRET}"; then # Declared and non-empty
     master_secret="${MASTER_SECRET}"
 else
     echo "MASTER_SECRET is required either as the first argument to setup.sh or as a non-empty value in .env"
