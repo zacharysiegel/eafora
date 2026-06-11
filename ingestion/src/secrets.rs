@@ -24,7 +24,7 @@ pub fn master_decrypt_utf8(secret_name: &str) -> Result<String, AppError> {
 }
 
 fn load_secrets() -> Result<SecretStore, AppError> {
-    let store_path: String = dotenvy::var("SECR__STORE_PATH")?;
+    let store_path: String = dotenvy::var("SECR_STORE_PATH")?;
     let store: SecretStore = load::load_secrets_from_file(Path::new(&store_path))?;
     Ok(store)
 }
