@@ -224,7 +224,7 @@ async fn create_repository(
         ArtifactRepositoryKind::CloudflareR2 => {
             let config: CloudflareR2Config = CloudflareR2Config {
                 account_id: dotenvy::var("R2_ACCOUNT_ID")?,
-                bucket: dotenvy::var("R2_BUCKET")?,
+                bucket: dotenvy::var("R2_ARTIFACT_BUCKET")?,
                 access_key_id: secrets::master_decrypt_utf8("r2_access_key_id")?,
                 secret_access_key: secrets::master_decrypt_utf8("r2_secret_access_key")?,
                 public_url_base: dotenvy::var("ARTIFACT_PUBLIC_URL_BASE")?,
