@@ -3,7 +3,6 @@
 //! discovers a new manifest URL is guaranteed to find its referenced
 //! shards already present at the same repository.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use sqlx::PgPool;
@@ -12,7 +11,6 @@ use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::{ArtifactBuildReport, ArtifactVersion};
 use crate::artifact::repository::ArtifactRepository;
 use crate::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
-use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 
 const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
@@ -33,7 +31,6 @@ pub async fn publish_artifacts(
     pool: &PgPool,
     build_report: &ArtifactBuildReport,
     repository: &dyn ArtifactRepository,
-    data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<PublishReport, AppError> {
     let version_label: &str = &build_report.version_label;
 
@@ -69,7 +66,7 @@ pub async fn publish_artifacts(
         version_label,
         build_report.artifacts.manifest.sha256_hex(),
         &manifest_url,
-        data_source_revisions,
+        &build_report.data_source_revisions,
     )
     .await?;
     log::info!("inserted artifact_version id={} version_label={}", artifact_version.id, artifact_version.version_label);

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -5,7 +6,7 @@ use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
 use crate::artifact::hashing::Hashed;
-use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, StatisticKind};
+use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
 
 /// One value as it sits in the canonical store: a single source's
@@ -137,6 +138,7 @@ pub struct ArtifactBuildReport {
     pub output_dir: PathBuf,
     pub version_label: String,
     pub artifacts: Artifacts,
+    pub data_source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
 }
 
 #[derive(Debug, Clone)]

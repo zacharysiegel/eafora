@@ -57,6 +57,7 @@ pub async fn build_artifacts(
             geometry,
             manifest,
         },
+        data_source_revisions,
     })
 }
 
