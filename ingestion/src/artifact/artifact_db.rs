@@ -93,6 +93,19 @@ pub async fn read_latest_revisions(
     Ok(revisions)
 }
 
+pub async fn read_artifact_version_exists<'e>(
+    executor: impl PgExecutor<'e>,
+    version_label: &str,
+) -> Result<bool, AppError> {
+    let exists: bool = sqlx::query_scalar!(
+        r#"select exists(select 1 from artifact_version where version_label = $1) as "exists!""#,
+        version_label,
+    )
+    .fetch_one(executor)
+    .await?;
+    Ok(exists)
+}
+
 pub async fn insert_artifact_version<'e>(
     executor: impl PgExecutor<'e>,
     version_label: &str,
@@ -112,7 +125,6 @@ pub async fn insert_artifact_version<'e>(
         insert into artifact_version
             (version_label, manifest_sha256, manifest_url, data_source_revisions_jsonb)
         values ($1, $2, $3, $4)
-        on conflict (version_label) do nothing
         returning
             id                          as "id!",
             version_label               as "version_label!",

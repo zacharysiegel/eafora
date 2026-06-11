@@ -1,0 +1,75 @@
+use std::path::Path;
+
+use async_trait::async_trait;
+use aws_sdk_s3::Client;
+use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
+use aws_sdk_s3::primitives::ByteStream;
+
+use crate::artifact::repository::artifact_repository::ArtifactRepository;
+use crate::error::AppError;
+
+const R2_REGION_PLACEHOLDER: &str = "auto";
+const R2_CREDENTIALS_PROVIDER_NAME: &str = "eafora-r2";
+
+pub struct CloudflareR2Config {
+    pub account_id: String,
+    pub bucket: String,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub public_url_base: String,
+}
+
+pub struct CloudflareR2ArtifactRepository {
+    client: Client,
+    bucket: String,
+    public_url_base: String,
+}
+
+impl CloudflareR2ArtifactRepository {
+    pub async fn create(config: CloudflareR2Config) -> Result<Self, AppError> {
+        let credentials: Credentials = Credentials::new(
+            config.access_key_id,
+            config.secret_access_key,
+            None,
+            None,
+            R2_CREDENTIALS_PROVIDER_NAME,
+        );
+        let endpoint_url: String = format!("https://{}.r2.cloudflarestorage.com", config.account_id);
+        let sdk_config = aws_config::defaults(BehaviorVersion::latest())
+            .endpoint_url(endpoint_url)
+            .credentials_provider(credentials)
+            .region(Region::new(R2_REGION_PLACEHOLDER))
+            .load()
+            .await;
+        let client: Client = Client::new(&sdk_config);
+
+        Ok(CloudflareR2ArtifactRepository {
+            client,
+            bucket: config.bucket,
+            public_url_base: config.public_url_base,
+        })
+    }
+}
+
+#[async_trait]
+impl ArtifactRepository for CloudflareR2ArtifactRepository {
+    async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError> {
+        let body: ByteStream = ByteStream::from_path(source_path).await.map_err(|err| {
+            AppError::from(format!("ByteStream::from_path {:?}: {}", source_path, err))
+        })?;
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .body(body)
+            .content_type(content_type)
+            .send()
+            .await
+            .map_err(|err| AppError::from(format!("put_object bucket={} key={}: {}", self.bucket, key, err)))?;
+        Ok(())
+    }
+
+    fn url_for(&self, key: &str) -> String {
+        format!("{}/{}", self.public_url_base.trim_end_matches('/'), key)
+    }
+}
