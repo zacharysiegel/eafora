@@ -6,4 +6,5 @@ pub mod error;
 pub mod geometry;
 pub mod http;
 pub mod ingest;
+pub mod secrets;
 pub mod world_bank_wdi;
