@@ -227,7 +227,7 @@ async fn create_repository(
                 bucket: dotenvy::var("R2_ARTIFACT_BUCKET")?,
                 access_key_id: secrets::master_decrypt_utf8("r2_access_key_id")?,
                 secret_access_key: secrets::master_decrypt_utf8("r2_secret_access_key")?,
-                public_url_base: dotenvy::var("ARTIFACT_PUBLIC_URL_BASE")?,
+                public_url_base: dotenvy::var("R2_ARTIFACT_PUBLIC_URL_BASE")?,
             };
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
             Ok(Box::new(repository))
