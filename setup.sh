@@ -34,6 +34,19 @@ fi
 
 source ./.env
 
+master_secret=
+if test -n "${1+set}"; then
+    master_secret="${1}"
+elif test -n "${MASTER_SECRET+set}" && test -n "${MASTER_SECRET}"; then
+    master_secret="${MASTER_SECRET}"
+else
+    echo "MASTER_SECRET is required either as the first argument to setup.sh or as a non-empty value in .env"
+    echo "  generate one with: secr key"
+    echo "  then set MASTER_SECRET=<key> in .env"
+    exit 1
+fi
+export MASTER_SECRET="${master_secret}"
+
 if ! brew ls --versions postgresql@18 >/dev/null 2>&1; then
     echo "Installing postgresql@18 via Homebrew"
     brew install postgresql@18
