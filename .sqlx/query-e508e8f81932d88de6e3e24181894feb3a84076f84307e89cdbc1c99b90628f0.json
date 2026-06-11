@@ -1,0 +1,61 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into artifact_version\n            (version_label, manifest_sha256, manifest_url, data_source_revisions_jsonb)\n        values ($1, $2, $3, $4)\n        returning\n            id                          as \"id!\",\n            version_label               as \"version_label!\",\n            artifact_created            as \"artifact_created!\",\n            manifest_sha256             as \"manifest_sha256!\",\n            manifest_url                as \"manifest_url!\",\n            data_source_revisions_jsonb as \"data_source_revisions_jsonb!\",\n            notes\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "version_label!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "artifact_created!",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "manifest_sha256!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "manifest_url!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "data_source_revisions_jsonb!",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 6,
+        "name": "notes",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Jsonb"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e508e8f81932d88de6e3e24181894feb3a84076f84307e89cdbc1c99b90628f0"
+}

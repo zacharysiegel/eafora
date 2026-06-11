@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select revision_label as \"revision_label!\", published, fetched as \"fetched!\"\n        from data_source_publication\n        where data_source_id = $1\n        order by published desc nulls last, fetched desc\n        limit 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "revision_label!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "published",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "fetched!",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "18089b881e1f1aec82d555fbd7651691f64a6588f6a21112adbfd89fdd42a34c"
+}

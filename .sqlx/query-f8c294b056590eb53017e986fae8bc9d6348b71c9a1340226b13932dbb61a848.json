@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select country.iso3, region.name_en\n        from country\n        join region on region.id = country.region_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "iso3",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "name_en",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "f8c294b056590eb53017e986fae8bc9d6348b71c9a1340226b13932dbb61a848"
+}

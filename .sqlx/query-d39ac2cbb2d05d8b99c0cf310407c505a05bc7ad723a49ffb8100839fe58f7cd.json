@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        insert into data_source_publication (data_source_id, revision_label, published, fetched)\n        values ($1, $2, $3, $4)\n        on conflict (data_source_id, revision_label) do update\n            set revision_label = excluded.revision_label\n        returning id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d39ac2cbb2d05d8b99c0cf310407c505a05bc7ad723a49ffb8100839fe58f7cd"
+}

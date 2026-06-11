@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select region_id, iso3, iso2, created, modified, deleted\n        from country\n        where iso3 = $1\n        ",
+  "query": "\n        select region_id, iso3, iso2, created, modified\n        from country\n        where iso3 = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -27,11 +27,6 @@
         "ordinal": 4,
         "name": "modified",
         "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 5,
-        "name": "deleted",
-        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
@@ -44,9 +39,8 @@
       false,
       false,
       false,
-      false,
-      true
+      false
     ]
   },
-  "hash": "4b9ca5044c6db2f374ae9decb15cf306d9ea63197fedc8f8e1ccae5e1a9ced86"
+  "hash": "4d5ad33afebe3f2c1b3e8ff29e6464f910edfa20175d3d6291415f9166901c92"
 }
