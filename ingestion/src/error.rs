@@ -6,7 +6,6 @@ minimer::define_app_error!(pub AppError);
 minimer::impl_from_error!(AppError, sqlx::Error);
 minimer::impl_from_error!(AppError, reqwest::Error);
 minimer::impl_from_error!(AppError, serde_json::Error);
-minimer::impl_from_error!(AppError, serde_yaml_ng::Error);
 minimer::impl_from_error!(AppError, rusqlite::Error);
 minimer::impl_from_error!(AppError, zip::result::ZipError);
 minimer::impl_from_error!(AppError, shapefile::Error);

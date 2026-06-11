@@ -28,7 +28,6 @@ aws-sdk-s3 = "1.135.*"
 aws-config = "1.8.*"
 async-trait = "0.1.*"
 bytes = "1.11.*"
-serde_yaml_ng = "0.10.*"
 base64 = "0.22.*"
 const_format = "0.2.*"
 geozero = { version = "0.14.*", default-features = false, features = ["with-geo"] }
