@@ -13,9 +13,6 @@ target/
 # Per-developer environment overrides (template.env is committed)
 .env
 
-# Encrypted secret store (secrets.yaml.template is committed)
-secrets.yaml
-
 # launchd job logs (rendered into logs/ by setup.sh)
 logs/
 

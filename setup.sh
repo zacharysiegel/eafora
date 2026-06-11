@@ -32,14 +32,6 @@ if ! test -f .env; then
     cp template.env .env
 fi
 
-if ! test -f secrets.yaml; then
-    echo "Generating secrets.yaml from secrets.yaml.template"
-    cp secrets.yaml.template secrets.yaml
-    echo "  Generate a master key with \`secr key\`, paste into MASTER_SECRET in .env,"
-    echo "  then encrypt each secret with \`secr encrypt --key \"\$MASTER_SECRET\" --name <name> <plaintext>\`"
-    echo "  and replace the REPLACE_WITH_SECR_ENCRYPT_OUTPUT placeholders in secrets.yaml."
-fi
-
 source ./.env
 
 if ! brew ls --versions postgresql@18 >/dev/null 2>&1; then
