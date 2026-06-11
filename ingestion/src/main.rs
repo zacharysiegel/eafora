@@ -67,7 +67,7 @@ fn build_cli() -> Command {
                 .arg(Arg::new("output-dir").required(true).help("directory containing manifest.json and referenced files"))
                 .arg(Arg::new("repository").long("repository").required(true).help("local | cloudflare-r2 | dryrun"))
                 .arg(Arg::new("local-root").long("local-root").help("destination root directory (required when --repository=local)"))
-                .arg(Arg::new("local-public-url-base").long("local-public-url-base").help("public URL prefix for local repository (required when --repository=local)"))
+                .arg(Arg::new("local-public-base-url").long("local-public-base-url").help("public URL prefix for local repository (required when --repository=local)"))
                 .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish; requires --version-label"))
                 .arg(Arg::new("version-label").long("version-label").help("version label for --build")),
         )
@@ -214,12 +214,12 @@ async fn create_repository(
                 .get_one::<String>("local-root")
                 .map(PathBuf::from)
                 .ok_or_else(|| AppError::new("--repository=local requires --local-root"))?;
-            let public_url_base: String = matches
-                .get_one::<String>("local-public-url-base")
+            let public_base_url: String = matches
+                .get_one::<String>("local-public-base-url")
                 .cloned()
-                .ok_or_else(|| AppError::new("--repository=local requires --local-public-url-base"))?;
+                .ok_or_else(|| AppError::new("--repository=local requires --local-public-base-url"))?;
 
-            Ok(Box::new(LocalArtifactRepository::new(root, public_url_base)))
+            Ok(Box::new(LocalArtifactRepository::new(root, public_base_url)))
         }
         ArtifactRepositoryKind::CloudflareR2 => {
             let config: CloudflareR2Config = CloudflareR2Config {
@@ -227,17 +227,17 @@ async fn create_repository(
                 bucket: dotenvy::var("R2_ARTIFACT_BUCKET")?,
                 access_key_id: secrets::master_decrypt_utf8("r2_access_key_id")?,
                 secret_access_key: secrets::master_decrypt_utf8("r2_secret_access_key")?,
-                public_url_base: dotenvy::var("R2_ARTIFACT_PUBLIC_URL_BASE")?,
+                public_base_url: dotenvy::var("R2_ARTIFACT_PUBLIC_BASE_URL")?,
             };
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
             Ok(Box::new(repository))
         }
         ArtifactRepositoryKind::Dryrun => {
-            let public_url_base: String = matches
-                .get_one::<String>("local-public-url-base")
+            let public_base_url: String = matches
+                .get_one::<String>("local-public-base-url")
                 .cloned()
                 .unwrap_or_else(|| "dryrun://".to_string());
-            Ok(Box::new(DryrunArtifactRepository::new(public_url_base)))
+            Ok(Box::new(DryrunArtifactRepository::new(public_base_url)))
         }
     }
 }

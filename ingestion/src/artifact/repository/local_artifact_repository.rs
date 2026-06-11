@@ -8,12 +8,12 @@ use crate::error::AppError;
 
 pub struct LocalArtifactRepository {
     root: PathBuf,
-    public_url_base: String,
+    public_base_url: String,
 }
 
 impl LocalArtifactRepository {
-    pub fn new(root: PathBuf, public_url_base: String) -> Self {
-        LocalArtifactRepository { root, public_url_base }
+    pub fn new(root: PathBuf, public_base_url: String) -> Self {
+        LocalArtifactRepository { root, public_base_url }
     }
 }
 
@@ -29,6 +29,6 @@ impl ArtifactRepository for LocalArtifactRepository {
     }
 
     fn url_for(&self, key: &str) -> String {
-        format!("{}/{}", self.public_url_base.trim_end_matches('/'), key)
+        format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
 }

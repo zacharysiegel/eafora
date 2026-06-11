@@ -37,9 +37,9 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
     let build_report: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
     let destination_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let public_url_base: String = "https://example.invalid/artifacts".to_string();
+    let public_base_url: String = "https://example.invalid/artifacts".to_string();
     let repository: LocalArtifactRepository =
-        LocalArtifactRepository::new(destination_dir.path().to_path_buf(), public_url_base.clone());
+        LocalArtifactRepository::new(destination_dir.path().to_path_buf(), public_base_url.clone());
 
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository)
         .await
@@ -47,7 +47,7 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
 
     let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
     assert_eq!(publish_report.version_label, version_label);
-    assert_eq!(publish_report.manifest_url, format!("{}/{}", public_url_base, manifest_key));
+    assert_eq!(publish_report.manifest_url, format!("{}/{}", public_base_url, manifest_key));
     assert_eq!(publish_report.shards_uploaded, 1);
     assert!(publish_report.geometry_uploaded);
     assert!(publish_report.manifest_uploaded);

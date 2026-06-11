@@ -8,12 +8,12 @@ use crate::error::AppError;
 /// Logs every PUT and returns Ok without performing any I/O. Use via
 /// `--repository dryrun` to preview a publish.
 pub struct DryrunArtifactRepository {
-    public_url_base: String,
+    public_base_url: String,
 }
 
 impl DryrunArtifactRepository {
-    pub fn new(public_url_base: String) -> Self {
-        DryrunArtifactRepository { public_url_base }
+    pub fn new(public_base_url: String) -> Self {
+        DryrunArtifactRepository { public_base_url }
     }
 }
 
@@ -27,6 +27,6 @@ impl ArtifactRepository for DryrunArtifactRepository {
     }
 
     fn url_for(&self, key: &str) -> String {
-        format!("{}/{}", self.public_url_base.trim_end_matches('/'), key)
+        format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
 }

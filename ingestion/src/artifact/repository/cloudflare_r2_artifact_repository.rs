@@ -16,13 +16,13 @@ pub struct CloudflareR2Config {
     pub bucket: String,
     pub access_key_id: String,
     pub secret_access_key: String,
-    pub public_url_base: String,
+    pub public_base_url: String,
 }
 
 pub struct CloudflareR2ArtifactRepository {
     client: Client,
     bucket: String,
-    public_url_base: String,
+    public_base_url: String,
 }
 
 impl CloudflareR2ArtifactRepository {
@@ -46,7 +46,7 @@ impl CloudflareR2ArtifactRepository {
         Ok(CloudflareR2ArtifactRepository {
             client,
             bucket: config.bucket,
-            public_url_base: config.public_url_base,
+            public_base_url: config.public_base_url,
         })
     }
 }
@@ -70,6 +70,6 @@ impl ArtifactRepository for CloudflareR2ArtifactRepository {
     }
 
     fn url_for(&self, key: &str) -> String {
-        format!("{}/{}", self.public_url_base.trim_end_matches('/'), key)
+        format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
 }
