@@ -21,7 +21,7 @@ use ingestion::artifact::artifact_model::{
 };
 use ingestion::artifact::hashing::Hashed;
 use ingestion::artifact::publish::PublishReport;
-use ingestion::artifact::repository::{DryrunArtifactRepository, LocalArtifactRepository};
+use ingestion::artifact::repository::{ArtifactRepository, DryrunArtifactRepository, LocalArtifactRepository};
 use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use ingestion::canonical::canonical_model::{
     DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind,
@@ -38,8 +38,9 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
 
     let destination_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let public_base_url: String = "https://example.invalid/artifacts".to_string();
-    let repository: LocalArtifactRepository =
-        LocalArtifactRepository::new(destination_dir.path().to_path_buf(), public_base_url.clone());
+    let repository: ArtifactRepository = ArtifactRepository::Local(
+        LocalArtifactRepository::new(destination_dir.path().to_path_buf(), public_base_url.clone()),
+    );
 
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository)
         .await
@@ -72,10 +73,10 @@ async fn publish_artifacts_errors_when_version_label_already_published() {
     let build_report: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
     let destination_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let repository: LocalArtifactRepository = LocalArtifactRepository::new(
+    let repository: ArtifactRepository = ArtifactRepository::Local(LocalArtifactRepository::new(
         destination_dir.path().to_path_buf(),
         "https://example.invalid/artifacts".to_string(),
-    );
+    ));
 
     artifact::publish_artifacts(&pool, &build_report, &repository)
         .await
@@ -95,7 +96,9 @@ async fn publish_artifacts_against_dryrun_repository_does_not_write_files_but_in
     let version_label: String = unique_version_label();
     let build_report: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
-    let repository: DryrunArtifactRepository = DryrunArtifactRepository::new("dryrun://".to_string());
+    let repository: ArtifactRepository = ArtifactRepository::Dryrun(
+        DryrunArtifactRepository::new("dryrun://".to_string()),
+    );
 
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository)
         .await

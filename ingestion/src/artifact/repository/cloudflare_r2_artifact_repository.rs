@@ -1,11 +1,9 @@
 use std::path::Path;
 
-use async_trait::async_trait;
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
 
-use crate::artifact::repository::artifact_repository::ArtifactRepository;
 use crate::error::AppError;
 
 const R2_REGION_PLACEHOLDER: &str = "auto";
@@ -35,6 +33,7 @@ impl CloudflareR2ArtifactRepository {
             R2_CREDENTIALS_PROVIDER_NAME,
         );
         let endpoint_url: String = format!("https://{}.r2.cloudflarestorage.com", config.account_id);
+
         let sdk_config = aws_config::defaults(BehaviorVersion::latest())
             .endpoint_url(endpoint_url)
             .credentials_provider(credentials)
@@ -49,14 +48,12 @@ impl CloudflareR2ArtifactRepository {
             public_base_url: config.public_base_url,
         })
     }
-}
 
-#[async_trait]
-impl ArtifactRepository for CloudflareR2ArtifactRepository {
-    async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError> {
+    pub async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError> {
         let body: ByteStream = ByteStream::from_path(source_path).await.map_err(|err| {
             AppError::from(format!("ByteStream::from_path {:?}: {}", source_path, err))
         })?;
+
         self.client
             .put_object()
             .bucket(&self.bucket)
@@ -66,10 +63,11 @@ impl ArtifactRepository for CloudflareR2ArtifactRepository {
             .send()
             .await
             .map_err(|err| AppError::from(format!("put_object bucket={} key={}: {}", self.bucket, key, err)))?;
+
         Ok(())
     }
 
-    fn url_for(&self, key: &str) -> String {
+    pub fn url_for(&self, key: &str) -> String {
         format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
 }

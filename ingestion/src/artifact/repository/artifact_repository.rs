@@ -1,8 +1,33 @@
 use std::path::Path;
 
-use async_trait::async_trait;
-
+use crate::artifact::repository::cloudflare_r2_artifact_repository::CloudflareR2ArtifactRepository;
+use crate::artifact::repository::dryrun_artifact_repository::DryrunArtifactRepository;
+use crate::artifact::repository::local_artifact_repository::LocalArtifactRepository;
 use crate::error::AppError;
+
+pub enum ArtifactRepository {
+    Local(LocalArtifactRepository),
+    CloudflareR2(CloudflareR2ArtifactRepository),
+    Dryrun(DryrunArtifactRepository),
+}
+
+impl ArtifactRepository {
+    pub async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError> {
+        match self {
+            ArtifactRepository::Local(repository) => repository.put_file(key, source_path, content_type).await,
+            ArtifactRepository::CloudflareR2(repository) => repository.put_file(key, source_path, content_type).await,
+            ArtifactRepository::Dryrun(repository) => repository.put_file(key, source_path, content_type).await,
+        }
+    }
+
+    pub fn url_for(&self, key: &str) -> String {
+        match self {
+            ArtifactRepository::Local(repository) => repository.url_for(key),
+            ArtifactRepository::CloudflareR2(repository) => repository.url_for(key),
+            ArtifactRepository::Dryrun(repository) => repository.url_for(key),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ArtifactRepositoryKind {
@@ -32,16 +57,4 @@ impl TryFrom<&str> for ArtifactRepositoryKind {
             other => Err(AppError::from(format!("unknown repository kind {:?}", other))),
         }
     }
-}
-
-#[async_trait]
-pub trait ArtifactRepository: Send + Sync {
-    /// Stream `source_path`'s bytes to the repository under `key`. Idempotent
-    /// at the implementation's discretion (R2 same-key PUT overwrites; Local
-    /// overwrites; Dryrun logs and returns).
-    async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError>;
-
-    /// Public URL where a client would fetch the object at `key`. Used by
-    /// the orchestrator to write `artifact_version.manifest_url`.
-    fn url_for(&self, key: &str) -> String;
 }

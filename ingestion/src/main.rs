@@ -190,8 +190,8 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
         artifact::load_build_report_from_disk(&output_dir)?
     };
 
-    let repository: Box<dyn ArtifactRepository> = create_repository(repository_kind, matches).await?;
-    let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, repository.as_ref()).await?;
+    let repository: ArtifactRepository = create_repository(repository_kind, matches).await?;
+    let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository).await?;
 
     log::info!(
         "publish complete: version_label={} manifest_url={} shards={} geometry={} manifest={}",
@@ -207,7 +207,7 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
 async fn create_repository(
     kind: ArtifactRepositoryKind,
     matches: &ArgMatches,
-) -> Result<Box<dyn ArtifactRepository>, AppError> {
+) -> Result<ArtifactRepository, AppError> {
     match kind {
         ArtifactRepositoryKind::Local => {
             let root: PathBuf = matches
@@ -219,7 +219,7 @@ async fn create_repository(
                 .cloned()
                 .ok_or_else(|| AppError::new("--repository=local requires --local-public-base-url"))?;
 
-            Ok(Box::new(LocalArtifactRepository::new(root, public_base_url)))
+            Ok(ArtifactRepository::Local(LocalArtifactRepository::new(root, public_base_url)))
         }
         ArtifactRepositoryKind::CloudflareR2 => {
             let config: CloudflareR2Config = CloudflareR2Config {
@@ -230,14 +230,14 @@ async fn create_repository(
                 public_base_url: dotenvy::var("R2_ARTIFACT_PUBLIC_BASE_URL")?,
             };
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
-            Ok(Box::new(repository))
+            Ok(ArtifactRepository::CloudflareR2(repository))
         }
         ArtifactRepositoryKind::Dryrun => {
             let public_base_url: String = matches
                 .get_one::<String>("local-public-base-url")
                 .cloned()
                 .unwrap_or_else(|| "dryrun://".to_string());
-            Ok(Box::new(DryrunArtifactRepository::new(public_base_url)))
+            Ok(ArtifactRepository::Dryrun(DryrunArtifactRepository::new(public_base_url)))
         }
     }
 }

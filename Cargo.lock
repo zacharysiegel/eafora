@@ -2034,7 +2034,6 @@ dependencies = [
 name = "ingestion"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "aws-config",
  "aws-sdk-s3",
  "base64",

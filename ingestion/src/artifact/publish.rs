@@ -37,7 +37,7 @@ pub struct PublishReport {
 pub async fn publish_artifacts(
     pool: &PgPool,
     build_report: &ArtifactBuildReport,
-    repository: &dyn ArtifactRepository,
+    repository: &ArtifactRepository,
 ) -> Result<PublishReport, AppError> {
     let version_label: &str = &build_report.version_label;
 
