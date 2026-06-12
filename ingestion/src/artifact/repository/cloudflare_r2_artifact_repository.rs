@@ -9,6 +9,12 @@ use crate::error::AppError;
 const R2_REGION_PLACEHOLDER: &str = "auto";
 const R2_CREDENTIALS_PROVIDER_NAME: &str = "eafora-r2";
 
+pub const ENV_R2_ACCOUNT_ID: &str = "R2_ACCOUNT_ID";
+pub const ENV_R2_ARTIFACT_BUCKET: &str = "R2_ARTIFACT_BUCKET";
+pub const ENV_R2_ARTIFACT_PUBLIC_BASE_URL: &str = "R2_ARTIFACT_PUBLIC_BASE_URL";
+pub const SECRET_R2_ACCESS_KEY_ID: &str = "r2_access_key_id";
+pub const SECRET_R2_SECRET_ACCESS_KEY: &str = "r2_secret_access_key";
+
 pub struct CloudflareR2Config {
     pub account_id: String,
     pub bucket: String,

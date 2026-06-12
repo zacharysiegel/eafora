@@ -8,6 +8,8 @@ use ingestion::artifact::{self, ArtifactBuildReport, BuildOptions, PublishReport
 use ingestion::artifact::repository::{
     ArtifactRepository, ArtifactRepositoryKind, CloudflareR2ArtifactRepository, CloudflareR2Config,
     DryrunArtifactRepository, LocalArtifactRepository,
+    ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL,
+    SECRET_R2_ACCESS_KEY_ID, SECRET_R2_SECRET_ACCESS_KEY,
 };
 use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::db;
@@ -67,7 +69,7 @@ fn build_cli() -> Command {
                 .arg(Arg::new("output-dir").required(true).help("directory containing manifest.json and referenced files"))
                 .arg(Arg::new("repository").long("repository").required(true).help("local | cloudflare-r2 | dryrun"))
                 .arg(Arg::new("local-root").long("local-root").help("destination root directory (required when --repository=local)"))
-                .arg(Arg::new("local-public-base-url").long("local-public-base-url").help("public URL prefix for local repository (required when --repository=local)"))
+                .arg(Arg::new("public-base-url").long("public-base-url").help("public URL prefix served from the destination (required when --repository=local; optional for --repository=dryrun; ignored for --repository=cloudflare-r2)"))
                 .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish; requires --version-label"))
                 .arg(Arg::new("version-label").long("version-label").help("version label for --build")),
         )
@@ -194,12 +196,10 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository).await?;
 
     log::info!(
-        "publish complete: version_label={} manifest_url={} shards={} geometry={} manifest={}",
+        "publish complete: version_label={} manifest_url={} shards={}",
         publish_report.version_label,
         publish_report.manifest_url,
-        publish_report.shards_uploaded,
-        publish_report.geometry_uploaded,
-        publish_report.manifest_uploaded,
+        publish_report.shards_published,
     );
     Ok(())
 }
@@ -215,26 +215,26 @@ async fn create_repository(
                 .map(PathBuf::from)
                 .ok_or_else(|| AppError::new("--repository=local requires --local-root"))?;
             let public_base_url: String = matches
-                .get_one::<String>("local-public-base-url")
+                .get_one::<String>("public-base-url")
                 .cloned()
-                .ok_or_else(|| AppError::new("--repository=local requires --local-public-base-url"))?;
+                .ok_or_else(|| AppError::new("--repository=local requires --public-base-url"))?;
 
             Ok(ArtifactRepository::Local(LocalArtifactRepository::new(root, public_base_url)))
         }
         ArtifactRepositoryKind::CloudflareR2 => {
             let config: CloudflareR2Config = CloudflareR2Config {
-                account_id: dotenvy::var("R2_ACCOUNT_ID")?,
-                bucket: dotenvy::var("R2_ARTIFACT_BUCKET")?,
-                access_key_id: secrets::master_decrypt_utf8("r2_access_key_id")?,
-                secret_access_key: secrets::master_decrypt_utf8("r2_secret_access_key")?,
-                public_base_url: dotenvy::var("R2_ARTIFACT_PUBLIC_BASE_URL")?,
+                account_id: dotenvy::var(ENV_R2_ACCOUNT_ID)?,
+                bucket: dotenvy::var(ENV_R2_ARTIFACT_BUCKET)?,
+                access_key_id: secrets::master_decrypt_utf8(SECRET_R2_ACCESS_KEY_ID)?,
+                secret_access_key: secrets::master_decrypt_utf8(SECRET_R2_SECRET_ACCESS_KEY)?,
+                public_base_url: dotenvy::var(ENV_R2_ARTIFACT_PUBLIC_BASE_URL)?,
             };
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
             Ok(ArtifactRepository::CloudflareR2(repository))
         }
         ArtifactRepositoryKind::Dryrun => {
             let public_base_url: String = matches
-                .get_one::<String>("local-public-base-url")
+                .get_one::<String>("public-base-url")
                 .cloned()
                 .unwrap_or_else(|| "dryrun://".to_string());
             Ok(ArtifactRepository::Dryrun(DryrunArtifactRepository::new(public_base_url)))

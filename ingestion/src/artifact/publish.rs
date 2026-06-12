@@ -1,7 +1,6 @@
-//! Walk an `ArtifactBuildReport` and ship every output file through an
-//! `ArtifactRepository`. Manifest is uploaded last so a client that
-//! discovers a new manifest URL is guaranteed to find its referenced
-//! shards already present at the same repository.
+//! Manifest is uploaded last so a client that discovers a new manifest URL
+//! is guaranteed to find its referenced shards already present at the same
+//! repository.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -29,9 +28,7 @@ pub struct PublishReport {
     pub version_label: String,
     pub manifest_url: String,
     pub artifact_version: ArtifactVersion,
-    pub shards_uploaded: usize,
-    pub geometry_uploaded: bool,
-    pub manifest_uploaded: bool,
+    pub shards_published: usize,
 }
 
 pub async fn publish_artifacts(
@@ -49,14 +46,13 @@ pub async fn publish_artifacts(
         )));
     }
 
-    let mut shards_uploaded: usize = 0;
     for shard in &build_report.artifacts.shards {
         let filename: &str = filename_of(&shard.file.path)?;
         let key: String = format!("{}/{}/{}", version_label, SUBDIR_DATA, filename);
         repository.put_file(&key, &shard.file.path, CONTENT_TYPE_SQLITE).await?;
         log::info!("uploaded shard key={} sha256={}", key, shard.file.sha256_hex());
-        shards_uploaded += 1;
     }
+    let shards_published: usize = build_report.artifacts.shards.len();
 
     let geometry_filename: &str = filename_of(&build_report.artifacts.geometry.path)?;
     let geometry_key: String = format!("{}/{}/{}", version_label, SUBDIR_GEOMETRY, geometry_filename);
@@ -82,9 +78,7 @@ pub async fn publish_artifacts(
         version_label: version_label.to_string(),
         manifest_url,
         artifact_version,
-        shards_uploaded,
-        geometry_uploaded: true,
-        manifest_uploaded: true,
+        shards_published,
     })
 }
 

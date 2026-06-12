@@ -49,9 +49,7 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
     let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
     assert_eq!(publish_report.version_label, version_label);
     assert_eq!(publish_report.manifest_url, format!("{}/{}", public_base_url, manifest_key));
-    assert_eq!(publish_report.shards_uploaded, 1);
-    assert!(publish_report.geometry_uploaded);
-    assert!(publish_report.manifest_uploaded);
+    assert_eq!(publish_report.shards_published, 1);
 
     let shard_destination: PathBuf = destination_dir.path().join(format!("{}/{}/shard.sqlite", version_label, SUBDIR_DATA));
     let geometry_destination: PathBuf = destination_dir.path().join(format!("{}/{}/world.fgb", version_label, SUBDIR_GEOMETRY));
@@ -104,9 +102,7 @@ async fn publish_artifacts_against_dryrun_repository_does_not_write_files_but_in
         .await
         .expect("dryrun publish succeeds");
 
-    assert_eq!(publish_report.shards_uploaded, 1);
-    assert!(publish_report.geometry_uploaded);
-    assert!(publish_report.manifest_uploaded);
+    assert_eq!(publish_report.shards_published, 1);
     assert!(publish_report.manifest_url.starts_with("dryrun:"));
 
     delete_artifact_version(&pool, &version_label).await;
