@@ -75,9 +75,8 @@ for a better answer than Docker would give us?
    Rust toolchain play nicely with `cargo sqlx prepare`'s offline cache and
    with `cargo build --release` for the launchd-installed ingestion binary?
    Or do we keep `rustup` and only use Nix for the system-level deps?
-3. Can `secr` (and `minimer`) be expressed as Nix derivations, or do we keep
-   `cargo install` for owned crates and only Nix-manage the third-party
-   deps?
+3. Can `secr` be expressed as a Nix derivation, or do we keep `cargo install`
+   for the owned CLI and only Nix-manage the third-party deps?
 4. macOS-only support is sufficient for v0.9. Linux dev would be a nice
    side-effect but is not a goal. Confirm chosen approach doesn't bake in
    anything Linux-specific that we'd later have to back out.
@@ -98,8 +97,8 @@ Worth deferring if:
 
 - Nix-on-macOS is still flaky for our specific tool mix (Postgres-with-PostGIS
   potential future, Rust toolchain, AWS SDK linkage).
-- Adoption requires us to rebuild `secr` / `minimer` as derivations and the
-  effort isn't justified by the reproducibility gain.
+- Adoption requires us to rebuild `secr` as a derivation and the effort isn't
+  justified by the reproducibility gain.
 
 ## Out of scope (for the investigation, not for the project)
 
