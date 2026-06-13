@@ -40,6 +40,16 @@ command, and gets the exact toolchain Eafora expects. CI runs the same
 toolchain. No `brew update` lottery, no `cargo install --locked` boilerplate,
 no "works on my machine."
 
+For context: the use cases Nix would address overlap heavily with what people
+typically reach for Docker for (pinning system tools, isolating per-project
+state, reproducible CI). Nix generally produces a stricter, more reproducible
+result than Docker — purely-functional builds, content-addressed store, no
+`apt-get update` non-determinism, no image-layer drift. The reason Docker
+dominates anyway is that Nix has a substantially steeper learning curve and a
+language (Nix expressions) that most developers don't know. The trade-off
+worth weighing here is: are we willing to absorb that ramp-up cost in exchange
+for a better answer than Docker would give us?
+
 ## Candidates to evaluate
 
 - **`nix` flakes (`flake.nix`)** — pure, reproducible, `nix develop` enters a
