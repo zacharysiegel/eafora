@@ -14,7 +14,7 @@ use crate::artifact::artifact_model::{
     ArtifactBuildReport, ArtifactVersion, Artifacts, FileReference, StatisticShard, StatisticShardKey,
 };
 use crate::artifact::hashing::Hashed;
-use crate::artifact::repository::ArtifactRepository;
+use crate::artifact::repository::ArtifactRepositoryKind;
 use crate::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
@@ -34,7 +34,7 @@ pub struct PublishReport {
 pub async fn publish_artifacts(
     pool: &PgPool,
     build_report: &ArtifactBuildReport,
-    repository: &ArtifactRepository,
+    repository: &ArtifactRepositoryKind,
 ) -> Result<PublishReport, AppError> {
     let version_label: &str = &build_report.version_label;
 

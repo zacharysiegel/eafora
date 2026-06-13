@@ -4,6 +4,7 @@ use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
 
+use crate::artifact::repository::artifact_repository::ArtifactRepository;
 use crate::error::AppError;
 
 const R2_REGION_PLACEHOLDER: &str = "auto";
@@ -54,8 +55,10 @@ impl CloudflareR2ArtifactRepository {
             public_base_url: config.public_base_url,
         })
     }
+}
 
-    pub async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError> {
+impl ArtifactRepository for CloudflareR2ArtifactRepository {
+    async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError> {
         let body: ByteStream = ByteStream::from_path(source_path).await.map_err(|err| {
             AppError::from(format!("ByteStream::from_path {:?}: {}", source_path, err))
         })?;
@@ -73,7 +76,7 @@ impl CloudflareR2ArtifactRepository {
         Ok(())
     }
 
-    pub fn url_for(&self, key: &str) -> String {
+    fn url_for(&self, key: &str) -> String {
         format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
 }

@@ -6,7 +6,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use ingestion::adapter::AdapterOptions;
 use ingestion::artifact::{self, ArtifactBuildReport, BuildOptions, PublishReport};
 use ingestion::artifact::repository::{
-    ArtifactRepository, ArtifactRepositoryKind, CloudflareR2ArtifactRepository, CloudflareR2Config,
+    ArtifactRepositoryKind, CloudflareR2ArtifactRepository, CloudflareR2Config,
     DryrunArtifactRepository, LocalArtifactRepository,
     ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL,
     SECRET_R2_ACCESS_KEY_ID, SECRET_R2_SECRET_ACCESS_KEY,
@@ -173,7 +173,6 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
         PathBuf::from(matches.get_one::<String>("output-dir").expect("output-dir is required via clap"));
     let repository_str: &String =
         matches.get_one::<String>("repository").expect("repository is required via clap");
-    let repository_kind: ArtifactRepositoryKind = ArtifactRepositoryKind::try_from(repository_str.as_str())?;
     let build_first: bool = matches.get_flag("build");
 
     let pool: PgPool = db::create_pool().await?;
@@ -192,7 +191,7 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
         artifact::load_build_report_from_disk(&output_dir)?
     };
 
-    let repository: ArtifactRepository = create_repository(repository_kind, matches).await?;
+    let repository: ArtifactRepositoryKind = create_repository(repository_str, matches).await?;
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository).await?;
 
     log::info!(
@@ -205,11 +204,11 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
 }
 
 async fn create_repository(
-    kind: ArtifactRepositoryKind,
+    repository_str: &str,
     matches: &ArgMatches,
-) -> Result<ArtifactRepository, AppError> {
-    match kind {
-        ArtifactRepositoryKind::Local => {
+) -> Result<ArtifactRepositoryKind, AppError> {
+    match repository_str {
+        "local" => {
             let root: PathBuf = matches
                 .get_one::<String>("local-root")
                 .map(PathBuf::from)
@@ -219,9 +218,9 @@ async fn create_repository(
                 .cloned()
                 .ok_or_else(|| AppError::new("--repository=local requires --public-base-url"))?;
 
-            Ok(ArtifactRepository::Local(LocalArtifactRepository::new(root, public_base_url)))
+            Ok(ArtifactRepositoryKind::Local(LocalArtifactRepository::new(root, public_base_url)))
         }
-        ArtifactRepositoryKind::CloudflareR2 => {
+        "cloudflare-r2" => {
             let config: CloudflareR2Config = CloudflareR2Config {
                 account_id: dotenvy::var(ENV_R2_ACCOUNT_ID)?,
                 bucket: dotenvy::var(ENV_R2_ARTIFACT_BUCKET)?,
@@ -230,14 +229,15 @@ async fn create_repository(
                 public_base_url: dotenvy::var(ENV_R2_ARTIFACT_PUBLIC_BASE_URL)?,
             };
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
-            Ok(ArtifactRepository::CloudflareR2(repository))
+            Ok(ArtifactRepositoryKind::CloudflareR2(repository))
         }
-        ArtifactRepositoryKind::Dryrun => {
+        "dryrun" => {
             let public_base_url: String = matches
                 .get_one::<String>("public-base-url")
                 .cloned()
                 .unwrap_or_else(|| "dryrun://".to_string());
-            Ok(ArtifactRepository::Dryrun(DryrunArtifactRepository::new(public_base_url)))
+            Ok(ArtifactRepositoryKind::Dryrun(DryrunArtifactRepository::new(public_base_url)))
         }
+        other => Err(AppError::from(format!("unknown repository {:?}", other))),
     }
 }

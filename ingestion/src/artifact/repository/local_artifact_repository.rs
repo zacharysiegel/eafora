@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use tokio::fs;
 
+use crate::artifact::repository::artifact_repository::ArtifactRepository;
 use crate::error::AppError;
 
 pub struct LocalArtifactRepository {
@@ -13,8 +14,10 @@ impl LocalArtifactRepository {
     pub fn new(root: PathBuf, public_base_url: String) -> Self {
         LocalArtifactRepository { root, public_base_url }
     }
+}
 
-    pub async fn put_file(&self, key: &str, source_path: &Path, _content_type: &str) -> Result<(), AppError> {
+impl ArtifactRepository for LocalArtifactRepository {
+    async fn put_file(&self, key: &str, source_path: &Path, _content_type: &str) -> Result<(), AppError> {
         let destination: PathBuf = self.root.join(key);
 
         if let Some(parent) = destination.parent() {
@@ -25,7 +28,7 @@ impl LocalArtifactRepository {
         Ok(())
     }
 
-    pub fn url_for(&self, key: &str) -> String {
+    fn url_for(&self, key: &str) -> String {
         format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
 }
