@@ -59,14 +59,14 @@ fn build_cli() -> Command {
         .subcommand(
             Command::new("build")
                 .about("Build CDN artifacts from the current canonical store")
-                .arg(Arg::new("output-dir").required(true))
+                .arg(Arg::new("artifact-dir").required(true))
                 .arg(Arg::new("version-label").required(true)),
         )
         .subcommand(Command::new("seed").about("Load checked-in sample responses"))
         .subcommand(
             Command::new("publish")
                 .about("Upload a previously-built artifact set to a repository")
-                .arg(Arg::new("output-dir").required(true).help("directory containing manifest.json and referenced files"))
+                .arg(Arg::new("artifact-dir").required(true).help("directory containing manifest.json and referenced files"))
                 .arg(Arg::new("repository").long("repository").required(true).help("local | cloudflare-r2 | dryrun"))
                 .arg(Arg::new("local-root").long("local-root").help("destination root directory (required when --repository=local)"))
                 .arg(Arg::new("public-base-url").long("public-base-url").help("public URL prefix served from the destination (required when --repository=local; optional for --repository=dryrun; ignored for --repository=cloudflare-r2)"))
@@ -141,8 +141,8 @@ fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
 }
 
 async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
-    let output_dir: PathBuf =
-        PathBuf::from(matches.get_one::<String>("output-dir").expect("output-dir is required via clap"));
+    let artifact_dir: PathBuf =
+        PathBuf::from(matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
     let version_label: &String =
         matches.get_one::<String>("version-label").expect("version-label is required via clap");
 
@@ -150,13 +150,13 @@ async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
     let options: BuildOptions = BuildOptions::default();
     let build: ArtifactBuildReport =
-        artifact::build_artifacts(&mut *transaction, &output_dir, version_label, options).await?;
+        artifact::build_artifacts(&mut *transaction, &artifact_dir, version_label, options).await?;
     transaction.commit().await?;
 
     log::info!(
-        "build complete: version_label={} output_dir={:?} shards={} geometry={:?} manifest={:?}",
+        "build complete: version_label={} artifact_dir={:?} shards={} geometry={:?} manifest={:?}",
         build.version_label,
-        build.output_dir,
+        build.artifact_dir,
         build.artifacts.shards.len(),
         build.artifacts.geometry.path,
         build.artifacts.manifest.path,
@@ -169,8 +169,8 @@ async fn dispatch_seed() -> Result<(), AppError> {
 }
 
 async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
-    let output_dir: PathBuf =
-        PathBuf::from(matches.get_one::<String>("output-dir").expect("output-dir is required via clap"));
+    let artifact_dir: PathBuf =
+        PathBuf::from(matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
     let repository_str: &String =
         matches.get_one::<String>("repository").expect("repository is required via clap");
     let build_first: bool = matches.get_flag("build");
@@ -184,11 +184,11 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
 
         let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
         let report: ArtifactBuildReport =
-            artifact::build_artifacts(&mut *transaction, &output_dir, version_label, BuildOptions::default()).await?;
+            artifact::build_artifacts(&mut *transaction, &artifact_dir, version_label, BuildOptions::default()).await?;
         transaction.commit().await?;
         report
     } else {
-        artifact::load_build_report_from_disk(&output_dir)?
+        artifact::load_build_report_from_disk(&artifact_dir)?
     };
 
     let repository: ArtifactRepositoryKind = create_repository(repository_str, matches).await?;

@@ -102,21 +102,21 @@ struct ManifestEntryOnDisk {
     sha256: String,
 }
 
-pub fn load_build_report_from_disk(output_dir: &Path) -> Result<ArtifactBuildReport, AppError> {
-    let manifest_path: PathBuf = output_dir.join(MANIFEST_FILENAME);
+pub fn load_build_report_from_disk(artifact_dir: &Path) -> Result<ArtifactBuildReport, AppError> {
+    let manifest_path: PathBuf = artifact_dir.join(MANIFEST_FILENAME);
     let manifest_bytes: Vec<u8> = fs::read(&manifest_path)
         .map_err(|err| AppError::from(format!("read {:?}: {}", manifest_path, err)))?;
     let manifest_on_disk: ManifestOnDisk = serde_json::from_slice(&manifest_bytes)
         .map_err(|err| AppError::from(format!("parse {:?}: {}", manifest_path, err)))?;
 
-    let geometry: Hashed<FileReference> = load_hashed_file(output_dir, &manifest_on_disk.geometry)?;
+    let geometry: Hashed<FileReference> = load_hashed_file(artifact_dir, &manifest_on_disk.geometry)?;
 
     let mut shards: Vec<StatisticShard<Hashed<FileReference>>> = Vec::new();
     for (statistic_code, license_shard_classes) in &manifest_on_disk.statistics {
         let statistic_kind: StatisticKind = StatisticKind::try_from(statistic_code.as_str())?;
         for (license_shard_code, entry) in license_shard_classes {
             let license_shard_class: LicenseShardClass = LicenseShardClass::try_from(license_shard_code.as_str())?;
-            let hashed_file: Hashed<FileReference> = load_hashed_file(output_dir, entry)?;
+            let hashed_file: Hashed<FileReference> = load_hashed_file(artifact_dir, entry)?;
 
             shards.push(StatisticShard {
                 key: StatisticShardKey { statistic_kind, license_shard_class },
@@ -137,7 +137,7 @@ pub fn load_build_report_from_disk(output_dir: &Path) -> Result<ArtifactBuildRep
     }
 
     Ok(ArtifactBuildReport {
-        output_dir: output_dir.to_path_buf(),
+        artifact_dir: artifact_dir.to_path_buf(),
         version_label: manifest_on_disk.version,
         artifacts: Artifacts {
             shards,
@@ -148,8 +148,8 @@ pub fn load_build_report_from_disk(output_dir: &Path) -> Result<ArtifactBuildRep
     })
 }
 
-fn load_hashed_file(output_dir: &Path, entry: &ManifestEntryOnDisk) -> Result<Hashed<FileReference>, AppError> {
-    let path: PathBuf = output_dir.join(&entry.relative_path);
+fn load_hashed_file(artifact_dir: &Path, entry: &ManifestEntryOnDisk) -> Result<Hashed<FileReference>, AppError> {
+    let path: PathBuf = artifact_dir.join(&entry.relative_path);
     let bytes: Vec<u8> = fs::read(&path)
         .map_err(|err| AppError::from(format!("read {:?}: {}", path, err)))?;
     let hashed: Hashed<FileReference> = Hashed::new(

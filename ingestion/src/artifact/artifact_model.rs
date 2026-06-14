@@ -135,7 +135,7 @@ pub struct Artifacts {
 
 #[derive(Debug, Clone)]
 pub struct ArtifactBuildReport {
-    pub output_dir: PathBuf,
+    pub artifact_dir: PathBuf,
     pub version_label: String,
     pub artifacts: Artifacts,
     pub data_source_revisions: BTreeMap<DataSourceKind, SourceRevision>,

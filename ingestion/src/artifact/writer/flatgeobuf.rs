@@ -48,21 +48,21 @@ struct Column {
 
 pub async fn write_geometry<'e>(
     executor: impl PgExecutor<'e>,
-    output_dir: &Path,
+    artifact_dir: &Path,
 ) -> Result<FileReference, AppError> {
     let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&http::HTTP_CLIENT).await?;
-    write_flatgeobuf_from_shapefile(executor, &shapefile_bytes, output_dir).await
+    write_flatgeobuf_from_shapefile(executor, &shapefile_bytes, artifact_dir).await
 }
 
 pub async fn write_flatgeobuf_from_shapefile<'e>(
     executor: impl PgExecutor<'e>,
     shapefile_bytes: &ShapefileBytes,
-    output_dir: &Path,
+    artifact_dir: &Path,
 ) -> Result<FileReference, AppError> {
     let iso3_to_name_en: BTreeMap<String, String> =
         artifact_db::read_country_iso3_to_name_en(executor).await?;
 
-    let path: PathBuf = build_tmp_geometry_path(output_dir)?;
+    let path: PathBuf = build_tmp_geometry_path(artifact_dir)?;
 
     let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
     writer.add_column(COLUMN_ISO3.name, ColumnType::String, |_fbb, _col| {});
@@ -103,8 +103,8 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     Ok(FileReference { path, byte_count })
 }
 
-pub fn write_placeholder_geometry(output_dir: &Path) -> Result<FileReference, AppError> {
-    let path: PathBuf = build_tmp_geometry_path(output_dir)?;
+pub fn write_placeholder_geometry(artifact_dir: &Path) -> Result<FileReference, AppError> {
+    let path: PathBuf = build_tmp_geometry_path(artifact_dir)?;
     fs::write(&path, PLACEHOLDER_GEOMETRY_BYTES)?;
 
     Ok(FileReference {
@@ -113,8 +113,8 @@ pub fn write_placeholder_geometry(output_dir: &Path) -> Result<FileReference, Ap
     })
 }
 
-fn build_tmp_geometry_path(output_dir: &Path) -> Result<PathBuf, AppError> {
-    let geometry_dir: PathBuf = output_dir.join(manifest::SUBDIR_GEOMETRY);
+fn build_tmp_geometry_path(artifact_dir: &Path) -> Result<PathBuf, AppError> {
+    let geometry_dir: PathBuf = artifact_dir.join(manifest::SUBDIR_GEOMETRY);
     fs::create_dir_all(&geometry_dir)?;
     let tmp_uuid: Uuid = Uuid::now_v7();
     Ok(geometry_dir.join(format!("{}.tmp-{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid)))

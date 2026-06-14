@@ -130,9 +130,9 @@ fn unique_version_label() -> String {
     format!("test-{}", Uuid::now_v7())
 }
 
-fn write_synthetic_bundle(output_dir: &Path, version_label: &str) -> ArtifactBuildReport {
-    let data_dir: PathBuf = output_dir.join(SUBDIR_DATA);
-    let geometry_dir: PathBuf = output_dir.join(SUBDIR_GEOMETRY);
+fn write_synthetic_bundle(artifact_dir: &Path, version_label: &str) -> ArtifactBuildReport {
+    let data_dir: PathBuf = artifact_dir.join(SUBDIR_DATA);
+    let geometry_dir: PathBuf = artifact_dir.join(SUBDIR_GEOMETRY);
     fs::create_dir_all(&data_dir).unwrap();
     fs::create_dir_all(&geometry_dir).unwrap();
 
@@ -174,12 +174,12 @@ fn write_synthetic_bundle(output_dir: &Path, version_label: &str) -> ArtifactBui
         &geometry_hashed,
         version_label,
         &data_source_revisions,
-        output_dir,
+        artifact_dir,
     )
     .expect("manifest writes");
 
     ArtifactBuildReport {
-        output_dir: output_dir.to_path_buf(),
+        artifact_dir: artifact_dir.to_path_buf(),
         version_label: version_label.to_string(),
         artifacts: Artifacts {
             shards,

@@ -2,7 +2,7 @@
 //! content-addressed name (full sha256 hex). A failed run leaves stray
 //! tmp or hashed files in the output directory; the next build writes
 //! fresh tmp files with new uuids and produces its own correct output,
-//! so cleanup is best-effort (wipe `output_dir` between builds).
+//! so cleanup is best-effort (wipe `artifact_dir` between builds).
 
 use std::fs;
 use std::ops::Deref;

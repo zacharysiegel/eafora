@@ -38,12 +38,12 @@ pub fn write_manifest(
     geometry: &Hashed<FileReference>,
     version_label: &str,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
-    output_dir: &Path,
+    artifact_dir: &Path,
 ) -> Result<Hashed<FileReference>, AppError> {
     let artifact_created: DateTime<Utc> = Utc::now();
     let json: String = build_manifest_json(shards, geometry, version_label, &artifact_created, data_source_revisions)?;
 
-    let path: PathBuf = output_dir.join(MANIFEST_FILENAME);
+    let path: PathBuf = artifact_dir.join(MANIFEST_FILENAME);
     fs::write(&path, &json)?;
 
     let byte_count: u64 = json.as_bytes().len() as u64;
