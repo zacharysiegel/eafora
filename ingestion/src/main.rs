@@ -59,8 +59,7 @@ fn build_cli() -> Command {
         .subcommand(Command::new("all").about("Run every registered source adapter"))
         .subcommand(
             Command::new("build")
-                .about("Build CDN artifacts from the current canonical store")
-                .arg(Arg::new("artifact-dir").required(true)),
+                .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/ and updates the $EAFORA_REPO_ROOT/artifacts symlink"),
         )
         .subcommand(Command::new("seed").about("Load checked-in sample responses"))
         .subcommand(
@@ -83,7 +82,10 @@ fn build_cli() -> Command {
 
 fn add_publish_common_args(command: Command) -> Command {
     command
-        .arg(Arg::new("artifact-dir").required(true).help("directory containing manifest.json and referenced files"))
+        .arg(Arg::new("artifact-dir")
+            .required_unless_present("build")
+            .conflicts_with("build")
+            .help("directory containing manifest.json and referenced files (omit when --build is set)"))
         .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish"))
 }
 
@@ -152,17 +154,9 @@ fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
     }
 }
 
-async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
-    let artifact_dir: PathBuf =
-        PathBuf::from(matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
-
+async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
     let pool: PgPool = db::create_pool().await?;
-    let version_label: String = version_label::generate(&pool).await?;
-    let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
-    let options: BuildOptions = BuildOptions::default();
-    let build: ArtifactBuildReport =
-        artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, options).await?;
-    transaction.commit().await?;
+    let build: ArtifactBuildReport = run_build(&pool).await?;
 
     log::info!(
         "build complete: version_label={} artifact_dir={:?} shards={} geometry={:?} manifest={:?}",
@@ -175,6 +169,19 @@ async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
     Ok(())
 }
 
+async fn run_build(pool: &PgPool) -> Result<ArtifactBuildReport, AppError> {
+    let parent: PathBuf = PathBuf::from(dotenvy::var("EAFORA_ARTIFACTS_DIR")?);
+    let version_label: String = version_label::generate(pool).await?;
+    let artifact_dir: PathBuf = parent.join(&version_label);
+
+    let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
+    let report: ArtifactBuildReport =
+        artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, BuildOptions::default()).await?;
+    transaction.commit().await?;
+
+    Ok(report)
+}
+
 async fn dispatch_seed() -> Result<(), AppError> {
     Err(AppError::new("seed: not yet implemented"))
 }
@@ -184,20 +191,16 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
         .subcommand()
         .expect("publish subcommand is required via clap");
 
-    let artifact_dir: PathBuf =
-        PathBuf::from(sub_matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
     let build_first: bool = sub_matches.get_flag("build");
 
     let pool: PgPool = db::create_pool().await?;
 
     let build_report: ArtifactBuildReport = if build_first {
-        let version_label: String = version_label::generate(&pool).await?;
-        let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
-        let report: ArtifactBuildReport =
-            artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, BuildOptions::default()).await?;
-        transaction.commit().await?;
-        report
+        run_build(&pool).await?
     } else {
+        let artifact_dir: PathBuf = PathBuf::from(
+            sub_matches.get_one::<String>("artifact-dir").expect("artifact-dir is required when --build is absent"),
+        );
         artifact::load_build_report_from_disk(&artifact_dir)?
     };
 
