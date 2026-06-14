@@ -3,13 +3,11 @@ use std::path::Path;
 use crate::artifact::repository::artifact_repository::ArtifactRepository;
 use crate::error::AppError;
 
-pub struct DryrunArtifactRepository {
-    public_base_url: String,
-}
+pub struct DryrunArtifactRepository {}
 
 impl DryrunArtifactRepository {
-    pub fn new(public_base_url: String) -> Self {
-        DryrunArtifactRepository { public_base_url }
+    pub fn new() -> Self {
+        DryrunArtifactRepository {}
     }
 }
 
@@ -22,6 +20,6 @@ impl ArtifactRepository for DryrunArtifactRepository {
     }
 
     fn url_for(&self, key: &str) -> String {
-        format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
+        format!("dryrun:///{}", key)
     }
 }

@@ -95,7 +95,7 @@ async fn publish_artifacts_against_dryrun_repository_does_not_write_files_but_in
     let build_report: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
     let repository: ArtifactRepositoryKind = ArtifactRepositoryKind::Dryrun(
-        DryrunArtifactRepository::new("dryrun://".to_string()),
+        DryrunArtifactRepository::new(),
     );
 
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository)
@@ -103,7 +103,7 @@ async fn publish_artifacts_against_dryrun_repository_does_not_write_files_but_in
         .expect("dryrun publish succeeds");
 
     assert_eq!(publish_report.shards_published, 1);
-    assert!(publish_report.manifest_url.starts_with("dryrun:"));
+    assert!(publish_report.manifest_url.starts_with("dryrun:///"));
 
     delete_artifact_version(&pool, &version_label).await;
 }

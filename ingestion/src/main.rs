@@ -66,13 +66,26 @@ fn build_cli() -> Command {
         .subcommand(
             Command::new("publish")
                 .about("Upload a previously-built artifact set to a repository")
-                .arg(Arg::new("artifact-dir").required(true).help("directory containing manifest.json and referenced files"))
-                .arg(Arg::new("repository").long("repository").required(true).help("local | cloudflare-r2 | dryrun"))
-                .arg(Arg::new("local-root").long("local-root").help("destination root directory (required when --repository=local)"))
-                .arg(Arg::new("public-base-url").long("public-base-url").help("public URL prefix served from the destination (required when --repository=local; optional for --repository=dryrun; ignored for --repository=cloudflare-r2)"))
-                .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish; requires --version-label"))
-                .arg(Arg::new("version-label").long("version-label").help("version label for --build")),
+                .subcommand_required(true)
+                .subcommand(add_publish_common_args(Command::new("local"))
+                    .about("Publish to a local filesystem destination served by an external HTTP server")
+                    .arg(Arg::new("root").long("root").required(true).help("destination root directory the publisher writes object keys under"))
+                    .arg(Arg::new("public-base-url").long("public-base-url").required(true).help("public URL prefix served from the destination")))
+                .subcommand(add_publish_common_args(Command::new("cloudflare-r2"))
+                    .about(format!(
+                        "Publish to Cloudflare R2; reads {}/{}/{} from .env and the access key + secret access key from secrets.yaml",
+                        ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL,
+                    )))
+                .subcommand(add_publish_common_args(Command::new("dryrun"))
+                    .about("Publish nowhere; logs every PUT and inserts an artifact_version row referencing a placeholder dryrun:/// URL")),
         )
+}
+
+fn add_publish_common_args(command: Command) -> Command {
+    command
+        .arg(Arg::new("artifact-dir").required(true).help("directory containing manifest.json and referenced files"))
+        .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish; requires --version-label"))
+        .arg(Arg::new("version-label").long("version-label").help("version label for --build"))
 }
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
@@ -169,16 +182,23 @@ async fn dispatch_seed() -> Result<(), AppError> {
 }
 
 async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
+    let (kind, sub_matches): (&str, &ArgMatches) = matches
+        .subcommand()
+        .expect("publish subcommand is required via clap");
+
     let artifact_dir: PathBuf =
-        PathBuf::from(matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
-    let repository_str: &String =
-        matches.get_one::<String>("repository").expect("repository is required via clap");
-    let build_first: bool = matches.get_flag("build");
+        PathBuf::from(sub_matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
+    let build_first: bool = sub_matches.get_flag("build");
+    let version_label_provided: bool = sub_matches.get_one::<String>("version-label").is_some();
+
+    if version_label_provided && !build_first {
+        return Err(AppError::new("--version-label is only valid with --build"));
+    }
 
     let pool: PgPool = db::create_pool().await?;
 
     let build_report: ArtifactBuildReport = if build_first {
-        let version_label: &String = matches
+        let version_label: &String = sub_matches
             .get_one::<String>("version-label")
             .ok_or_else(|| AppError::new("--build requires --version-label"))?;
 
@@ -191,7 +211,7 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
         artifact::load_build_report_from_disk(&artifact_dir)?
     };
 
-    let repository: ArtifactRepositoryKind = create_repository(repository_str, matches).await?;
+    let repository: ArtifactRepositoryKind = create_repository(kind, sub_matches).await?;
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository).await?;
 
     log::info!(
@@ -204,19 +224,18 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
 }
 
 async fn create_repository(
-    repository_str: &str,
-    matches: &ArgMatches,
+    kind: &str,
+    sub_matches: &ArgMatches,
 ) -> Result<ArtifactRepositoryKind, AppError> {
-    match repository_str {
+    match kind {
         "local" => {
-            let root: PathBuf = matches
-                .get_one::<String>("local-root")
-                .map(PathBuf::from)
-                .ok_or_else(|| AppError::new("--repository=local requires --local-root"))?;
-            let public_base_url: String = matches
+            let root: PathBuf = PathBuf::from(
+                sub_matches.get_one::<String>("root").expect("--root is required via clap"),
+            );
+            let public_base_url: String = sub_matches
                 .get_one::<String>("public-base-url")
-                .cloned()
-                .ok_or_else(|| AppError::new("--repository=local requires --public-base-url"))?;
+                .expect("--public-base-url is required via clap")
+                .clone();
 
             Ok(ArtifactRepositoryKind::Local(LocalArtifactRepository::new(root, public_base_url)))
         }
@@ -231,13 +250,7 @@ async fn create_repository(
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
             Ok(ArtifactRepositoryKind::CloudflareR2(repository))
         }
-        "dryrun" => {
-            let public_base_url: String = matches
-                .get_one::<String>("public-base-url")
-                .cloned()
-                .unwrap_or_else(|| "dryrun://".to_string());
-            Ok(ArtifactRepositoryKind::Dryrun(DryrunArtifactRepository::new(public_base_url)))
-        }
-        other => Err(AppError::from(format!("unknown repository {:?}", other))),
+        "dryrun" => Ok(ArtifactRepositoryKind::Dryrun(DryrunArtifactRepository::new())),
+        other => Err(AppError::from(format!("unknown publish repository: {:?}", other))),
     }
 }
