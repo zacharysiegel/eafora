@@ -7,4 +7,5 @@ pub mod geometry;
 pub mod http;
 pub mod ingest;
 pub mod secrets;
+pub mod version_label;
 pub mod world_bank_wdi;

@@ -16,6 +16,7 @@ use ingestion::db;
 use ingestion::error::AppError;
 use ingestion::ingest::IngestReport;
 use ingestion::secrets;
+use ingestion::version_label;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;
 
 /// Registered source adapters. Adding a new source = one entry here plus
@@ -59,8 +60,7 @@ fn build_cli() -> Command {
         .subcommand(
             Command::new("build")
                 .about("Build CDN artifacts from the current canonical store")
-                .arg(Arg::new("artifact-dir").required(true))
-                .arg(Arg::new("version-label").required(true)),
+                .arg(Arg::new("artifact-dir").required(true)),
         )
         .subcommand(Command::new("seed").about("Load checked-in sample responses"))
         .subcommand(
@@ -84,7 +84,7 @@ fn build_cli() -> Command {
 fn add_publish_common_args(command: Command) -> Command {
     command
         .arg(Arg::new("artifact-dir").required(true).help("directory containing manifest.json and referenced files"))
-        .arg(Arg::new("build").long("build").value_name("version-label").help("build the artifact set first with this version label, then publish"))
+        .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish"))
 }
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
@@ -155,14 +155,13 @@ fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
 async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
     let artifact_dir: PathBuf =
         PathBuf::from(matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
-    let version_label: &String =
-        matches.get_one::<String>("version-label").expect("version-label is required via clap");
 
     let pool: PgPool = db::create_pool().await?;
+    let version_label: String = version_label::generate(&pool).await?;
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
     let options: BuildOptions = BuildOptions::default();
     let build: ArtifactBuildReport =
-        artifact::build_artifacts(&mut *transaction, &artifact_dir, version_label, options).await?;
+        artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, options).await?;
     transaction.commit().await?;
 
     log::info!(
@@ -187,19 +186,19 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
 
     let artifact_dir: PathBuf =
         PathBuf::from(sub_matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
-    let build_label: Option<&String> = sub_matches.get_one::<String>("build");
+    let build_first: bool = sub_matches.get_flag("build");
 
     let pool: PgPool = db::create_pool().await?;
 
-    let build_report: ArtifactBuildReport = match build_label {
-        Some(version_label) => {
-            let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
-            let report: ArtifactBuildReport =
-                artifact::build_artifacts(&mut *transaction, &artifact_dir, version_label, BuildOptions::default()).await?;
-            transaction.commit().await?;
-            report
-        }
-        None => artifact::load_build_report_from_disk(&artifact_dir)?,
+    let build_report: ArtifactBuildReport = if build_first {
+        let version_label: String = version_label::generate(&pool).await?;
+        let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
+        let report: ArtifactBuildReport =
+            artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, BuildOptions::default()).await?;
+        transaction.commit().await?;
+        report
+    } else {
+        artifact::load_build_report_from_disk(&artifact_dir)?
     };
 
     let repository: ArtifactRepositoryKind = create_repository(kind, sub_matches).await?;
