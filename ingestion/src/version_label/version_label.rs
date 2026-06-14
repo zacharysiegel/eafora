@@ -8,6 +8,7 @@ use crate::artifact::artifact_db;
 use crate::error::AppError;
 
 const SURNAMES_RAW: &str = include_str!("./nobel_surnames.txt");
+const MAX_GENERATION_ATTEMPTS: usize = 16;
 
 static SURNAMES: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
     SURNAMES_RAW
@@ -16,8 +17,6 @@ static SURNAMES: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
         .filter(|line| !line.is_empty())
         .collect()
 });
-
-const MAX_GENERATION_ATTEMPTS: usize = 16;
 
 pub async fn generate(pool: &PgPool) -> Result<String, AppError> {
     let date_prefix: String = Utc::now().format("%Y-%m-%d").to_string();
