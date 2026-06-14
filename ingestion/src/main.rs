@@ -84,8 +84,7 @@ fn build_cli() -> Command {
 fn add_publish_common_args(command: Command) -> Command {
     command
         .arg(Arg::new("artifact-dir").required(true).help("directory containing manifest.json and referenced files"))
-        .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish; requires --version-label"))
-        .arg(Arg::new("version-label").long("version-label").help("version label for --build"))
+        .arg(Arg::new("build").long("build").value_name("version-label").help("build the artifact set first with this version label, then publish"))
 }
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
@@ -188,27 +187,19 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
 
     let artifact_dir: PathBuf =
         PathBuf::from(sub_matches.get_one::<String>("artifact-dir").expect("artifact-dir is required via clap"));
-    let build_first: bool = sub_matches.get_flag("build");
-    let version_label_provided: bool = sub_matches.get_one::<String>("version-label").is_some();
-
-    if version_label_provided && !build_first {
-        return Err(AppError::new("--version-label is only valid with --build"));
-    }
+    let build_label: Option<&String> = sub_matches.get_one::<String>("build");
 
     let pool: PgPool = db::create_pool().await?;
 
-    let build_report: ArtifactBuildReport = if build_first {
-        let version_label: &String = sub_matches
-            .get_one::<String>("version-label")
-            .ok_or_else(|| AppError::new("--build requires --version-label"))?;
-
-        let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
-        let report: ArtifactBuildReport =
-            artifact::build_artifacts(&mut *transaction, &artifact_dir, version_label, BuildOptions::default()).await?;
-        transaction.commit().await?;
-        report
-    } else {
-        artifact::load_build_report_from_disk(&artifact_dir)?
+    let build_report: ArtifactBuildReport = match build_label {
+        Some(version_label) => {
+            let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
+            let report: ArtifactBuildReport =
+                artifact::build_artifacts(&mut *transaction, &artifact_dir, version_label, BuildOptions::default()).await?;
+            transaction.commit().await?;
+            report
+        }
+        None => artifact::load_build_report_from_disk(&artifact_dir)?,
     };
 
     let repository: ArtifactRepositoryKind = create_repository(kind, sub_matches).await?;
