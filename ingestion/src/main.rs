@@ -13,7 +13,6 @@ use ingestion::artifact::repository::{
 };
 use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::db;
-use ingestion::env;
 use ingestion::error::AppError;
 use ingestion::ingest::IngestReport;
 use ingestion::secrets;
@@ -75,6 +74,7 @@ fn build_cli() -> Command {
             Command::new("publish")
                 .about("Upload a previously-built artifact set to a repository")
                 .subcommand_required(true)
+                .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).global(true).help("build the artifact set first, then publish"))
                 .subcommand(add_publish_common_args(Command::new("local"))
                     .about("Publish to a local filesystem destination served by an external HTTP server")
                     .arg(Arg::new("root").long("root").required(true).help("destination root directory the publisher writes object keys under"))
@@ -95,7 +95,6 @@ fn add_publish_common_args(command: Command) -> Command {
             .required_unless_present("build")
             .conflicts_with("build")
             .help("directory containing manifest.json and referenced files (omit when --build is set)"))
-        .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish"))
 }
 
 async fn dispatch_ingest(matches: &ArgMatches) -> Result<(), AppError> {
@@ -187,7 +186,7 @@ async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
 }
 
 async fn run_build(pool: &PgPool) -> Result<ArtifactBuildReport, AppError> {
-    let parent: PathBuf = PathBuf::from(env::read_var("EAFORA_ARTIFACTS_DIR")?);
+    let parent: PathBuf = PathBuf::from(dotenvy::var("EAFORA_ARTIFACTS_DIR")?);
     let version_label: String = version_label::generate(pool).await?;
     let artifact_dir: PathBuf = parent.join(&version_label);
 
@@ -251,11 +250,11 @@ async fn create_repository(
         }
         "cloudflare-r2" => {
             let config: CloudflareR2Config = CloudflareR2Config {
-                account_id: env::read_var(ENV_R2_ACCOUNT_ID)?,
-                bucket: env::read_var(ENV_R2_ARTIFACT_BUCKET)?,
+                account_id: dotenvy::var(ENV_R2_ACCOUNT_ID)?,
+                bucket: dotenvy::var(ENV_R2_ARTIFACT_BUCKET)?,
                 access_key_id: secrets::master_decrypt_utf8(SECRET_R2_ACCESS_KEY_ID)?,
                 secret_access_key: secrets::master_decrypt_utf8(SECRET_R2_SECRET_ACCESS_KEY)?,
-                public_base_url: env::read_var(ENV_R2_ARTIFACT_PUBLIC_BASE_URL)?,
+                public_base_url: dotenvy::var(ENV_R2_ARTIFACT_PUBLIC_BASE_URL)?,
             };
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
             Ok(ArtifactRepositoryKind::CloudflareR2(repository))

@@ -2,7 +2,6 @@ pub mod adapter;
 pub mod artifact;
 pub mod canonical;
 pub mod db;
-pub mod env;
 pub mod error;
 pub mod geometry;
 pub mod http;
