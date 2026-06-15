@@ -32,6 +32,22 @@ if ! test -f .env; then
     cp template.env .env
 fi
 
+# Sync new keys from template.env into the existing .env (don't overwrite
+# existing values; only append missing keys). Lets `template.env` evolve
+# without forcing every developer to delete and regenerate `.env`.
+while IFS= read -r template_line; do
+    case "${template_line}" in
+        ''|'#'*) continue ;;
+        *=*)
+            template_key="${template_line%%=*}"
+            if ! grep -qE "^${template_key}=" .env; then
+                echo "Adding ${template_key} to .env (new key in template.env)"
+                echo "${template_line}" >> .env
+            fi
+            ;;
+    esac
+done < template.env
+
 source ./.env
 
 master_secret=

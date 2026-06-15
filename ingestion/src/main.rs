@@ -13,6 +13,7 @@ use ingestion::artifact::repository::{
 };
 use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::db;
+use ingestion::env;
 use ingestion::error::AppError;
 use ingestion::ingest::IngestReport;
 use ingestion::secrets;
@@ -170,7 +171,7 @@ async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
 }
 
 async fn run_build(pool: &PgPool) -> Result<ArtifactBuildReport, AppError> {
-    let parent: PathBuf = PathBuf::from(dotenvy::var("EAFORA_ARTIFACTS_DIR")?);
+    let parent: PathBuf = PathBuf::from(env::read_var("EAFORA_ARTIFACTS_DIR")?);
     let version_label: String = version_label::generate(pool).await?;
     let artifact_dir: PathBuf = parent.join(&version_label);
 
@@ -234,11 +235,11 @@ async fn create_repository(
         }
         "cloudflare-r2" => {
             let config: CloudflareR2Config = CloudflareR2Config {
-                account_id: dotenvy::var(ENV_R2_ACCOUNT_ID)?,
-                bucket: dotenvy::var(ENV_R2_ARTIFACT_BUCKET)?,
+                account_id: env::read_var(ENV_R2_ACCOUNT_ID)?,
+                bucket: env::read_var(ENV_R2_ARTIFACT_BUCKET)?,
                 access_key_id: secrets::master_decrypt_utf8(SECRET_R2_ACCESS_KEY_ID)?,
                 secret_access_key: secrets::master_decrypt_utf8(SECRET_R2_SECRET_ACCESS_KEY)?,
-                public_base_url: dotenvy::var(ENV_R2_ARTIFACT_PUBLIC_BASE_URL)?,
+                public_base_url: env::read_var(ENV_R2_ARTIFACT_PUBLIC_BASE_URL)?,
             };
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
             Ok(ArtifactRepositoryKind::CloudflareR2(repository))
