@@ -16,10 +16,10 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::artifact::{self, BuildOptions, BuildReport};
-use ingestion::artifact::artifact_model::FileReference;
 use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME, PLACEHOLDER_GEOMETRY_BYTES};
 use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
+use ingestion::filesystem::FileReference;
 use ingestion::geometry::natural_earth::{self, ShapefileBytes};
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};

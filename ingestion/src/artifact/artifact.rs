@@ -6,14 +6,14 @@ use std::time::Instant;
 use sqlx::PgConnection;
 
 use crate::artifact::artifact_model::{
-    BuildReport, Artifacts, CandidateValue, FileReference, ResolvedValue,
+    Artifacts, BuildReport, CandidateValue, ResolvedValue,
 };
-use crate::artifact::hashing::Hashed;
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::artifact::{artifact_db, hashing, source_choice, StatisticShard};
 use crate::canonical::canonical_db;
 use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision, StatisticKind};
 use crate::error::AppError;
+use crate::filesystem::{FileReference, Hashed};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {

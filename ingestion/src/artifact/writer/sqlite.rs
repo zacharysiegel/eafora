@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use uuid::Uuid;
 
-use crate::artifact::artifact_model::{FileReference, ResolvedValue, StatisticShard, StatisticShardKey};
+use crate::artifact::artifact_model::{ResolvedValue, StatisticShard, StatisticShardKey};
+use crate::filesystem::FileReference;
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 

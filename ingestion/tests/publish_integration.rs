@@ -17,15 +17,15 @@ use uuid::Uuid;
 
 use ingestion::artifact;
 use ingestion::artifact::artifact_model::{
-    BuildReport, Artifacts, FileReference, StatisticShard, StatisticShardKey,
+    Artifacts, BuildReport, StatisticShard, StatisticShardKey,
 };
-use ingestion::artifact::hashing::Hashed;
 use ingestion::artifact::publish::PublishReport;
 use ingestion::artifact::repository::{ArtifactRepositoryKind, DryArtifactRepository, LocalArtifactRepository};
 use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use ingestion::canonical::canonical_model::{
     DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind,
 };
+use ingestion::filesystem::{FileReference, Hashed};
 
 use helpers::test_db::test_pool;
 

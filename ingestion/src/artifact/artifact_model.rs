@@ -5,9 +5,9 @@ use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::adapter::adapter_model::NaiveDatePeriod;
-use crate::artifact::hashing::Hashed;
 use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
+use crate::filesystem::{FileReference, Hashed};
 
 /// One value as it sits in the canonical store: a single source's
 /// reading for a `(region, statistic, period)` cell. Multiple candidates
@@ -97,12 +97,6 @@ impl ResolvedValue {
             license_shard_class,
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct FileReference {
-    pub path: PathBuf,
-    pub byte_count: u64,
 }
 
 #[derive(Debug, Clone)]

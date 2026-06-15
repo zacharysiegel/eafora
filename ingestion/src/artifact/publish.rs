@@ -11,14 +11,13 @@ use sqlx::PgPool;
 
 use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::{
-    Artifacts, ArtifactVersion, BuildReport, FileReference, StatisticShard, StatisticShardKey,
+    Artifacts, ArtifactVersion, BuildReport, StatisticShard, StatisticShardKey,
 };
-use crate::artifact::hashing::Hashed;
 use crate::artifact::repository::ArtifactRepositoryKind;
 use crate::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
-use crate::filesystem;
+use crate::filesystem::{self, FileReference, Hashed};
 
 const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
 const CONTENT_TYPE_MANIFEST: &str = "application/json";
@@ -116,7 +115,7 @@ pub fn load_build_report_from_disk(artifact_dir: &Path) -> Result<BuildReport, A
         }
     }
 
-    let manifest_hashed: Hashed<FileReference> = Hashed::new(
+    let manifest: Hashed<FileReference> = Hashed::new(
         FileReference { path: manifest_path, byte_count: manifest_bytes.len() as u64 },
         &manifest_bytes,
     );
@@ -133,7 +132,7 @@ pub fn load_build_report_from_disk(artifact_dir: &Path) -> Result<BuildReport, A
         artifacts: Artifacts {
             shards,
             geometry,
-            manifest: manifest_hashed,
+            manifest,
         },
         data_source_revisions,
     })

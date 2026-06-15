@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::artifact::artifact_model::{FileReference, StatisticShard};
-use crate::artifact::hashing::Hashed;
+use crate::artifact::artifact_model::StatisticShard;
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
+use crate::filesystem::{FileReference, Hashed};
 
 pub const MANIFEST_FILENAME: &str = "manifest.json";
 pub const SUBDIR_GEOMETRY: &str = "geometry";
@@ -108,8 +108,8 @@ mod tests {
     use super::*;
 
     use crate::artifact::artifact_model::{StatisticShard, StatisticShardKey};
-    use crate::artifact::hashing;
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
+    use crate::filesystem;
 
     fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {
         let shards: Vec<StatisticShard<Hashed<FileReference>>> = vec![
@@ -230,7 +230,7 @@ mod tests {
 
         assert!(manifest.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&manifest.path).unwrap();
-        let computed: String = hashing::sha256_hex(&bytes_on_disk);
+        let computed: String = filesystem::sha256_hex(&bytes_on_disk);
         assert_eq!(computed, manifest.sha256_hex());
     }
 }

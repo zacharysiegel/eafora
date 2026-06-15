@@ -5,42 +5,11 @@
 //! so cleanup is best-effort (wipe `artifact_dir` between builds).
 
 use std::fs;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-use sha2::{Digest, Sha256};
-
-use crate::artifact::artifact_model::{FileReference, StatisticShard};
+use crate::artifact::artifact_model::StatisticShard;
 use crate::error::AppError;
-
-#[derive(Debug, Clone)]
-pub struct Hashed<T> {
-    inner: T,
-    sha256_hex: String,
-}
-
-impl<T> Hashed<T> {
-    pub fn new(inner: T, bytes: impl AsRef<[u8]>) -> Self {
-        Hashed {
-            inner,
-            sha256_hex: sha256_hex(bytes.as_ref()),
-        }
-    }
-
-    pub fn sha256_hex(&self) -> &str {
-        &self.sha256_hex
-    }
-
-    #[cfg(test)]
-    pub fn new_with_sha(inner: T, sha256_hex: String) -> Self {
-        Hashed { inner, sha256_hex }
-    }
-}
-
-impl<T> Deref for Hashed<T> {
-    type Target = T;
-    fn deref(&self) -> &T { &self.inner }
-}
+use crate::filesystem::{self, FileReference, Hashed};
 
 pub fn hash_sqlite_shards(
     shards: Vec<StatisticShard<FileReference>>,
@@ -48,7 +17,7 @@ pub fn hash_sqlite_shards(
     shards
         .into_iter()
         .map(|shard| {
-            let sha256_hex: String = sha256_hex_of_file(&shard.file.path)?;
+            let sha256_hex: String = filesystem::sha256_hex_of_file(&shard.file.path)?;
             let hashed_file: Hashed<FileReference> = rename_with_digest(shard.file, &sha256_hex)?;
             Ok(StatisticShard {
                 key: shard.key,
@@ -59,20 +28,8 @@ pub fn hash_sqlite_shards(
 }
 
 pub fn hash_geometry(geometry: FileReference) -> Result<Hashed<FileReference>, AppError> {
-    let sha256_hex: String = sha256_hex_of_file(&geometry.path)?;
+    let sha256_hex: String = filesystem::sha256_hex_of_file(&geometry.path)?;
     rename_with_digest(geometry, &sha256_hex)
-}
-
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher: Sha256 = Sha256::new();
-    hasher.update(bytes);
-    let digest: [u8; 32] = hasher.finalize().into();
-    hex_encode(&digest)
-}
-
-fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
-    let bytes: Vec<u8> = fs::read(path)?;
-    Ok(sha256_hex(&bytes))
 }
 
 fn rename_with_digest(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashed<FileReference>, AppError> {
@@ -83,23 +40,20 @@ fn rename_with_digest(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashe
             tmp_file.path, new_path, err,
         ))
     })?;
-    Ok(Hashed {
-        inner: FileReference {
+    Ok(Hashed::new_with_sha(
+        FileReference {
             path: new_path,
             byte_count: tmp_file.byte_count,
         },
-        sha256_hex: sha256_hex.to_string(),
-    })
+        sha256_hex.to_string(),
+    ))
 }
 
 fn build_hashed_path(tmp_path: &Path, sha256_hex: &str) -> Result<PathBuf, AppError> {
     let parent: &Path = tmp_path.parent().ok_or_else(|| {
         AppError::from(format!("no parent for {:?}", tmp_path))
     })?;
-    let filename: &str = tmp_path
-        .file_name()
-        .and_then(|os| os.to_str())
-        .ok_or_else(|| AppError::from(format!("bad filename {:?}", tmp_path)))?;
+    let filename: &str = filesystem::filename_of(tmp_path)?;
 
     let (name_part, extension): (&str, &str) = filename
         .rsplit_once('.')
@@ -120,18 +74,11 @@ fn trim_tmp_uuid_segment(name_part: &str) -> Option<&str> {
     Some(stem)
 }
 
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut hex_string: String = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        hex_string.push_str(&format!("{:02x}", byte));
-    }
-    hex_string
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use sha2::{Digest, Sha256};
     use uuid::Uuid;
 
     use crate::artifact::artifact_model::StatisticShardKey;
@@ -177,7 +124,8 @@ mod tests {
 
         let mut hasher: Sha256 = Sha256::new();
         hasher.update(b"SQLITE FAKE");
-        let expected: String = hex_encode(&Into::<[u8; 32]>::into(hasher.finalize()));
+        let digest: [u8; 32] = hasher.finalize().into();
+        let expected: String = digest.iter().map(|b| format!("{:02x}", b)).collect();
         assert_eq!(shards[0].file.sha256_hex(), expected);
     }
 
