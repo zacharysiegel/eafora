@@ -715,7 +715,7 @@ When the Mac mini becomes insufficient (HA, geographic distribution, or v3+ live
 
 ### Seeding the canonical store
 
-> **Status (2026-06): deferred indefinitely.** The CLI subcommand stub exists (`ingestion seed`) but errors with "not yet implemented." The live path (`ingestion ingest source wb_wdi`) takes about a second against the WB WDI API and works fine for first-time setup — the offline / no-internet use case that motivated `seed` (CI without network access, demo machines, fully reproducible fixture data across developers) isn't currently pressing. Re-implement when one of those cases becomes a real blocker; the design below is preserved as the intended shape.
+> **Status (2026-06): deferred indefinitely; subcommand removed.** No `ingestion seed` subcommand currently exists in the CLI. The live path (`ingestion ingest source wb_wdi`) takes about a second against the WB WDI API and works fine for first-time setup — the offline / no-internet use case that motivated `seed` (CI without network access, demo machines, fully reproducible fixture data across developers) isn't currently pressing. Re-add when one of those cases becomes a real blocker; the design below is preserved as the intended shape.
 
 A `seed` CLI subcommand populates the canonical store with checked-in sample data:
 

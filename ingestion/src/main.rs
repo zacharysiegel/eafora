@@ -39,7 +39,6 @@ async fn main() -> Result<(), AppError> {
     match matches.subcommand() {
         Some(("ingest", sub_matches)) => dispatch_ingest(sub_matches).await,
         Some(("build", sub_matches)) => dispatch_build(sub_matches).await,
-        Some(("seed", _)) => dispatch_seed().await,
         Some(("publish", sub_matches)) => dispatch_publish(sub_matches).await,
         Some((other, _)) => Err(AppError::from(format!("unknown subcommand: {other}"))),
         None => Err(AppError::new("missing subcommand")),
@@ -70,7 +69,6 @@ fn build_cli() -> Command {
             Command::new("build")
                 .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/"),
         )
-        .subcommand(Command::new("seed").about("(deferred) Load checked-in sample responses; see docs/architecture/ingestion.md §Seeding"))
         .subcommand(
             Command::new("publish")
                 .about("Upload a previously-built artifact set to a repository")
@@ -197,10 +195,6 @@ async fn run_build(pool: &PgPool) -> Result<BuildReport, AppError> {
     transaction.commit().await?;
 
     Ok(report)
-}
-
-async fn dispatch_seed() -> Result<(), AppError> {
-    Err(AppError::new("seed: deferred indefinitely. Use `ingestion ingest source <code>` against the live API instead. See docs/architecture/ingestion.md §Seeding for the design."))
 }
 
 async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
