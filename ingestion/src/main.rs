@@ -9,8 +9,8 @@ use ingestion::artifact::repository::{
     ArtifactRepositoryKind, CloudflareR2ArtifactRepository, CloudflareR2Config,
     DryArtifactRepository, LocalArtifactRepository,
     ENV_LOCAL_REPOSITORY_ROOT,
-    ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL,
-    SECRET_R2_PUBLISH_TOKEN, SECRET_R2_PUBLISH_SECRET_ACCESS_KEY,
+    ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL, ENV_R2_PUBLISH_ACCESS_KEY_ID,
+    SECRET_R2_PUBLISH_SECRET_ACCESS_KEY,
 };
 use ingestion::canonical::canonical_model::DataSourceKind;
 use ingestion::db;
@@ -253,7 +253,7 @@ async fn create_repository(
             let config: CloudflareR2Config = CloudflareR2Config {
                 account_id: dotenvy::var(ENV_R2_ACCOUNT_ID)?,
                 bucket: dotenvy::var(ENV_R2_ARTIFACT_BUCKET)?,
-                access_key_id: secrets::master_decrypt_utf8(SECRET_R2_PUBLISH_TOKEN)?,
+                access_key_id: dotenvy::var(ENV_R2_PUBLISH_ACCESS_KEY_ID)?,
                 secret_access_key: secrets::master_decrypt_utf8(SECRET_R2_PUBLISH_SECRET_ACCESS_KEY)?,
                 public_base_url: dotenvy::var(ENV_R2_ARTIFACT_PUBLIC_BASE_URL)?,
             };
