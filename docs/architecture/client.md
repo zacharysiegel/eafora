@@ -6,7 +6,7 @@
 
 This document covers everything between **a published artifact bundle on the CDN** and **a rendered map with fertility data overlaid**:
 
-- The artifact-consumption contract: how clients discover, validate, and pin a manifest version.
+- The artifact-consumption contract: how clients discover and validate a manifest, and how the embedded vs. live bundle relationship works.
 - The fetch / cache / load pipeline: HTTP → on-device persistent cache → in-memory data structures.
 - SQLite-in-the-client: which engine, how the database is opened, how queries run.
 - FlatGeobuf reading: which reader, how features feed the renderer.
@@ -73,16 +73,33 @@ The consumer-side type lives in `core/src/artifact/manifest.rs` (parsed via `ser
 
 ### Version pinning and discovery
 
-There is intentionally no `latest.json` on the CDN. Clients discover a version one of two ways:
+A client holds two artifact bundles at any moment: an **embedded** one (pinned at client build time; literally bytes in the binary) and a **live** one (the latest CDN-published version; resolved at runtime). The embedded bundle is purely a first-paint accelerant — it's pinned because there's no other option for bytes baked into the binary, not because the design wants it pinned. The live bundle is the one the user is meant to see.
 
-1. **Hard-coded build pin.** Each client build bakes in a specific `version_label` at compile time (or, for web, at static-deploy time). The deployed build always loads that version, period. To roll forward, the build system regenerates the artifact label + redeploys the client.
-2. **Embedded downsampled fallback.** Each client also bundles a small downsampled version inside the binary (see §Embedded downsampled artifact). This loads instantly and unconditionally; the CDN fetch upgrades it on top.
+#### Embedded bundle
 
-The downsampled-bundled version pin and the CDN version pin can be the same or can differ; the CDN version is a strict superset of the bundled one (more recent statistics; full geometry instead of downsampled). The client renders bundled-first and replaces in-place when the CDN bundle finishes loading.
+Pinned at client build time. `scripts/build-downsampled.sh` (see §Embedded downsampled artifact) snapshots whatever the latest CDN version is at the moment the client is built and stages the downsampled output into the per-platform asset directory. The client loads it synchronously at startup so the map renders before any network activity.
 
-Why no `latest.json`: a moving pointer is a coordination problem (cache invalidation, race conditions, partial reads where one client sees a manifest URL whose referenced shards are still uploading). With a build-time pin, the coordination problem becomes "the deploy process publishes an artifact, then deploys a client that points at it" — a strict serial order with no shared mutable state. The cost is that data refresh requires a client redeploy, which is acceptable while the data update cadence is weekly and the web client redeploys at static-asset speed (Cloudflare Pages, ~seconds).
+#### Live bundle: stable pointer at `latest/manifest.json`
 
-A `latest.json` indirection can be introduced in v3+ if the cadence-of-data ever decouples from the cadence-of-client-deploy. It's not in scope for v1–v2.
+The producer maintains a stable URL — `https://repository.eafora.org/latest/manifest.json` — that always points at the most recently published version. Clients fetch this URL on launch (and periodically thereafter, see below), parse out `version_label`, and load the bundle from `<repository_base_url>/<version_label>/`.
+
+The "latest" determination is **server-side, sourced from the `artifact_version` table**:
+
+1. `ingestion publish` finishes — inserts a row in `artifact_version` (this already happens; see `ingestion/src/artifact/artifact_db.rs`).
+2. As a final publish step, the producer reads the latest row (`select * from artifact_version order by created desc limit 1`) and uploads a byte-for-byte copy of that version's `manifest.json` to the stable key `latest/manifest.json` on R2. (To be implemented as a small follow-up PR on the producer side, separate from the client-implementation work that consumes this pointer.)
+3. The stable manifest is short-cached at the CDN (`max-age=300`, matching the per-version manifest's cache policy); the per-version content-addressed shards it references are immutable and cache for a year.
+
+The DB is the source of truth for "latest"; R2 just hosts the resulting pointer. Clients never query Postgres (constitution: clients never call origin through v2). R2 listing is not used (no public listing on R2 anyway, and listing-as-discovery is fragile).
+
+Concurrent-publish safety relies on the publish flow's manifest-last upload order (see `ingestion/src/artifact/publish.rs`): every shard a manifest references is already on R2 before the manifest goes up, so a client that fetches `latest/manifest.json` always sees a fully-published bundle.
+
+#### Bundle hot-swap
+
+When the live bundle finishes loading, it replaces the embedded one in-place — the renderer's `Arc<Bundle>` is swapped (see §Decisions still open for the swap-vs-frame-boundary choice). On subsequent launches the live bundle is read from cache; the client refetches `latest/manifest.json` on launch and on a long-interval periodic timer (TBD; likely once per active session, plus on focus / visibility-change for web). If the resolved `version_label` differs from the cached one, the client fetches the new bundle and hot-swaps again.
+
+#### Future: opt-in version pin
+
+For QA / staged-rollout use cases, a client build can override the discovery URL with a fixed `version_label`. Out of scope for v1–v2; the mechanism is just "configure `repository_base_url` to point at `<base>/<version_label>` instead of `<base>/latest`."
 
 ### Verifying the bundle
 
