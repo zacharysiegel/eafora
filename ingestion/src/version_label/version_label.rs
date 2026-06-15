@@ -23,7 +23,7 @@ pub async fn generate(pool: &PgPool) -> Result<String, AppError> {
 
     for _ in 0..MAX_GENERATION_ATTEMPTS {
         let surname: &'static str = pick_random_surname();
-        let candidate: String = format!("{}-{}", date_prefix, surname);
+        let candidate: String = format!("{}+{}", date_prefix, surname);
 
         let exists: bool = artifact_db::read_artifact_version_exists(pool, &candidate).await?;
         if !exists {
