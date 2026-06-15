@@ -87,11 +87,11 @@ The embedded bundle on native serves two purposes: it is the first-paint acceler
 
 #### Embedded bundle (native clients)
 
-Pinned at native-client build time. The native client's build script invokes (or fetches the most recent output of) `ingestion build --downsampled` (see §Embedded downsampled artifact) and copies the result into its own asset directory. The client loads it synchronously at startup so the map renders before any network activity, and the same bytes are the offline baseline if the network is unavailable.
+Pinned at native-client build time. The native client's build script invokes (or fetches the most recent output of) `ingestion build --downsampled` (see §Embedded downsampled artifact) and copies the result into its own asset directory. The client loads it synchronously at startup so the map renders before any network activity, and the same bytes are the offline baseline if the network is unavailable at startup.
 
 #### Live bundle: stable pointer at `latest/manifest.json`
 
-The producer maintains a stable URL — `https://repository.eafora.org/latest/manifest.json` — that always points at the most recently published version. Clients fetch this URL on launch (and periodically thereafter, see below), parse out `version_label`, and load the bundle from `<repository_base_url>/<version_label>/`.
+The producer maintains a stable URL — `https://repository.eafora.org/latest/manifest.json` — that always points at the most recently published version. Clients fetch this URL on launch (and periodically thereafter, see below), then resolve every shard's URL using the manifest's per-entry `relative_path` against `<repository_base_url>/<version>/`. Clients do not string-format shard URLs or assume the directory layout (`geometry/`, `data/`, content-hashed filename); the manifest is the only source of truth for what to fetch and where it lives. The `version` field doubles as the cache key.
 
 The "latest" determination is **server-side, sourced from the `artifact_version` table**:
 
