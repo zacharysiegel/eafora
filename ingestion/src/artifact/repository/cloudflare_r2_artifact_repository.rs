@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::path::Path;
 
 use aws_sdk_s3::Client;
@@ -71,7 +72,7 @@ impl ArtifactRepository for CloudflareR2ArtifactRepository {
             .content_type(content_type)
             .send()
             .await
-            .map_err(|err| AppError::from(format!("put_object bucket={} key={}: {}", self.bucket, key, err)))?;
+            .map_err(|err| AppError::from(format!("put_object bucket={} key={}: {}", self.bucket, key, render_error_chain(&err))))?;
 
         Ok(())
     }
@@ -79,4 +80,21 @@ impl ArtifactRepository for CloudflareR2ArtifactRepository {
     fn url(&self, key: &str) -> String {
         format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
+}
+
+/// Walk an error's `source()` chain and concatenate each level's Display.
+/// The AWS SDK's top-level `SdkError::Display` summarizes to "service error"
+/// or "dispatch failure" without the underlying detail; the source chain
+/// carries the actual hyper / TLS / HTTP-status info.
+fn render_error_chain(error: &dyn Error) -> String {
+    let mut rendered: String = error.to_string();
+    let mut next: Option<&dyn Error> = error.source();
+
+    while let Some(source) = next {
+        rendered.push_str(" -> ");
+        rendered.push_str(&source.to_string());
+        next = source.source();
+    }
+
+    rendered
 }
