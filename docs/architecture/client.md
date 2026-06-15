@@ -35,7 +35,7 @@ The producer publishes one **artifact version** at a time. A version is a direct
 
 ### Manifest schema (consumer view)
 
-The on-the-wire shape every client deserializes:
+An illustrative on-the-wire shape (the Rust type, not this snippet, is the canonical definition):
 
 ```json
 {
@@ -71,9 +71,11 @@ Properties the consumer relies on:
 - `statistics` is keyed first by statistic code, then by license shard class; values are exactly the entries the client may attach. (`base` is the only class in v1.)
 - `source_revisions` is informational — surfaced in the UI's "data sources" panel; not load-bearing for any rendering decision.
 
-The consumer-side type lives in `core/src/artifact/manifest.rs` (parsed via `serde_json::from_slice`); the producer side serializes from `ingestion/src/artifact/writer/manifest.rs`. The two are the same wire format; the doc above is the source of truth when they disagree.
+The manifest type lives once in `core/src/artifact/manifest.rs` with both `Serialize` and `Deserialize` derived; the producer and every client use it directly. The Rust type is canonical; this document describes shape and intent but defers to the code on every disagreement.
 
-> **Producer follow-up (small PR):** rename the `data/` subdirectory to `statistics/` for symmetry with `geometry/` and to remove the ambiguity of "data" as a shard subtype name. Touches `ingestion/src/artifact/writer/manifest.rs` (the `SUBDIR_DATA` constant and its references) and any client-side examples or constants. Producer-side change; pre-dates the first client implementation, so no migration concern.
+> **Producer follow-ups (small PRs):**
+> - Stand up the `core/` crate (workspace member) and move the manifest type into `core::artifact::manifest`, with `ingestion::artifact::writer::manifest` importing it. Currently the producer-side struct is local (`ingestion/src/artifact/writer/manifest.rs::ManifestSerializer`) and there is no `core/`. Sequenced before the first client implementation, since the client depends on `core/` existing.
+> - Rename the `data/` subdirectory to `statistics/` for symmetry with `geometry/` and to remove the ambiguity of "data" as a shard subtype name. Touches the `SUBDIR_DATA` constant and its references. Pre-dates the first client implementation, so no migration concern.
 
 ### Version pinning and discovery
 
