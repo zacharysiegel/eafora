@@ -5,6 +5,8 @@ use tokio::fs;
 use crate::artifact::repository::artifact_repository::ArtifactRepository;
 use crate::error::AppError;
 
+pub const ENV_LOCAL_REPOSITORY_ROOT: &str = "EAFORA_LOCAL_REPOSITORY_ROOT";
+
 pub struct LocalArtifactRepository {
     root: PathBuf,
     public_base_url: String,

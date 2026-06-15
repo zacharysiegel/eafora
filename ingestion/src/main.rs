@@ -8,6 +8,7 @@ use ingestion::artifact::{self, ArtifactBuildReport, BuildOptions, PublishReport
 use ingestion::artifact::repository::{
     ArtifactRepositoryKind, CloudflareR2ArtifactRepository, CloudflareR2Config,
     DryArtifactRepository, LocalArtifactRepository,
+    ENV_LOCAL_REPOSITORY_ROOT,
     ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL,
     SECRET_R2_ACCESS_KEY_ID, SECRET_R2_SECRET_ACCESS_KEY,
 };
@@ -77,7 +78,7 @@ fn build_cli() -> Command {
                 .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).global(true).help("build the artifact set first, then publish"))
                 .subcommand(add_publish_common_args(Command::new("local"))
                     .about("Publish to a local filesystem destination served by an external HTTP server")
-                    .arg(Arg::new("root").long("root").required(true).help("destination root directory the publisher writes object keys under"))
+                    .arg(Arg::new("root").long("root").help(format!("destination root directory the publisher writes object keys under (defaults to ${})", ENV_LOCAL_REPOSITORY_ROOT)))
                     .arg(Arg::new("public-base-url").long("public-base-url").required(true).help("public URL prefix served from the destination")))
                 .subcommand(add_publish_common_args(Command::new("cloudflare-r2"))
                     .about(format!(
@@ -206,7 +207,6 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
     let (kind, sub_matches): (&str, &ArgMatches) = matches
         .subcommand()
         .expect("publish subcommand is required via clap");
-
     let build_first: bool = sub_matches.get_flag("build");
 
     let pool: PgPool = db::create_pool().await?;
@@ -238,9 +238,10 @@ async fn create_repository(
 ) -> Result<ArtifactRepositoryKind, AppError> {
     match kind {
         "local" => {
-            let root: PathBuf = PathBuf::from(
-                sub_matches.get_one::<String>("root").expect("--root is required via clap"),
-            );
+            let root: PathBuf = match sub_matches.get_one::<String>("root") {
+                Some(value) => PathBuf::from(value),
+                None => PathBuf::from(dotenvy::var(ENV_LOCAL_REPOSITORY_ROOT)?),
+            };
             let public_base_url: String = sub_matches
                 .get_one::<String>("public-base-url")
                 .expect("--public-base-url is required via clap")
