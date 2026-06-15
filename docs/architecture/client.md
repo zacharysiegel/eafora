@@ -11,7 +11,7 @@ This document covers everything between **a published artifact bundle on the CDN
 - SQLite-in-the-client: which engine, how the database is opened, how queries run.
 - FlatGeobuf reading: which reader, how features feed the renderer.
 - License-shard composition: how the client picks which shards to attach for its distribution context.
-- Embedded downsampled artifact: the "good enough for first paint" bundle shipped inside each app build.
+- Embedded downsampled artifact: the "good enough for first paint and offline use" bundle baked into native client binaries (no equivalent on web).
 - Cross-platform consistency: which decisions every client makes the same, which it doesn't.
 
 Map rendering details (projection, hit testing, zoom-to-country) are covered in `docs/architecture/overview.md`. Per-platform UI (Leptos components, SwiftUI views, Compose composables) is covered in the per-platform docs.
@@ -79,11 +79,13 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 
 ### Version pinning and discovery
 
-A client holds two artifact bundles at any moment: an **embedded** one (pinned at client build time; literally bytes in the binary) and a **live** one (the latest CDN-published version; resolved at runtime). The embedded bundle is purely a first-paint accelerant — it's pinned because there's no other option for bytes baked into the binary, not because the design wants it pinned. The live bundle is the one the user is meant to see.
+A client holds (up to) two artifact bundles at any moment: an **embedded** one (native clients only — bytes baked into the app binary at build time) and a **live** one (the latest CDN-published version; resolved at runtime). The web client has no embedded bundle since nothing is shipped to the device; its first-paint accelerant is whatever the browser has already cached from a previous visit (see §Embedded downsampled artifact).
 
-#### Embedded bundle
+The embedded bundle serves two purposes on native clients: it is a first-paint accelerant (the map renders before any network activity), and it is the **offline-capable baseline** — a user who launches the app without connectivity still sees a usable, if slightly stale, atlas. The live bundle is the one the user is meant to see when online.
 
-Pinned at client build time. `scripts/build-downsampled.sh` (see §Embedded downsampled artifact) snapshots whatever the latest CDN version is at the moment the client is built and stages the downsampled output into the per-platform asset directory. The client loads it synchronously at startup so the map renders before any network activity.
+#### Embedded bundle (native clients)
+
+Pinned at native-client build time. `scripts/build-downsampled.sh` (see §Embedded downsampled artifact) snapshots whatever the latest CDN version is at the moment the client is built and stages the downsampled output into the per-platform asset directory. The client loads it synchronously at startup so the map renders before any network activity, and the same bytes are the offline baseline if the network is unavailable.
 
 #### Live bundle: stable pointer at `latest/manifest.json`
 
@@ -122,12 +124,12 @@ For the manifest itself the client has nothing to compare against on first launc
 Every client follows the same four-stage pipeline. The platform-specific layer is the cache implementation; everything else is shared Rust.
 
 ```
-            [embedded downsampled bundle]                       [CDN]
+        [embedded bundle - native only]                       [CDN]
                        |                                          |
                        v                                          v
      +------------------------------+        +-----------------------------+
-     | bytes in the binary          |        | https://repository...       |
-     | (read once, in-memory only)  |        | /<version>/manifest.json    |
+     | bytes in the app binary      |        | https://repository...       |
+     | (iOS, Android only)          |        | /<version>/manifest.json    |
      +------------------------------+        | /<version>/geometry/...     |
                        |                     | /<version>/data/...         |
                        |                     +-----------------------------+
@@ -150,13 +152,13 @@ Every client follows the same four-stage pipeline. The platform-specific layer i
 
 ### Stage 1: launch
 
-The client constructs a `core::artifact::Bundle` from the embedded downsampled bytes. This is synchronous and runs before the first frame; the map renders within milliseconds of the runtime starting. Eafora has a usable map even if the device is offline and the cache is empty.
+On native clients, the client constructs a `core::artifact::Bundle` from the embedded downsampled bytes synchronously, before the first frame; the map renders within milliseconds of the runtime starting and remains usable offline. On web, there is no embedded bundle — the client renders a loading state and proceeds to stage 2 immediately.
 
 ### Stage 2: cache check
 
 The client asks the cache for the pinned `version_label`. Three outcomes:
 
-- **Full cache hit.** All referenced files (manifest + geometry + every shard) are present and pass SHA-256 verification. Replace the embedded bundle with the cached bundle in-place. Done.
+- **Full cache hit.** All referenced files (manifest + geometry + every shard) are present and pass SHA-256 verification. Replace the current bundle (embedded on native; loading state on web first-visit) with the cached bundle in-place. Done.
 - **Partial cache hit.** Manifest is present but one or more referenced files are missing or hash-mismatched. Fall through to stage 3 for only the missing files.
 - **Cache miss.** Nothing for this version. Fall through to stage 3 for everything.
 
@@ -166,11 +168,11 @@ The cache key is `version_label`, not the manifest URL. A new version installed 
 
 Fetch missing files via plain HTTP GET. Files are content-addressed and CDN-cached aggressively (`max-age=31536000, immutable`); the manifest is short-cached. The fetcher is platform-specific (`fetch()` in JS-land; `URLSession` on iOS; `OkHttp` on Android per the constitution); the bytes are then handed to the Rust core uniformly as `&[u8]`.
 
-Fetches are issued concurrently up to a per-platform parallelism cap (browser typically 6 per origin; native clients 4). The client renders progress as bytes-received over expected-total (sum of `size_bytes` from the manifest). On any HTTP error or hash mismatch, retry once with exponential backoff (250ms / 1s); persistent failure leaves the embedded bundle in place and surfaces a UI-level banner.
+Fetches are issued concurrently up to a per-platform parallelism cap (browser typically 6 per origin; native clients 4). The client renders progress as bytes-received over expected-total (sum of `size_bytes` from the manifest). On any HTTP error or hash mismatch, retry once with exponential backoff (250ms / 1s); persistent failure leaves the embedded bundle (native) or loading state (web) in place and surfaces a UI-level banner.
 
 ### Stage 4: persist + attach
 
-Verified bytes go into the persistent cache and into a fresh `core::artifact::Bundle`. The bundle replaces the embedded one. The renderer is notified via a one-shot signal; it discards its current draw state and re-issues from the new bundle's geometry on the next frame.
+Verified bytes go into the persistent cache and into a fresh `core::artifact::Bundle`. The bundle replaces whatever the renderer was previously holding (embedded on native; loading state on web first-visit; cached prior version on any returning client). The renderer is notified via a one-shot signal; it discards its current draw state and re-issues from the new bundle's geometry on the next frame.
 
 ### Cache eviction
 
@@ -213,9 +215,11 @@ Why not the JavaScript `flatgeobuf` package: same reason as not sql.js. Keeping 
 
 The reader is initialized once per bundle load. Country features parse first, in the foreground; if subnational features are present (v2+) they parse in the background after the initial render is up, scheduled by the platform shell. The progress signal goes through the same renderer-notification channel as cache replacement.
 
-## Embedded downsampled artifact
+## Embedded downsampled artifact (native only)
 
-Each client build embeds a small artifact bundle directly in the binary so the first frame renders before any network or filesystem activity. The downsampled bundle is generated at client build time by `scripts/build-downsampled.sh`:
+Native clients (iOS, Android) embed a small artifact bundle directly in the app binary so the first frame renders before any network or filesystem activity. The web client has no equivalent — there is no shipped binary for web; visitors download wasm + JS + static assets fresh each visit (modulo browser HTTP caching) and the first-paint accelerant on web is the previous session's IndexedDB cache, not an embedded bundle.
+
+The downsampled bundle is generated at native-client build time by `scripts/build-downsampled.sh`:
 
 1. Fetch the latest CDN manifest (or, equivalently, point at a specific `version_label`).
 2. Download the latest full bundle.
@@ -224,13 +228,19 @@ Each client build embeds a small artifact bundle directly in the binary so the f
    - Reduce country geometry resolution to ~1:110m equivalent (Natural Earth's coarsest released set), enough for instant first paint without visible artifacts at low zoom.
    - For each statistic, keep only the most recent year of values per country.
 4. Stage the result into the per-platform asset path:
-   - Web: `web/static/embedded/`
    - iOS: `ios/EaforaApp/Resources/embedded/`
    - Android: `android/app/src/main/assets/embedded/`
 
 The embedded bundle is read into memory at app startup, parsed by the same `core::artifact` code path that handles CDN bundles, and replaced in-place when the CDN fetch completes. From the renderer's point of view there is exactly one source of bundles; the embedded one is just the one without an HTTP round trip.
 
-The embedded bundle is regenerated and re-bundled into client builds **on every client redeploy**. Stale embedded bundles are not a correctness issue — the CDN fetch upgrades them — but a fresh first-paint experience is a UX win, and the redeploy hook is the natural moment to refresh.
+The embedded bundle is regenerated and re-bundled into native-client builds **on every native-client redeploy**. Stale embedded bundles are not a correctness issue — the CDN fetch upgrades them — but a fresh first-paint experience is a UX win, and the redeploy hook is the natural moment to refresh.
+
+### Web first-paint without an embedded bundle
+
+The web client's first-paint behavior depends on whether the browser has a populated IndexedDB cache from a previous visit:
+
+- **Returning visitor (cache present).** The wasm module reads the cached bundle from IndexedDB and renders the map before issuing any CDN fetch — same UX as a native client's embedded path.
+- **First-ever visitor (cache empty).** No bundle is available before the CDN fetch returns. The client renders a loading state (skeleton map / progress indicator) until the first manifest + geometry land. Whether to also ship a downsampled bundle as a static asset alongside the wasm in `web/static/` (which would give first-ever visitors an instant render at the cost of a larger initial download) is open — see §Decisions still open.
 
 ## Cross-platform consistency
 
@@ -298,7 +308,8 @@ Live HTTP against the CDN is **not** part of automated tests; it's a manual smok
 ## Decisions still open
 
 - **wgpu / WebGPU fallback policy.** WebGPU is stable in Chromium and Safari 18.4+; Firefox is on WebGL2 via the wgpu downlevel backend. The capability detection happens inside `wgpu::Instance::request_adapter`, so the client doesn't need its own logic — but the *UI fallback* (do we render a coarser version under WebGL2, or do we render the same version with a perf-warning banner?) is per-platform UX work. Defer to `client-web.md`.
-- **Embedded-bundle build automation.** `scripts/build-downsampled.sh` exists conceptually but isn't shipped. It runs at client-build time, which means it needs a contract with each platform's build (Cargo build-scripts for native; cargo-leptos for web). Defer to the first client-spec branch.
+- **Embedded-bundle build automation (native).** `scripts/build-downsampled.sh` exists conceptually but isn't shipped. It runs at native-client build time, which means it needs a contract with each platform's build (Cargo build-scripts wired to the Xcode/Gradle build).
+- **Whether to ship a static-asset downsampled bundle on web.** Bundling a downsampled artifact alongside the wasm in `web/static/` would give first-ever visitors an instant render, at the cost of a larger initial download. Defer to the first web-client spec branch.
 - **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are baked into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. Defer to the artifact-builder spec when i18n lands.
 - **Embedded-third-party-widget distribution context.** The license matrix has a `EmbeddedWidget` slot but v1 has only one shard (`base`) which every context authorizes. The first source with stricter-than-WB license terms forces a real decision about which classes the widget context authorizes. Defer until that source lands in the canonical store.
 - **Bundle hot-swap semantics for in-flight queries.** A user can issue a hover query at the exact moment the CDN fetch completes and the bundle is being replaced. Two safe strategies: (a) the renderer holds an `Arc<Bundle>` and the swap is an `Arc::store`, so an in-flight query reads the old bundle to completion; (b) the swap is done at a frame boundary, so no in-flight query exists at the moment of swap. (a) composes better with future async query work. Defer to implementation.
