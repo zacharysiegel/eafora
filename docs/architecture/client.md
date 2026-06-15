@@ -101,6 +101,10 @@ When the live bundle finishes loading, it replaces the embedded one in-place —
 
 For QA / staged-rollout use cases, a client build can override the discovery URL with a fixed `version_label`. Out of scope for v1–v2; the mechanism is just "configure `repository_base_url` to point at `<base>/<version_label>` instead of `<base>/latest`."
 
+#### v2+: live server architecture supersedes the static pointer
+
+The `latest/manifest.json` flow above is a v1 design. v2's live server architecture replaces it: the client resolves the current version against a live origin (under Cloudflare Tunnel from the Mac mini, dormant through v1) instead of a static R2 object. The static-pointer approach in v1 is intentionally minimal so the v2 transition is additive — clients gain a new discovery endpoint, the producer drops the `latest/manifest.json` upload step, and the per-version bundles on R2 are unchanged.
+
 ### Verifying the bundle
 
 After downloading any file, the client recomputes its SHA-256 and compares against `manifest.json`'s entry. A mismatch is a hard error: drop the cache, log a warning, retry the fetch once, then surface a UI-level "data unavailable, please reload" if it persists. The mismatch is treated as evidence of CDN corruption or a man-in-the-middle, not as a recoverable transient.
