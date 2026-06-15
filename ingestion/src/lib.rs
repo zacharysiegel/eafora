@@ -3,6 +3,7 @@ pub mod artifact;
 pub mod canonical;
 pub mod db;
 pub mod error;
+pub mod filesystem;
 pub mod geometry;
 pub mod http;
 pub mod ingest;

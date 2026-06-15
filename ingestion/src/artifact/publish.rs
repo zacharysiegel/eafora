@@ -18,6 +18,7 @@ use crate::artifact::repository::ArtifactRepositoryKind;
 use crate::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
+use crate::filesystem;
 
 const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
 const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
@@ -45,14 +46,14 @@ pub async fn publish_artifacts(
     }
 
     for shard in &build_report.artifacts.shards {
-        let filename: &str = filename_of(&shard.file.path)?;
+        let filename: &str = filesystem::filename_of(&shard.file.path)?;
         let key: String = format!("{}/{}/{}", version_label, SUBDIR_DATA, filename);
         repository.put_file(&key, &shard.file.path, CONTENT_TYPE_SQLITE).await?;
         log::debug!("uploaded shard key={}", key);
     }
     let shards_published: usize = build_report.artifacts.shards.len();
 
-    let geometry_filename: &str = filename_of(&build_report.artifacts.geometry.path)?;
+    let geometry_filename: &str = filesystem::filename_of(&build_report.artifacts.geometry.path)?;
     let geometry_key: String = format!("{}/{}/{}", version_label, SUBDIR_GEOMETRY, geometry_filename);
     repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, CONTENT_TYPE_FLATGEOBUF).await?;
     log::debug!("uploaded geometry key={}", geometry_key);
@@ -76,12 +77,6 @@ pub async fn publish_artifacts(
         artifact_version,
         shards_published,
     })
-}
-
-fn filename_of(path: &Path) -> Result<&str, AppError> {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| AppError::from(format!("path missing filename component: {:?}", path)))
 }
 
 #[derive(Debug, Deserialize)]
