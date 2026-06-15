@@ -70,7 +70,7 @@ fn build_cli() -> Command {
             Command::new("build")
                 .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/"),
         )
-        .subcommand(Command::new("seed").about("Load checked-in sample responses"))
+        .subcommand(Command::new("seed").about("(deferred) Load checked-in sample responses; see docs/architecture/ingestion.md §Seeding"))
         .subcommand(
             Command::new("publish")
                 .about("Upload a previously-built artifact set to a repository")
@@ -200,7 +200,7 @@ async fn run_build(pool: &PgPool) -> Result<BuildReport, AppError> {
 }
 
 async fn dispatch_seed() -> Result<(), AppError> {
-    Err(AppError::new("seed: not yet implemented"))
+    Err(AppError::new("seed: deferred indefinitely. Use `ingestion ingest source <code>` against the live API instead. See docs/architecture/ingestion.md §Seeding for the design."))
 }
 
 async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
