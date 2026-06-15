@@ -1,6 +1,6 @@
 //! Integration tests for the publish pipeline. Each test writes a tiny
 //! synthetic bundle into a tempdir, runs `publish_artifacts` through a
-//! `LocalArtifactRepository` (or `DryrunArtifactRepository`), and cleans
+//! `LocalArtifactRepository` (or `DryArtifactRepository`), and cleans
 //! up the resulting `artifact_version` record. `artifact_version` inserts
 //! commit through the pool, so MVCC rollback isn't available — uuid-suffixed
 //! version labels keep parallel tests from colliding.
@@ -21,7 +21,7 @@ use ingestion::artifact::artifact_model::{
 };
 use ingestion::artifact::hashing::Hashed;
 use ingestion::artifact::publish::PublishReport;
-use ingestion::artifact::repository::{ArtifactRepositoryKind, DryrunArtifactRepository, LocalArtifactRepository};
+use ingestion::artifact::repository::{ArtifactRepositoryKind, DryArtifactRepository, LocalArtifactRepository};
 use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use ingestion::canonical::canonical_model::{
     DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind,
@@ -88,22 +88,22 @@ async fn publish_artifacts_errors_when_version_label_already_published() {
 }
 
 #[tokio::test]
-async fn publish_artifacts_against_dryrun_repository_does_not_write_files_but_inserts_artifact_version() {
+async fn publish_artifacts_against_dry_repository_does_not_write_files_but_inserts_artifact_version() {
     let pool: PgPool = test_pool().await;
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let version_label: String = unique_version_label();
     let build_report: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
-    let repository: ArtifactRepositoryKind = ArtifactRepositoryKind::Dryrun(
-        DryrunArtifactRepository::new(),
+    let repository: ArtifactRepositoryKind = ArtifactRepositoryKind::Dry(
+        DryArtifactRepository::new(),
     );
 
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository)
         .await
-        .expect("dryrun publish succeeds");
+        .expect("dry publish succeeds");
 
     assert_eq!(publish_report.shards_published, 1);
-    assert!(publish_report.manifest_url.starts_with("dryrun:///"));
+    assert!(publish_report.manifest_url.starts_with("dry:///"));
 
     delete_artifact_version(&pool, &version_label).await;
 }

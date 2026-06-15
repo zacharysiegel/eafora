@@ -7,7 +7,7 @@ use ingestion::adapter::AdapterOptions;
 use ingestion::artifact::{self, ArtifactBuildReport, BuildOptions, PublishReport};
 use ingestion::artifact::repository::{
     ArtifactRepositoryKind, CloudflareR2ArtifactRepository, CloudflareR2Config,
-    DryrunArtifactRepository, LocalArtifactRepository,
+    DryArtifactRepository, LocalArtifactRepository,
     ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL,
     SECRET_R2_ACCESS_KEY_ID, SECRET_R2_SECRET_ACCESS_KEY,
 };
@@ -76,8 +76,8 @@ fn build_cli() -> Command {
                         "Publish to Cloudflare R2; reads {}/{}/{} from .env and the access key + secret access key from secrets.yaml",
                         ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL,
                     )))
-                .subcommand(add_publish_common_args(Command::new("dryrun"))
-                    .about("Publish nowhere; logs every PUT and inserts an artifact_version row referencing a placeholder dryrun:/// URL")),
+                .subcommand(add_publish_common_args(Command::new("dry"))
+                    .about("Publish nowhere; logs every PUT and inserts an artifact_version row referencing a placeholder dry:/// URL")),
         )
 }
 
@@ -244,7 +244,7 @@ async fn create_repository(
             let repository: CloudflareR2ArtifactRepository = CloudflareR2ArtifactRepository::create(config).await?;
             Ok(ArtifactRepositoryKind::CloudflareR2(repository))
         }
-        "dryrun" => Ok(ArtifactRepositoryKind::Dryrun(DryrunArtifactRepository::new())),
+        "dry" => Ok(ArtifactRepositoryKind::Dry(DryArtifactRepository::new())),
         other => Err(AppError::from(format!("unknown publish repository: {:?}", other))),
     }
 }

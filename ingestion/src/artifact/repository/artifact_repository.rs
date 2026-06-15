@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::artifact::repository::cloudflare_r2_artifact_repository::CloudflareR2ArtifactRepository;
-use crate::artifact::repository::dryrun_artifact_repository::DryrunArtifactRepository;
+use crate::artifact::repository::dry_artifact_repository::DryArtifactRepository;
 use crate::artifact::repository::local_artifact_repository::LocalArtifactRepository;
 use crate::error::AppError;
 
@@ -14,7 +14,7 @@ pub(crate) trait ArtifactRepository {
 pub enum ArtifactRepositoryKind {
     Local(LocalArtifactRepository),
     CloudflareR2(CloudflareR2ArtifactRepository),
-    Dryrun(DryrunArtifactRepository),
+    Dry(DryArtifactRepository),
 }
 
 impl ArtifactRepositoryKind {
@@ -22,7 +22,7 @@ impl ArtifactRepositoryKind {
         match self {
             ArtifactRepositoryKind::Local(repository) => repository.put_file(key, source_path, content_type).await,
             ArtifactRepositoryKind::CloudflareR2(repository) => repository.put_file(key, source_path, content_type).await,
-            ArtifactRepositoryKind::Dryrun(repository) => repository.put_file(key, source_path, content_type).await,
+            ArtifactRepositoryKind::Dry(repository) => repository.put_file(key, source_path, content_type).await,
         }
     }
 
@@ -30,7 +30,7 @@ impl ArtifactRepositoryKind {
         match self {
             ArtifactRepositoryKind::Local(repository) => repository.url_for(key),
             ArtifactRepositoryKind::CloudflareR2(repository) => repository.url_for(key),
-            ArtifactRepositoryKind::Dryrun(repository) => repository.url_for(key),
+            ArtifactRepositoryKind::Dry(repository) => repository.url_for(key),
         }
     }
 }
