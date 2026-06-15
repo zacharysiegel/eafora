@@ -37,8 +37,7 @@ async fn main() -> Result<(), AppError> {
     let matches: ArgMatches = build_cli().get_matches();
 
     match matches.subcommand() {
-        Some(("source", sub_matches)) => dispatch_source(sub_matches).await,
-        Some(("all", _)) => dispatch_all().await,
+        Some(("ingest", sub_matches)) => dispatch_ingest(sub_matches).await,
         Some(("build", sub_matches)) => dispatch_build(sub_matches).await,
         Some(("seed", _)) => dispatch_seed().await,
         Some(("publish", sub_matches)) => dispatch_publish(sub_matches).await,
@@ -52,15 +51,20 @@ fn build_cli() -> Command {
         .about("Eafora canonical-store CLI")
         .subcommand_required(true)
         .subcommand(
-            Command::new("source")
-                .about("Run a single source adapter")
-                .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi)"))
-                .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
+            Command::new("ingest")
+                .about("Fetch upstream source data and write it to the canonical store")
+                .subcommand_required(true)
+                .subcommand(
+                    Command::new("source")
+                        .about("Run a single source adapter")
+                        .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi)"))
+                        .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
+                )
+                .subcommand(Command::new("all").about("Run every registered source adapter")),
         )
-        .subcommand(Command::new("all").about("Run every registered source adapter"))
         .subcommand(
             Command::new("build")
-                .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/ and updates the $EAFORA_REPO_ROOT/artifacts symlink"),
+                .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/"),
         )
         .subcommand(Command::new("seed").about("Load checked-in sample responses"))
         .subcommand(
@@ -88,6 +92,15 @@ fn add_publish_common_args(command: Command) -> Command {
             .conflicts_with("build")
             .help("directory containing manifest.json and referenced files (omit when --build is set)"))
         .arg(Arg::new("build").long("build").action(ArgAction::SetTrue).help("build the artifact set first, then publish"))
+}
+
+async fn dispatch_ingest(matches: &ArgMatches) -> Result<(), AppError> {
+    match matches.subcommand() {
+        Some(("source", sub_matches)) => dispatch_source(sub_matches).await,
+        Some(("all", _)) => dispatch_all().await,
+        Some((other, _)) => Err(AppError::from(format!("unknown ingest subcommand: {other}"))),
+        None => Err(AppError::new("missing ingest subcommand")),
+    }
 }
 
 async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {

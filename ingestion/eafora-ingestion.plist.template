@@ -8,6 +8,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>@@INGESTION_BIN@@</string>
+        <string>ingest</string>
         <string>all</string>
     </array>
 
