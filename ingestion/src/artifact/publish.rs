@@ -73,7 +73,7 @@ pub async fn publish_artifacts(
 
     let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
     repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, CONTENT_TYPE_MANIFEST).await?;
-    let manifest_url: String = repository.url_for(&manifest_key);
+    let manifest_url: String = repository.url(&manifest_key);
     log::debug!("uploaded manifest; [key={} url={}]", manifest_key, manifest_url);
 
     let artifact_version: ArtifactVersion = artifact_db::insert_artifact_version(

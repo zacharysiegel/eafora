@@ -76,7 +76,7 @@ impl ArtifactRepository for CloudflareR2ArtifactRepository {
         Ok(())
     }
 
-    fn url_for(&self, key: &str) -> String {
+    fn url(&self, key: &str) -> String {
         format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
 }

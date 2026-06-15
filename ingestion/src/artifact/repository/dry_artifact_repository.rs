@@ -19,7 +19,7 @@ impl ArtifactRepository for DryArtifactRepository {
         Ok(())
     }
 
-    fn url_for(&self, key: &str) -> String {
+    fn url(&self, key: &str) -> String {
         format!("dry:///{}", key)
     }
 }

@@ -9,7 +9,7 @@ use crate::error::AppError;
 pub trait ArtifactRepository {
     fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> impl Future<Output = Result<(), AppError>> + Send;
 
-    fn url_for(&self, key: &str) -> String;
+    fn url(&self, key: &str) -> String;
 }
 
 pub enum ArtifactRepositoryKind {
@@ -27,11 +27,11 @@ impl ArtifactRepositoryKind {
         }
     }
 
-    pub fn url_for(&self, key: &str) -> String {
+    pub fn url(&self, key: &str) -> String {
         match self {
-            ArtifactRepositoryKind::Local(repository) => repository.url_for(key),
-            ArtifactRepositoryKind::CloudflareR2(repository) => repository.url_for(key),
-            ArtifactRepositoryKind::Dry(repository) => repository.url_for(key),
+            ArtifactRepositoryKind::Local(repository) => repository.url(key),
+            ArtifactRepositoryKind::CloudflareR2(repository) => repository.url(key),
+            ArtifactRepositoryKind::Dry(repository) => repository.url(key),
         }
     }
 }

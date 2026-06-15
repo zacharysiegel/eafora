@@ -30,7 +30,7 @@ impl ArtifactRepository for LocalArtifactRepository {
         Ok(())
     }
 
-    fn url_for(&self, key: &str) -> String {
+    fn url(&self, key: &str) -> String {
         format!("{}/{}", self.public_base_url.trim_end_matches('/'), key)
     }
 }
