@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::path::Path;
 
 use crate::artifact::repository::cloudflare_r2_artifact_repository::CloudflareR2ArtifactRepository;
@@ -5,8 +6,8 @@ use crate::artifact::repository::dry_artifact_repository::DryArtifactRepository;
 use crate::artifact::repository::local_artifact_repository::LocalArtifactRepository;
 use crate::error::AppError;
 
-pub(crate) trait ArtifactRepository {
-    async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError>;
+pub trait ArtifactRepository {
+    fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> impl Future<Output = Result<(), AppError>> + Send;
 
     fn url_for(&self, key: &str) -> String;
 }
