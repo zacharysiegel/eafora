@@ -11,7 +11,7 @@ use sqlx::PgPool;
 
 use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::{
-    BuildReport, ArtifactVersion, Artifacts, FileReference, StatisticShard, StatisticShardKey,
+    Artifacts, ArtifactVersion, BuildReport, FileReference, StatisticShard, StatisticShardKey,
 };
 use crate::artifact::hashing::Hashed;
 use crate::artifact::repository::ArtifactRepositoryKind;
@@ -20,9 +20,9 @@ use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, Sourc
 use crate::error::AppError;
 use crate::filesystem;
 
-const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
 const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
 const CONTENT_TYPE_MANIFEST: &str = "application/json";
+const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
 
 #[derive(Debug, Clone)]
 pub struct PublishReport {
