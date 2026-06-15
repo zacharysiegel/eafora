@@ -1,0 +1,277 @@
+# Client architecture
+
+> **Status: draft, 2026-06-14.** This document is the cross-cutting consumer-side companion to `docs/architecture/ingestion.md`. Ingestion ends with a content-addressed bundle on Cloudflare R2 (`manifest.json` + per-statistic SQLite shards + a FlatGeobuf geometry file); this document defines what every client (web, iOS, Android) does with that bundle to render a fertility-data atlas. Per-platform deltas (build system, hot reload, threading model, FFI surface) live in `client-web.md`, `client-ios.md`, `client-android.md`, which are subsequent branches.
+
+## Scope of this document
+
+This document covers everything between **a published artifact bundle on the CDN** and **a rendered map with fertility data overlaid**:
+
+- The artifact-consumption contract: how clients discover, validate, and pin a manifest version.
+- The fetch / cache / load pipeline: HTTP → on-device persistent cache → in-memory data structures.
+- SQLite-in-the-client: which engine, how the database is opened, how queries run.
+- FlatGeobuf reading: which reader, how features feed the renderer.
+- License-shard composition: how the client picks which shards to attach for its distribution context.
+- Embedded downsampled artifact: the "good enough for first paint" bundle shipped inside each app build.
+- Cross-platform consistency: which decisions every client makes the same, which it doesn't.
+
+Map rendering details (projection, hit testing, zoom-to-country) are covered in `docs/architecture/overview.md`. Per-platform UI (Leptos components, SwiftUI views, Compose composables) is covered in the per-platform docs.
+
+## Locked decisions referenced (not relitigated)
+
+From the constitution and `docs/architecture/overview.md`:
+
+- v1–v2 data path is CDN-hosted versioned artifacts; clients never call origin. (Constitution VI; overview §Architecture diagram)
+- Each client embeds the same Rust core via wasm-bindgen (web) or UniFFI (iOS, Android). The core owns artifact parsing, geometry, statistic queries, projection, hit testing, and camera state. (Overview §Rust core)
+- Polygons are full-resolution; no LOD pyramid. ~200 country polygons (~5 MB compressed FlatGeobuf) through v1; subnational geometry joins the same FlatGeobuf as additional features in v2+. (Overview §Polygon representation)
+- Web is single-threaded WASM; **no** `SharedArrayBuffer`; no cross-origin isolation headers. (Overview §Web client)
+- License-segmented SQLite shards compose **additively** via `ATTACH DATABASE`. v1 ships only one license class (`base`); the mechanism is in place from day one. (Overview §License-segmented SQLite shards)
+- Manifest format and shard naming convention are defined by the producer-side spec; see `docs/architecture/ingestion.md` and `ingestion/src/artifact/writer/manifest.rs` for the canonical schema.
+- Plain CSS for the web client; no Tailwind or utility-class frameworks. (Project memory)
+- Native iOS/Android apps are a personal-learning goal for the parallel game project, not a v1 funder deliverable. The web client is the v1 surface; the mobile-app contracts in this doc exist so the producer side does not foreclose them. (Project memory)
+
+## The artifact-consumption contract
+
+The producer publishes one **artifact version** at a time. A version is a directory under `<repository_base_url>/<version_label>/` containing exactly one `manifest.json`, one FlatGeobuf geometry file under `geometry/`, and N SQLite shard files under `data/`. Every file other than `manifest.json` is content-addressed (filename ends with the leading 8 hex characters of its SHA-256). Shipped today by `ingestion publish cloudflare-r2`; live at `https://repository.eafora.org/<version_label>/`.
+
+### Manifest schema (consumer view)
+
+The on-the-wire shape every client deserializes:
+
+```json
+{
+  "version": "2026-06-14+laughlin",
+  "artifact_created": "2026-06-14T03:00:12Z",
+  "geometry": {
+    "relative_path": "geometry/world-50m-ab12cd34.fgb",
+    "size_bytes": 4380000,
+    "sha256": "ab12cd34..."
+  },
+  "statistics": {
+    "tfr": {
+      "base": {
+        "relative_path": "data/tfr-base-ef561234.sqlite",
+        "size_bytes": 89000,
+        "sha256": "ef561234..."
+      }
+    }
+  },
+  "source_revisions": {
+    "wb_wdi": { "revision": "2024-12-12", "published": "2024-12-12T00:00:00Z", "fetched": "2024-12-31T00:00:00Z" }
+  }
+}
+```
+
+Properties the consumer relies on:
+
+- `version` is the human-readable, monotonically-disambiguated label (`YYYY-MM-DD+<surname>`). It is the cache key and the URL segment.
+- `relative_path` is rooted at the version directory; the absolute URL is `<repository_base_url>/<version_label>/<relative_path>`. Clients must not assume any host or scheme — they read the base URL from configuration.
+- `sha256` is the SHA-256 of the file's bytes, hex-encoded. Clients verify after download and reject the bundle if any hash mismatches.
+- `statistics` is keyed first by statistic code, then by license shard class; values are exactly the entries the client may attach. (`base` is the only class in v1.)
+- `source_revisions` is informational — surfaced in the UI's "data sources" panel; not load-bearing for any rendering decision.
+
+The consumer-side type lives in `core/src/artifact/manifest.rs` (parsed via `serde_json::from_slice`); the producer side serializes from `ingestion/src/artifact/writer/manifest.rs`. The two are the same wire format; the doc above is the source of truth when they disagree.
+
+### Version pinning and discovery
+
+There is intentionally no `latest.json` on the CDN. Clients discover a version one of two ways:
+
+1. **Hard-coded build pin.** Each client build bakes in a specific `version_label` at compile time (or, for web, at static-deploy time). The deployed build always loads that version, period. To roll forward, the build system regenerates the artifact label + redeploys the client.
+2. **Embedded downsampled fallback.** Each client also bundles a small downsampled version inside the binary (see §Embedded downsampled artifact). This loads instantly and unconditionally; the CDN fetch upgrades it on top.
+
+The downsampled-bundled version pin and the CDN version pin can be the same or can differ; the CDN version is a strict superset of the bundled one (more recent statistics; full geometry instead of downsampled). The client renders bundled-first and replaces in-place when the CDN bundle finishes loading.
+
+Why no `latest.json`: a moving pointer is a coordination problem (cache invalidation, race conditions, partial reads where one client sees a manifest URL whose referenced shards are still uploading). With a build-time pin, the coordination problem becomes "the deploy process publishes an artifact, then deploys a client that points at it" — a strict serial order with no shared mutable state. The cost is that data refresh requires a client redeploy, which is acceptable while the data update cadence is weekly and the web client redeploys at static-asset speed (Cloudflare Pages, ~seconds).
+
+A `latest.json` indirection can be introduced in v3+ if the cadence-of-data ever decouples from the cadence-of-client-deploy. It's not in scope for v1–v2.
+
+### Verifying the bundle
+
+After downloading any file, the client recomputes its SHA-256 and compares against `manifest.json`'s entry. A mismatch is a hard error: drop the cache, log a warning, retry the fetch once, then surface a UI-level "data unavailable, please reload" if it persists. The mismatch is treated as evidence of CDN corruption or a man-in-the-middle, not as a recoverable transient.
+
+For the manifest itself the client has nothing to compare against on first launch — it trusts TLS to the configured `repository_base_url`. On subsequent launches the manifest is short-cached (HTTP `Cache-Control: max-age=300` from Cloudflare; see `docs/architecture/ingestion.md` for the producer-side cache headers), so the verifying loop is implicitly: fetch manifest, fetch shards by content hash, verify, attach.
+
+## Fetch / cache / load pipeline
+
+Every client follows the same four-stage pipeline. The platform-specific layer is the cache implementation; everything else is shared Rust.
+
+```
+            [embedded downsampled bundle]                       [CDN]
+                       |                                          |
+                       v                                          v
+     +------------------------------+        +-----------------------------+
+     | bytes in the binary          |        | https://repository...       |
+     | (read once, in-memory only)  |        | /<version>/manifest.json    |
+     +------------------------------+        | /<version>/geometry/...     |
+                       |                     | /<version>/data/...         |
+                       |                     +-----------------------------+
+                       |                                          |
+                       |                                          v
+                       |                          +--------------------------+
+                       |                          | persistent on-device     |
+                       |                          | cache (per-platform):    |
+                       |                          |   web    -> IndexedDB    |
+                       |                          |   iOS    -> file system  |
+                       |                          |   Android-> file system  |
+                       |                          +--------------------------+
+                       |                                          |
+                       v                                          v
+     +-------------------------------------------------------------------+
+     | core::artifact::Bundle (parsed manifest + open SQLite + parsed   |
+     | FlatGeobuf reader); held by the renderer for the session         |
+     +-------------------------------------------------------------------+
+```
+
+### Stage 1: launch
+
+The client constructs a `core::artifact::Bundle` from the embedded downsampled bytes. This is synchronous and runs before the first frame; the map renders within milliseconds of the runtime starting. Eafora has a usable map even if the device is offline and the cache is empty.
+
+### Stage 2: cache check
+
+The client asks the cache for the pinned `version_label`. Three outcomes:
+
+- **Full cache hit.** All referenced files (manifest + geometry + every shard) are present and pass SHA-256 verification. Replace the embedded bundle with the cached bundle in-place. Done.
+- **Partial cache hit.** Manifest is present but one or more referenced files are missing or hash-mismatched. Fall through to stage 3 for only the missing files.
+- **Cache miss.** Nothing for this version. Fall through to stage 3 for everything.
+
+The cache key is `version_label`, not the manifest URL. A new version installed by a client redeploy doesn't share keys with the previous one — old versions sit in the cache until the eviction policy reaps them.
+
+### Stage 3: fetch
+
+Fetch missing files via plain HTTP GET. Files are content-addressed and CDN-cached aggressively (`max-age=31536000, immutable`); the manifest is short-cached. The fetcher is platform-specific (`fetch()` in JS-land; `URLSession` on iOS; `OkHttp` on Android per the constitution); the bytes are then handed to the Rust core uniformly as `&[u8]`.
+
+Fetches are issued concurrently up to a per-platform parallelism cap (browser typically 6 per origin; native clients 4). The client renders progress as bytes-received over expected-total (sum of `size_bytes` from the manifest). On any HTTP error or hash mismatch, retry once with exponential backoff (250ms / 1s); persistent failure leaves the embedded bundle in place and surfaces a UI-level banner.
+
+### Stage 4: persist + attach
+
+Verified bytes go into the persistent cache and into a fresh `core::artifact::Bundle`. The bundle replaces the embedded one. The renderer is notified via a one-shot signal; it discards its current draw state and re-issues from the new bundle's geometry on the next frame.
+
+### Cache eviction
+
+The cache holds one or more complete artifact versions. The default policy is **keep the current pinned version + the most recent prior version**; older versions are deleted on launch. The prior-version retention exists so a client downgrade (rare; happens if a deploy is rolled back) doesn't force a full re-fetch.
+
+Per-platform policy differs in failure modes — see `client-web.md` for IndexedDB quota / `navigator.storage.persist()` / `estimate()` handling per the saved memory `reference_browser_storage_quotas`; see `client-ios.md` and `client-android.md` for iOS document-directory and Android internal-storage equivalents. The cross-platform contract is just: a `cache.put(version_label, file_relative_path, bytes)` / `cache.get(version_label, file_relative_path) -> Option<Bytes>` interface, implemented per platform and consumed by the same Rust core.
+
+## SQLite in the client
+
+The chosen approach is **download-the-whole-shard-and-query-in-memory**, on every platform. SQLite's file format is identical across platforms; the only thing that changes per-platform is which library opens the file.
+
+| Platform | SQLite library                  | File access                                                  |
+| -------- | ------------------------------- | ------------------------------------------------------------ |
+| Web      | `rusqlite` compiled to WASM, with the database backed by the SQLite VFS reading from a `Vec<u8>` held in WASM linear memory. | The downloaded `.sqlite` bytes are passed to a custom VFS layer; no OPFS / no file handle. |
+| iOS      | `rusqlite` (statically linked).  | Open the cached file path via `Connection::open(path)`. |
+| Android  | `rusqlite` (statically linked).  | Open the cached file path via `Connection::open(path)`. |
+
+The web platform does **not** use OPFS, sql.js, or wa-sqlite. Reasoning:
+
+- `rusqlite`-on-WASM means the same `core::*` query code runs everywhere, byte-for-byte. No JS/TS query layer; no parallel implementation to keep in sync; no FFI marshaling for query results. This is a direct application of Constitution Principle V (explicit over implicit) and the architectural premise that Rust core is the single source of truth.
+- Per-statistic shards are tens of KB to a few MB through v2 (memory: `feedback_consolidated_migrations` is unrelated, but the producer-side per-shard size estimates in `docs/architecture/ingestion.md` apply). Holding a 5 MB `Vec<u8>` in WASM linear memory is trivially cheap compared to the ~3 MB raw WASM bundle itself; there's no pressure to stream.
+- OPFS is a 2024+ API with uneven Safari support (file handle support landed in iOS 17 but the synchronous handle API needed for SQLite has historically required Worker context — and we deliberately don't use Workers, see Web client overview). Until OPFS is uniformly available *and* the data sizes warrant the streaming model, in-memory wins on simplicity.
+- sql.js is JavaScript-implemented SQLite. Using it means parsing query results in JS and marshaling across the wasm-bindgen boundary on every read. wa-sqlite is the modern equivalent. Both have the same problem: the query layer lives outside Rust.
+
+**Migration trigger:** if any per-statistic shard grows past ~30 MB (to be reviewed when v2's license shards land or when subnational statistics arrive), revisit by switching the WASM client's SQLite to read via HTTP range requests through a custom `Connection` impl. This is mechanical work behind the same `core::statistic` API.
+
+### Attaching license shards
+
+The bundle's `statistics` map is keyed by statistic-code → license-shard-class. The client identifies its **distribution context** at startup (eafora.org-first-party, embedded-third-party-widget, etc.) and the runtime computes the *authorized class set* — the subset of license classes its context is permitted to access. For v1 the only class is `base` and every context authorizes it; the mechanism is exercised but trivially.
+
+Per statistic, the client opens an in-memory SQLite database and `ATTACH DATABASE` of every authorized shard for that statistic. Queries union across attached databases as a SQLite-native operation. The attach order is the alphabetical order of license-class names (matches the manifest's serialization order), which means the resulting `sqlite_master` is deterministic — useful for debugging.
+
+Authorized-class evaluation is a function in `core::license` whose input is a context enum (`DistributionContext::FirstParty | EmbeddedWidget | ...`) and whose output is a `BTreeSet<LicenseShardClass>`. This is the only place the per-context license matrix lives; both the client and any future server-side filter (v3+) call it.
+
+## FlatGeobuf in the client
+
+The chosen reader is **the upstream `flatgeobuf` Rust crate**, compiled into the same Rust core that runs everywhere. The crate provides streaming feature reads and an embedded R-tree spatial index for hit testing. Per the overview's §Polygon representation, the spatial index in the FlatGeobuf file is the hit-test index for the renderer — no separate index build step.
+
+Why not the JavaScript `flatgeobuf` package: same reason as not sql.js. Keeping the parser in Rust avoids a duplicated implementation on each platform and a per-feature marshaling cost across wasm-bindgen / UniFFI.
+
+The reader is initialized once per bundle load. Country features parse first, in the foreground; if subnational features are present (v2+) they parse in the background after the initial render is up, scheduled by the platform shell. The progress signal goes through the same renderer-notification channel as cache replacement.
+
+## Embedded downsampled artifact
+
+Each client build embeds a small artifact bundle directly in the binary so the first frame renders before any network or filesystem activity. The downsampled bundle is generated at client build time by `scripts/build-downsampled.sh`:
+
+1. Fetch the latest CDN manifest (or, equivalently, point at a specific `version_label`).
+2. Download the latest full bundle.
+3. Apply downsampling rules:
+   - Drop sub-national geometry (v2+); keep country polygons.
+   - Reduce country geometry resolution to ~1:110m equivalent (Natural Earth's coarsest released set), enough for instant first paint without visible artifacts at low zoom.
+   - For each statistic, keep only the most recent year of values per country.
+4. Stage the result into the per-platform asset path:
+   - Web: `web/static/embedded/`
+   - iOS: `ios/EaforaApp/Resources/embedded/`
+   - Android: `android/app/src/main/assets/embedded/`
+
+The embedded bundle is read into memory at app startup, parsed by the same `core::artifact` code path that handles CDN bundles, and replaced in-place when the CDN fetch completes. From the renderer's point of view there is exactly one source of bundles; the embedded one is just the one without an HTTP round trip.
+
+The embedded bundle is regenerated and re-bundled into client builds **on every client redeploy**. Stale embedded bundles are not a correctness issue — the CDN fetch upgrades them — but a fresh first-paint experience is a UX win, and the redeploy hook is the natural moment to refresh.
+
+## Cross-platform consistency
+
+The Rust core enforces consistency on the things that should be consistent. Per-platform code owns the things that genuinely differ.
+
+| Concern                                            | Owner       | Rationale |
+| -------------------------------------------------- | ----------- | --------- |
+| Manifest parsing                                   | Rust core   | Bytes are bytes; no platform reason to diverge. |
+| SQLite query strings (statistic-by-region-by-year) | Rust core   | One source of truth; tested once. |
+| FlatGeobuf parsing                                 | Rust core   | Same as SQLite. |
+| Hit testing                                        | Rust core   | Spatial-index reads from the FlatGeobuf are framework-agnostic. |
+| Projection (Miller cylindrical)                    | Rust core   | Closed-form math; lives in `core::projection`. |
+| HTTP fetch                                         | Per-platform | Native APIs are the right tool: `fetch()` (web), `URLSession` (iOS), `OkHttp` (Android). |
+| Cache persistence                                  | Per-platform | IndexedDB / file-system contracts differ enough that a Rust abstraction would be a leaky shim. |
+| Render loop                                        | Per-platform | wgpu surface acquisition is platform-specific; the draw calls themselves are shared. |
+| UI chrome (legend, statistic picker, source panel) | Per-platform | Leptos / SwiftUI / Compose own their idiomatic UI; the data shown is identical because it's read from the same `core` queries. |
+
+The per-platform shell is intentionally thin. A typical client per-platform layer is on the order of 1–2k LOC: a fetcher, a cache adapter, a render-surface bridge, and the UI tree. Anything beyond that should be re-evaluated as a candidate for promotion into `core`.
+
+## Module layout (`core/` consumer surface)
+
+The producer (`ingestion/`) writes manifests; the consumer (every client via `core/`) reads them. The consumer types live alongside the geometry / statistic types they wrap.
+
+```
+core/
+├── src/
+│   ├── lib.rs
+│   ├── artifact/
+│   │   ├── artifact.rs            # Bundle: open(manifest_bytes, cache_reader) -> Bundle
+│   │   ├── artifact_model.rs      # Manifest, ManifestEntry, StatisticEntry, etc.
+│   │   ├── manifest.rs            # parse_manifest(bytes) -> Manifest
+│   │   └── verifier.rs            # verify_sha256(bytes, expected_hex)
+│   ├── statistic/
+│   │   ├── statistic.rs           # query the in-memory SQLite database
+│   │   ├── statistic_model.rs     # StatisticValue, Series, etc. (shared with ingestion via core)
+│   │   └── attach.rs              # ATTACH-DATABASE composition across license shards
+│   ├── geometry/
+│   │   ├── geometry.rs            # FlatGeobuf reader wiring; feature iteration
+│   │   └── geometry_model.rs      # Feature, Polygon, BoundingBox
+│   ├── license/
+│   │   └── license.rs             # DistributionContext -> authorized BTreeSet<LicenseShardClass>
+│   ├── projection.rs              # Miller cylindrical
+│   ├── hit_test.rs                # spatial-index lookup
+│   ├── render/                    # wgpu pipeline (shared across platforms)
+│   └── ffi/
+│       ├── wasm.rs                # wasm-bindgen surface (web)
+│       └── uniffi.rs              # UniFFI surface (iOS, Android)
+```
+
+Per-feature module layout follows the Singularity `lobby/` triplet pattern; the consumer side has no `<feature>_db.rs` because there is no Postgres in the client, and no `<feature>_api.rs` because the client doesn't host HTTP routes. Where a feature needs an external-call abstraction in the future (a v3+ live correction-submission API), the `<feature>_client.rs` slot is reserved.
+
+## Testing strategy
+
+Per Constitution Principle VII, each TDD-required surface gets unit tests written before implementation. The client side has the following such surfaces:
+
+- Manifest parsing: round-trip a known wire-format manifest through `parse_manifest` and assert every field. Reject malformed input with a typed `ManifestError`.
+- SHA-256 verification: known input bytes → known hex digest; mismatch fails fast.
+- License-class authorization: every `DistributionContext` variant returns the documented `BTreeSet<LicenseShardClass>`.
+- Cache adapter contract: a per-platform integration test that does `cache.put(...) -> cache.get(...)` round-trips and asserts a missing key returns `None`. Web's version runs against IndexedDB in headless Chrome; iOS / Android run against the real device file system in their native test runner.
+- SQLite ATTACH composition: build two trivial shards on the fly, attach both, assert a `select` unions correctly.
+- FlatGeobuf hit testing: a feature collection with two known polygons; clicks at known points return the expected feature ids.
+
+Live HTTP against the CDN is **not** part of automated tests; it's a manual smoke step run after each client deploy. The producer side already covers "the CDN serves what we think it serves" through `ingestion publish cloudflare-r2` + a curl check; duplicating that on the client side would add wall-clock time without catching a class of bug the producer side doesn't.
+
+## Decisions still open
+
+- **wgpu / WebGPU fallback policy.** WebGPU is stable in Chromium and Safari 18.4+; Firefox is on WebGL2 via the wgpu downlevel backend. The capability detection happens inside `wgpu::Instance::request_adapter`, so the client doesn't need its own logic — but the *UI fallback* (do we render a coarser version under WebGL2, or do we render the same version with a perf-warning banner?) is per-platform UX work. Defer to `client-web.md`.
+- **Embedded-bundle build automation.** `scripts/build-downsampled.sh` exists conceptually but isn't shipped. It runs at client-build time, which means it needs a contract with each platform's build (Cargo build-scripts for native; cargo-leptos for web). Defer to the first client-spec branch.
+- **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are baked into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. Defer to the artifact-builder spec when i18n lands.
+- **Embedded-third-party-widget distribution context.** The license matrix has a `EmbeddedWidget` slot but v1 has only one shard (`base`) which every context authorizes. The first source with stricter-than-WB license terms forces a real decision about which classes the widget context authorizes. Defer until that source lands in the canonical store.
+- **Bundle hot-swap semantics for in-flight queries.** A user can issue a hover query at the exact moment the CDN fetch completes and the bundle is being replaced. Two safe strategies: (a) the renderer holds an `Arc<Bundle>` and the swap is an `Arc::store`, so an in-flight query reads the old bundle to completion; (b) the swap is done at a frame boundary, so no in-flight query exists at the moment of swap. (a) composes better with future async query work. Defer to implementation.
