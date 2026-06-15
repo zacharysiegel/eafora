@@ -73,6 +73,8 @@ Properties the consumer relies on:
 
 The consumer-side type lives in `core/src/artifact/manifest.rs` (parsed via `serde_json::from_slice`); the producer side serializes from `ingestion/src/artifact/writer/manifest.rs`. The two are the same wire format; the doc above is the source of truth when they disagree.
 
+> **Producer follow-up (small PR):** rename the `data/` subdirectory to `statistics/` for symmetry with `geometry/` and to remove the ambiguity of "data" as a shard subtype name. Touches `ingestion/src/artifact/writer/manifest.rs` (the `SUBDIR_DATA` constant and its references) and any client-side examples or constants. Producer-side change; pre-dates the first client implementation, so no migration concern.
+
 ### Version pinning and discovery
 
 A client holds two artifact bundles at any moment: an **embedded** one (pinned at client build time; literally bytes in the binary) and a **live** one (the latest CDN-published version; resolved at runtime). The embedded bundle is purely a first-paint accelerant — it's pinned because there's no other option for bytes baked into the binary, not because the design wants it pinned. The live bundle is the one the user is meant to see.
