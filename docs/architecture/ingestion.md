@@ -6,6 +6,21 @@ Status: draft, 2026-05-23. This document is the per-segment implementation plan 
 The first concrete feature spec under this plan will be the World Bank WDI ingestion CLI (the smallest end-to-end exercise of the canonical store + adapter contract + artifact builder). That spec will go through `/speckit-specify` and live at `specs/NNN-world-bank-wdi-ingestion/`.
 -->
 
+> **Implementation-state note (2026-06):** Specific function signatures, CLI invocations, and dependency choices in this document predate the artifact-builder/publish PRs (specs 002) and have drifted from what shipped. The high-level design (adapter → ingest → canonical store → build → publish, with the canonical store as the producer/consumer seam) is correct; the specifics that diverged:
+>
+> - **CLI shape**: `ingestion ingest source <code>` / `ingestion ingest all` / `ingestion build` / `ingestion publish local|cloudflare-r2|dry [<artifact-dir>] [--build]` (nested sub-subcommands on `ingest` and `publish`, not flat `ingestion source` / `ingestion publish --destination=`).
+> - **Auto-generated version labels**: `YYYY-MM-DD+<surname>` from a Nobel-laureate list via `crate::version_label::generate`; not a CLI argument.
+> - **`build` writes to `$EAFORA_ARTIFACTS_DIR/<version-label>/`**, not a positional output dir.
+> - **Build report type**: `BuildReport` (was `LocalArtifactBuild`); fields are `artifact_dir`, `version_label`, `artifacts: Artifacts`, `data_source_revisions: BTreeMap<DataSourceKind, SourceRevision>`.
+> - **Publish orchestrator**: `publish_artifacts(pool, &BuildReport, &ArtifactRepositoryKind) -> PublishReport`; destination is selected by enum variant, not a generic bound.
+> - **`ArtifactRepository` trait**: two methods — `put_file(&self, key, source_path, content_type) -> impl Future<...> + Send` and `url(&self, key) -> String`. Three impls: `LocalArtifactRepository`, `CloudflareR2ArtifactRepository`, `DryArtifactRepository`.
+> - **R2 client**: `aws-sdk-s3` 1.135 against the R2 endpoint (was planned as raw `reqwest` + `aws-sigv4`).
+> - **`artifact_version` insertion**: non-clobbering precheck (`read_artifact_version_exists` returns AppError if the label is taken); not `ON CONFLICT (version_label) DO NOTHING`.
+> - **`ingest all` does NOT chain into `build` / `publish`.** Each pipeline stage is its own subcommand the launchd plist invokes separately.
+> - **Filesystem types live in `crate::filesystem`**: `FileReference`, `Hashed<T>`, `sha256_hex`, `read_bytes`, `load_hashed_file`, `filename_of`. The `crate::artifact::hashing` module retains only the artifact-build-specific tmp-to-content-hashed rename orchestration.
+>
+> Per-spec docs (`specs/002-artifact-builder/spec.md` and the `git log` on `impl-publish-flow`) are authoritative for the publish flow's current shape. This document continues to describe the design at the architecture level; treat the inline code samples below as illustrative of intent, not as current API.
+
 ## Scope of this document
 
 This document covers everything between **upstream data sources** and **CDN-published artifacts**:
@@ -688,9 +703,9 @@ A `launchd` plist (template at `ingestion/eafora-ingestion.plist.template`, inst
 </dict>
 ```
 
-`ingestion all` invokes every registered adapter sequentially (parallelism is unnecessary at v1's source count; cross-adapter dependencies are nil). **An error from one adapter does NOT block subsequent adapters** — the orchestrator catches the `AppError`, logs it as the failed adapter's outcome, and continues with the next adapter. After all adapters have been attempted, `all` calls `build` if any adapter reported rows changed, and `publish` if the build succeeded. The process exit status reflects whether any adapter failed (non-zero if at least one returned `AppError`, zero if all succeeded).
+`ingestion ingest all` invokes every registered adapter sequentially (parallelism is unnecessary at v1's source count; cross-adapter dependencies are nil). **An error from one adapter does NOT block subsequent adapters** — the orchestrator catches the `AppError`, logs it as the failed adapter's outcome, and continues with the next adapter. The process exit status reflects whether any adapter failed (non-zero if at least one returned `AppError`, zero if all succeeded). `ingest all` does NOT chain into `build` or `publish` — those are separate subcommands the launchd plist invokes on its own schedule.
 
-Manual invocation is always supported: `ingestion source wb_wdi --force-full-refetch` re-runs a single adapter ignoring incremental state. Per Constitution §Tooling discipline, both the scheduled path and the manual path go through the same CLI subcommands; `launchd` calls the same binary the developer calls.
+Manual invocation is always supported: `ingestion ingest source wb_wdi --force-full-refetch` re-runs a single adapter ignoring incremental state. Per Constitution §Tooling discipline, both the scheduled path and the manual path go through the same CLI subcommands; `launchd` calls the same binary the developer calls.
 
 ### v2+: managed compute
 
@@ -713,7 +728,7 @@ This loads sample responses from `ingestion/samples/<source_code>/` and replays 
 ### Running an adapter locally
 
 ```sh
-cargo run -p ingestion -- source wb_wdi
+cargo run -p ingestion -- ingest source wb_wdi
 ```
 
 A full WB WDI run is ~200 countries × ~65 years × ~1 statistic ≈ 13k rows, which is under a second — fast enough to iterate without needing per-country or per-period filters.
@@ -721,10 +736,10 @@ A full WB WDI run is ~200 countries × ~65 years × ~1 statistic ≈ 13k rows, w
 ### Producing artifacts locally
 
 ```sh
-cargo run -p ingestion -- build ./build-output 2026-05-18
+cargo run -p ingestion -- build
 ```
 
-Writes `manifest.json` + `geometry/` + `data/` under `./build-output/`. No upload. The artifacts can be served via `python -m http.server` in a pinch (with `Content-Encoding: br` headers ad-hoc'd in front of `nginx` or `caddy` if compression-aware testing is wanted), or pointed at directly from the web client via a local file URL.
+Writes `manifest.json` + `geometry/` + `data/` under `$EAFORA_ARTIFACTS_DIR/<auto-generated-label>/`. No upload. The artifacts can be served via `python -m http.server` in a pinch (with `Content-Encoding: br` headers ad-hoc'd in front of `nginx` or `caddy` if compression-aware testing is wanted), or pointed at directly from the web client via a local file URL.
 
 ## Testing strategy
 
