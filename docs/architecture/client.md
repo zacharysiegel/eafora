@@ -79,9 +79,9 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 
 ### Version pinning and discovery
 
-A client holds (up to) two artifact bundles at any moment: an **embedded** one (native clients only — bytes baked into the app binary at build time) and a **live** one (the latest CDN-published version; resolved at runtime). The web client has no embedded bundle since nothing is shipped to the device; its first-paint accelerant is whatever the browser has already cached from a previous visit (see §Embedded downsampled artifact).
+A client holds (up to) two artifact bundles at any moment: an **embedded** one (native clients only — bytes baked into the app binary at build time) and a **live** one (the latest CDN-published version; resolved at runtime). On every platform, the persistent on-device cache (IndexedDB on web; file system on iOS/Android) holds the most recently fetched live bundle, so returning users get instant first-paint regardless of platform. The native embedded bundle is the additional baseline for first-ever-launch / cache-cleared / fresh-install scenarios on native; web has no such baseline.
 
-The embedded bundle serves two purposes on native clients: it is a first-paint accelerant (the map renders before any network activity), and it is the **offline-capable baseline** — a user who launches the app without connectivity still sees a usable, if slightly stale, atlas. The live bundle is the one the user is meant to see when online.
+The embedded bundle on native serves two purposes: it is the first-paint accelerant for first-ever-launch on the device, and it is the **offline-capable baseline** — a user who launches the app without connectivity and without a populated cache still sees a usable, if slightly stale, atlas. (Returning native users with a populated cache don't need the embedded bundle for first paint, but it's still there as the floor.) The live bundle is the one the user is meant to see when online.
 
 #### Embedded bundle (native clients)
 
@@ -237,10 +237,10 @@ The embedded bundle is regenerated and re-bundled into native-client builds **on
 
 ### Web first-paint without an embedded bundle
 
-The web client's first-paint behavior depends on whether the browser has a populated IndexedDB cache from a previous visit:
+The previous-visit cache (IndexedDB) gives the web client the same returning-user UX as native: a populated cache renders the previous bundle before any network activity. The difference is only in the cache-empty case:
 
-- **Returning visitor (cache present).** The wasm module reads the cached bundle from IndexedDB and renders the map before issuing any CDN fetch — same UX as a native client's embedded path.
-- **First-ever visitor (cache empty).** No bundle is available before the CDN fetch returns. The client renders a loading state (skeleton map / progress indicator) until the first manifest + geometry land. Whether to also ship a downsampled bundle as a static asset alongside the wasm in `web/static/` (which would give first-ever visitors an instant render at the cost of a larger initial download) is open — see §Decisions still open.
+- **Returning visitor (IndexedDB populated).** Same as native — render the cached bundle, then upgrade in the background.
+- **First-ever visitor (cache empty).** No bundle is available before the CDN fetch returns. The client renders a loading state (skeleton map / progress indicator) until the first manifest + geometry land. Whether to also ship a downsampled bundle as a static asset alongside the wasm in `web/static/` — which would give first-ever visitors an instant render at the cost of a larger initial download — is open (see §Decisions still open).
 
 ## Cross-platform consistency
 
