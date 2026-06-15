@@ -7,6 +7,7 @@ These docs are the source of truth. Per-feature plan.md / tasks.md should refere
 ## Index
 
 - [`types.md`](types.md) — Type naming (Model + Entity/Projection/Serial pairs, `Kind` enum suffix, `TryFrom<&str>` parsing, conversion impl placement, db.rs variable-naming guidance).
+- [`logging.md`](logging.md) — Log message format: `<message>; [key=value ...]` for messages with structured data; prose-only messages stand alone.
 
 ## When to add a doc here
 

@@ -14,7 +14,7 @@ impl DryArtifactRepository {
 impl ArtifactRepository for DryArtifactRepository {
     async fn put_file(&self, key: &str, source_path: &Path, content_type: &str) -> Result<(), AppError> {
         log::info!(
-            "[dry] would PUT key={key} content_type={content_type} source={source_path:?}",
+            "[dry] would PUT; [key={key} content_type={content_type} source={source_path:?}]",
         );
         Ok(())
     }

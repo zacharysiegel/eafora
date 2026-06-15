@@ -49,19 +49,19 @@ pub async fn publish_artifacts(
         let filename: &str = filesystem::filename_of(&shard.file.path)?;
         let key: String = format!("{}/{}/{}", version_label, SUBDIR_DATA, filename);
         repository.put_file(&key, &shard.file.path, CONTENT_TYPE_SQLITE).await?;
-        log::debug!("uploaded shard key={}", key);
+        log::debug!("uploaded shard; [key={}]", key);
     }
     let shards_published: usize = build_report.artifacts.shards.len();
 
     let geometry_filename: &str = filesystem::filename_of(&build_report.artifacts.geometry.path)?;
     let geometry_key: String = format!("{}/{}/{}", version_label, SUBDIR_GEOMETRY, geometry_filename);
     repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, CONTENT_TYPE_FLATGEOBUF).await?;
-    log::debug!("uploaded geometry key={}", geometry_key);
+    log::debug!("uploaded geometry; [key={}]", geometry_key);
 
     let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
     repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, CONTENT_TYPE_MANIFEST).await?;
     let manifest_url: String = repository.url_for(&manifest_key);
-    log::debug!("uploaded manifest key={} url={}", manifest_key, manifest_url);
+    log::debug!("uploaded manifest; [key={} url={}]", manifest_key, manifest_url);
 
     let artifact_version: ArtifactVersion = artifact_db::insert_artifact_version(
         pool,
@@ -71,7 +71,7 @@ pub async fn publish_artifacts(
         &build_report.data_source_revisions,
     )
     .await?;
-    log::info!("inserted artifact_version id={} version_label={}", artifact_version.id, artifact_version.version_label);
+    log::info!("inserted artifact_version; [id={} version_label={}]", artifact_version.id, artifact_version.version_label);
 
     Ok(PublishReport {
         artifact_version,

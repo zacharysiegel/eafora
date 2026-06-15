@@ -176,7 +176,7 @@ async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
     let build: BuildReport = run_build(&pool).await?;
 
     log::info!(
-        "build complete: version_label={} artifact_dir={:?} shards={} geometry={:?} manifest={:?}",
+        "build complete; [version_label={} artifact_dir={:?} shards={} geometry={:?} manifest={:?}]",
         build.version_label,
         build.artifact_dir,
         build.artifacts.shards.len(),
@@ -224,7 +224,7 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
     let publish_report: PublishReport = artifact::publish_artifacts(&pool, &build_report, &repository).await?;
 
     log::info!(
-        "publish complete: version_label={} manifest_url={} shards={}",
+        "publish complete; [version_label={} manifest_url={} shards={}]",
         publish_report.artifact_version.version_label,
         publish_report.artifact_version.manifest_url,
         publish_report.shards_published,
