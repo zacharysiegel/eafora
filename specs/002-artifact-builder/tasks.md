@@ -6,6 +6,8 @@
 
 **Plan**: `specs/002-artifact-builder/plan.md`
 
+> **Status note (post-implementation review):** This task list was frozen at planning time and has not been updated as the work shipped. Function names, type names, dependency choices, and CLI shapes referenced in individual tasks below predate the implementation review (see `plan.md` and `spec.md` status notes for divergences — `BuildReport` not `LocalArtifactBuild`, `aws-sdk-s3` not `aws-sigv4`, `ingest source` / `ingest all` / `build` / `publish <kind>` sub-subcommand structure, auto-generated version labels, etc.). For what actually shipped, consult `git log` on the implementation branches (`impl-artifact-build-local`, `impl-publish-flow`) and the current `spec.md`.
+
 Task ordering reflects the three-PR stacked sequence in plan.md §Phasing for PRs. Within each PR, [Tests-first] tasks land before their implementation counterparts per Constitution VII.
 
 ---
