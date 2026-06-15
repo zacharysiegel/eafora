@@ -60,7 +60,11 @@ fn build_cli() -> Command {
                         .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi)"))
                         .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
                 )
-                .subcommand(Command::new("all").about("Run every registered source adapter")),
+                .subcommand(
+                    Command::new("all")
+                        .about("Run every registered source adapter")
+                        .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
+                ),
         )
         .subcommand(
             Command::new("build")
@@ -97,7 +101,7 @@ fn add_publish_common_args(command: Command) -> Command {
 async fn dispatch_ingest(matches: &ArgMatches) -> Result<(), AppError> {
     match matches.subcommand() {
         Some(("source", sub_matches)) => dispatch_source(sub_matches).await,
-        Some(("all", _)) => dispatch_all().await,
+        Some(("all", sub_matches)) => dispatch_all(sub_matches).await,
         Some((other, _)) => Err(AppError::from(format!("unknown ingest subcommand: {other}"))),
         None => Err(AppError::new("missing ingest subcommand")),
     }
@@ -116,11 +120,10 @@ async fn dispatch_source(matches: &ArgMatches) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn dispatch_all() -> Result<(), AppError> {
+async fn dispatch_all(matches: &ArgMatches) -> Result<(), AppError> {
     let pool: PgPool = db::create_pool().await?;
-    let options: AdapterOptions = AdapterOptions {
-        force_full_refetch: false,
-    };
+    let force_full_refetch: bool = matches.get_flag("force-full-refetch");
+    let options: AdapterOptions = AdapterOptions { force_full_refetch };
 
     let mut failure_count: usize = 0;
 
