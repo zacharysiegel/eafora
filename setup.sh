@@ -27,40 +27,27 @@ function check_prerequisites {
 }
 check_prerequisites
 
-if ! test -f .env; then
-    echo "Generating .env from template.env"
-    cp template.env .env
-fi
-
-# Sync new keys from template.env into the existing .env (don't overwrite
-# existing values; only append missing keys). Lets `template.env` evolve
-# without forcing every developer to delete and regenerate `.env`.
-while IFS= read -r template_line; do
-    case "${template_line}" in
-        ''|'#'*) continue ;;
-        *=*)
-            template_key="${template_line%%=*}"
-            if ! grep -qE "^${template_key}=" .env; then
-                echo "Adding ${template_key} to .env (new key in template.env)"
-                echo "${template_line}" >> .env
-            fi
-            ;;
-    esac
-done < template.env
-
-source ./.env
-
 master_secret=
 if test -n "${1+set}"; then
     master_secret="${1}"
-elif test -n "${MASTER_SECRET+set}" && test -n "${MASTER_SECRET}"; then # Declared and non-empty
-    master_secret="${MASTER_SECRET}"
-else
+elif test -f .env; then
+    master_secret=$(grep -E "^MASTER_SECRET=" .env | head -n 1 | cut -d= -f2-)
+fi
+
+if test -z "${master_secret}"; then
     echo "MASTER_SECRET is required either as the first argument to setup.sh or as a non-empty value in .env"
     echo "  generate one with: secr key"
-    echo "  then set MASTER_SECRET=<key> in .env"
+    echo "  then pass it as the first argument to setup.sh, or set MASTER_SECRET=<key> in .env"
     exit 1
 fi
+
+# Regenerate .env from template.env every run, substituting MASTER_SECRET.
+# This keeps .env in sync with template.env (new keys, default updates,
+# comment changes); MASTER_SECRET is the only value preserved across runs.
+echo "Regenerating .env from template.env"
+sed -E "s|^MASTER_SECRET=.*$|MASTER_SECRET=${master_secret}|" template.env > .env
+
+source ./.env
 export MASTER_SECRET="${master_secret}"
 
 if ! brew ls --versions postgresql@18 >/dev/null 2>&1; then
