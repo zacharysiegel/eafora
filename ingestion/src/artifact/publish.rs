@@ -30,6 +30,20 @@ pub struct PublishReport {
     pub shards_published: usize,
 }
 
+#[derive(Debug, Deserialize)]
+struct ManifestOnDisk {
+    version: String,
+    geometry: ManifestEntryOnDisk,
+    statistics: BTreeMap<String, BTreeMap<String, ManifestEntryOnDisk>>,
+    source_revisions: BTreeMap<String, SourceRevision>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestEntryOnDisk {
+    relative_path: String,
+    sha256: String,
+}
+
 pub async fn publish_artifacts(
     pool: &PgPool,
     build_report: &BuildReport,
@@ -77,20 +91,6 @@ pub async fn publish_artifacts(
         artifact_version,
         shards_published,
     })
-}
-
-#[derive(Debug, Deserialize)]
-struct ManifestOnDisk {
-    version: String,
-    geometry: ManifestEntryOnDisk,
-    statistics: BTreeMap<String, BTreeMap<String, ManifestEntryOnDisk>>,
-    source_revisions: BTreeMap<String, SourceRevision>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ManifestEntryOnDisk {
-    relative_path: String,
-    sha256: String,
 }
 
 pub fn load_build_report_from_disk(artifact_dir: &Path) -> Result<BuildReport, AppError> {
