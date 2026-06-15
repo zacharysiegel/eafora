@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use ingestion::artifact;
 use ingestion::artifact::artifact_model::{
-    ArtifactBuildReport, Artifacts, FileReference, StatisticShard, StatisticShardKey,
+    BuildReport, Artifacts, FileReference, StatisticShard, StatisticShardKey,
 };
 use ingestion::artifact::hashing::Hashed;
 use ingestion::artifact::publish::PublishReport;
@@ -34,7 +34,7 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
     let pool: PgPool = test_pool().await;
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let version_label: String = unique_version_label();
-    let build_report: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
+    let build_report: BuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
     let destination_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let public_base_url: String = "https://example.invalid/artifacts".to_string();
@@ -47,8 +47,8 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
         .expect("publish succeeds");
 
     let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
-    assert_eq!(publish_report.version_label, version_label);
-    assert_eq!(publish_report.manifest_url, format!("{}/{}", public_base_url, manifest_key));
+    assert_eq!(publish_report.artifact_version.version_label, version_label);
+    assert_eq!(publish_report.artifact_version.manifest_url, format!("{}/{}", public_base_url, manifest_key));
     assert_eq!(publish_report.shards_published, 1);
 
     let shard_destination: PathBuf = destination_dir.path().join(format!("{}/{}/shard.sqlite", version_label, SUBDIR_DATA));
@@ -68,7 +68,7 @@ async fn publish_artifacts_errors_when_version_label_already_published() {
     let pool: PgPool = test_pool().await;
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let version_label: String = unique_version_label();
-    let build_report: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
+    let build_report: BuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
     let destination_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let repository: ArtifactRepositoryKind = ArtifactRepositoryKind::Local(LocalArtifactRepository::new(
@@ -92,7 +92,7 @@ async fn publish_artifacts_against_dry_repository_does_not_write_files_but_inser
     let pool: PgPool = test_pool().await;
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let version_label: String = unique_version_label();
-    let build_report: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
+    let build_report: BuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
     let repository: ArtifactRepositoryKind = ArtifactRepositoryKind::Dry(
         DryArtifactRepository::new(),
@@ -103,7 +103,7 @@ async fn publish_artifacts_against_dry_repository_does_not_write_files_but_inser
         .expect("dry publish succeeds");
 
     assert_eq!(publish_report.shards_published, 1);
-    assert!(publish_report.manifest_url.starts_with("dry:///"));
+    assert!(publish_report.artifact_version.manifest_url.starts_with("dry:///"));
 
     delete_artifact_version(&pool, &version_label).await;
 }
@@ -112,9 +112,9 @@ async fn publish_artifacts_against_dry_repository_does_not_write_files_but_inser
 async fn load_build_report_from_disk_round_trips_a_freshly_written_bundle() {
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
     let version_label: String = unique_version_label();
-    let original: ArtifactBuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
+    let original: BuildReport = write_synthetic_bundle(temp_dir.path(), &version_label);
 
-    let loaded: ArtifactBuildReport = artifact::load_build_report_from_disk(temp_dir.path())
+    let loaded: BuildReport = artifact::load_build_report_from_disk(temp_dir.path())
         .expect("loader succeeds on freshly-written bundle");
 
     assert_eq!(loaded.version_label, original.version_label);
@@ -130,7 +130,7 @@ fn unique_version_label() -> String {
     format!("test-{}", Uuid::now_v7())
 }
 
-fn write_synthetic_bundle(artifact_dir: &Path, version_label: &str) -> ArtifactBuildReport {
+fn write_synthetic_bundle(artifact_dir: &Path, version_label: &str) -> BuildReport {
     let data_dir: PathBuf = artifact_dir.join(SUBDIR_DATA);
     let geometry_dir: PathBuf = artifact_dir.join(SUBDIR_GEOMETRY);
     fs::create_dir_all(&data_dir).unwrap();
@@ -178,7 +178,7 @@ fn write_synthetic_bundle(artifact_dir: &Path, version_label: &str) -> ArtifactB
     )
     .expect("manifest writes");
 
-    ArtifactBuildReport {
+    BuildReport {
         artifact_dir: artifact_dir.to_path_buf(),
         version_label: version_label.to_string(),
         artifacts: Artifacts {

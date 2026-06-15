@@ -11,7 +11,7 @@ use sqlx::PgPool;
 
 use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::{
-    ArtifactBuildReport, ArtifactVersion, Artifacts, FileReference, StatisticShard, StatisticShardKey,
+    BuildReport, ArtifactVersion, Artifacts, FileReference, StatisticShard, StatisticShardKey,
 };
 use crate::artifact::hashing::Hashed;
 use crate::artifact::repository::ArtifactRepositoryKind;
@@ -21,19 +21,17 @@ use crate::error::AppError;
 
 const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
 const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
-const CONTENT_TYPE_MANIFEST_JSON: &str = "application/json";
+const CONTENT_TYPE_MANIFEST: &str = "application/json";
 
 #[derive(Debug, Clone)]
 pub struct PublishReport {
-    pub version_label: String,
-    pub manifest_url: String,
     pub artifact_version: ArtifactVersion,
     pub shards_published: usize,
 }
 
 pub async fn publish_artifacts(
     pool: &PgPool,
-    build_report: &ArtifactBuildReport,
+    build_report: &BuildReport,
     repository: &ArtifactRepositoryKind,
 ) -> Result<PublishReport, AppError> {
     let version_label: &str = &build_report.version_label;
@@ -41,7 +39,7 @@ pub async fn publish_artifacts(
     let already_exists: bool = artifact_db::read_artifact_version_exists(pool, version_label).await?;
     if already_exists {
         return Err(AppError::from(format!(
-            "artifact_version with version_label {:?} already exists; publish is non-clobbering",
+            "artifact_version with version_label {:?} already exists; aborting publish",
             version_label,
         )));
     }
@@ -60,7 +58,7 @@ pub async fn publish_artifacts(
     log::info!("uploaded geometry key={} sha256={}", geometry_key, build_report.artifacts.geometry.sha256_hex());
 
     let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
-    repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, CONTENT_TYPE_MANIFEST_JSON).await?;
+    repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, CONTENT_TYPE_MANIFEST).await?;
     let manifest_url: String = repository.url_for(&manifest_key);
     log::info!("uploaded manifest key={} url={} sha256={}", manifest_key, manifest_url, build_report.artifacts.manifest.sha256_hex());
 
@@ -75,8 +73,6 @@ pub async fn publish_artifacts(
     log::info!("inserted artifact_version id={} version_label={}", artifact_version.id, artifact_version.version_label);
 
     Ok(PublishReport {
-        version_label: version_label.to_string(),
-        manifest_url,
         artifact_version,
         shards_published,
     })
@@ -102,7 +98,7 @@ struct ManifestEntryOnDisk {
     sha256: String,
 }
 
-pub fn load_build_report_from_disk(artifact_dir: &Path) -> Result<ArtifactBuildReport, AppError> {
+pub fn load_build_report_from_disk(artifact_dir: &Path) -> Result<BuildReport, AppError> {
     let manifest_path: PathBuf = artifact_dir.join(MANIFEST_FILENAME);
     let manifest_bytes: Vec<u8> = fs::read(&manifest_path)
         .map_err(|err| AppError::from(format!("read {:?}: {}", manifest_path, err)))?;
@@ -136,7 +132,7 @@ pub fn load_build_report_from_disk(artifact_dir: &Path) -> Result<ArtifactBuildR
         data_source_revisions.insert(kind, revision);
     }
 
-    Ok(ArtifactBuildReport {
+    Ok(BuildReport {
         artifact_dir: artifact_dir.to_path_buf(),
         version_label: manifest_on_disk.version,
         artifacts: Artifacts {

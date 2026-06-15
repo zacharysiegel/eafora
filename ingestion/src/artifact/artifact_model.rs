@@ -134,7 +134,7 @@ pub struct Artifacts {
 }
 
 #[derive(Debug, Clone)]
-pub struct ArtifactBuildReport {
+pub struct BuildReport {
     pub artifact_dir: PathBuf,
     pub version_label: String,
     pub artifacts: Artifacts,

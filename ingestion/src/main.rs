@@ -4,7 +4,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use ingestion::adapter::AdapterOptions;
-use ingestion::artifact::{self, ArtifactBuildReport, BuildOptions, PublishReport};
+use ingestion::artifact::{self, BuildReport, BuildOptions, PublishReport};
 use ingestion::artifact::repository::{
     ArtifactRepositoryKind, CloudflareR2ArtifactRepository, CloudflareR2Config,
     DryArtifactRepository, LocalArtifactRepository,
@@ -173,7 +173,7 @@ fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
 
 async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
     let pool: PgPool = db::create_pool().await?;
-    let build: ArtifactBuildReport = run_build(&pool).await?;
+    let build: BuildReport = run_build(&pool).await?;
 
     log::info!(
         "build complete: version_label={} artifact_dir={:?} shards={} geometry={:?} manifest={:?}",
@@ -186,13 +186,13 @@ async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn run_build(pool: &PgPool) -> Result<ArtifactBuildReport, AppError> {
+async fn run_build(pool: &PgPool) -> Result<BuildReport, AppError> {
     let parent: PathBuf = PathBuf::from(dotenvy::var("EAFORA_ARTIFACTS_DIR")?);
     let version_label: String = version_label::generate(pool).await?;
     let artifact_dir: PathBuf = parent.join(&version_label);
 
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
-    let report: ArtifactBuildReport =
+    let report: BuildReport =
         artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, BuildOptions::default()).await?;
     transaction.commit().await?;
 
@@ -211,7 +211,7 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
 
     let pool: PgPool = db::create_pool().await?;
 
-    let build_report: ArtifactBuildReport = if build_first {
+    let build_report: BuildReport = if build_first {
         run_build(&pool).await?
     } else {
         let artifact_dir: PathBuf = PathBuf::from(
@@ -225,8 +225,8 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
 
     log::info!(
         "publish complete: version_label={} manifest_url={} shards={}",
-        publish_report.version_label,
-        publish_report.manifest_url,
+        publish_report.artifact_version.version_label,
+        publish_report.artifact_version.manifest_url,
         publish_report.shards_published,
     );
     Ok(())

@@ -6,7 +6,7 @@ use std::time::Instant;
 use sqlx::PgConnection;
 
 use crate::artifact::artifact_model::{
-    ArtifactBuildReport, Artifacts, CandidateValue, FileReference, ResolvedValue,
+    BuildReport, Artifacts, CandidateValue, FileReference, ResolvedValue,
 };
 use crate::artifact::hashing::Hashed;
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
@@ -25,7 +25,7 @@ pub async fn build_artifacts(
     artifact_dir: &Path,
     version_label: &str,
     options: BuildOptions,
-) -> Result<ArtifactBuildReport, AppError> {
+) -> Result<BuildReport, AppError> {
     let started: Instant = Instant::now();
     log::info!("starting version_label={} artifact_dir={:?}", version_label, artifact_dir,);
 
@@ -49,7 +49,7 @@ pub async fn build_artifacts(
         manifest.sha256_hex(),
     );
 
-    Ok(ArtifactBuildReport {
+    Ok(BuildReport {
         artifact_dir: artifact_dir.to_path_buf(),
         version_label: version_label.to_string(),
         artifacts: Artifacts {
