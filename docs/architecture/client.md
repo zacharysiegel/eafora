@@ -76,6 +76,8 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 > **Producer follow-ups (small PRs):**
 > - Stand up the `core/` crate (workspace member) and move the manifest type into `core::artifact::manifest`, with `ingestion::artifact::writer::manifest` importing it. Currently the producer-side struct is local (`ingestion/src/artifact/writer/manifest.rs::ManifestSerializer`) and there is no `core/`. Sequenced before the first client implementation, since the client depends on `core/` existing.
 > - Rename the `data/` subdirectory to `statistics/` for symmetry with `geometry/` and to remove the ambiguity of "data" as a shard subtype name. Touches the `SUBDIR_DATA` constant and its references. Pre-dates the first client implementation, so no migration concern.
+> - Add `ingestion build --downsampled <output-dir>` for generating the native-client embedded bundle directly from the canonical store. Sequenced when native-client work begins.
+> - On every successful `ingestion publish`, copy the just-published manifest to the stable key `latest/manifest.json` on the destination so clients have a fixed discovery URL (see §Version pinning).
 
 ### Version pinning and discovery
 
@@ -85,7 +87,7 @@ The embedded bundle on native serves two purposes: it is the first-paint acceler
 
 #### Embedded bundle (native clients)
 
-Pinned at native-client build time. `scripts/build-downsampled.sh` (see §Embedded downsampled artifact) snapshots whatever the latest CDN version is at the moment the client is built and stages the downsampled output into the per-platform asset directory. The client loads it synchronously at startup so the map renders before any network activity, and the same bytes are the offline baseline if the network is unavailable.
+Pinned at native-client build time. `ingestion build --downsampled` (see §Embedded downsampled artifact) reads the canonical store directly and writes a reduced artifact set into the per-platform asset directory. The client loads it synchronously at startup so the map renders before any network activity, and the same bytes are the offline baseline if the network is unavailable.
 
 #### Live bundle: stable pointer at `latest/manifest.json`
 
@@ -219,17 +221,16 @@ The reader is initialized once per bundle load. Country features parse first, in
 
 Native clients (iOS, Android) embed a small artifact bundle directly in the app binary so the first frame renders before any network or filesystem activity. The web client has no equivalent — there is no shipped binary for web; visitors download wasm + JS + static assets fresh each visit (modulo browser HTTP caching) and the first-paint accelerant on web is the previous session's IndexedDB cache, not an embedded bundle.
 
-The downsampled bundle is generated at native-client build time by `scripts/build-downsampled.sh`:
+The downsampled bundle is generated at native-client build time by `ingestion build --downsampled <output-dir>`, which reads the canonical store directly (no CDN round trip) and applies the downsampling rules during shard emission:
 
-1. Fetch the latest CDN manifest (or, equivalently, point at a specific `version_label`).
-2. Download the latest full bundle.
-3. Apply downsampling rules:
-   - Drop sub-national geometry (v2+); keep country polygons.
-   - Reduce country geometry resolution to ~1:110m equivalent (Natural Earth's coarsest released set), enough for instant first paint without visible artifacts at low zoom.
-   - For each statistic, keep only the most recent year of values per country.
-4. Stage the result into the per-platform asset path:
-   - iOS: `ios/EaforaApp/Resources/embedded/`
-   - Android: `android/app/src/main/assets/embedded/`
+- Drop sub-national geometry (v2+); keep country polygons.
+- Reduce country geometry resolution to ~1:110m equivalent (Natural Earth's coarsest released set), enough for instant first paint without visible artifacts at low zoom.
+- For each statistic, keep only the most recent year of values per country.
+
+The output is staged into the per-platform asset path:
+
+- iOS: `ios/EaforaApp/Resources/embedded/`
+- Android: `android/app/src/main/assets/embedded/`
 
 The embedded bundle is read into memory at app startup, parsed by the same `core::artifact` code path that handles CDN bundles, and replaced in-place when the CDN fetch completes. From the renderer's point of view there is exactly one source of bundles; the embedded one is just the one without an HTTP round trip.
 
@@ -308,7 +309,7 @@ Live HTTP against the CDN is **not** part of automated tests; it's a manual smok
 ## Decisions still open
 
 - **wgpu / WebGPU fallback policy.** WebGPU is stable in Chromium and Safari 18.4+; Firefox is on WebGL2 via the wgpu downlevel backend. The capability detection happens inside `wgpu::Instance::request_adapter`, so the client doesn't need its own logic — but the *UI fallback* (do we render a coarser version under WebGL2, or do we render the same version with a perf-warning banner?) is per-platform UX work. Defer to `client-web.md`.
-- **Embedded-bundle build automation (native).** `scripts/build-downsampled.sh` exists conceptually but isn't shipped. It runs at native-client build time, which means it needs a contract with each platform's build (Cargo build-scripts wired to the Xcode/Gradle build).
+- **Embedded-bundle build automation (native).** `ingestion build --downsampled` does not exist yet; today's `ingestion build` produces only the full artifact. To be added as a separate small PR on the producer side when native-client work begins; the build hook then needs a contract with each platform's build (Cargo build-scripts wired to the Xcode/Gradle build) to invoke it before bundling assets.
 - **Whether to ship a static-asset downsampled bundle on web.** Bundling a downsampled artifact alongside the wasm in `web/static/` would give first-ever visitors an instant render, at the cost of a larger initial download. Defer to the first web-client spec branch.
 - **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are baked into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. Defer to the artifact-builder spec when i18n lands.
 - **Embedded-third-party-widget distribution context.** The license matrix has a `EmbeddedWidget` slot but v1 has only one shard (`base`) which every context authorizes. The first source with stricter-than-WB license terms forces a real decision about which classes the widget context authorizes. Defer until that source lands in the canonical store.
