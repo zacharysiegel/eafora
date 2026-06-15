@@ -31,7 +31,7 @@ From the constitution and `docs/architecture/overview.md`:
 
 ## The artifact-consumption contract
 
-The producer publishes one **artifact version** at a time. A version is a directory under `<repository_base_url>/<version_label>/` containing exactly one `manifest.json`, one FlatGeobuf geometry file under `geometry/`, and N SQLite shard files under `data/`. Every file other than `manifest.json` is content-addressed (filename ends with the leading 8 hex characters of its SHA-256). Shipped today by `ingestion publish cloudflare-r2`; live at `https://repository.eafora.org/<version_label>/`.
+The producer publishes one **artifact version** at a time. A version is a directory under `<repository_base_url>/<version_label>/` containing exactly one `manifest.json`, one FlatGeobuf geometry file under `geometry/`, and N SQLite shard files under `data/`. Every file other than `manifest.json` is content-addressed: its filename ends with the file's full SHA-256 in hex (e.g. `world-50m-ddd660b71c1a36c881f8504889efe39845e04fb2b20ca10340a48c9c7dace87f.fgb`). Shipped today by `ingestion publish cloudflare-r2`; live at `https://repository.eafora.org/<version_label>/`.
 
 ### Manifest schema (consumer view)
 
@@ -42,16 +42,16 @@ The on-the-wire shape every client deserializes:
   "version": "2026-06-14+laughlin",
   "artifact_created": "2026-06-14T03:00:12Z",
   "geometry": {
-    "relative_path": "geometry/world-50m-ab12cd34.fgb",
+    "relative_path": "geometry/world-50m-ddd660b71c1a36c881f8504889efe39845e04fb2b20ca10340a48c9c7dace87f.fgb",
     "size_bytes": 4380000,
-    "sha256": "ab12cd34..."
+    "sha256": "ddd660b71c1a36c881f8504889efe39845e04fb2b20ca10340a48c9c7dace87f"
   },
   "statistics": {
     "tfr": {
       "base": {
-        "relative_path": "data/tfr-base-ef561234.sqlite",
+        "relative_path": "data/tfr-base-2c3a91...d4e7.sqlite",
         "size_bytes": 89000,
-        "sha256": "ef561234..."
+        "sha256": "2c3a91...d4e7"
       }
     }
   },
@@ -60,6 +60,8 @@ The on-the-wire shape every client deserializes:
   }
 }
 ```
+
+(Statistics-shard hashes elided to `2c3a91...d4e7` for example legibility; real entries carry the full 64-character hex.)
 
 Properties the consumer relies on:
 
