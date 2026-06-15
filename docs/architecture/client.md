@@ -27,7 +27,7 @@ From the constitution and `docs/architecture/overview.md`:
 - License-segmented SQLite shards compose **additively** via `ATTACH DATABASE`. v1 ships only one license class (`base`); the mechanism is in place from day one. (Overview §License-segmented SQLite shards)
 - Manifest format and shard naming convention are defined by the producer-side spec; see `docs/architecture/ingestion.md` and `ingestion/src/artifact/writer/manifest.rs` for the canonical schema.
 - Plain CSS for the web client; no Tailwind or utility-class frameworks. (Project memory)
-- Native iOS/Android apps are a personal-learning goal for the parallel game project, not a v1 funder deliverable. The web client is the v1 surface; the mobile-app contracts in this doc exist so the producer side does not foreclose them. (Project memory)
+- Web and iOS are developed **in parallel** from v1, deliberately, to prevent the architecture from overfitting to the web platform's constraints. Android lags but is not foreclosed. The native apps double as personal-learning goals for the parallel game project; for funder pitches, only the web is the user-facing v1 deliverable. (Project memory)
 
 ## The artifact-consumption contract
 
