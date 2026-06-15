@@ -48,19 +48,16 @@ pub async fn publish_artifacts(
         let filename: &str = filename_of(&shard.file.path)?;
         let key: String = format!("{}/{}/{}", version_label, SUBDIR_DATA, filename);
         repository.put_file(&key, &shard.file.path, CONTENT_TYPE_SQLITE).await?;
-        log::info!("uploaded shard key={} sha256={}", key, shard.file.sha256_hex());
     }
     let shards_published: usize = build_report.artifacts.shards.len();
 
     let geometry_filename: &str = filename_of(&build_report.artifacts.geometry.path)?;
     let geometry_key: String = format!("{}/{}/{}", version_label, SUBDIR_GEOMETRY, geometry_filename);
     repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, CONTENT_TYPE_FLATGEOBUF).await?;
-    log::info!("uploaded geometry key={} sha256={}", geometry_key, build_report.artifacts.geometry.sha256_hex());
 
     let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
     repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, CONTENT_TYPE_MANIFEST).await?;
     let manifest_url: String = repository.url_for(&manifest_key);
-    log::info!("uploaded manifest key={} url={} sha256={}", manifest_key, manifest_url, build_report.artifacts.manifest.sha256_hex());
 
     let artifact_version: ArtifactVersion = artifact_db::insert_artifact_version(
         pool,
