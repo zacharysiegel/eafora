@@ -172,7 +172,7 @@ Fetches are issued concurrently up to a per-platform parallelism cap (browser ty
 
 ### Stage 4: persist + attach
 
-Verified bytes go into the persistent cache and into a fresh `core::artifact::Bundle`. The bundle replaces whatever the renderer was previously holding (embedded on native; loading state on web first-visit; cached prior version on any returning client). The renderer is notified via a one-shot signal; it discards its current draw state and re-issues from the new bundle's geometry on the next frame.
+Verified bytes go into the persistent cache and into a fresh `core::artifact::Bundle`. The bundle replaces whatever the renderer was previously holding (embedded on native; loading state on web first-visit; cached prior version on any returning client). The renderer awaits the bundle channel via `tokio::sync::watch::Receiver::changed()` and re-reads the new `Arc<Bundle>` each time the loader publishes — the same `watch` channel that backs the hot-swap, used here and on every subsequent refetch (no separate one-shot).
 
 ### Cache eviction
 
