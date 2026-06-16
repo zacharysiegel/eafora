@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eafora — mobile design stub</title>
+<style>
+  :root {
+    --black:        #000;
+    --red:          #e60019;
+    --blue:         #0030d4;
+    --hairline:     #000;
+    --hairline-soft:#d4d4d4;
+    --ink-muted:    #555;
+    --ink-soft:     #888;
+    --bg:           #fff;
+    --canvas:       #f4f4f4;
+    --sans:         "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono:         "IBM Plex Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--canvas);
+    color: var(--black);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum", "ss01";
+  }
+
+  /* ---------- Page chrome ---------- */
+
+  .page {
+    padding: 56px 32px;
+  }
+
+  .page-header {
+    max-width: 1400px;
+    margin: 0 auto 32px;
+  }
+  .page-header h1 {
+    margin: 0 0 4px 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+  .page-header p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--ink-muted);
+  }
+
+  .frames {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 56px;
+    justify-content: center;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .frame-wrap { display: flex; flex-direction: column; gap: 12px; }
+  .frame-caption {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+  .frame-caption .num { color: var(--red); margin-right: 6px; }
+
+  /* ---------- Phone frame ---------- */
+
+  .phone {
+    width: 393px;
+    height: 852px;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .status-bar {
+    height: 44px;
+    padding: 14px 24px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    font-family: var(--mono);
+    font-size: 13px;
+    flex-shrink: 0;
+  }
+  .status-bar .icons {
+    display: flex;
+    gap: 6px;
+    color: var(--black);
+  }
+
+  .home-indicator {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 134px;
+    height: 4px;
+    background: var(--black);
+  }
+
+  /* ---------- App top bar ---------- */
+
+  .app-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--hairline);
+    flex-shrink: 0;
+  }
+  .app-top .brand {
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: 0.01em;
+  }
+  .app-top .brand .mark { color: var(--red); }
+  .app-top .title {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .app-top .title .code {
+    color: var(--ink-soft);
+    font-family: var(--mono);
+    font-weight: 400;
+    font-size: 11px;
+    margin-left: 8px;
+    letter-spacing: 0.04em;
+  }
+
+  .icon-btn {
+    font-size: 14px;
+    color: var(--black);
+    text-decoration: none;
+  }
+  .icon-back {
+    font-size: 18px;
+    line-height: 1;
+    width: 18px;
+    display: inline-block;
+  }
+
+  /* ---------- Statistic selector row ---------- */
+
+  .selector {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--hairline);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .selector .label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin-bottom: 2px;
+  }
+  .selector .value {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .selector .value .chev {
+    color: var(--red);
+    margin-left: 6px;
+    font-size: 11px;
+  }
+  .selector .year {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--red);
+  }
+
+  /* ---------- Map ---------- */
+
+  .map {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .map svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .region {
+    fill: var(--bg);
+    stroke: var(--black);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  .fill-tfr-1 { fill: #fff8f9; }
+  .fill-tfr-2 { fill: #ffe2e6; }
+  .fill-tfr-3 { fill: #ffb6bf; }
+  .fill-tfr-4 { fill: #ff6979; }
+  .fill-tfr-5 { fill: var(--red); }
+
+  .region.is-selected {
+    stroke: var(--red);
+    stroke-width: 1.6;
+  }
+
+  .graticule {
+    stroke: var(--hairline-soft);
+    stroke-width: 0.5;
+    fill: none;
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* Map overlays (legend, hint) — sit on the map as plain HTML, not inside SVG,
+     so positioning is unaffected by viewBox scaling. */
+  .map-legend {
+    position: absolute;
+    bottom: 14px;
+    left: 16px;
+    pointer-events: none;
+  }
+  .map-legend .legend-caption {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin-bottom: 4px;
+  }
+  .map-legend .legend-swatches {
+    display: flex;
+    margin-bottom: 3px;
+  }
+  .map-legend .legend-swatch {
+    width: 22px;
+    height: 8px;
+    border: 0.5px solid var(--black);
+  }
+  .map-legend .legend-scale {
+    display: flex;
+    justify-content: space-between;
+    width: 110px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--ink-muted);
+  }
+
+  .map-hint {
+    position: absolute;
+    bottom: 18px;
+    right: 16px;
+    font-size: 10px;
+    color: var(--ink-soft);
+    pointer-events: none;
+  }
+
+  /* ---------- Bottom sheet ---------- */
+
+  .sheet {
+    background: var(--bg);
+    border-top: 1px solid var(--hairline);
+    padding: 18px 20px 22px;
+    flex-shrink: 0;
+  }
+
+  .sheet-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  .sheet-head .region-name {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .sheet-head .region-code {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+    letter-spacing: 0.04em;
+  }
+
+  .sheet-stat {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 12px 0 4px;
+  }
+  .sheet-stat .stat-primary {
+    font-family: var(--mono);
+    font-size: 40px;
+    line-height: 1.0;
+    letter-spacing: -0.01em;
+  }
+  .sheet-stat .stat-delta {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--red);
+  }
+  .sheet-stat-label {
+    font-size: 11px;
+    color: var(--ink-muted);
+  }
+
+  .sheet hr {
+    border: none;
+    border-top: 1px solid var(--hairline);
+    margin: 16px -20px;
+  }
+
+  .sheet-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 20px;
+    font-size: 12px;
+  }
+  .sheet-meta .meta-label {
+    font-size: 10px;
+    color: var(--ink-muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .sheet-meta .meta-value {
+    font-family: var(--mono);
+    font-size: 14px;
+  }
+
+  .sheet-action {
+    margin-top: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+  }
+  .sheet-action a {
+    color: var(--red);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .sheet-action .citation { color: var(--ink-muted); font-size: 11px; }
+  .sheet-action .citation a {
+    color: var(--blue);
+    border-bottom: 1px solid currentColor;
+    font-weight: 400;
+  }
+
+  /* ---------- Tab bar ---------- */
+
+  .tabs {
+    display: flex;
+    border-top: 1px solid var(--hairline);
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 14px 0 26px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    cursor: default;
+  }
+  .tab.is-active { color: var(--red); }
+
+  /* ---------- Frame 2: ranking list ---------- */
+
+  .list {
+    flex: 1;
+    overflow-y: auto;
+  }
+  .list-row {
+    display: flex;
+    align-items: baseline;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--hairline-soft);
+    gap: 16px;
+  }
+  .list-row .rank {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-soft);
+    width: 26px;
+    flex-shrink: 0;
+  }
+  .list-row .name {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .list-row .value {
+    font-family: var(--mono);
+    font-size: 16px;
+    text-align: right;
+  }
+  .list-row .delta {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--red);
+    width: 56px;
+    text-align: right;
+  }
+  .list-row.is-selected {
+    background: #fff5f6;
+  }
+  .list-row.is-selected .name,
+  .list-row.is-selected .value,
+  .list-row.is-selected .rank {
+    color: var(--red);
+  }
+
+  .list-head {
+    display: flex;
+    align-items: baseline;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--hairline);
+    background: var(--bg);
+    gap: 16px;
+    font-size: 10px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+  .list-head .h-rank { width: 26px; }
+  .list-head .h-name { flex: 1; }
+  .list-head .h-value { width: 60px; text-align: right; }
+  .list-head .h-value.is-sorted { color: var(--red); }
+  .list-head .h-delta { width: 56px; text-align: right; }
+
+  /* ---------- Frame 3: detail ---------- */
+
+  .detail-body {
+    flex: 1;
+    overflow-y: auto;
+  }
+  .detail-block { padding: 22px 20px; border-bottom: 1px solid var(--hairline); }
+  .detail-block:last-child { border-bottom: none; }
+
+  .detail-stat-primary {
+    font-family: var(--mono);
+    font-size: 56px;
+    line-height: 1.0;
+    letter-spacing: -0.02em;
+    margin: 6px 0 4px;
+  }
+  .detail-stat-unit {
+    font-size: 12px;
+    color: var(--ink-muted);
+  }
+  .detail-stat-context {
+    margin-top: 12px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+  .detail-stat-context .ctx-label { color: var(--ink-muted); }
+  .detail-stat-context .ctx-value { font-family: var(--mono); }
+  .detail-stat-context .ctx-value.red { color: var(--red); }
+
+  .detail-segment {
+    display: flex;
+    margin: -22px -20px 16px;
+    padding: 0;
+  }
+  .detail-segment .seg {
+    flex: 1;
+    text-align: center;
+    padding: 12px 0;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    border-bottom: 1px solid var(--hairline-soft);
+    cursor: default;
+  }
+  .detail-segment .seg.is-active {
+    color: var(--red);
+    border-bottom: 1px solid var(--red);
+  }
+
+  .chart {
+    width: 100%;
+    height: 200px;
+    display: block;
+  }
+  .chart .axis-line { stroke: var(--black); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .chart .grid-line { stroke: var(--hairline-soft); stroke-width: 0.5; vector-effect: non-scaling-stroke; }
+  .chart .series   { stroke: var(--red); stroke-width: 1.5; fill: none; vector-effect: non-scaling-stroke; }
+  .chart .marker   { stroke: var(--red); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .chart .marker-dot { fill: var(--red); }
+  .chart text       { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 9px; fill: var(--ink-muted); }
+  .chart text.x-active { fill: var(--red); }
+
+  .source-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hairline-soft);
+    font-size: 12px;
+  }
+  .source-row:last-child { border-bottom: none; }
+  .source-row .src-name a {
+    color: var(--blue);
+    text-decoration: none;
+    border-bottom: 1px solid currentColor;
+  }
+  .source-row .src-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-muted);
+  }
+
+  .block-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+    margin: 0 0 12px 0;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header class="page-header">
+    <h1>Eafora · Mobile design stub</h1>
+    <p>iPhone 14 Pro frame · 393 × 852 · static, no animations (v1)</p>
+  </header>
+
+  <div class="frames">
+
+    <!-- ============================================================
+         FRAME 0: Empty state — map with no region selected
+         ============================================================ -->
+    <div class="frame-wrap">
+      <div class="frame-caption"><span class="num">00</span>Map · empty state</div>
+
+      <section class="phone">
+
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="icons">5G · 87%</span>
+        </div>
+
+        <div class="app-top">
+          <span class="brand">eafora<span class="mark">.</span></span>
+          <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
+        </div>
+
+        <div class="selector">
+          <div>
+            <div class="label">Statistic</div>
+            <div class="value">Total fertility rate <span class="chev">▾</span></div>
+          </div>
+          <span class="year">2024</span>
+        </div>
+
+        <div class="map">
+          <svg viewBox="0 0 800 540" preserveAspectRatio="xMidYMid slice">
+            <g class="graticule">
+              <line x1="0"   y1="135" x2="800" y2="135" />
+              <line x1="0"   y1="270" x2="800" y2="270" />
+              <line x1="0"   y1="405" x2="800" y2="405" />
+              <line x1="160" y1="0"   x2="160" y2="540" />
+              <line x1="320" y1="0"   x2="320" y2="540" />
+              <line x1="480" y1="0"   x2="480" y2="540" />
+              <line x1="640" y1="0"   x2="640" y2="540" />
+            </g>
+
+            <polygon class="region fill-tfr-2"
+              points="60,80 140,68 200,86 235,140 230,180 195,220 145,235 100,210 75,170 60,120" />
+            <polygon class="region fill-tfr-2"
+              points="245,55 275,50 285,95 270,120 250,115 240,80" />
+            <polygon class="region fill-tfr-3"
+              points="200,275 240,265 270,310 285,375 265,440 235,470 210,445 195,390 195,320" />
+            <polygon class="region fill-tfr-4"
+              points="360,100 410,95 440,120 445,160 425,180 380,180 360,150" />
+            <polygon class="region fill-tfr-1"
+              points="390,205 440,200 460,255 460,325 440,395 410,425 385,400 375,345 380,275 385,235" />
+            <polygon class="region fill-tfr-3"
+              points="450,100 555,85 645,100 680,140 670,205 625,235 555,230 490,215 460,180 455,140" />
+            <polygon class="region fill-tfr-2"
+              points="540,235 565,235 575,275 555,310 540,290 537,260" />
+            <polygon class="region fill-tfr-2"
+              points="615,285 660,285 675,305 665,325 630,325 615,305" />
+            <polygon class="region fill-tfr-2"
+              points="595,315 615,315 620,330 605,335 595,328" />
+            <polygon class="region fill-tfr-5"
+              points="700,180 712,172 718,185 723,200 717,213 705,205 702,192" />
+            <polygon class="region fill-tfr-5"
+              points="678,185 690,184 695,200 685,210 678,202" />
+            <polygon class="region fill-tfr-3"
+              points="660,365 720,355 750,375 750,410 720,425 670,420 655,395" />
+            <polygon class="region fill-tfr-3"
+              points="765,415 773,412 778,425 772,433 765,427" />
+          </svg>
+
+          <div class="map-legend">
+            <div class="legend-caption">TFR · births per woman</div>
+            <div class="legend-swatches">
+              <span class="legend-swatch" style="background: #fff8f9;"></span>
+              <span class="legend-swatch" style="background: #ffe2e6;"></span>
+              <span class="legend-swatch" style="background: #ffb6bf;"></span>
+              <span class="legend-swatch" style="background: #ff6979;"></span>
+              <span class="legend-swatch" style="background: #e60019;"></span>
+            </div>
+            <div class="legend-scale">
+              <span>0.7</span>
+              <span>2.1</span>
+              <span>4.0</span>
+            </div>
+          </div>
+
+          <div class="map-hint">Tap a region for detail</div>
+        </div>
+
+        <nav class="tabs">
+          <span class="tab is-active">Map</span>
+          <span class="tab">Table</span>
+          <span class="tab">History</span>
+          <span class="tab">About</span>
+        </nav>
+
+        <div class="home-indicator"></div>
+
+      </section>
+    </div>
+
+    <!-- ============================================================
+         FRAME 1: Map view with bottom sheet
+         ============================================================ -->
+    <div class="frame-wrap">
+      <div class="frame-caption"><span class="num">01</span>Map · region selected</div>
+
+      <section class="phone">
+
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="icons">5G · 87%</span>
+        </div>
+
+        <div class="app-top">
+          <span class="brand">eafora<span class="mark">.</span></span>
+          <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
+        </div>
+
+        <div class="selector">
+          <div>
+            <div class="label">Statistic</div>
+            <div class="value">Total fertility rate <span class="chev">▾</span></div>
+          </div>
+          <span class="year">2024</span>
+        </div>
+
+        <div class="map">
+          <svg viewBox="0 0 800 540" preserveAspectRatio="xMidYMid slice">
+            <g class="graticule">
+              <line x1="0"   y1="135" x2="800" y2="135" />
+              <line x1="0"   y1="270" x2="800" y2="270" />
+              <line x1="0"   y1="405" x2="800" y2="405" />
+              <line x1="160" y1="0"   x2="160" y2="540" />
+              <line x1="320" y1="0"   x2="320" y2="540" />
+              <line x1="480" y1="0"   x2="480" y2="540" />
+              <line x1="640" y1="0"   x2="640" y2="540" />
+            </g>
+
+            <polygon class="region fill-tfr-2"
+              points="60,80 140,68 200,86 235,140 230,180 195,220 145,235 100,210 75,170 60,120" />
+            <polygon class="region fill-tfr-2"
+              points="245,55 275,50 285,95 270,120 250,115 240,80" />
+            <polygon class="region fill-tfr-3"
+              points="200,275 240,265 270,310 285,375 265,440 235,470 210,445 195,390 195,320" />
+            <polygon class="region fill-tfr-4"
+              points="360,100 410,95 440,120 445,160 425,180 380,180 360,150" />
+            <polygon class="region fill-tfr-1"
+              points="390,205 440,200 460,255 460,325 440,395 410,425 385,400 375,345 380,275 385,235" />
+            <polygon class="region fill-tfr-3"
+              points="450,100 555,85 645,100 680,140 670,205 625,235 555,230 490,215 460,180 455,140" />
+            <polygon class="region fill-tfr-2"
+              points="540,235 565,235 575,275 555,310 540,290 537,260" />
+            <polygon class="region fill-tfr-2"
+              points="615,285 660,285 675,305 665,325 630,325 615,305" />
+            <polygon class="region fill-tfr-2"
+              points="595,315 615,315 620,330 605,335 595,328" />
+            <polygon class="region fill-tfr-5 is-selected"
+              points="700,180 712,172 718,185 723,200 717,213 705,205 702,192" />
+            <polygon class="region fill-tfr-5"
+              points="678,185 690,184 695,200 685,210 678,202" />
+            <polygon class="region fill-tfr-3"
+              points="660,365 720,355 750,375 750,410 720,425 670,420 655,395" />
+            <polygon class="region fill-tfr-3"
+              points="765,415 773,412 778,425 772,433 765,427" />
+          </svg>
+        </div>
+
+        <section class="sheet">
+          <div class="sheet-head">
+            <span class="region-name">Japan <span class="region-code">JPN</span></span>
+            <span class="icon-btn" style="color: var(--ink-soft); font-size: 14px;">×</span>
+          </div>
+
+          <div class="sheet-stat-label">Total fertility rate · 2024 · births per woman</div>
+          <div class="sheet-stat">
+            <span class="stat-primary">1.20</span>
+            <span class="stat-delta">−0.16 <span style="color: var(--ink-soft); font-size: 11px;">5y</span></span>
+          </div>
+
+          <hr>
+
+          <div class="sheet-meta">
+            <div>
+              <div class="meta-label">Replacement</div>
+              <div class="meta-value" style="color: var(--ink-muted);">2.10</div>
+            </div>
+            <div>
+              <div class="meta-label">Rank · 193</div>
+              <div class="meta-value" style="color: var(--ink-muted);">187</div>
+            </div>
+            <div>
+              <div class="meta-label">Cohort CFR</div>
+              <div class="meta-value" style="color: var(--ink-muted);">1.42</div>
+            </div>
+            <div>
+              <div class="meta-label">Median age</div>
+              <div class="meta-value" style="color: var(--ink-muted);">49.0</div>
+            </div>
+          </div>
+
+          <div class="sheet-action">
+            <a href="#">View detail →</a>
+            <span class="citation">Source: <a href="#">UN WPP 2024</a></span>
+          </div>
+        </section>
+
+        <nav class="tabs">
+          <span class="tab is-active">Map</span>
+          <span class="tab">Table</span>
+          <span class="tab">History</span>
+          <span class="tab">About</span>
+        </nav>
+
+        <div class="home-indicator"></div>
+
+      </section>
+    </div>
+
+    <!-- ============================================================
+         FRAME 2: Ranked list view
+         ============================================================ -->
+    <div class="frame-wrap">
+      <div class="frame-caption"><span class="num">02</span>Table · ranked list</div>
+
+      <section class="phone">
+
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="icons">5G · 87%</span>
+        </div>
+
+        <div class="app-top">
+          <span class="title">Rankings</span>
+          <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
+        </div>
+
+        <div class="selector">
+          <div>
+            <div class="label">Sort by</div>
+            <div class="value">Lowest TFR · 2024 <span class="chev">▾</span></div>
+          </div>
+          <span class="year">193 ⌃</span>
+        </div>
+
+        <div class="list-head">
+          <span class="h-rank">#</span>
+          <span class="h-name">Region</span>
+          <span class="h-value is-sorted">TFR ▾</span>
+          <span class="h-delta">5y Δ</span>
+        </div>
+
+        <div class="list">
+
+          <div class="list-row">
+            <span class="rank">01</span>
+            <span class="name">South Korea</span>
+            <span class="value">0.72</span>
+            <span class="delta">−0.20</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">02</span>
+            <span class="name">Hong Kong</span>
+            <span class="value">0.77</span>
+            <span class="delta">−0.30</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">03</span>
+            <span class="name">Taiwan</span>
+            <span class="value">0.87</span>
+            <span class="delta">−0.18</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">04</span>
+            <span class="name">Ukraine</span>
+            <span class="value">0.95</span>
+            <span class="delta">−0.18</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">05</span>
+            <span class="name">Singapore</span>
+            <span class="value">0.97</span>
+            <span class="delta">−0.13</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">06</span>
+            <span class="name">Spain</span>
+            <span class="value">1.19</span>
+            <span class="delta">−0.04</span>
+          </div>
+          <div class="list-row is-selected">
+            <span class="rank">07</span>
+            <span class="name">Japan</span>
+            <span class="value">1.20</span>
+            <span class="delta">−0.16</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">08</span>
+            <span class="name">Italy</span>
+            <span class="value">1.21</span>
+            <span class="delta">−0.06</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">09</span>
+            <span class="name">Poland</span>
+            <span class="value">1.26</span>
+            <span class="delta">−0.12</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">10</span>
+            <span class="name">Greece</span>
+            <span class="value">1.30</span>
+            <span class="delta">−0.04</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">11</span>
+            <span class="name">Portugal</span>
+            <span class="value">1.31</span>
+            <span class="delta">−0.05</span>
+          </div>
+          <div class="list-row">
+            <span class="rank">12</span>
+            <span class="name">Croatia</span>
+            <span class="value">1.34</span>
+            <span class="delta">−0.06</span>
+          </div>
+
+        </div>
+
+        <nav class="tabs">
+          <span class="tab">Map</span>
+          <span class="tab is-active">Table</span>
+          <span class="tab">History</span>
+          <span class="tab">About</span>
+        </nav>
+
+        <div class="home-indicator"></div>
+
+      </section>
+    </div>
+
+    <!-- ============================================================
+         FRAME 3: Region detail
+         ============================================================ -->
+    <div class="frame-wrap">
+      <div class="frame-caption"><span class="num">03</span>Region detail · history</div>
+
+      <section class="phone">
+
+        <div class="status-bar">
+          <span>9:41</span>
+          <span class="icons">5G · 87%</span>
+        </div>
+
+        <div class="app-top">
+          <span class="icon-btn icon-back">‹</span>
+          <span class="title">Japan <span class="code">JPN</span></span>
+          <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Share</span>
+        </div>
+
+        <div class="detail-body">
+
+          <div class="detail-block">
+            <div class="detail-segment">
+              <span class="seg">Overview</span>
+              <span class="seg is-active">History</span>
+              <span class="seg">Sources</span>
+            </div>
+
+            <div style="font-size: 11px; color: var(--ink-muted); letter-spacing: 0.06em; text-transform: uppercase;">Total fertility rate · 2024</div>
+            <div class="detail-stat-primary">1.20</div>
+            <div class="detail-stat-unit">births per woman, period TFR</div>
+
+            <div class="detail-stat-context">
+              <span class="ctx-label">5-year change</span>
+              <span class="ctx-value red">−0.16</span>
+            </div>
+            <div class="detail-stat-context">
+              <span class="ctx-label">10-year change</span>
+              <span class="ctx-value red">−0.22</span>
+            </div>
+            <div class="detail-stat-context">
+              <span class="ctx-label">Replacement rate</span>
+              <span class="ctx-value">2.10</span>
+            </div>
+            <div class="detail-stat-context">
+              <span class="ctx-label">Global rank · 193 regions</span>
+              <span class="ctx-value">187</span>
+            </div>
+          </div>
+
+          <div class="detail-block">
+            <div class="block-title">History · 1960 – 2024</div>
+
+            <svg class="chart" viewBox="0 0 360 200" preserveAspectRatio="none">
+              <!-- Y axis grid lines -->
+              <line class="grid-line" x1="40" y1="20"  x2="350" y2="20"  />
+              <line class="grid-line" x1="40" y1="60"  x2="350" y2="60"  />
+              <line class="grid-line" x1="40" y1="100" x2="350" y2="100" />
+              <line class="grid-line" x1="40" y1="140" x2="350" y2="140" />
+
+              <!-- Replacement-rate dashed line at TFR=2.1 (y=82) -->
+              <line class="grid-line" x1="40" y1="82" x2="350" y2="82" stroke-dasharray="3 3" />
+
+              <!-- Y axis labels (TFR) -->
+              <text x="34" y="24"  text-anchor="end">4.0</text>
+              <text x="34" y="64"  text-anchor="end">3.0</text>
+              <text x="34" y="86"  text-anchor="end" fill="#999">2.1</text>
+              <text x="34" y="104" text-anchor="end">2.0</text>
+              <text x="34" y="144" text-anchor="end">1.0</text>
+
+              <!-- Axes -->
+              <line class="axis-line" x1="40" y1="180" x2="350" y2="180" />
+              <line class="axis-line" x1="40" y1="20"  x2="40"  y2="180" />
+
+              <!-- X axis labels -->
+              <text x="40"  y="194">1960</text>
+              <text x="118" y="194" text-anchor="middle">1980</text>
+              <text x="195" y="194" text-anchor="middle">2000</text>
+              <text x="272" y="194" text-anchor="middle">2020</text>
+              <text x="346" y="194" text-anchor="end" class="x-active">2024</text>
+
+              <!-- TFR series (Japan: 2.00→1.20). x maps 1960..2024 → 40..350; y maps 0..4 → 180..20 (40 px per unit). -->
+              <polyline class="series" points="
+                40,100
+                52,98
+                64,95
+                76,90
+                88,82
+                100,108
+                112,124
+                124,128
+                136,132
+                148,136
+                160,140
+                172,144
+                184,142
+                196,140
+                208,140
+                220,138
+                232,138
+                244,138
+                256,134
+                268,132
+                280,130
+                292,130
+                304,131
+                316,132
+                328,131
+                338,132
+                346,132
+              " />
+
+              <!-- Active year marker (2024) -->
+              <line class="marker" x1="346" y1="20" x2="346" y2="180" />
+              <circle class="marker-dot" cx="346" cy="132" r="3" />
+            </svg>
+
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-muted); margin-top: 4px;">
+              <span>Period TFR · annual</span>
+              <span style="font-family: var(--mono);">peak 2.14 · 1971</span>
+            </div>
+          </div>
+
+          <div class="detail-block">
+            <div class="block-title">Sources</div>
+
+            <div class="source-row">
+              <span class="src-name"><a href="#">UN World Population Prospects 2024</a></span>
+              <span class="src-meta">2026-06-12</span>
+            </div>
+            <div class="source-row">
+              <span class="src-name"><a href="#">Human Fertility Database</a></span>
+              <span class="src-meta">2026-05-20</span>
+            </div>
+            <div class="source-row">
+              <span class="src-name"><a href="#">World Bank WDI</a></span>
+              <span class="src-meta">2026-04-18</span>
+            </div>
+            <div class="source-row">
+              <span class="src-name" style="color: var(--ink-muted);">Methodology &amp; coverage</span>
+              <span class="src-meta"><a href="#" style="color: var(--blue); text-decoration: none; border-bottom: 1px solid currentColor;">Read →</a></span>
+            </div>
+          </div>
+
+        </div>
+
+        <nav class="tabs">
+          <span class="tab">Map</span>
+          <span class="tab">Table</span>
+          <span class="tab is-active">History</span>
+          <span class="tab">About</span>
+        </nav>
+
+        <div class="home-indicator"></div>
+
+      </section>
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>

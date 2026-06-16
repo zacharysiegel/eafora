@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eafora — design stub</title>
+<style>
+  :root {
+    --black:        #000;
+    --red:          #e60019;
+    --blue:         #0030d4;
+    --hairline:     #000;
+    --hairline-soft:#d4d4d4;
+    --ink-muted:    #555;
+    --bg:           #fff;
+    --sans:         "Inter", ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --mono:         "IBM Plex Mono", ui-monospace, "JetBrains Mono", "SF Mono", Menlo, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--black);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "tnum", "ss01";
+  }
+
+  /* ---------- Top bar ---------- */
+
+  .topbar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .brand {
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    font-size: 15px;
+  }
+  .brand .mark { color: var(--red); }
+
+  .breadcrumb { font-size: 12px; }
+  .breadcrumb .sep {
+    margin: 0 10px;
+    color: var(--hairline-soft);
+  }
+  .breadcrumb .crumb-active { color: var(--black); }
+
+  .topbar-controls {
+    display: flex;
+    gap: 28px;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .toggle { color: var(--ink-muted); cursor: default; }
+  .toggle.is-active { color: var(--red); }
+
+  /* ---------- Stage ---------- */
+
+  .stage {
+    position: relative;
+    height: 760px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .map {
+    position: absolute;
+    inset: 0;
+    background: var(--bg);
+  }
+  .map svg { width: 100%; height: 100%; display: block; }
+
+  /* Land regions */
+  .region {
+    fill: var(--bg);
+    stroke: var(--black);
+    stroke-width: 1;
+    stroke-linejoin: miter;
+    vector-effect: non-scaling-stroke;
+  }
+  /* Choropleth scale: low TFR (red) to high TFR (white). */
+  .fill-tfr-1 { fill: #fff8f9; }
+  .fill-tfr-2 { fill: #ffe2e6; }
+  .fill-tfr-3 { fill: #ffb6bf; }
+  .fill-tfr-4 { fill: #ff6979; }
+  .fill-tfr-5 { fill: var(--red); }
+
+  .region.is-selected {
+    stroke: var(--red);
+    stroke-width: 1.4;
+  }
+
+  /* Latitude/longitude hairlines */
+  .graticule {
+    stroke: var(--hairline-soft);
+    stroke-width: 0.5;
+    fill: none;
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* ---------- Panels (sheets over the map) ---------- */
+
+  .panel {
+    position: absolute;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    padding: 18px 20px;
+  }
+
+  .panel h2 {
+    margin: 0 0 10px 0;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+  }
+
+  .panel hr {
+    border: none;
+    border-top: 1px solid var(--hairline);
+    margin: 14px -20px;
+  }
+
+  /* Region detail panel (top-left) */
+  .panel-detail {
+    top: 28px;
+    left: 28px;
+    width: 320px;
+  }
+  .panel-detail .region-name {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .panel-detail .stat-label {
+    font-size: 12px;
+    color: var(--ink-muted);
+    margin-bottom: 12px;
+  }
+  .panel-detail .stat-primary {
+    font-family: var(--mono);
+    font-size: 36px;
+    line-height: 1.0;
+    letter-spacing: -0.01em;
+  }
+  .panel-detail .stat-unit {
+    font-size: 11px;
+    color: var(--ink-muted);
+    margin-top: 4px;
+  }
+  .panel-detail .stat-delta {
+    margin-top: 14px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+  .panel-detail .stat-delta .delta-value {
+    font-family: var(--mono);
+    color: var(--red);
+  }
+  .panel-detail .citation {
+    font-size: 11px;
+    color: var(--ink-muted);
+  }
+  .panel-detail .citation a {
+    color: var(--blue);
+    text-decoration: none;
+    border-bottom: 1px solid currentColor;
+  }
+  .panel-detail .citation a:hover { color: var(--red); border-bottom-color: var(--red); }
+
+  /* Ranking table panel (top-right) */
+  .panel-ranking {
+    top: 28px;
+    right: 28px;
+    width: 380px;
+  }
+  .ranking-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .ranking-table thead th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--ink-muted);
+    border-bottom: 1px solid var(--hairline);
+    padding: 6px 4px;
+  }
+  .ranking-table thead th.is-sorted {
+    color: var(--red);
+    font-weight: 600;
+  }
+  .ranking-table .col-numeric {
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .ranking-table tbody td {
+    padding: 6px 4px;
+    border-bottom: 1px solid var(--hairline-soft);
+  }
+  .ranking-table tbody tr:last-child td { border-bottom: none; }
+  .ranking-table tbody tr.is-selected td {
+    color: var(--red);
+    font-weight: 500;
+  }
+  .ranking-table .rank {
+    color: var(--ink-muted);
+    font-family: var(--mono);
+    width: 24px;
+  }
+
+  /* Time scrubber panel (bottom) */
+  .panel-scrubber {
+    bottom: 28px;
+    left: 28px;
+    right: 28px;
+    padding: 14px 22px;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+  }
+  .scrubber-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    color: var(--ink-muted);
+  }
+  .scrubber-track {
+    position: relative;
+    flex: 1;
+    height: 22px;
+  }
+  .scrubber-track .axis {
+    position: absolute;
+    top: 11px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--hairline);
+  }
+  .scrubber-tick {
+    position: absolute;
+    top: 8px;
+    width: 1px;
+    height: 7px;
+    background: var(--hairline);
+  }
+  .scrubber-tick-label {
+    position: absolute;
+    top: 18px;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-muted);
+  }
+  .scrubber-playhead {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 22px;
+    background: var(--red);
+  }
+  .scrubber-playhead::after {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: -3px;
+    width: 7px;
+    height: 7px;
+    background: var(--red);
+  }
+  .scrubber-year {
+    font-family: var(--mono);
+    font-size: 14px;
+    min-width: 48px;
+    text-align: right;
+    color: var(--red);
+  }
+
+  /* ---------- Footer note ---------- */
+
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 28px;
+    font-size: 11px;
+    color: var(--ink-muted);
+  }
+  .footer a {
+    color: var(--blue);
+    text-decoration: none;
+    border-bottom: 1px solid currentColor;
+  }
+
+  /* ---------- Focus ---------- */
+
+  a:focus-visible {
+    outline: 1px solid var(--red);
+    outline-offset: 2px;
+  }
+
+</style>
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="brand">eafora<span class="mark">.</span></div>
+
+    <nav class="breadcrumb">
+      <span>Atlas</span>
+      <span class="sep">/</span>
+      <span>Total fertility rate</span>
+      <span class="sep">/</span>
+      <span class="crumb-active">2024</span>
+    </nav>
+
+    <div class="topbar-controls">
+      <span class="toggle is-active">Map</span>
+      <span class="toggle">Table</span>
+      <span class="toggle">Time series</span>
+      <span class="toggle">About</span>
+    </div>
+  </header>
+
+  <main class="stage">
+
+    <div class="map">
+      <svg viewBox="0 0 1600 760" preserveAspectRatio="xMidYMid slice">
+
+        <g class="graticule">
+          <line x1="0"   y1="190" x2="1600" y2="190" />
+          <line x1="0"   y1="380" x2="1600" y2="380" />
+          <line x1="0"   y1="570" x2="1600" y2="570" />
+          <line x1="320"  y1="0" x2="320"  y2="760" />
+          <line x1="640"  y1="0" x2="640"  y2="760" />
+          <line x1="960"  y1="0" x2="960"  y2="760" />
+          <line x1="1280" y1="0" x2="1280" y2="760" />
+        </g>
+
+        <!-- North America -->
+        <polygon class="region fill-tfr-2"
+          points="120,90 280,70 410,110 470,200 460,260 380,320 300,340 240,310 170,260 130,200 110,140" />
+
+        <!-- Greenland -->
+        <polygon class="region fill-tfr-2"
+          points="500,80 560,70 580,140 550,180 510,170 490,120" />
+
+        <!-- South America -->
+        <polygon class="region fill-tfr-3"
+          points="400,400 460,380 510,440 530,540 500,640 450,690 410,650 390,560 380,470" />
+
+        <!-- Europe -->
+        <polygon class="region fill-tfr-4"
+          points="720,140 820,130 870,170 880,220 840,250 770,250 730,210" />
+
+        <!-- Africa -->
+        <polygon class="region fill-tfr-1"
+          points="780,290 880,280 920,360 920,460 880,560 820,610 780,580 760,500 760,400 770,330" />
+
+        <!-- Asia main -->
+        <polygon class="region fill-tfr-3"
+          points="900,140 1100,110 1280,140 1350,200 1340,290 1260,340 1140,330 1020,310 940,260 910,200" />
+
+        <!-- India peninsula -->
+        <polygon class="region fill-tfr-2"
+          points="1080,330 1130,330 1145,400 1110,450 1080,420 1075,370" />
+
+        <!-- SE Asia / Indonesia -->
+        <polygon class="region fill-tfr-2"
+          points="1230,400 1310,400 1340,430 1320,460 1260,460 1230,430" />
+        <polygon class="region fill-tfr-2"
+          points="1180,440 1220,440 1230,460 1200,470 1180,460" />
+
+        <!-- Japan (selected) -->
+        <polygon class="region fill-tfr-5 is-selected"
+          points="1390,250 1410,240 1420,260 1430,280 1420,300 1400,290 1395,270" />
+
+        <!-- South Korea -->
+        <polygon class="region fill-tfr-5"
+          points="1350,260 1372,258 1378,280 1362,295 1352,285" />
+
+        <!-- Australia -->
+        <polygon class="region fill-tfr-3"
+          points="1310,510 1430,490 1500,520 1500,580 1430,610 1340,600 1300,560" />
+
+        <!-- New Zealand -->
+        <polygon class="region fill-tfr-3"
+          points="1530,580 1545,575 1555,600 1545,615 1530,605" />
+
+        <!-- Selection callout line from Japan to detail panel -->
+        <line x1="1395" y1="265" x2="368" y2="120"
+              stroke="#e60019" stroke-width="0.75" stroke-dasharray="3 3"
+              vector-effect="non-scaling-stroke" />
+
+      </svg>
+    </div>
+
+    <aside class="panel panel-detail">
+      <h2>Selected region</h2>
+      <div class="region-name">Japan</div>
+      <div class="stat-label">Total fertility rate · 2024</div>
+
+      <div class="stat-primary">1.20</div>
+      <div class="stat-unit">births per woman, period TFR</div>
+
+      <hr>
+
+      <div class="stat-delta">
+        <span>5-year change</span>
+        <span class="delta-value">−0.16</span>
+      </div>
+      <div class="stat-delta">
+        <span>Replacement rate</span>
+        <span class="delta-value" style="color: var(--ink-muted);">2.10</span>
+      </div>
+      <div class="stat-delta">
+        <span>Rank (193 regions)</span>
+        <span class="delta-value" style="color: var(--ink-muted);">187</span>
+      </div>
+
+      <hr>
+
+      <div class="citation">
+        Source: <a href="#">UN World Population Prospects 2024</a><br>
+        Retrieved 2026-06-12 · CC-BY-3.0 IGO
+      </div>
+    </aside>
+
+    <aside class="panel panel-ranking">
+      <h2>Lowest TFR · 2024</h2>
+      <table class="ranking-table">
+        <thead>
+          <tr>
+            <th class="rank">#</th>
+            <th>Region</th>
+            <th class="col-numeric is-sorted">TFR ▾</th>
+            <th class="col-numeric">5y Δ</th>
+            <th class="col-numeric">CFR</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="rank">1</td>
+            <td>South Korea</td>
+            <td class="col-numeric">0.72</td>
+            <td class="col-numeric">−0.20</td>
+            <td class="col-numeric">1.55</td>
+          </tr>
+          <tr>
+            <td class="rank">2</td>
+            <td>Hong Kong</td>
+            <td class="col-numeric">0.77</td>
+            <td class="col-numeric">−0.30</td>
+            <td class="col-numeric">1.18</td>
+          </tr>
+          <tr>
+            <td class="rank">3</td>
+            <td>Taiwan</td>
+            <td class="col-numeric">0.87</td>
+            <td class="col-numeric">−0.18</td>
+            <td class="col-numeric">1.28</td>
+          </tr>
+          <tr>
+            <td class="rank">4</td>
+            <td>Singapore</td>
+            <td class="col-numeric">0.97</td>
+            <td class="col-numeric">−0.13</td>
+            <td class="col-numeric">1.41</td>
+          </tr>
+          <tr>
+            <td class="rank">5</td>
+            <td>Ukraine</td>
+            <td class="col-numeric">0.95</td>
+            <td class="col-numeric">−0.18</td>
+            <td class="col-numeric">1.44</td>
+          </tr>
+          <tr>
+            <td class="rank">6</td>
+            <td>Spain</td>
+            <td class="col-numeric">1.19</td>
+            <td class="col-numeric">−0.04</td>
+            <td class="col-numeric">1.30</td>
+          </tr>
+          <tr class="is-selected">
+            <td class="rank">7</td>
+            <td>Japan</td>
+            <td class="col-numeric">1.20</td>
+            <td class="col-numeric">−0.16</td>
+            <td class="col-numeric">1.42</td>
+          </tr>
+          <tr>
+            <td class="rank">8</td>
+            <td>Italy</td>
+            <td class="col-numeric">1.21</td>
+            <td class="col-numeric">−0.06</td>
+            <td class="col-numeric">1.31</td>
+          </tr>
+          <tr>
+            <td class="rank">9</td>
+            <td>Poland</td>
+            <td class="col-numeric">1.26</td>
+            <td class="col-numeric">−0.12</td>
+            <td class="col-numeric">1.40</td>
+          </tr>
+          <tr>
+            <td class="rank">10</td>
+            <td>Greece</td>
+            <td class="col-numeric">1.30</td>
+            <td class="col-numeric">−0.04</td>
+            <td class="col-numeric">1.35</td>
+          </tr>
+        </tbody>
+      </table>
+    </aside>
+
+    <div class="panel panel-scrubber">
+      <span class="scrubber-label">Year</span>
+
+      <div class="scrubber-track">
+        <div class="axis"></div>
+
+        <span class="scrubber-tick"       style="left:  0%;"></span>
+        <span class="scrubber-tick-label" style="left:  0%;">1960</span>
+
+        <span class="scrubber-tick"       style="left: 23%;"></span>
+        <span class="scrubber-tick-label" style="left: 23%;">1975</span>
+
+        <span class="scrubber-tick"       style="left: 46%;"></span>
+        <span class="scrubber-tick-label" style="left: 46%;">1990</span>
+
+        <span class="scrubber-tick"       style="left: 69%;"></span>
+        <span class="scrubber-tick-label" style="left: 69%;">2005</span>
+
+        <span class="scrubber-tick"       style="left: 92%;"></span>
+        <span class="scrubber-tick-label" style="left: 92%;">2020</span>
+
+        <span class="scrubber-playhead" style="left: 98%;"></span>
+      </div>
+
+      <span class="scrubber-year">2024</span>
+    </div>
+
+  </main>
+
+  <footer class="footer">
+    <div>Eafora · v0.0.0 design stub · 2026-06-15</div>
+    <div>
+      <a href="#">Methodology</a>
+      &nbsp;·&nbsp;
+      <a href="#">Data sources</a>
+      &nbsp;·&nbsp;
+      <a href="#">License</a>
+    </div>
+  </footer>
+
+</body>
+</html>
