@@ -164,7 +164,7 @@ The client asks the cache for the `version_label` resolved from `latest/manifest
 - **Partial cache hit.** Manifest is present but one or more referenced files are missing or hash-mismatched. Fall through to stage 3 for only the missing files.
 - **Cache miss.** Nothing for this version. Fall through to stage 3 for everything.
 
-The cache key is `version_label`, not the manifest URL. A new version installed by a client redeploy doesn't share keys with the previous one — old versions sit in the cache until the eviction policy reaps them.
+The cache key is `version_label`, so different versions don't overwrite each other — old versions sit in the cache until the eviction policy reaps them.
 
 ### Stage 3: fetch
 
