@@ -168,7 +168,7 @@ The client asks the cache for the `version_label` resolved from `latest/manifest
 
 Fetch missing files via plain HTTP GET. Files are content-addressed and CDN-cached aggressively (`max-age=31536000, immutable`); the manifest is short-cached. The fetcher is platform-specific (`fetch()` in JS-land; `URLSession` on iOS; `OkHttp` on Android per the constitution); the bytes are then handed to the Rust core uniformly as `&[u8]`.
 
-Fetches are issued concurrently up to a per-platform parallelism cap (browser typically 6 per origin; native clients 4). The client renders progress as bytes-received over expected-total (sum of `size_bytes` from the manifest). On any HTTP error or hash mismatch, retry once with exponential backoff (250ms / 1s); persistent failure leaves the embedded bundle (native) or loading state (web) in place and surfaces a UI-level banner.
+Fetches are issued concurrently up to a per-platform parallelism cap (browser typically 6 per origin; native clients 4). The client renders progress as bytes-received over expected-total (sum of `size_bytes` from the manifest). On any HTTP error or hash mismatch, retry once after a short backoff (~25 ms, doubling to ~100 ms on a second attempt); persistent failure leaves the embedded bundle (native) or loading state (web) in place and surfaces a UI-level banner.
 
 ### Stage 4: persist + attach
 
