@@ -17,7 +17,7 @@ Add new entries at the bottom of the relevant section. When picking up an item, 
 
 ## Infrastructure / ops
 
-(none yet)
+- **Adopt Nix (or `devenv` / `flake.nix`) for reproducible local development.** The current bootstrap is `setup.sh` plus Homebrew, with most tool versions floating across `brew update` cadences (Postgres point release, dbmate, system OpenSSL/rustls linkage, etc.) and Rust pinned only by each developer's `rustup default`. Eafora is single-contributor today so the drift hasn't bitten, but a second contributor or a CI environment would surface it immediately. Decision criteria, candidate tools (flakes, `devenv`, `nix-direnv`, Brewfile fallback), and what to investigate are captured in `docs/research/nix-reproducible-dev.md`. **Trigger:** a second contributor needs to set up the repo, OR `setup.sh` breaks on a point-release float, OR CI gains a pinned-toolchain requirement.
 
 ## Product
 
