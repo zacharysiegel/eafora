@@ -88,6 +88,20 @@ From v2 onward, animations may be introduced selectively, governed by a single p
 
 - Single-stroke geometric icons, 1–1.5px stroke, no fills. Black by default; red for active state. Match the pen-line vocabulary.
 
+## Naming and the About page
+
+Eafora launches into the map. There is no splash screen and no gating chrome on first paint; the user lands on the data. The product name, its etymology, and the editorial framing live on a dedicated About surface, reachable from the bottom tab on mobile and the top nav on desktop.
+
+The About page's wordmark carries a Bosworth-Toller-style subtitle:
+
+> **ēafora** &nbsp;·&nbsp; *Old English, masc.* &nbsp;·&nbsp; son, descendant, heir.
+
+The headword links to the [Bosworth-Toller entry](https://bosworthtoller.com/008338) so the curious reader can verify the source. The macron on the **ē** is the proper Old English orthography and is preserved everywhere the etymology appears. The middots match the breadcrumb and selector separators used elsewhere in the UI.
+
+A condensed gloss may appear once, in muted text, in the global footer (e.g. `ēafora · Old English: son, descendant, heir`) as a one-line reminder of the name's meaning.
+
+This is editorial as much as visual. The name's meaning — heir, descendant, son — maps directly to the subject of the atlas; surfacing the etymology rewards the reader who looks for it without imposing it on the reader who came for the data.
+
 ## Where Eafora can do better than enhancedradar.com
 
 [enhancedradar.com](https://www.enhancedradar.com) is the closest existing reference for the language Eafora is reaching for: white-and-red, panels over a map. It is not the bar; it is the floor. That site uses (a) too much micro-chrome (rounded buttons, thick header bars), (b) inconsistent border weights, and (c) too many UI states at once. Eafora should:
