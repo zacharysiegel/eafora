@@ -178,6 +178,8 @@ Verified bytes go into the persistent cache and into a fresh `core::artifact::Bu
 
 The cache holds one or more complete artifact versions. The default policy is **keep the current resolved version + the most recent prior version**; older versions are deleted on launch. The prior-version retention exists so a brief publish rollback (rare) doesn't force a full re-fetch.
 
+The embedded bundle on native is not part of the cache — it lives inside the app binary and is never evicted. It is replaced only when the user installs a new app build (whose `ingestion build --downsampled` output captured a newer baseline). On native, the floor of available data is therefore "embedded version OR cached version, whichever is more recent"; on web, it's just "cached version, if any."
+
 Per-platform policy differs in failure modes — see `client-web.md` for IndexedDB quota / `navigator.storage.persist()` / `estimate()` handling per the saved memory `reference_browser_storage_quotas`; see `client-ios.md` and `client-android.md` for iOS document-directory and Android internal-storage equivalents. The cross-platform contract is just: a `cache.put(version_label, file_relative_path, bytes)` / `cache.get(version_label, file_relative_path) -> Option<Bytes>` interface, implemented per platform and consumed by the same Rust core.
 
 ## SQLite in the client
