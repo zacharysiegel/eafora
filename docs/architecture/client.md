@@ -164,8 +164,6 @@ The client asks the cache for the `version_label` resolved from `latest/manifest
 - **Partial cache hit.** Manifest is present but one or more referenced files are missing or hash-mismatched. Fall through to stage 3 for only the missing files.
 - **Cache miss.** Nothing for this version. Fall through to stage 3 for everything.
 
-The cache key is `version_label`, so different versions don't overwrite each other — old versions sit in the cache until the eviction policy reaps them.
-
 ### Stage 3: fetch
 
 Fetch missing files via plain HTTP GET. Files are content-addressed and CDN-cached aggressively (`max-age=31536000, immutable`); the manifest is short-cached. The fetcher is platform-specific (`fetch()` in JS-land; `URLSession` on iOS; `OkHttp` on Android per the constitution); the bytes are then handed to the Rust core uniformly as `&[u8]`.
