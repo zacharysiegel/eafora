@@ -158,7 +158,7 @@ On native clients, the client constructs a `core::artifact::Bundle` from the emb
 
 ### Stage 2: cache check
 
-The client asks the cache for the pinned `version_label`. Three outcomes:
+The client asks the cache for the `version_label` resolved from `latest/manifest.json`. Three outcomes:
 
 - **Full cache hit.** All referenced files (manifest + geometry + every shard) are present and pass SHA-256 verification. Replace the current bundle (embedded on native; loading state on web first-visit) with the cached bundle in-place. Done.
 - **Partial cache hit.** Manifest is present but one or more referenced files are missing or hash-mismatched. Fall through to stage 3 for only the missing files.
@@ -178,7 +178,7 @@ Verified bytes go into the persistent cache and into a fresh `core::artifact::Bu
 
 ### Cache eviction
 
-The cache holds one or more complete artifact versions. The default policy is **keep the current pinned version + the most recent prior version**; older versions are deleted on launch. The prior-version retention exists so a client downgrade (rare; happens if a deploy is rolled back) doesn't force a full re-fetch.
+The cache holds one or more complete artifact versions. The default policy is **keep the current resolved version + the most recent prior version**; older versions are deleted on launch. The prior-version retention exists so a brief publish rollback (rare) doesn't force a full re-fetch.
 
 Per-platform policy differs in failure modes — see `client-web.md` for IndexedDB quota / `navigator.storage.persist()` / `estimate()` handling per the saved memory `reference_browser_storage_quotas`; see `client-ios.md` and `client-android.md` for iOS document-directory and Android internal-storage equivalents. The cross-platform contract is just: a `cache.put(version_label, file_relative_path, bytes)` / `cache.get(version_label, file_relative_path) -> Option<Bytes>` interface, implemented per platform and consumed by the same Rust core.
 
