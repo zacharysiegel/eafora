@@ -764,6 +764,10 @@ Non-TDD surfaces (still tested, but the test-first discipline is relaxed):
 
 (None for v1 — the doc has converged on concrete answers for everything previously parked here.)
 
+## Future work (not v1)
+
+- **Decouple geometry from per-version artifact bundles.** The current shape re-uploads the full geometry file under every published `version_label`. Geometry changes rarely (Natural Earth boundary updates are infrequent; subnational additions happen in discrete v2+ steps), so re-publishing it every time wastes R2 storage and bandwidth. A future shape publishes geometry to its own content-addressed key shared across versions, with the per-version manifest referencing it by URL (absolute, or rooted somewhere other than the version directory). Affects the publish flow and the manifest's `relative_path` resolution rule; invisible to consumers as long as they resolve URLs from the manifest entry rather than string-formatting paths. Defer until R2 storage cost or upload time becomes a real signal.
+
 ## Things to verify
 
 1. **dbmate's behavior with the Singularity convention for `cargo sqlx prepare`**: confirm that `dbmate.sh`'s wrapper around `sqlx prepare --workspace` works against a workspace with both `ingestion/` and `core/` crates.
