@@ -205,11 +205,30 @@ The web platform does **not** use OPFS, sql.js, or wa-sqlite. Reasoning:
 
 The bundle's `statistics` map is keyed `statistic-code → license-shard-class → shard entry` (nested, not tupled). A single statistic can expose multiple license shards in v2+; v1 ships only `base` per statistic.
 
-The client identifies its **distribution context** at startup (eafora.org-first-party, embedded, etc.) and the runtime computes the *authorized class set* — the subset of license classes its context is permitted to access. For v1 every context authorizes `base` and there is nothing else to choose between; the mechanism is exercised trivially.
+The client identifies its **distribution context** at startup (eafora.org-first-party, embedded, etc.) and looks up the *authorized class set* — the subset of license classes its context is permitted to access. For v1 every context authorizes `base` and there is nothing else to choose between; the mechanism is exercised trivially.
 
-Per statistic, the client opens an in-memory SQLite database and `ATTACH DATABASE` of every authorized shard for that statistic. Queries union across attached databases as a SQLite-native operation. The attach order is the alphabetical order of license-class names (matches the manifest's serialization order), which means the resulting `sqlite_master` is deterministic — useful for debugging.
+Per statistic, the client opens an in-memory SQLite database and `ATTACH DATABASE` of every authorized shard for that statistic. Queries union across attached databases as a SQLite-native operation. The slice is written in the alphabetical order of license-class names (matches the manifest's serialization order), so the resulting `sqlite_master` is deterministic without a runtime sort — useful for debugging.
 
-Authorized-class evaluation is a function in `core::license` whose input is a context enum (`DistributionContext::FirstParty | Embedded | ...`) and whose output is a `BTreeSet<LicenseShardClass>`. This is the only place the per-context license matrix lives; both the client and any future server-side filter (v3+) call it.
+Authorized-class evaluation is a `match` on a context enum returning a `&'static [LicenseShardClass]`:
+
+```rust
+impl DistributionContext {
+    pub fn authorized_classes(self) -> &'static [LicenseShardClass] {
+        match self {
+            DistributionContext::FirstParty => &[
+                LicenseShardClass::Base,
+                LicenseShardClass::NonCommercial,
+                LicenseShardClass::ShareAlike,
+            ],
+            DistributionContext::Embedded => &[
+                LicenseShardClass::Base,
+            ],
+        }
+    }
+}
+```
+
+Lives in `core::license`. This is the only place the per-context license matrix lives; both the client and any future server-side filter (v3+) call it. Adding a new `LicenseShardClass` does not silently appear in any context — each `DistributionContext` arm must be updated explicitly. Adding a new `DistributionContext` requires writing the slice explicitly. Both are deliberate failure modes.
 
 ## FlatGeobuf in the client
 
