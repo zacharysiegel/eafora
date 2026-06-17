@@ -262,7 +262,7 @@ The dependency direction is **client build pulls from the producer's output**, n
 
 The embedded bundle is read into memory at app startup, parsed by the same `core::artifact` code path that handles CDN bundles, and replaced in-place when the CDN fetch completes. From the renderer's point of view there is exactly one source of bundles; the embedded one is just the one without an HTTP round trip.
 
-The embedded bundle is regenerated and re-bundled into native-client builds **on every native-client redeploy**. Stale embedded bundles are not a correctness issue — the CDN fetch upgrades them — but a fresh first-paint experience is a UX win, and the redeploy hook is the natural moment to refresh.
+The embedded bundle is regenerated and re-bundled into native-client artifacts **on every native-client build**. Stale embedded bundles are not a correctness issue — the CDN fetch upgrades them — but a fresh first-paint experience is a UX win, and the build step is the natural moment to refresh.
 
 ### Web first-paint without an embedded bundle
 
