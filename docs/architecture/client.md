@@ -81,7 +81,7 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 
 ### Version pinning and discovery
 
-A client holds (up to) two artifact bundles at any moment: an **embedded** one (native clients only — bytes baked into the app binary at build time) and a **live** one (the latest CDN-published version; resolved at runtime). On every platform, the persistent on-device cache (IndexedDB on web; file system on iOS/Android) holds the most recently fetched live bundle, so returning users get instant first-paint regardless of platform. The native embedded bundle is the additional baseline for first-ever-launch / cache-cleared / fresh-install scenarios on native; web has no such baseline.
+A client holds (up to) two artifact bundles at any moment: an **embedded** one (native clients only — bytes baked into the app binary at build time) and a **live** one (the latest CDN-published version; resolved at runtime). On every platform, the persistent on-device cache (OPFS on web; file system on iOS/Android) holds the most recently fetched live bundle, so returning users get instant first-paint regardless of platform. The native embedded bundle is the additional baseline for first-ever-launch / cache-cleared / fresh-install scenarios on native; web has no such baseline.
 
 The embedded bundle on native serves two purposes: it is the first-paint accelerant for first-ever-launch on the device, and it is the **offline-capable baseline** — a user who launches the app without connectivity and without a populated cache still sees a usable, if slightly stale, atlas. (Returning native users with a populated cache don't need the embedded bundle for first paint, but it's still there as the floor.) The live bundle is the one the user is meant to see when online.
 
@@ -140,7 +140,7 @@ Every client follows the same four-stage pipeline. The platform-specific layer i
                        |                          +--------------------------+
                        |                          | persistent on-device     |
                        |                          | cache (per-platform):    |
-                       |                          |   web    -> IndexedDB    |
+                       |                          |   web    -> OPFS         |
                        |                          |   iOS    -> file system  |
                        |                          |   Android-> file system  |
                        |                          +--------------------------+
@@ -180,7 +180,7 @@ The cache holds one or more complete artifact versions. The default policy is **
 
 The embedded bundle on native is not part of the cache — it lives inside the app binary and is never evicted. It is replaced only when the user installs a new app build (whose `ingestion build --downsampled` output captured a newer baseline). On native, the floor of available data is therefore "embedded version OR cached version, whichever is more recent"; on web, it's just "cached version, if any."
 
-Per-platform policy differs in failure modes — see `client-web.md` for IndexedDB quota / `navigator.storage.persist()` / `estimate()` handling per the saved memory `reference_browser_storage_quotas`; see `client-ios.md` and `client-android.md` for iOS document-directory and Android internal-storage equivalents. The cross-platform contract is just: a `cache.put(version_label, file_relative_path, bytes)` / `cache.get(version_label, file_relative_path) -> Option<Bytes>` interface, implemented per platform and consumed by the same Rust core.
+Per-platform policy differs in failure modes — see `client-web.md` for OPFS quota / `navigator.storage.persist()` / `estimate()` handling per the saved memory `reference_browser_storage_quotas`; see `client-ios.md` and `client-android.md` for iOS document-directory and Android internal-storage equivalents. The cross-platform contract is just: a `cache.put(version_label, file_relative_path, bytes)` / `cache.get(version_label, file_relative_path) -> Option<Bytes>` interface, implemented per platform and consumed by the same Rust core.
 
 ## SQLite in the client
 
@@ -240,7 +240,7 @@ The reader is initialized once per bundle load. Country features parse first, in
 
 ## Embedded downsampled artifact (native only)
 
-Native clients (iOS, Android) embed a small artifact bundle directly in the app binary so the first frame renders before any network or filesystem activity. The web client has no equivalent — there is no shipped binary for web; visitors download wasm + JS + static assets fresh each visit (modulo browser HTTP caching) and the first-paint accelerant on web is the previous session's IndexedDB cache, not an embedded bundle.
+Native clients (iOS, Android) embed a small artifact bundle directly in the app binary so the first frame renders before any network or filesystem activity. The web client has no equivalent — there is no shipped binary for web; visitors download wasm + JS + static assets fresh each visit (modulo browser HTTP caching) and the first-paint accelerant on web is the previous session's OPFS cache, not an embedded bundle.
 
 The downsampled bundle is generated by `ingestion build --downsampled`, which reads the canonical store directly (no CDN round trip) and writes a reduced artifact set to a single output directory (alongside the regular `ingestion build` output). It does not touch any per-platform asset directory.
 
@@ -266,9 +266,9 @@ The embedded bundle is regenerated and re-bundled into native-client artifacts *
 
 ### Web first-paint without an embedded bundle
 
-The previous-visit cache (IndexedDB) gives the web client the same returning-user UX as native: a populated cache renders the previous bundle before any network activity. The difference is only in the cache-empty case:
+The previous-visit cache (OPFS) gives the web client the same returning-user UX as native: a populated cache renders the previous bundle before any network activity. The difference is only in the cache-empty case:
 
-- **Returning visitor (IndexedDB populated).** Same as native — render the cached bundle, then upgrade in the background.
+- **Returning visitor (OPFS populated).** Same as native — render the cached bundle, then upgrade in the background.
 - **First-ever visitor (cache empty).** No bundle is available before the CDN fetch returns. The client renders a loading state (skeleton map / progress indicator) until the first manifest + geometry land. Whether to also ship a downsampled bundle as a static asset alongside the wasm in `web/static/` — which would give first-ever visitors an instant render at the cost of a larger initial download — is open (see §Decisions still open).
 
 ## Cross-platform consistency
@@ -283,7 +283,7 @@ The Rust core enforces consistency on the things that should be consistent. Per-
 | Hit testing                                        | Rust core   | Spatial-index reads from the FlatGeobuf are framework-agnostic. |
 | Projection (Miller cylindrical)                    | Rust core   | Closed-form math; lives in `core::projection`. |
 | HTTP fetch                                         | Per-platform | Native APIs are the right tool: `fetch()` (web), `URLSession` (iOS), `OkHttp` (Android). |
-| Cache persistence                                  | Per-platform | IndexedDB / file-system contracts differ enough that a Rust abstraction would be a leaky shim. |
+| Cache persistence                                  | Per-platform | OPFS / file-system contracts differ enough that a Rust abstraction would be a leaky shim. |
 | Render loop                                        | Per-platform | wgpu surface acquisition is platform-specific; the draw calls themselves are shared. |
 | UI chrome (legend, statistic picker, source panel) | Per-platform | Leptos / SwiftUI / Compose own their idiomatic UI; the data shown is identical because it's read from the same `core` queries. |
 
@@ -328,7 +328,7 @@ Per Constitution Principle VII, each TDD-required surface gets unit tests writte
 - Manifest parsing: round-trip a known wire-format manifest through `parse_manifest` and assert every field. Reject malformed input with a typed `ManifestError`.
 - SHA-256 verification: known input bytes → known hex digest; mismatch fails fast.
 - License-class authorization: every `DistributionContext` variant returns the documented `BTreeSet<LicenseShardClass>`.
-- Cache adapter contract: a per-platform integration test that does `cache.put(...) -> cache.get(...)` round-trips and asserts a missing key returns `None`. Web's version runs against IndexedDB in headless Chrome; iOS / Android run against the real device file system in their native test runner.
+- Cache adapter contract: a per-platform integration test that does `cache.put(...) -> cache.get(...)` round-trips and asserts a missing key returns `None`. Web's version runs against OPFS in headless Chrome; iOS / Android run against the real device file system in their native test runner.
 - SQLite ATTACH composition: build two trivial shards on the fly, attach both, assert a `select` unions correctly.
 - FlatGeobuf hit testing: a feature collection with two known polygons; clicks at known points return the expected feature ids.
 

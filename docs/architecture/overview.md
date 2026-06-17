@@ -65,7 +65,7 @@ The data sources doc at `docs/data/sources-survey.md` and licensing research at 
    │   Leptos + WASM           │                   │    SwiftUI + MTKView      │         │   Compose + SurfaceView   │
    │   wgpu (WebGPU/WebGL)     │                   │    Rust core via UniFFI   │         │   Rust core via UniFFI    │
    │   Rust core via wasm-     │                   │    xcframework, wgpu via  │         │   AAR + cargo-ndk, wgpu   │
-   │   bindgen, IndexedDB      │                   │    Metal                  │         │   via Vulkan              │
+   │   bindgen, OPFS cache     │                   │    Metal                  │         │   via Vulkan              │
    │   cache                   │                   │                           │         │                           │
    └───────────────────────────┘                   └───────────────────────────┘         └───────────────────────────┘
 ```
@@ -319,8 +319,8 @@ Detailed plan: `docs/architecture/client-web.md` (follow-up branch). Key contrac
 - **Map rendering**: wgpu via WebGPU primarily, with WebGL2 fallback through wgpu's downlevel backend. Browser support in mid-2026: Chromium stable; Safari 18.4+ stable; Firefox WebGPU not yet shipped, falls back to WebGL2. Cargo: `wgpu = { version = "...", features = ["webgpu", "webgl"] }`.
 - **Threading**: single-threaded WASM. We **do not** use `SharedArrayBuffer` and therefore do not require `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` headers. This keeps the door open for future third-party embedding (UN portals, journalism sites) without wrestling with cross-origin isolation. Per-WASM state lives in `thread_local!`.
 - **Bundle size**: target ~500–700 KB brotli-compressed (~2–3 MB raw WASM), of which Leptos is ~400 KB and wgpu+Naga is ~600 KB. `wasm-opt -O4` in release builds.
-- **Data loading**: JS-side `fetch()` reads the artifact (manifest → SQLite + FlatGeobuf bytes) and stores in IndexedDB. Rust receives `&[u8]` and constructs the in-memory data structures. FlatGeobuf has a built-in R-tree spatial index that we use directly for hit-testing — no separate index build step. Country features parse first; subnational features parse in the background after the initial render. **For SQLite: download once, cache in IndexedDB, query in-memory via a WASM-built `rusqlite` or `sqlx`.** This works because per-statistic SQLite files are small (~tens of KB to a few MB through v2). Migration trigger: if any per-statistic file grows past tens of MB, switch to HTTP-range-request reads via a Rust-side custom `Connection` impl. Not anticipated through v2.
-- **IndexedDB quota and eviction**: the cache layer must call `navigator.storage.persist()` on first launch to opt into persistent storage (avoids LRU eviction under disk pressure), call `navigator.storage.estimate()` before each artifact write to fail fast on quota-exceeded, and recover gracefully when the cache is missing on launch (re-fetch as if first run). Per-browser policies vary; the deep details belong in `docs/architecture/client-web.md` and reference [MDN: Storage quotas and eviction criteria](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria).
+- **Data loading**: JS-side `fetch()` reads the artifact (manifest → SQLite + FlatGeobuf bytes) and stores in OPFS. Rust receives `&[u8]` and constructs the in-memory data structures. FlatGeobuf has a built-in R-tree spatial index that we use directly for hit-testing — no separate index build step. Country features parse first; subnational features parse in the background after the initial render. **For SQLite: download once, cache in OPFS, query in-memory via a WASM-built `rusqlite`.** This works because per-statistic SQLite files are small (tens of KB to a few MB through v2). Migration trigger: if any per-statistic file grows past approx. 30 MB, host the SQLite engine in a Worker and back it with an OPFS `FileSystemSyncAccessHandle` for streaming page reads. Not anticipated through v2.
+- **OPFS quota and eviction**: the cache layer must call `navigator.storage.persist()` on first launch to opt into persistent storage (avoids LRU eviction under disk pressure), call `navigator.storage.estimate()` before each artifact write to fail fast on quota-exceeded, and recover gracefully when the cache is missing on launch (re-fetch as if first run). Per-browser policies vary; the deep details belong in `docs/architecture/client-web.md` and reference [MDN: Storage quotas and eviction criteria](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria).
 - **Hot reload**: `cargo leptos watch` for development; full WASM rebuild is ~5–15 s. Splitting `core` into a library crate and `web` into a thin entry crate minimizes recompile scope.
 
 ## iOS client (overview)
@@ -423,7 +423,7 @@ This is a working direction for v2+, not a v1 commitment. The first source with 
 
 ### Client cache strategy
 
-- **Web**: IndexedDB. Mobile browsers allow 50+ MB per origin without prompts in 2026. First-launch download → IndexedDB → in-memory (Rust-side). Subsequent launches read IndexedDB without network unless `manifest.json` says a newer version exists.
+- **Web**: OPFS. Per-origin quotas in 2026 are generous (Chrome ~60% of disk, Firefox ~50%, Safari more conservative); Eafora's 5–10 MB working set is negligible against any of these. First-launch download → OPFS → in-memory (Rust-side). Subsequent launches read OPFS without network unless `manifest.json` says a newer version exists.
 - **iOS / Android**: file-system cache in app sandbox. Same logic; `URLSession`/`OkHttp` already handle the HTTP cache headers.
 - **Embedded downsampled artifact**: a small "good enough for first paint" SQLite + smaller FlatGeobuf is bundled in each build. App opens instantly with stale-but-real data while the latest is fetched in the background.
 
@@ -555,7 +555,7 @@ These are claims in this document where I'm working from research-agent output w
 
 Subsequent branches that depend on this overview:
 
-- `docs-architecture-client-web` — full Leptos + WASM + cargo-leptos plan, CSS approach, component layout, build optimizations, IndexedDB cache lifecycle.
+- `docs-architecture-client-web` — full Leptos + WASM + cargo-leptos plan, CSS approach, component layout, build optimizations, OPFS cache lifecycle.
 - `docs-architecture-client-ios` — full SwiftUI + UniFFI + xcframework plan, MTKView details, App Store submission walkthrough.
 - `docs-architecture-client-android` — full Compose + UniFFI + cargo-ndk plan, SurfaceView lifecycle, Play Store submission walkthrough.
 - `docs-architecture-ingestion` — full Postgres schema, per-source adapters, artifact builder, scheduling, license tracking.
