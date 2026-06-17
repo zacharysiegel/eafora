@@ -287,7 +287,7 @@ The Rust core enforces consistency on the things that should be consistent. Per-
 | Render loop                                        | Per-platform | wgpu surface acquisition is platform-specific; the draw calls themselves are shared. |
 | UI chrome (legend, statistic picker, source panel) | Per-platform | Leptos / SwiftUI / Compose own their idiomatic UI; the data shown is identical because it's read from the same `core` queries. |
 
-The per-platform shell is intentionally thin. A typical client per-platform layer is on the order of 1–2k LOC: a fetcher, a cache adapter, a render-surface bridge, and the UI tree. Anything beyond that should be re-evaluated as a candidate for promotion into `core`.
+The per-platform shell is intentionally thin. A typical client per-platform layer is on the order of 1–2k LOC: a fetcher, a cache adapter, a render-surface bridge, the UI tree, and any platform-framework integrations (notifications, sharing, deep linking, OAuth handoff, App Intents / Android Intents, accessibility services, etc.) that have no portable equivalent. Framework integrations are necessarily platform code and don't count against the "thinness" budget. Anything else beyond the categories above should be re-evaluated as a candidate for promotion into `core`.
 
 ## Module layout (`core/` consumer surface)
 
