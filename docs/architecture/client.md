@@ -255,8 +255,8 @@ Revisit when v2+ subnational geometry lands (would push the geometry portion wel
 
 Each native client's build pipeline is responsible for fetching (or regenerating + fetching) the latest downsampled output and loading it into its own asset directory:
 
-- iOS: bundle build script reads from the downsampled output directory and copies into `ios/EaforaApp/Resources/embedded/` as part of the Xcode build.
-- Android: Gradle task reads from the downsampled output directory and copies into `android/app/src/main/assets/embedded/` as part of the Android build.
+- iOS: bundle build script reads from the downsampled output directory and copies into `ios/EaforaApp/Resources/embedded_artifacts/` as part of the Xcode build.
+- Android: Gradle task reads from the downsampled output directory and copies into `android/app/src/main/assets/embedded_artifacts/` as part of the Android build.
 
 The dependency direction is **client build pulls from the producer's output**, never **producer pushes into client trees**. This keeps `ingestion` agnostic to per-platform layout and lets each client decide when (and whether) to refresh its embedded bundle.
 
