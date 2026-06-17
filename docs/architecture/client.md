@@ -203,7 +203,7 @@ The web platform does **not** use OPFS, sql.js, or wa-sqlite. Reasoning:
 
 ### Attaching license shards
 
-The bundle's `statistics` map is a two-level structure: the outer map is keyed by statistic code (e.g. `tfr`), and each statistic's value is itself a map keyed by license-shard class (e.g. `base`, `noncommercial`) whose values are shard entries. A single statistic can therefore expose multiple license shards in v2+; v1 ships only one (`base`) per statistic.
+The bundle's `statistics` map is keyed `statistic-code → license-shard-class → shard entry` (nested, not tupled). A single statistic can expose multiple license shards in v2+; v1 ships only `base` per statistic.
 
 The client identifies its **distribution context** at startup (eafora.org-first-party, embedded-third-party-widget, etc.) and the runtime computes the *authorized class set* — the subset of license classes its context is permitted to access. For v1 every context authorizes `base` and there is nothing else to choose between; the mechanism is exercised trivially.
 
