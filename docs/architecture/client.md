@@ -300,17 +300,21 @@ core/
 │   ├── artifact/
 │   │   ├── artifact.rs            # Bundle: open(manifest_bytes, cache_reader) -> Bundle
 │   │   ├── artifact_model.rs      # Manifest, ManifestEntry, StatisticEntry, etc.
-│   │   ├── manifest.rs            # parse_manifest(bytes) -> Manifest
-│   │   └── verifier.rs            # verify_sha256(bytes, expected_hex)
+│   │   └── manifest.rs            # parse_manifest(bytes) -> Manifest
+│   ├── hashing/
+│   │   └── hashing.rs             # sha256_hex(bytes), verify_sha256(bytes, expected_hex)
+│   ├── sqlite/
+│   │   ├── sqlite.rs              # connection wrapper around the in-memory SQLite database
+│   │   ├── attach.rs              # ATTACH-DATABASE composition across license shards
+│   │   └── vfs.rs                 # Vec<u8>-backed custom VFS (cfg-gated to wasm32)
 │   ├── statistic/
-│   │   ├── statistic.rs           # query the in-memory SQLite database
-│   │   ├── statistic_model.rs     # StatisticValue, Series, etc. (shared with ingestion via core)
-│   │   └── attach.rs              # ATTACH-DATABASE composition across license shards
+│   │   ├── statistic.rs           # statistic-domain queries (uses crate::sqlite)
+│   │   └── statistic_model.rs     # StatisticValue, Series, etc. (shared with ingestion via core)
 │   ├── geometry/
 │   │   ├── geometry.rs            # FlatGeobuf reader wiring; feature iteration
 │   │   └── geometry_model.rs      # Feature, Polygon, BoundingBox
 │   ├── license/
-│   │   └── license.rs             # DistributionContext -> authorized BTreeSet<LicenseShardClass>
+│   │   └── license.rs             # DistributionContext -> authorized &'static [LicenseShardClass]
 │   ├── projection.rs              # Miller cylindrical
 │   ├── hit_test.rs                # spatial-index lookup
 │   ├── render/                    # wgpu pipeline (shared across platforms)
@@ -342,3 +346,4 @@ Live HTTP against the CDN is **not** part of automated tests; it's a manual smok
 - **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are baked into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. Defer to the artifact-builder spec when i18n lands.
 - **Embedded distribution context.** The license matrix has an `Embedded` slot but v1 has only one shard (`base`) which every context authorizes. The first source with stricter-than-WB license terms forces a real decision about which classes the embedded context authorizes. Defer until that source lands in the canonical store.
 - **Bundle hot-swap semantics for in-flight queries.** A user can issue a hover query at the exact moment the CDN fetch completes and the bundle is being replaced. Two safe strategies: (a) the renderer reads the current bundle via `tokio::sync::watch::Receiver<Arc<Bundle>>::borrow()` (or `.borrow_and_update()`); the bundle-loader publishes a new `Arc<Bundle>` via the matching `Sender::send`. Each reader gets a coherent snapshot, the swap is wait-free, and an in-flight query holding an old `Arc` finishes against the old bundle; (b) the swap is done at a frame boundary, so no in-flight query exists at the moment of swap. (a) composes better with future async query work. Defer to implementation.
+
