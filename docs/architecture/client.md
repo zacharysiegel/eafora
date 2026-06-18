@@ -281,7 +281,7 @@ The Rust core enforces consistency on the things that should be consistent. Per-
 | SQLite query strings (statistic-by-region-by-year) | Rust core   | One source of truth; tested once. |
 | FlatGeobuf parsing                                 | Rust core   | Same as SQLite. |
 | Hit testing                                        | Rust core   | Spatial-index reads from the FlatGeobuf are framework-agnostic. |
-| Projection (Miller cylindrical)                    | Rust core   | Closed-form math; lives in `core::projection`. |
+| Projection (Miller cylindrical)                    | Rust core   | Closed-form math; lives in `core::map::projection`. |
 | HTTP fetch                                         | Per-platform | Native APIs are the right tool: `fetch()` (web), `URLSession` (iOS), `OkHttp` (Android). |
 | Cache persistence                                  | Per-platform | OPFS / file-system contracts differ enough that a Rust abstraction would be a leaky shim. |
 | Render loop                                        | Per-platform | wgpu surface acquisition is platform-specific; the draw calls themselves are shared. |
@@ -310,14 +310,15 @@ core/
 │   ├── statistic/
 │   │   ├── statistic.rs           # statistic-domain queries (uses crate::sqlite)
 │   │   └── statistic_model.rs     # StatisticValue, Series, etc. (shared with ingestion via core)
-│   ├── geometry/
-│   │   ├── geometry.rs            # FlatGeobuf reader wiring; feature iteration
-│   │   └── geometry_model.rs      # Feature, Polygon, BoundingBox
+│   ├── map/                       # interactive atlas view feature
+│   │   ├── geometry/
+│   │   │   ├── geometry.rs        # FlatGeobuf reader wiring; feature iteration
+│   │   │   └── geometry_model.rs  # Feature, Polygon, BoundingBox
+│   │   ├── projection.rs          # Miller cylindrical
+│   │   ├── hit_test.rs            # spatial-index lookup
+│   │   └── map_renderer.rs        # wgpu pipeline (shared across platforms)
 │   ├── license/
 │   │   └── license.rs             # DistributionContext -> authorized &'static [LicenseShardClass]
-│   ├── projection.rs              # Miller cylindrical
-│   ├── hit_test.rs                # spatial-index lookup
-│   ├── render/                    # wgpu pipeline (shared across platforms)
 │   └── ffi/
 │       ├── wasm.rs                # wasm-bindgen surface (web)
 │       └── uniffi.rs              # UniFFI surface (iOS, Android)
