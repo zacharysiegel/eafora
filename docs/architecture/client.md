@@ -11,7 +11,7 @@ This document covers everything between **a published artifact bundle on the CDN
 - SQLite-in-the-client: which engine, how the database is opened, how queries run.
 - FlatGeobuf reading: which reader, how features feed the renderer.
 - License-shard composition: how the client picks which shards to attach for its distribution context.
-- Embedded downsampled artifact: the "good enough for first paint and offline use" bundle baked into native client binaries (no equivalent on web).
+- Embedded downsampled artifact: the "good enough for first paint and offline use" bundle — baked into native client binaries; shipped as a static asset alongside the wasm on web. Mechanism differs by platform; the bundle itself is the same.
 - Cross-platform consistency: which decisions every client makes the same, which it doesn't.
 
 Map rendering details (projection, hit testing, zoom-to-country) are covered in `docs/architecture/overview.md`. Per-platform UI (Leptos components, SwiftUI views, Compose composables) is covered in the per-platform docs.
@@ -81,13 +81,13 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 
 ### Version pinning and discovery
 
-A client holds (up to) two artifact bundles at any moment: an **embedded** one (native clients only — bytes baked into the app binary at build time) and a **live** one (the latest CDN-published version; resolved at runtime). On every platform, the persistent on-device cache (OPFS on web; file system on iOS/Android) holds the most recently fetched live bundle, so returning users get instant first-paint regardless of platform. The native embedded bundle is the additional baseline for first-ever-launch / cache-cleared / fresh-install scenarios on native; web has no such baseline.
+A client holds (up to) two artifact bundles at any moment: an **embedded** one (the downsampled bundle baked into the binary on native, shipped as a static asset on web) and a **live** one (the latest CDN-published version; resolved at runtime). On every platform, the persistent on-device cache (OPFS on web; file system on iOS/Android) holds the most recently fetched live bundle, so returning users get instant first-paint regardless of platform. The embedded bundle is the additional baseline for first-ever-launch / cache-cleared / fresh-install scenarios — present on every platform, so every first-time user sees the map render before any live-bundle fetch resolves.
 
-The embedded bundle on native serves two purposes: it is the first-paint accelerant for first-ever-launch on the device, and it is the **offline-capable baseline** — a user who launches the app without connectivity and without a populated cache still sees a usable, if slightly stale, atlas. (Returning native users with a populated cache don't need the embedded bundle for first paint, but it's still there as the floor.) The live bundle is the one the user is meant to see when online.
+The embedded bundle on native serves two purposes: first-paint accelerant for first-ever-launch on the device, and the **offline-capable baseline** — a user who launches the app without connectivity and without a populated cache still sees a usable, if slightly stale, atlas. (Returning native users with a populated cache don't need the embedded bundle for first paint, but it's still there as the floor.) On web, the static-asset bundle serves only as the first-paint accelerant — there is no offline use case for the web client since the wasm itself ships from the same origin and is subject to the same connectivity constraints. The live bundle is the one the user is meant to see when online.
 
-#### Embedded bundle (native clients)
+#### Embedded bundle (native + web)
 
-Pinned at native-client build time. The native client's build script invokes (or fetches the most recent output of) `ingestion build --downsampled` (see §Embedded downsampled artifact) and copies the result into its own asset directory. The client loads it synchronously at startup so the map renders before any network activity, and the same bytes are the offline baseline if the network is unavailable at startup.
+Pinned at client build time on every platform. The client's build script pulls the latest output of `ingestion build --downsampled` and copies the result into its own asset directory (see §Embedded downsampled artifact for the per-platform paths). On native the bundle loads synchronously at startup; on web it's fetched at static-asset speed alongside the wasm. Either way the map renders before the live CDN fetch resolves.
 
 #### Live bundle: stable pointer at `latest/manifest.json`
 
@@ -238,9 +238,12 @@ Why not the JavaScript `flatgeobuf` package: same reason as not sql.js. Keeping 
 
 The reader is initialized once per bundle load. Country features parse first, in the foreground; if subnational features are present (v2+) they parse in the background after the initial render is up, scheduled by the platform shell. The progress signal goes through the same renderer-notification channel as cache replacement.
 
-## Embedded downsampled artifact (native only)
+## Embedded downsampled artifact
 
-Native clients (iOS, Android) embed a small artifact bundle directly in the app binary so the first frame renders before any network or filesystem activity. The web client has no equivalent — there is no shipped binary for web; visitors download wasm + JS + static assets fresh each visit (modulo browser HTTP caching) and the first-paint accelerant on web is the previous session's OPFS cache, not an embedded bundle.
+Every client ships with the same downsampled bundle — a small subset of the live artifact that gives every first-time user (and every offline-capable device) an instant render. The bundle bytes are identical across platforms; only the **delivery mechanism** differs:
+
+- **Native** (iOS, Android): bytes baked into the app binary at build time. Available before any network or filesystem activity. Doubles as the offline-capable baseline when no cache and no network are present.
+- **Web**: bytes shipped as a static asset alongside the wasm on Cloudflare Pages. Fetched on first visit (HTTP-cached for return visits) before the live CDN bundle, so the first-ever visitor sees the map render at static-asset speed rather than waiting on a separate live-bundle fetch.
 
 The downsampled bundle is generated by `ingestion build --downsampled`, which reads the canonical store directly (no CDN round trip) and writes a reduced artifact set to a single output directory (alongside the regular `ingestion build` output). It does not touch any per-platform asset directory.
 
@@ -253,23 +256,30 @@ Total embedded bundle: approx. 1.5–1.7 MB through v2. Matching the live bundle
 
 Revisit when v2+ subnational geometry lands (would push the geometry portion well past the current 1.5 MB) or when current-year-across-all-statistics stops fitting comfortably in single-digit MB.
 
-Each native client's build pipeline is responsible for fetching (or regenerating + fetching) the latest downsampled output and loading it into its own asset directory:
+Each client's build pipeline pulls the latest downsampled output and copies it into its own asset directory:
 
 - iOS: bundle build script reads from the downsampled output directory and copies into `ios/EaforaApp/Resources/embedded_artifacts/` as part of the Xcode build.
 - Android: Gradle task reads from the downsampled output directory and copies into `android/app/src/main/assets/embedded_artifacts/` as part of the Android build.
+- Web: cargo-leptos build step (or equivalent) reads from the downsampled output directory and copies into `web/static/embedded_artifacts/` so Cloudflare Pages serves it alongside the wasm bundle.
 
 The dependency direction is **client build pulls from the producer's output**, never **producer pushes into client trees**. This keeps `ingestion` agnostic to per-platform layout and lets each client decide when (and whether) to refresh its embedded bundle.
 
-The embedded bundle is read into memory at app startup, parsed by the same `core::artifact` code path that handles CDN bundles, and replaced in-place when the CDN fetch completes. From the renderer's point of view there is exactly one source of bundles; the embedded one is just the one without an HTTP round trip.
+The embedded bundle is read into memory at app startup, parsed by the same `core::artifact` code path that handles CDN bundles, and replaced in-place when the live CDN fetch completes. From the renderer's point of view there is exactly one source of bundles; the embedded one is just the one without a live HTTP round trip.
 
-The embedded bundle is regenerated and re-bundled into native-client artifacts **on every native-client build**. Stale embedded bundles are not a correctness issue — the CDN fetch upgrades them — but a fresh first-paint experience is a UX win, and the build step is the natural moment to refresh.
+The embedded bundle is regenerated and re-bundled into client artifacts **on every client build**. Stale embedded bundles are not a correctness issue — the CDN fetch upgrades them — but a fresh first-paint experience is a UX win, and the build step is the natural moment to refresh.
 
-### Web first-paint without an embedded bundle
+### Web first-paint perf budget
 
-The previous-visit cache (OPFS) gives the web client the same returning-user UX as native: a populated cache renders the previous bundle before any network activity. The difference is only in the cache-empty case:
+Web first paint serves wasm + the static-asset bundle together; together they're the price of "instant atlas render" on a fresh visit. Caps to enforce in the web build:
 
-- **Returning visitor (OPFS populated).** Same as native — render the cached bundle, then upgrade in the background.
-- **First-ever visitor (cache empty).** No bundle is available before the CDN fetch returns. The client renders a loading state (skeleton map / progress indicator) until the first manifest + geometry land. Whether to also ship a downsampled bundle as a static asset alongside the wasm in `web/static/` — which would give first-ever visitors an instant render at the cost of a larger initial download — is open (see §Decisions still open).
+- **2 MB total compressed at first paint** — wasm bundle + static-asset embedded bundle + page shell. CI fails if the deployed total exceeds it.
+- **3 MB total compressed at second paint** — once the live CDN bundle has loaded in the background.
+
+Expected sizes against the 2 MB ceiling: wasm approx. 600 KB brotli (per overview §Web client; `wasm-opt -O4`), static-asset bundle approx. 700 KB–1 MB brotli (FlatGeobuf and SQLite both compress well), page shell <50 KB — totals approx. 1.4–1.7 MB with comfortable headroom.
+
+### Returning-visitor flow
+
+The previous-visit cache (OPFS on web; file system on native) holds the most recently fetched live bundle. On every platform, returning users render the cached live bundle on launch — strictly newer than the embedded bundle and so the better starting point. The embedded bundle is the floor; the cached live bundle is the next-most-recent floor when it exists; the freshly-fetched live bundle from the CDN replaces both.
 
 ## Cross-platform consistency
 
@@ -342,7 +352,6 @@ Live HTTP against the CDN is **not** part of automated tests; it's a manual smok
 
 - **wgpu / WebGPU fallback policy.** WebGPU is stable in Chromium and Safari 18.4+; Firefox is on WebGL2 via the wgpu downlevel backend. The capability detection happens inside `wgpu::Instance::request_adapter`, so the client doesn't need its own logic — but the *UI fallback* (do we render a coarser version under WebGL2, or do we render the same version with a perf-warning banner?) is per-platform UX work. Defer to `client-web.md`.
 - **Embedded-bundle build automation (native).** `ingestion build --downsampled` does not exist yet; today's `ingestion build` produces only the full artifact. To be added as a separate small PR on the producer side when native-client work begins. Each native build script then needs to invoke (or fetch the latest output of) the downsampled command and copy the result into its own asset directory.
-- **Whether to ship a static-asset downsampled bundle on web.** Bundling a downsampled artifact alongside the wasm in `web/static/` would give first-ever visitors an instant render, at the cost of a larger initial download. Defer to the first web-client spec branch.
 - **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are baked into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. **Trigger:** i18n lands (a second locale becomes a real deliverable).
 - **Bundle hot-swap semantics for in-flight queries.** A user can issue a hover query at the exact moment the CDN fetch completes and the bundle is being replaced. Two safe strategies: (a) the renderer reads the current bundle via `tokio::sync::watch::Receiver<Arc<Bundle>>::borrow()` (or `.borrow_and_update()`); the bundle-loader publishes a new `Arc<Bundle>` via the matching `Sender::send`. Each reader gets a coherent snapshot, the swap is wait-free, and an in-flight query holding an old `Arc` finishes against the old bundle; (b) the swap is done at a frame boundary, so no in-flight query exists at the moment of swap. (a) composes better with future async query work. Defer to implementation.
 
