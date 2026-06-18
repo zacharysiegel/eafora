@@ -332,9 +332,8 @@ Per Constitution Principle VII, each TDD-required surface gets unit tests writte
 
 - Manifest parsing: round-trip a known wire-format manifest through `parse_manifest` and assert every field. Reject malformed input with a typed `ManifestError`.
 - SHA-256 verification: known input bytes → known hex digest; mismatch fails fast.
-- License-class authorization: every `DistributionContext` variant returns the documented `BTreeSet<LicenseShardClass>`.
+- License-class authorization: every `DistributionContext` variant returns the documented `&'static [LicenseShardClass]`.
 - Cache adapter contract: a per-platform integration test that does `cache.put(...) -> cache.get(...)` round-trips and asserts a missing key returns `None`. Web's version runs against OPFS in headless Chrome; iOS / Android run against the real device file system in their native test runner.
-- SQLite ATTACH composition: build two trivial shards on the fly, attach both, assert a `select` unions correctly.
 - FlatGeobuf hit testing: a feature collection with two known polygons; clicks at known points return the expected feature ids.
 
 Live HTTP against the CDN is **not** part of automated tests; it's a manual smoke step run after each client deploy. The producer side already covers "the CDN serves what we think it serves" through `ingestion publish cloudflare-r2` + a curl check; duplicating that on the client side would add wall-clock time without catching a class of bug the producer side doesn't.
