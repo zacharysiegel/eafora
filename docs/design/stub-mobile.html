@@ -154,37 +154,38 @@
     display: inline-block;
   }
 
-  /* ---------- Statistic selector row ---------- */
+  /* ---------- Crumb row (statistic / year breadcrumb) ---------- */
 
-  .selector {
-    padding: 14px 20px;
+  .crumb-row {
+    padding: 10px 20px;
     border-bottom: 1px solid var(--hairline);
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    justify-content: space-between;
     flex-shrink: 0;
+    font-size: 12px;
   }
-  .selector .label {
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.10em;
-    text-transform: uppercase;
-    color: var(--ink-muted);
-    margin-bottom: 2px;
+  .crumb-row .crumbs {
+    display: flex;
+    align-items: center;
   }
-  .selector .value {
-    font-size: 14px;
-    font-weight: 500;
+  .crumb-row .crumbs .sep {
+    margin: 0 8px;
+    color: var(--hairline-soft);
   }
-  .selector .value .chev {
+  .crumb-row .crumbs .year {
     color: var(--red);
-    margin-left: 6px;
-    font-size: 11px;
-  }
-  .selector .year {
     font-family: var(--mono);
-    font-size: 14px;
+  }
+  .crumb-row .crumbs .chev {
     color: var(--red);
+    margin-left: 8px;
+    font-size: 10px;
+  }
+  .crumb-row .crumbs-meta {
+    color: var(--ink-muted);
+    font-family: var(--mono);
+    font-size: 11px;
   }
 
   /* ---------- Map ---------- */
@@ -565,12 +566,13 @@
           <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
         </div>
 
-        <div class="selector">
-          <div>
-            <div class="label">Statistic</div>
-            <div class="value">Total fertility rate <span class="chev">▾</span></div>
+        <div class="crumb-row">
+          <div class="crumbs">
+            <span>Total fertility rate</span>
+            <span class="sep">/</span>
+            <span class="year">2024</span>
+            <span class="chev">▾</span>
           </div>
-          <span class="year">2024</span>
         </div>
 
         <div class="map">
@@ -662,12 +664,13 @@
           <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
         </div>
 
-        <div class="selector">
-          <div>
-            <div class="label">Statistic</div>
-            <div class="value">Total fertility rate <span class="chev">▾</span></div>
+        <div class="crumb-row">
+          <div class="crumbs">
+            <span>Total fertility rate</span>
+            <span class="sep">/</span>
+            <span class="year">2024</span>
+            <span class="chev">▾</span>
           </div>
-          <span class="year">2024</span>
         </div>
 
         <div class="map">
@@ -780,12 +783,14 @@
           <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
         </div>
 
-        <div class="selector">
-          <div>
-            <div class="label">Sort by</div>
-            <div class="value">Lowest TFR · 2024 <span class="chev">▾</span></div>
+        <div class="crumb-row">
+          <div class="crumbs">
+            <span>Lowest TFR</span>
+            <span class="sep">/</span>
+            <span class="year">2024</span>
+            <span class="chev">▾</span>
           </div>
-          <span class="year">193 ⌃</span>
+          <span class="crumbs-meta">193 regions</span>
         </div>
 
         <div class="list-head">
