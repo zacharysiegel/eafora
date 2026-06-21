@@ -77,9 +77,10 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 > - Stand up the `core/` crate (workspace member) and move the manifest type into `core::artifact::manifest`, with `ingestion::artifact::writer::manifest` importing it. Currently the producer-side struct is local (`ingestion/src/artifact/writer/manifest.rs::ManifestSerializer`) and there is no `core/`. Sequenced before the first client implementation, since the client depends on `core/` existing.
 > - Rename the `data/` subdirectory to `statistics/` for symmetry with `geometry/` and to remove the ambiguity of "data" as a shard subtype name. Touches the `SUBDIR_DATA` constant and its references. Pre-dates the first client implementation, so no migration concern.
 > - Add `ingestion build --downsampled <output-dir>` for generating the native-client embedded bundle directly from the canonical store. Sequenced when native-client work begins.
-> - On every successful `ingestion publish`, copy the just-published manifest to the stable key `latest/manifest.json` on the destination so clients have a fixed discovery URL (see §Version pinning).
+> - On every successful `ingestion publish`, copy the just-published manifest to the stable key `latest/manifest.json` on the destination (see §Discovery and live bundle resolution).
+> - Publish the discovery document at `https://eafora.org/discovery` (see §Discovery and live bundle resolution for the schema). Initially a committed static file under the web app's `static/` tree; regenerated via a small script when the contract changes.
 
-### Version pinning and discovery
+### Discovery and live bundle resolution
 
 A client holds (up to) two artifact bundles at any moment: an **embedded** one (the downsampled bundle baked into the binary on native, shipped as a static asset on web) and a **live** one (the latest CDN-published version; resolved at runtime). On every platform, the persistent on-device cache (OPFS on web; file system on iOS/Android) holds the most recently fetched live bundle, so returning users get instant first-paint regardless of platform. The embedded bundle is the additional baseline for first-ever-launch / cache-cleared / fresh-install scenarios — present on every platform, so every first-time user sees the map render before any live-bundle fetch resolves.
 
@@ -89,9 +90,70 @@ The embedded bundle on native serves two purposes: first-paint accelerant for fi
 
 Pinned at client build time on every platform. The client's build script pulls the latest output of `ingestion build --downsampled` and copies the result into its own asset directory (see §Embedded downsampled artifact for the per-platform paths). On native the bundle loads synchronously at startup; on web it's fetched at static-asset speed alongside the wasm. Either way the map renders before the live CDN fetch resolves.
 
+#### Discovery URL: the one forever-URL
+
+Clients commit to exactly one immutable URL: `https://eafora.org/discovery`. Everything else — including the repository base URL — is server-supplied at runtime. This indirection exists almost entirely for the native clients: web rebuilds and redeploys on every commit, so a baked-in URL would be a one-commit change to update, but iOS and Android binaries live on user devices for months or years, and a `repository.eafora.org` re-platform without runtime indirection would silently break every old install in the field. We keep the contract identical across platforms (web included) for simplicity; it costs web nothing.
+
+The endpoint is `/discovery` with no extension. The content-type comes from the response header, not the path; an extension would prematurely couple the URL to a specific backing implementation (static file vs. Pages Function vs. someday-Worker) and we want freedom there.
+
+##### Discovery document shape
+
+```json
+{
+  "schema_version": 1,
+  "repository_base_url": "https://repository.eafora.org",
+  "minimum_client_version": "0.1.0",
+  "sunset": null
+}
+```
+
+- `schema_version` lets the document's shape evolve. Clients reject documents whose `schema_version` they don't recognize, falling back to their baked-in defaults.
+- `repository_base_url` is where every shard URL is resolved against. The client never string-formats CDN paths; it joins `repository_base_url` + the manifest's per-entry `relative_path`.
+- `minimum_client_version` is the lowest client version this contract still supports. Clients older than this surface a "please update" banner. Through v1 this is informational; it becomes load-bearing when v2's live API lands and old clients genuinely lose features.
+- `sunset` is `null` in steady state. When non-null (RFC 3339 timestamp), clients surface a dismissible warning banner with the date; after the date passes, clients hard-error rather than continue against an end-of-life contract. Reserved for major contract changes that can't be made backward-compatible (R2 re-platform, manifest schema bump). This field ships in v1 deliberately: it has to exist in v1's schema to ever be usable for retiring v1 clients later; adding it under `schema_version: 2` would mean v1 clients don't know to look for it.
+
+Fields not in v1, intentionally:
+
+- No `repository_base_url_mirrors` for failover. Cloudflare's CDN already handles regional distribution; we have no real failover use case yet. Adding the field later is a non-breaking schema bump (old clients ignore it and run single-URL as today); the absence costs us nothing.
+
+Cache headers on the discovery doc: `Cache-Control: public, max-age=3600`. A re-platform propagates to every client within an hour. Short enough to recover from a mistake; long enough to avoid hammering the endpoint.
+
+The document is physically hosted on the same Cloudflare Workers Assets deploy that serves the web app (`web/static/discovery`, deployed at `https://eafora.org/discovery`), because `eafora.org` is the obvious place for it and we already have a deploy serving that origin. The endpoint is platform-agnostic — every client fetches it at startup — but it ends up living in the web tree by convenience. See `client-web.md` §Deploy target for the deployment shape.
+
+##### Baked-in fallback
+
+Clients also bake in the value of `repository_base_url` that was current at the moment they were built. This fallback is used **only** when the discovery fetch fails (offline, broken document, transient outage). It drifts from current truth over time, but it's the right behavior for "client can't reach discovery — use the last-known-good source." If both discovery and the manifest fetch under the fallback URL fail, the embedded bundle remains the floor, exactly as designed.
+
+The fallback is read from the actual discovery document at client build time (a small script fetches `https://eafora.org/discovery` and writes the resulting `repository_base_url` into a build-time constant). No hand-typed strings; whatever the discovery doc says at build time becomes the binary's fallback.
+
+##### Speculative parallel fetch at startup
+
+The expected case is "the discovery URL still points at the baked-in repository URL." That's the steady state. To save a round trip in this expected case, the client fires the discovery fetch and the speculative manifest fetch (against the baked-in URL) **in parallel** at startup, then reconciles:
+
+1. Construct `Bundle` from the embedded bundle. Map renders. (No network.)
+2. Fire two requests in parallel:
+   - The discovery fetch to `https://eafora.org/discovery`.
+   - The manifest fetch to `<baked_repository_base_url>/latest/manifest.json` (speculative).
+3. When discovery resolves:
+   - If its `repository_base_url` matches the baked URL → the speculative fetch is the one we wanted. Await it, verify, hot-swap.
+   - If it differs (re-platform happened) → cancel or discard the speculative fetch, issue a new manifest fetch against the discovered URL, await, verify, hot-swap.
+4. If discovery fails → use the speculative fetch's result. If it succeeded, hot-swap. If both fail, surface a UI banner; embedded bundle remains the floor.
+5. If discovery succeeds but the chosen `repository_base_url` 404s → surface the failure; same fallback.
+
+The speculative fetch's errors are silenced *only* while discovery is still in flight. Once we know which URL is authoritative, errors on that URL are real and surface normally.
+
+One implementation note: the speculative fetch must not write into the OPFS / file-system cache until we know we're keeping it. Otherwise a re-platform leaves cached bytes under the old URL's version label that we'd have to garbage-collect. The fetch buffers in memory; cache commit happens only after the URL is confirmed authoritative.
+
+Decision-tree summary:
+
+- Discovery says baked URL is still good → 1 round trip total (the speculative manifest fetch was the right one).
+- Discovery says use a new URL → 2 round trips, one wasted.
+- Discovery fails → 1 round trip (the speculative one we already had).
+- Both fail → embedded bundle is the floor.
+
 #### Live bundle: stable pointer at `latest/manifest.json`
 
-The producer maintains a stable URL — `https://repository.eafora.org/latest/manifest.json` — that always points at the most recently published version. Clients fetch this URL on launch (and periodically thereafter, see below), then resolve every shard's URL using the manifest's per-entry `relative_path` against `<repository_base_url>/<version>/`. Clients do not string-format shard URLs or assume the directory layout (`geometry/`, `data/`, content-hashed filename); the manifest is the only source of truth for what to fetch and where it lives. The `version` field doubles as the cache key.
+Once the client has resolved `repository_base_url`, it fetches `<repository_base_url>/latest/manifest.json`. This URL always points at the most recently published version. Clients resolve every shard's URL using the manifest's per-entry `relative_path` against `<repository_base_url>/<version>/`. Clients do not string-format shard URLs or assume the directory layout (`geometry/`, `data/`, content-hashed filename); the manifest is the only source of truth for what to fetch and where it lives. The `version` field doubles as the cache key.
 
 The "latest" determination is **server-side, sourced from the `artifact_version` table**:
 
@@ -105,15 +167,15 @@ Concurrent-publish safety relies on the publish flow's manifest-last upload orde
 
 #### Bundle hot-swap
 
-When the live bundle finishes loading, it replaces the embedded one in-place — the renderer's `tokio::sync::watch::Sender<Arc<Bundle>>` publishes the new `Arc<Bundle>` to all subscribed receivers. Each reader takes its own `Arc` clone via `Receiver::borrow()` (or `.borrow_and_update()`) at the start of a query and uses it to completion; in-flight queries holding an old `Arc` finish against the old bundle, and the old bundle's memory frees when the last reference drops. The swap is wait-free in both directions — no reader blocks the writer; no writer blocks readers. On subsequent launches the live bundle is read from cache; the client refetches `latest/manifest.json` on launch and on a long-interval periodic timer (TBD; likely once per active session, plus on focus / visibility-change for web). If the resolved `version_label` differs from the cached one, the client fetches the new bundle and hot-swaps again.
+When the live bundle finishes loading, it replaces the embedded one in-place — the renderer's `tokio::sync::watch::Sender<Arc<Bundle>>` publishes the new `Arc<Bundle>` to all subscribed receivers. Each reader takes its own `Arc` clone via `Receiver::borrow()` (or `.borrow_and_update()`) at the start of a query and uses it to completion; in-flight queries holding an old `Arc` finish against the old bundle, and the old bundle's memory frees when the last reference drops. The swap is wait-free in both directions — no reader blocks the writer; no writer blocks readers. On subsequent launches the live bundle is read from cache; the client refetches discovery + `latest/manifest.json` on launch and on a long-interval periodic timer (TBD; likely once per active session, plus on focus / visibility-change for web). If the resolved `version_label` differs from the cached one, the client fetches the new bundle and hot-swaps again.
 
 #### Future: opt-in version pin
 
-For QA / staged-rollout use cases, a client build can override the discovery URL with a fixed `version_label`. Out of scope for v1–v2; the mechanism is just "configure `repository_base_url` to point at `<base>/<version_label>` instead of `<base>/latest`."
+For QA / staged-rollout use cases, a client build can override the discovery URL (and therefore bypass the dynamic resolution entirely) with a fixed `version_label`. Out of scope for v1–v2; the mechanism is just "configure the client to skip discovery and use `<base>/<version_label>/manifest.json` directly."
 
 #### v2+: live server architecture supersedes the static pointer
 
-The `latest/manifest.json` flow above is a v1 design. v2's live server architecture replaces it: the client resolves the current version against a live origin (under Cloudflare Tunnel from the Mac mini, dormant through v1) instead of a static R2 object. The static-pointer approach in v1 is intentionally minimal so the v2 transition is additive — clients gain a new discovery endpoint, the producer drops the `latest/manifest.json` upload step, and the per-version bundles on R2 are unchanged.
+The `latest/manifest.json` flow above is a v1 design. v2's live server architecture replaces it: the discovery document's `repository_base_url` points at a live origin (under Cloudflare Tunnel from the Mac mini, dormant through v1) instead of a static R2 object. The static-pointer approach in v1 is intentionally minimal so the v2 transition is additive — the discovery doc gets updated to point at the new origin, clients pick up the change on their next launch, the producer drops the `latest/manifest.json` upload step, and the per-version bundles on R2 are unchanged. The discovery indirection is precisely what makes this transition seamless for old native clients.
 
 ### Verifying the bundle
 
@@ -243,7 +305,7 @@ The reader is initialized once per bundle load. Country features parse first, in
 Every client ships with the same downsampled bundle — a small subset of the live artifact that gives every first-time user (and every offline-capable device) an instant render. The bundle bytes are identical across platforms; only the **delivery mechanism** differs:
 
 - **Native** (iOS, Android): bytes baked into the app binary at build time. Available before any network or filesystem activity. Doubles as the offline-capable baseline when no cache and no network are present.
-- **Web**: bytes shipped as a static asset alongside the wasm on Cloudflare Pages. Fetched on first visit (HTTP-cached for return visits) before the live CDN bundle, so the first-ever visitor sees the map render at static-asset speed rather than waiting on a separate live-bundle fetch.
+- **Web**: bytes shipped as a static asset alongside the wasm on Cloudflare Workers Assets. Fetched on first visit (HTTP-cached for return visits) before the live CDN bundle, so the first-ever visitor sees the map render at static-asset speed rather than waiting on a separate live-bundle fetch.
 
 The downsampled bundle is generated by `ingestion build --downsampled`, which reads the canonical store directly (no CDN round trip) and writes a reduced artifact set to a single output directory (alongside the regular `ingestion build` output). It does not touch any per-platform asset directory.
 
@@ -260,7 +322,7 @@ Each client's build pipeline pulls the latest downsampled output and copies it i
 
 - iOS: bundle build script reads from the downsampled output directory and copies into `ios/EaforaApp/Resources/embedded_artifacts/` as part of the Xcode build.
 - Android: Gradle task reads from the downsampled output directory and copies into `android/app/src/main/assets/embedded_artifacts/` as part of the Android build.
-- Web: cargo-leptos build step (or equivalent) reads from the downsampled output directory and copies into `web/static/embedded_artifacts/` so Cloudflare Pages serves it alongside the wasm bundle.
+- Web: cargo-leptos build step (or equivalent) reads from the downsampled output directory and copies into `web/static/embedded_artifacts/` so Cloudflare Workers Assets serves it alongside the wasm bundle.
 
 The dependency direction is **client build pulls from the producer's output**, never **producer pushes into client trees**. This keeps `ingestion` agnostic to per-platform layout and lets each client decide when (and whether) to refresh its embedded bundle.
 

@@ -303,7 +303,7 @@ All three platform shells (web, iOS, Android) are **scaffolded with their full b
 
 | Platform | Build toolchain | Iteration in v1 |
 |---|---|---|
-| Web | Live, end-to-end (cargo-leptos + wasm-bindgen + Cloudflare Pages deploy) | Yes — primary surface |
+| Web | Live, end-to-end (cargo-leptos + wasm-bindgen + Cloudflare Workers Assets deploy) | Yes — primary surface |
 | iOS | Live, end-to-end (xcframework + Xcode + TestFlight) | Yes — second surface, lags web |
 | Android | Live, end-to-end (cargo-ndk → AAR + Gradle + Play Console internal track) | Minimal — keep the hello-world building, do not actively iterate features until web + iOS stabilize |
 
@@ -374,7 +374,7 @@ Comparison (concrete numbers approximate; see §Things to verify):
 | GitHub Releases | $0 | no edge caching, rate limits | Acceptable for v1 only |
 | Netlify / Vercel | $0 free tier; ~$11/mo Pro | bundled in plans | Nice for the web app static files; not the right shape for binary artifacts |
 
-**Recommendation**: **Cloudflare R2** for the artifacts. The zero-egress model is decisive; the operational story is simple (S3-compatible API, public buckets); it scales from v1 to v2 to v3 without re-platforming. The web app's static files (Leptos build output) can ride on Cloudflare Pages from the same account.
+**Recommendation**: **Cloudflare R2** for the artifacts. The zero-egress model is decisive; the operational story is simple (S3-compatible API, public buckets); it scales from v1 to v2 to v3 without re-platforming. The web app's static files (Leptos build output) ride on Cloudflare Workers Assets from the same account — a thin pass-through Worker plus an asset bundle; serves precompressed brotli-q11 siblings.
 
 ### Artifact format
 
@@ -513,7 +513,7 @@ iOS signing: App Store Connect API key (.p8) stored in repo secrets, decoded in 
 
 ### Domain and email
 
-- **Domain**: `eafora.org`, registered through **Cloudflare** (pairs naturally with the Cloudflare R2 + Pages choice in §Artifact distribution; one vendor relationship for DNS, registrar, CDN, and static hosting). `.org` is traditionally for nonprofit / educational / research-shaped projects, which fits the stated mission. Pricing ~$8–10/year through Cloudflare's at-cost registrar pricing.
+- **Domain**: `eafora.org`, registered through **Cloudflare** (pairs naturally with the Cloudflare R2 + Workers Assets choice in §Artifact distribution; one vendor relationship for DNS, registrar, CDN, and static hosting). `.org` is traditionally for nonprofit / educational / research-shaped projects, which fits the stated mission. Pricing ~$8–10/year through Cloudflare's at-cost registrar pricing.
 - **Email**: registrar-provided forwarding (`hello@eafora.org` → personal inbox), free; outbound via Sendgrid/Postmark free tier when app-to-user emails are needed (probably not in v1–v2).
 
 ## Cost estimate
@@ -522,7 +522,7 @@ Concrete numbers carry the same approximation caveats as the source agent resear
 
 | Category | v1 (alpha, <100 users) | v1.5 (~1k DAU) | v2 (~10k DAU) |
 |---|---|---|---|
-| CDN (Cloudflare R2 + Pages) | ~$0–2/mo | ~$1–5/mo | ~$5–20/mo |
+| CDN (Cloudflare R2 + Workers Assets) | ~$0–2/mo | ~$1–5/mo | ~$5–20/mo |
 | Postgres (on the Mac mini through v1; managed-cloud Postgres post-migration) | **$0** | $0–15/mo | $15–50/mo |
 | Ingestion compute (Mac mini through v1; managed runner post-migration) | **$0** | $0 | $0–50/mo |
 | CI/CD (Mac mini through v1; managed runner post-migration) | **$0** | $0–20/mo | $20–100/mo |
