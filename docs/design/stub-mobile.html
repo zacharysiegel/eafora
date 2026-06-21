@@ -123,12 +123,6 @@
     border-bottom: 1px solid var(--hairline);
     flex-shrink: 0;
   }
-  .app-top .brand {
-    font-weight: 600;
-    font-size: 16px;
-    letter-spacing: 0.01em;
-  }
-  .app-top .brand .mark { color: var(--red); }
   .app-top .title {
     font-size: 14px;
     font-weight: 600;
@@ -157,7 +151,7 @@
   /* ---------- Crumb row (statistic / year breadcrumb) ---------- */
 
   .crumb-row {
-    padding: 10px 20px;
+    padding: 12px 20px 10px;
     border-bottom: 1px solid var(--hairline);
     display: flex;
     align-items: center;
@@ -186,6 +180,12 @@
     color: var(--ink-muted);
     font-family: var(--mono);
     font-size: 11px;
+  }
+  .crumb-row .crumbs-action {
+    color: var(--ink-muted);
+    font-size: 11px;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
   }
 
   /* ---------- Map ---------- */
@@ -561,11 +561,6 @@
           <span class="icons">5G · 87%</span>
         </div>
 
-        <div class="app-top">
-          <span class="brand">eafora<span class="mark">.</span></span>
-          <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
-        </div>
-
         <div class="crumb-row">
           <div class="crumbs">
             <span>Total fertility rate</span>
@@ -573,6 +568,7 @@
             <span class="year">2024</span>
             <span class="chev">▾</span>
           </div>
+          <span class="crumbs-action">Filter</span>
         </div>
 
         <div class="map">
@@ -659,11 +655,6 @@
           <span class="icons">5G · 87%</span>
         </div>
 
-        <div class="app-top">
-          <span class="brand">eafora<span class="mark">.</span></span>
-          <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
-        </div>
-
         <div class="crumb-row">
           <div class="crumbs">
             <span>Total fertility rate</span>
@@ -671,6 +662,7 @@
             <span class="year">2024</span>
             <span class="chev">▾</span>
           </div>
+          <span class="crumbs-action">Filter</span>
         </div>
 
         <div class="map">
@@ -776,11 +768,6 @@
         <div class="status-bar">
           <span>9:41</span>
           <span class="icons">5G · 87%</span>
-        </div>
-
-        <div class="app-top">
-          <span class="title">Rankings</span>
-          <span class="icon-btn" style="font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; color: var(--ink-muted);">Filter</span>
         </div>
 
         <div class="crumb-row">
