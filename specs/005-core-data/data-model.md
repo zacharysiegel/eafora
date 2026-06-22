@@ -98,7 +98,9 @@ pub fn load_hashed_file(
 
 ## Module: `core::canonical::canonical_model`
 
-Moved from `ingestion/src/canonical/canonical_model.rs` per plan.md §Phasing step 3.
+Moved from `ingestion/src/canonical/canonical_model.rs` per plan.md §Phasing step 3, with `NaiveDatePeriod` lifted from `ingestion/src/adapter/adapter_model.rs` per spec FR-005a.
+
+Per `docs/conventions/types.md` §Core dichotomy: every DB-touched type has a Model (consumer-facing, typed) + an Entity / Projection (Postgres wire shape). This module holds the **Models**; the matching **Entities stay in `ingestion/src/canonical/canonical_model.rs`** since only the producer's sqlx queries construct them. The `From<Entity> for Model` / `TryFrom<Entity> for Model` impls live next to the Entity (per the same convention) — the orphan rule permits ingestion adding the impl because ingestion owns the Entity even though Model is now foreign (from core).
 
 ### `StatisticKind`
 
@@ -211,6 +213,104 @@ pub struct SourceRevision {
 ```
 
 Already has Serialize / Deserialize in the current producer-side definition; moves verbatim.
+
+### `NaiveDatePeriod`
+
+Pure value type lifted from `ingestion/src/adapter/adapter_model.rs` per spec FR-005a. Half-open `[start, end)` interval matching the canonical store's `period_start` / `period_end` columns. Consumers use it for period-keyed SQLite shard queries (year scrubber).
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NaiveDatePeriod {
+    pub start: NaiveDate,
+    pub end: NaiveDate,
+}
+
+impl NaiveDatePeriod {
+    pub fn from_year(year: i32) -> Result<NaiveDatePeriod, AppError>;
+    pub fn to_year(&self) -> Option<i32>;
+}
+```
+
+`to_year` returns `Some(year)` iff the period is exactly a calendar year (`YYYY-01-01` to `YYYY+1-01-01`). The `#[allow(dead_code)]` annotation on the producer-side definition drops on move — `to_year` becomes consumer-side live code (the map view's year-scrubber label reads it).
+
+### `Region` (Model)
+
+The consumer-side Model paired with the producer-side `RegionEntity` (stays in ingestion). Consumers use this for region-detail UI (`name_en`, `level`, `parent_region_id` parent-chain rendering) and Universal Link routing (`code` slug).
+
+```rust
+pub struct Region {
+    pub id: Uuid,
+    pub code: String,                       // URL-safe slug, e.g. "usa", "south_america"
+    pub name_en: String,
+    pub level: String,                      // e.g. "country", "subregion", "supranational"
+    pub parent_region_id: Option<Uuid>,
+    pub m49_code: Option<String>,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
+```
+
+`RegionEntity` + `impl From<RegionEntity> for Region` stay in `ingestion/src/canonical/canonical_model.rs` (Entity is producer-only Postgres wire shape).
+
+### `Country` (Model)
+
+Paired with `CountryEntity` (stays in ingestion). Consumers join FlatGeobuf features (which carry `iso3`) to `Country` to reach the parent `Region`.
+
+```rust
+pub struct Country {
+    pub region_id: Uuid,
+    pub iso3: String,
+    pub iso2: String,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
+```
+
+### `Statistic` (Model)
+
+Paired with `StatisticEntity` (stays in ingestion). Consumers display `name_en` + `units` + `description` in the statistic-picker chrome + the detail panel.
+
+```rust
+pub struct Statistic {
+    pub id: Uuid,
+    pub code: String,                       // matches `StatisticKind::code()` for the typed variant
+    pub name_en: String,
+    pub description: String,
+    pub units: String,                      // e.g. "births per woman" for TFR
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
+```
+
+### `DataSource` (Model)
+
+Paired with `DataSourceEntity` (stays in ingestion). Consumers display attribution in the source-panel chrome per `docs/design/stub-desktop.html` (top-right citation, etc.).
+
+```rust
+pub struct DataSource {
+    pub id: Uuid,
+    pub kind: DataSourceKind,               // typed; matches the moved enum
+    pub name_en: String,                    // e.g. "World Bank: World Development Indicators"
+    pub homepage_url: String,
+    pub license_class: LicenseClass,        // typed; matches the moved enum
+    pub license_name: String,               // e.g. "CC BY 4.0"
+    pub license_url: String,
+    pub attribution_text: String,           // publisher's literal attribution string
+    pub preference_rank: i32,
+    pub created: DateTime<Utc>,
+    pub modified: DateTime<Utc>,
+}
+```
+
+`DataSourceEntity` (with `code: String` instead of `kind: DataSourceKind` + `license_class: String` instead of `license_class: LicenseClass`) + `impl TryFrom<DataSourceEntity> for DataSource` stay in `ingestion/src/canonical/canonical_model.rs`.
+
+### Types that DO NOT move
+
+These stay in ingestion entirely (not just Entity-stays-Model-moves; nothing about them crosses into `core/`):
+
+- **`StatisticValue` + `StatisticValueEntity`**: consumer-side `statistic_value` reads happen against SQLite shards with a different column set (`region_iso3 text` not `region_id uuid`; no `superseded`; no FK references). The Postgres-shaped `StatisticValue` Model isn't the right consumer type; consumers query the shard directly.
+- **`SourceChoice` + `SourceChoiceEntity`**: producer-only merge configuration. Baked into shards at build time; consumers see only the resulting `statistic_value` rows.
+- **`ArtifactVersion` + `ArtifactVersionEntity`**: producer-only publish bookkeeping. The `latest/manifest.json` discovery flow exposes `version_label` + `manifest_url` indirectly (via the manifest's URL), but consumers don't read the Postgres row directly.
 
 ## Module: `core::artifact::manifest`
 

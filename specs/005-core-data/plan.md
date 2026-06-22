@@ -52,7 +52,7 @@ No `async-trait` (stable AFIT covers `ArtifactCache`). No new third-party deps b
 - `Bundle: Send + Sync` (per spec.md §Clarifications Q2): `Arc<Bundle>` crosses thread boundaries on iOS where the live-fetch task runs on a tokio worker thread.
 - No new third-party deps beyond the wasm-bindgen family (per Constitution Principle IV + `feedback_eafora_library_conventions`).
 
-**Scale/Scope**: ~30 FRs across 7 modules (`core/src/{lib,error,filesystem,canonical/canonical_model,artifact/{manifest,bundle,bundle_watch,cache,discovery,geometry},license/license,sqlite/vfs}.rs`). Estimated ~1500 LOC for the implementation (most of it is the moved-from-ingestion types + their conversion impls), ~800 LOC for tests. The biggest single chunk is `Bundle::open` (~120 LOC) and the WASM VFS (~200 LOC).
+**Scale/Scope**: ~32 FRs across 7 modules (`core/src/{lib,error,filesystem,canonical/canonical_model,artifact/{manifest,bundle,bundle_watch,cache,discovery,geometry},license/license,sqlite/vfs}.rs`). Estimated ~1700 LOC for the implementation (most of it is the moved-from-ingestion types + their conversion impls; the Model + Entity split adds ~100 LOC over the prior estimate because Models move + impls stay), ~800 LOC for tests. The biggest single chunk is `Bundle::open` (~120 LOC) and the WASM VFS (~200 LOC).
 
 ## Constitution Check
 
@@ -124,7 +124,9 @@ ingestion/
 └── src/
     ├── error.rs                            # `pub use core::error::AppError;` + the additional `From` impls for ingestion-only error families (sqlx, reqwest, zip, shapefile, shapefile::dbase, secr, dotenvy, base64)
     ├── canonical/
-    │   └── canonical_model.rs              # `pub use core::canonical::canonical_model::*;` + any ingestion-only struct definitions (Region, Country, Statistic, *Entity, etc.) that stay
+    │   └── canonical_model.rs              # The `*Entity` wire-shape types (`RegionEntity`, `CountryEntity`, `StatisticEntity`, `DataSourceEntity`, `StatisticValueEntity`, `SourceChoiceEntity`) STAY here — they're producer-only Postgres wire shapes. Their `From<Entity> for Model` / `TryFrom<Entity> for Model` impls also stay here (orphan rule allows: ingestion owns the Entity even though Model is foreign from core). `StatisticValue` + `SourceChoice` Models stay too (consumers read `statistic_value` from SQLite shards directly, not via the Postgres Model). At the top of the file: `pub use core::canonical::canonical_model::*;` so existing `crate::canonical::canonical_model::Region` import sites resolve via the moved Model.
+    ├── adapter/
+    │   └── adapter_model.rs                # `NaiveDatePeriod` moves to core; the rest (`AdapterOptions`, `NormalizedStatisticValue`, `NormalizeOutcome`, `IngestWarning`, `IngestWarningKind`) stays. At the top: `pub use core::canonical::canonical_model::NaiveDatePeriod;` so existing `crate::adapter::NaiveDatePeriod` imports resolve.
     ├── filesystem.rs                       # `pub use core::filesystem::*;` (single-line re-export; the rest moved to core/src/filesystem.rs). Alternatively delete the file entirely and add `pub use core::filesystem;` to lib.rs — implementation-time choice.
     ├── artifact/
     │   ├── hashing.rs                      # ingestion-side producer orchestrators only (hash_sqlite_shards, hash_geometry). The sha256_hex / sha256_hex_of_file helpers now reach via core::filesystem::*; this file stays for the rename-dance logic that's producer-specific.
@@ -222,7 +224,7 @@ Rough implementation order inside the single PR (tasks.md will codify this):
 
 1. Workspace setup (`core/Cargo.toml`, root `Cargo.toml` members + wasm-bindgen-family deps, `rust-toolchain.toml` pin).
 2. `core::error::AppError` (canonical home, moves from ingestion) + `core::filesystem` (moves wholesale from `ingestion/src/filesystem.rs`).
-3. `core::canonical::canonical_model` (move from `ingestion/src/canonical/canonical_model.rs`); ingestion re-exports.
+3. `core::canonical::canonical_model` (move from `ingestion/src/canonical/canonical_model.rs`): the 6 enums + `SourceRevision` + `NaiveDatePeriod` (lifted from `ingestion/src/adapter/adapter_model.rs`) + the 4 consumer-facing Models (`Region`, `Country`, `Statistic`, `DataSource`). The matching `*Entity` types + their `(Try)From<Entity> for Model` impls stay in ingestion. Ingestion re-exports the moved Models via `pub use core::canonical::canonical_model::*;`.
 4. `core::artifact::manifest` (Manifest + ManifestEntry + parse_manifest + MANIFEST_SCHEMA_VERSION = 1); ingestion's `write_manifest` rewritten to use it.
 5. `core::artifact::discovery` (DiscoveryDocument + parse_discovery_document + DISCOVERY_SCHEMA_VERSION = 1).
 6. `core::artifact::cache` (ArtifactCache trait + MockArtifactCache).

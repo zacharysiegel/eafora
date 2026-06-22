@@ -26,6 +26,11 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `LicenseClass`                                                    | `core::canonical::canonical_model` | type  | locked    |
 | `LicenseShardClass`                                               | `core::canonical::canonical_model` | type  | locked    |
 | `SourceRevision`                                                  | `core::canonical::canonical_model` | type  | locked    |
+| `NaiveDatePeriod`                                                 | `core::canonical::canonical_model` | type  | locked    |
+| `Region` (Model only; Entity stays in ingestion)                  | `core::canonical::canonical_model` | type  | locked    |
+| `Country` (Model only; Entity stays in ingestion)                 | `core::canonical::canonical_model` | type  | locked    |
+| `Statistic` (Model only; Entity stays in ingestion)               | `core::canonical::canonical_model` | type  | locked    |
+| `DataSource` (Model only; Entity stays in ingestion)              | `core::canonical::canonical_model` | type  | locked    |
 | `MANIFEST_FILENAME`                                               | `core::artifact::manifest`      | const    | locked    |
 | `MANIFEST_SCHEMA_VERSION`                                         | `core::artifact::manifest`      | const    | new       |
 | `SUBDIR_GEOMETRY`                                                 | `core::artifact::manifest`      | const    | locked    |
