@@ -1,0 +1,209 @@
+# Feature Specification: core/ crate — renderer layer (wgpu pipelines, projection, hit-testing, Renderer)
+
+**Feature Branch**: `006-core-renderer`
+
+**Created**: 2026-06-22
+
+**Status**: Draft
+
+**Input**: User description: "Split into `005-core-data` (types + cache trait + license + parsers) and `006-core-renderer` (wgpu pipelines + draw_frame)." This is the second half: the rendering layer of `core/`, stacked on `005-core-data`. Sized to unblock 003-web-client (FR-011 through FR-016 + §Assumptions reference to `core::map::map_renderer::Renderer` and `core::map::WgpuSurface`) and 004-ios-client (FR-008's `EaforaCore` surface methods `attach_surface` / `detach_surface` / `resize_surface` / `draw_frame` / `region_at_point` + §Assumptions). All projection math, polygon model, spatial hit-testing, and the wgpu pipelines + WGSL shaders land here.
+
+## Scenarios & Testing *(mandatory)*
+
+### Renderer constructed against a Bundle (P1)
+
+`core::map::map_renderer::Renderer::new(bundle_receiver: tokio::sync::watch::Receiver<Arc<Bundle>>) -> Result<Renderer, AppError>` constructs the renderer in two phases per `docs/architecture/client-ios.md` §Rendering: MTKView + wgpu Metal step 6 ("The renderer's wgpu device, queue, and pipeline state are constructed once at `EaforaCore::new` time. The surface is attached later when the view is ready"). At construction time the renderer creates the wgpu `Instance`, requests an `Adapter`, creates the `Device` + `Queue`, builds the WGSL `borders` + `fills` + `hover_scale` render pipelines, uploads the country-polygon vertex buffers from the bundle's geometry, and stashes them all on `self`. The surface is NOT created yet — the platform shell calls `attach_surface(...)` (P2) once the platform render target (HtmlCanvasElement on web; CAMetalLayer on iOS) is ready. The renderer is `!Send` (wgpu resources are bound to the thread that created them in single-threaded WASM); both clients hold it via a `RefCell` inside a `thread_local!` (web) or via an instance owned by the Swift main thread (iOS).
+
+**Acceptance Scenarios**:
+
+1. **Given** an `Arc<Bundle>` constructed via `core::artifact::Bundle::open(...)` (005-core-data's FR-019), **When** `Renderer::new(receiver)` runs, **Then** the result is `Ok(Renderer)`; the renderer holds a non-null wgpu `Instance` + `Adapter` + `Device` + `Queue` + compiled pipelines + uploaded vertex buffers; no `wgpu::Surface` has been created yet (it's `None`).
+2. **Given** the host build (`cargo test -p core`), **When** the renderer-construction test runs against a minimal mock-bundle, **Then** the test succeeds against the wgpu `Vulkan` / `Metal` / `Gl` backend appropriate to the host (the test does NOT require a window or display server; wgpu's `request_adapter` + `request_device` succeed on the host's GPU without a surface).
+3. **Given** `Renderer::new` fails because no wgpu adapter is available (some CI runner without GPU access), **When** the test runs, **Then** the result is `Err(AppError)` whose message identifies the adapter-request failure; the renderer never enters a half-constructed state.
+
+---
+
+### Surface lifecycle: attach / resize / detach (P2)
+
+`Renderer::attach_surface(window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError>` constructs a `wgpu::Surface` from the platform-supplied window handle (HtmlCanvasElement on web; `(CAMetalLayer, UIView)` pointers on iOS via `raw-window-handle`'s UiKit variant per `docs/architecture/client-ios.md` §UniFFI: proc-macro form), configures it for the requested width × height with the device's preferred format, and stashes it on `self.surface = Some(surface)`. `Renderer::detach_surface()` drops the surface (`self.surface = None`); the device + queue + pipelines + vertex buffers survive. `Renderer::resize_surface(width: u32, height: u32) -> Result<(), AppError>` reconfigures the existing surface to the new size (called on `mtkView(_:drawableSizeWillChange:)` on iOS per `client-ios.md` §Rendering step 4; called from a `ResizeObserver` on web per `client-web.md` §Rendering: wgpu surface acquisition).
+
+**Acceptance Scenarios**:
+
+1. **Given** a constructed `Renderer` with no surface attached, **When** `renderer.attach_surface(handle, 1024, 768)` runs, **Then** the result is `Ok(())`; `self.surface` is `Some(surface)` configured for the 1024×768 logical size; the device's preferred format (`Bgra8UnormSrgb` on Metal; matching on WebGPU / WebGL2) is selected.
+2. **Given** a renderer with an attached surface, **When** `renderer.resize_surface(2048, 1536)` runs (e.g. Retina-scale handoff from a 1024×768 logical viewport), **Then** the surface reconfigures cleanly; the next `draw_frame` (P3) renders against the new size with no flicker / no resource leak.
+3. **Given** a renderer with an attached surface, **When** `renderer.detach_surface()` runs, **Then** `self.surface` is `None`; the device + queue + pipelines + vertex buffers remain valid; a subsequent `attach_surface(...)` against a freshly-constructed surface succeeds without rebuilding the pipelines (the per-platform `EaforaCore` instance survives view recreation per `client-ios.md` §Rendering edge case "MTKView's CAMetalLayer is recreated").
+
+---
+
+### Draw frame against persistent surface (P3)
+
+`Renderer::draw_frame(viewport: Viewport, frame_state: FrameState) -> Result<(), AppError>` is called by the platform shell once per `requestAnimationFrame` (web) or `MTKViewDelegate::draw(in:)` (iOS) callback. Algorithm: (1) `self.surface.as_ref().expect("attach_surface must be called first").get_current_texture()` returns a `SurfaceTexture` (the next presentable framebuffer); (2) read the current `Arc<Bundle>` from `self.bundle_receiver.borrow_and_update()` (the watch-channel reader picks up any hot-swap that happened since the last frame per 005-core-data's FR-023); (3) encode `borders` pipeline draw against the country boundary vertex buffers; (4) encode `fills` pipeline draw against the country fill vertex buffers, with per-country color computed from the active statistic's value via the choropleth color function (FR-014); (5) encode `hover_scale` pipeline against the currently-hovered country if `frame_state.hovered_region` is `Some`; (6) submit the command buffer; (7) present the surface texture.
+
+Rendering is **event-driven**, NOT loop-driven — `draw_frame` runs only when the platform shell schedules it; the renderer never schedules itself. This matches the dirty-flag + rAF pattern in `client-web.md` §Client-side map view and the `MTKView.isPaused = true` + `setNeedsDisplay()` pattern in `client-ios.md` §Rendering: MTKView + wgpu Metal. Per `docs/design/README.md` §Animation, NO animations through v1 — every state change is instant.
+
+**Acceptance Scenarios**:
+
+1. **Given** an attached surface and a populated `Arc<Bundle>` (held via the watch channel), **When** `renderer.draw_frame(viewport, frame_state)` runs against a viewport covering the whole world (longitude_min=-180, longitude_max=180, latitude_min=-90, latitude_max=90), **Then** the surface presents a frame in which every country in the bundle's geometry is rendered with the `fills` pipeline (per-country color from the active statistic) and outlined with the `borders` pipeline (1px black per `docs/design/README.md` §Map). No GPU validation errors are emitted on the device's error scope.
+2. **Given** a viewport with `frame_state.hovered_region = Some(usa_code)`, **When** `draw_frame` runs, **Then** the USA country polygon is also drawn through the `hover_scale` pipeline with the visual-scale-only transform (FR-013); the hit-test path (P4) still treats the unscaled polygon as the hit region per the user-stated requirement in `docs/architecture/overview.md` §Hover scaling.
+3. **Given** the bundle channel publishes a new `Arc<Bundle>` between two `draw_frame` calls, **When** the second `draw_frame` runs, **Then** `borrow_and_update()` returns the new bundle; the next frame renders against the new geometry / statistics without recreating the renderer or its pipelines (hot-swap is wait-free per `docs/architecture/client.md` §Bundle hot-swap).
+4. **Given** a viewport whose `longitude_min < -180` (the user has panned past the antimeridian), **When** `draw_frame` runs, **Then** horizontal wraparound is applied per `docs/architecture/overview.md` §Projection: polygons that span the ±180° seam are rendered twice, once at their natural longitude and once shifted by ±360°.
+
+---
+
+### Spatial hit-testing (P4)
+
+`core::map::hit_test::region_at_point(bundle: &Bundle, viewport: Viewport, screen_point: ScreenPoint) -> Option<RegionCode>` queries the spatial index in the bundle's FlatGeobuf reader to find which country polygon contains the screen-space point. The function uses the FlatGeobuf file's built-in R-tree spatial index for the bounding-box query (per `docs/architecture/overview.md` §Polygon representation "the spatial index in the FlatGeobuf file is the hit-test index for the renderer — no separate index build step") and then a precise point-in-polygon test against the candidate polygons. Critical UX rule per `docs/architecture/overview.md` §Hover scaling: the hit-test polygon is always the **unscaled** country polygon; the renderer's `hover_scale` pipeline grows the visual transform but the hit-test path reads the source-of-truth polygon. The renderer and hit-test path share a single polygon source; only the visual transform differs.
+
+**Acceptance Scenarios**:
+
+1. **Given** a bundle with USA + Mexico country polygons + a viewport covering North America, **When** `region_at_point(bundle, viewport, ScreenPoint { x: <middle-of-USA>, y: <middle-of-USA> })` runs, **Then** the result is `Some(RegionCode("usa"))`.
+2. **Given** the same setup, **When** the screen point falls on the ocean (no country polygon contains the inverse-projected lat/lon), **Then** the result is `None`.
+3. **Given** the renderer is currently animating USA with `hover_scale` visually, **When** the user moves the cursor across the unscaled USA-Mexico border, **Then** `region_at_point` returns Mexico the moment the cursor crosses the unscaled border (NOT the scaled-up visual border) — the hit-test reads the source polygon, not the rendered transform.
+4. **Given** the viewport spans the ±180° antimeridian (longitude_min < -180), **When** the cursor falls over a longitude-wrapped copy of Japan (i.e. the duplicated rendering on the western seam), **Then** `region_at_point` correctly returns `Some(RegionCode("jpn"))` (the inverse-projection wraps longitudes back into ±180 before the spatial-index query).
+
+---
+
+### Projection (Miller cylindrical) (P5)
+
+`core::map::projection` provides closed-form `project(longitude: f64, latitude: f64) -> (f64, f64)` and `unproject(x: f64, y: f64) -> (f64, f64)` per `docs/architecture/overview.md` §Projection. Miller cylindrical formula (~5 lines):
+```rust
+fn project(longitude: f64, latitude: f64) -> (f64, f64) {
+    let x: f64 = longitude;
+    let y: f64 = 1.25 * ((std::f64::consts::FRAC_PI_4 + 0.4 * latitude).tan()).ln();
+    (x, y)
+}
+```
+Aspect ratio approximately 5:3; no alternate projections; no toggle; no v2+ plans for additional projections (the architecture explicitly closes this decision). The `unproject` inverse is used by `hit_test` to convert screen-space cursor positions back to (longitude, latitude) for the spatial-index query.
+
+**Acceptance Scenarios**:
+
+1. **Given** `project(0.0, 0.0)`, **When** the function runs, **Then** the result is `(0.0, 0.0)` (the origin maps to the origin in the unit-radius spherical frame).
+2. **Given** any `(longitude, latitude)` pair within Miller's defined domain (longitude in [-180, 180], latitude in [-90, 90] excluding the poles), **When** `unproject(project(longitude, latitude))` runs, **Then** the result is approximately equal to the input (within `1e-10` tolerance). The round-trip property exercises both halves of the projection.
+3. **Given** longitudes outside [-180, 180] (e.g. -185 after a horizontal pan past the antimeridian), **When** `project(-185, 0)` runs, **Then** the function returns `(-185, 0)` (it does NOT clamp to -180); the renderer's wraparound code path is responsible for the visual seam handling, not the projection function.
+
+---
+
+### Edge Cases
+
+- **`draw_frame` called before `attach_surface`** — the `self.surface.as_ref().expect("attach_surface must be called first")` panics. This is a programmer error (the platform shell is responsible for calling `attach_surface` first); the panic message identifies the violated invariant. `panic = "abort"` workspace-wide (per `docs/architecture/overview.md` §Workspace Cargo profile) makes this a clean process abort with a stack trace, not silent state corruption.
+- **`resize_surface` called before `attach_surface`** — same panic semantics. Programmer error.
+- **`attach_surface` called twice without a `detach_surface` in between** — the second call drops the previous surface (the old `wgpu::Surface` goes out of scope) and constructs a new one. No panic; the platform shell is free to attach-and-replace if needed. Documented behavior.
+- **`get_current_texture()` returns `Outdated` or `Lost`** (wgpu surface-acquisition failure) — `draw_frame` skips this frame, calls `self.surface.as_ref().unwrap().configure(...)` to reconfigure, and returns `Ok(())`. The next frame retries; the user sees a one-frame stall, no panic, no error surfaced upward.
+- **The watch channel's `Sender` is dropped before the renderer's `Receiver` is** — `borrow_and_update()` returns the last-published `Arc<Bundle>` regardless; the renderer continues rendering against it. No panic. This is the expected shape when the loader task ends; the renderer keeps the last-known-good bundle live.
+- **A country polygon spans the ±180° antimeridian without explicit wraparound vertices in the geometry** (FlatGeobuf source quirk) — the renderer's wraparound code (FR-018) duplicates the polygon at ±360° offsets when the viewport spans the seam; if the source polygon already crosses ±180° with vertices at +180 and -180, the duplication produces correct visual output regardless.
+- **A FlatGeobuf with zero country features** (degenerate bundle) — `Renderer::new` succeeds; `draw_frame` clears the surface to white and presents (no countries to render); no panic.
+- **A bundle whose statistic shard has zero values** (degenerate; the statistic is registered but no source contributed) — the choropleth color function returns the "no data" color (white, per `docs/design/README.md` §Color); every country renders as the "no data" state.
+- **Hit-test against a zero-feature bundle** — the spatial index has no entries; `region_at_point` returns `None`.
+
+## Requirements *(mandatory)*
+
+### Functional Requirements
+
+#### Module structure
+
+- **FR-001**: System MUST add `core/src/map/` per `docs/architecture/client.md` §Module layout containing: `mod.rs` (declarations + re-exports only per `feedback_mod_rs_holds_only_declarations`); `map_renderer.rs` (the `Renderer` struct, attach / detach / resize / draw_frame methods); `projection.rs` (the closed-form Miller cylindrical project + unproject); `hit_test.rs` (the spatial-index lookup function); `geometry/geometry.rs` (FlatGeobuf reader wiring + feature iteration); `geometry/geometry_model.rs` (the `Feature` / `Polygon` / `BoundingBox` types). Per-feature module layout per `feedback_singularity_db_conventions` (lobby-triplet style adapted for the consumer side: no `_db` since no database, no `_api` since not hosting routes).
+- **FR-002**: System MUST organize the wgpu pipelines in `core/src/render/` per `docs/architecture/overview.md` §wgpu rendering pipeline: `mod.rs` (declarations + re-exports); `surface.rs` (the `WgpuSurface` platform-agnostic wrapper type from `client-web.md` §Rendering: wgpu surface acquisition); `pipeline.rs` (the three WGSL render pipelines: `borders`, `fills`, `hover_scale`); `shaders/borders.wgsl`, `shaders/fills.wgsl`, `shaders/hover_scale.wgsl` (the WGSL shader source files; loaded at pipeline-build time via `include_str!`).
+- **FR-003**: System MUST cfg-gate any host-only wgpu functionality (e.g. desktop backend selection) so the wasm32 build compiles cleanly. `wgpu = { ..., features = ["webgpu", "webgl"] }` is the per-target dependency on wasm32 (matches overview §Web client); native targets get a different feature set (`["metal"]` on Apple, `["vulkan"]` on Linux / Android).
+
+#### `Renderer` type + lifecycle
+
+- **FR-004**: System MUST define `core::map::map_renderer::Renderer` as a public struct holding: `instance: wgpu::Instance`, `adapter: wgpu::Adapter`, `device: wgpu::Device`, `queue: wgpu::Queue`, `pipelines: RenderPipelines` (the three compiled WGSL pipelines from FR-002), `surface: Option<wgpu::Surface<'static>>` (`None` until `attach_surface` is called), `bundle_receiver: tokio::sync::watch::Receiver<Arc<Bundle>>` (from 005-core-data's FR-023), `current_viewport_size: (u32, u32)` (the last-configured surface size). The struct is `!Send` (wgpu resources are thread-bound).
+- **FR-005**: System MUST implement `Renderer::new(bundle_receiver: tokio::sync::watch::Receiver<Arc<Bundle>>) -> Result<Renderer, AppError>` per the §Acceptance Scenarios for P1. Construction: create `wgpu::Instance`; `request_adapter` against `RequestAdapterOptions::default()` with `power_preference: HighPerformance`; `request_device` with empty `Features` + `Limits::downlevel_webgl2_defaults()` (per overview §Web client + client-web.md §WebGPU vs WebGL2 fallback policy: "the renderer ... is designed to work under the WebGL2-equivalent feature set"); compile the three pipelines; upload the country-polygon vertex buffers from the current bundle's geometry.
+- **FR-006**: System MUST implement `Renderer::attach_surface(window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError>` per the §Acceptance Scenarios for P2 + `docs/architecture/client-ios.md` §UniFFI: proc-macro form's WindowHandle enum. The function: matches on the variant; constructs `raw_window_handle::RawWindowHandle` (UiKit variant for iOS; the web shell calls a separate `attach_surface_from_canvas(canvas: &HtmlCanvasElement, ...)` since web doesn't use the WindowHandle enum — per `client-web.md` §Rendering: wgpu surface acquisition the web bridge takes the canvas directly); creates the wgpu `Surface`; configures it via `surface.configure(&device, &config)` where `config.width = width`, `config.height = height`, `config.format = surface.get_capabilities(&adapter).formats[0]`, `config.present_mode = PresentMode::Fifo`; stashes on `self.surface`. The `WindowHandle` enum is reused from 005-core-data's FR-018 / the FFI surface defined in 004-ios-client; both clients pass the appropriate variant.
+- **FR-007**: System MUST also expose `Renderer::attach_surface_from_canvas(canvas: web_sys::HtmlCanvasElement, width: u32, height: u32) -> Result<(), AppError>` cfg-gated to `target_arch = "wasm32"` per `client-web.md` §Rendering: wgpu surface acquisition. The web client per FR-012 of 003-web-client passes the canvas directly (no WindowHandle indirection needed; web has no `raw-window-handle` integration for `HtmlCanvasElement`).
+- **FR-008**: System MUST implement `Renderer::detach_surface()`: drops `self.surface` (sets to `None`); leaves device / queue / pipelines / vertex buffers intact. Idempotent (calling on `None` is a no-op).
+- **FR-009**: System MUST implement `Renderer::resize_surface(width: u32, height: u32) -> Result<(), AppError>`: re-configures the existing surface to the new size via `surface.configure(...)`. Panics if called before `attach_surface` (programmer-error guard).
+
+#### `Viewport`, `FrameState`, `WindowHandle`, `ScreenPoint`, `RegionCode`
+
+- **FR-010**: System MUST define `core::map::Viewport` as a public struct with fields `longitude_min: f64`, `longitude_max: f64`, `latitude_min: f64`, `latitude_max: f64` per `docs/architecture/client-ios.md` §UniFFI: proc-macro form's Viewport Record. Derives `Debug`, `Clone`, `Copy`, `PartialEq`. This is the type the FFI surface (004-ios-client's FR-008) takes for `draw_frame` and `region_at_point`.
+- **FR-011**: System MUST define `core::map::FrameState` as a public struct holding the per-frame inputs the renderer needs that are NOT in the viewport: `active_statistic: StatisticKind`, `active_period: chrono::NaiveDate` (the year scrubber's current position), `selected_region: Option<RegionCode>` (the currently-clicked country), `hovered_region: Option<RegionCode>` (the currently-hovered country, for the `hover_scale` pipeline; `None` on touch platforms where hover doesn't exist). Derives `Debug`, `Clone`.
+- **FR-012**: System MUST define `core::map::WindowHandle` as a public enum re-using the 005-core-data FR-018 / 004-ios-client FR-008 definition, with variants `UiKit { layer_ptr: u64, view_ptr: u64 }` (iOS) and `AndroidNdk { native_window_ptr: u64 }` (Android). The wasm32 surface-attach path does NOT take a WindowHandle (it uses `attach_surface_from_canvas` per FR-007); no `Wasm` variant.
+- **FR-013**: System MUST define `core::map::ScreenPoint` as a public struct with fields `x: f64`, `y: f64`. The coordinate system is device-pixel logical (matching the viewport configured for `attach_surface`); the platform shell pre-divides by `devicePixelRatio` if needed before calling `region_at_point`.
+- **FR-014**: System MUST define `core::map::RegionCode` as a public wrapper struct around `String` (the `region.code` slug — `"usa"`, `"south_america"`, `"germany"`). Derives `Debug`, `Clone`, `PartialEq`, `Eq`, `Hash`. UniFFI-marshaled across the iOS FFI; the iOS Swift side wraps this in a Swift-level `RegionCode` adopting `Identifiable` per 004-ios-client's FR-033.
+
+#### `draw_frame`
+
+- **FR-015**: System MUST implement `Renderer::draw_frame(&mut self, viewport: Viewport, frame_state: FrameState) -> Result<(), AppError>` per the §Acceptance Scenarios for P3. Algorithm in FR-002's notation: get current surface texture → read bundle via `borrow_and_update()` → encode `borders` + `fills` + (conditional) `hover_scale` pipeline draws → submit → present.
+- **FR-016**: System MUST compute the per-country choropleth color in the `fills` pipeline per `docs/design/README.md` §Map: "Region fills use a single-hue scale (red intensity for the active statistic) over a white base. No multi-hue choropleths." The color function is a closed-form `lerp(white, accent_active, value_normalized_to_statistic_range)` where the normalized value is `(value - statistic_min) / (statistic_max - statistic_min)` clamped to `[0, 1]`; `statistic_min` and `statistic_max` are computed once per statistic shard at bundle-open time (cached on the bundle). The "no data" state (`None` value for a country at the active period) renders as pure white per FR-014 of `docs/design/README.md`.
+- **FR-017**: System MUST render selection as a 1px red outline (NOT a fill change) per `docs/design/README.md` §Map. The selection is drawn by the `borders` pipeline with a per-vertex color attribute that the shader picks (red for the selected country's vertices; black for everything else). Tilt the per-country selection state into a uniform buffer the shader samples by country index.
+- **FR-018**: System MUST handle horizontal wraparound per `docs/architecture/overview.md` §Projection: when `viewport.longitude_min < -180` or `viewport.longitude_max > 180`, polygons that span the seam are drawn twice — once at their natural longitude and once shifted by ±360°. Implementation: the vertex shader takes a per-draw `x_offset` uniform; the renderer issues two draw calls per pipeline (offset 0 and offset ±360°) when the viewport spans the seam.
+- **FR-019**: System MUST handle `wgpu::SurfaceError::Outdated` and `wgpu::SurfaceError::Lost` per the §Edge Cases: `draw_frame` reconfigures the surface and returns `Ok(())`; the next frame retries. The user sees a one-frame stall, no error.
+
+#### Projection
+
+- **FR-020**: System MUST implement `core::map::projection::project(longitude: f64, latitude: f64) -> (f64, f64)` per `docs/architecture/overview.md` §Projection (the closed-form Miller cylindrical formula). The function MUST be pure (no I/O, no global state); the math operates on `f64`s in radians-converted form internally and returns the projected (x, y) in the unit-square frame.
+- **FR-021**: System MUST implement `core::map::projection::unproject(x: f64, y: f64) -> (f64, f64)` as the closed-form inverse of `project`. Used by hit_test to convert screen-space cursor positions back to (longitude, latitude) for the spatial-index query.
+- **FR-022**: System MUST NOT introduce alternate projections, a globe-view toggle, or v2+ projection plans per the explicit closed decision in `docs/architecture/overview.md` §Projection. Miller cylindrical is the only projection.
+
+#### Hit testing
+
+- **FR-023**: System MUST implement `core::map::hit_test::region_at_point(bundle: &Bundle, viewport: Viewport, screen_point: ScreenPoint) -> Option<RegionCode>` per the §Acceptance Scenarios for P4. Algorithm: convert `screen_point` to (longitude, latitude) via `unproject` (accounting for `viewport` and surface dimensions); apply horizontal wraparound (if longitude < -180 or > 180, wrap into ±180); query the bundle's FlatGeobuf R-tree spatial index for candidate polygons via `flatgeobuf::HttpFgbReader` or the in-memory `FgbReader` equivalent; for each candidate, run a precise point-in-polygon test using `geo::Polygon::contains` (or equivalent); return the first matching polygon's `region.code` as a `RegionCode`.
+- **FR-024**: System MUST read the hit-test polygons from the SAME source as the renderer's vertex data (the bundle's FlatGeobuf features). The two paths share the underlying polygon source; only the visual transform differs per `docs/architecture/overview.md` §Hover scaling. The renderer's `hover_scale` pipeline MUST NOT affect the hit-test path — verified by P4 acceptance scenario #3.
+
+#### Geometry module
+
+- **FR-025**: System MUST implement `core::map::geometry::geometry::open_flatgeobuf_reader(bytes: &[u8]) -> Result<FlatGeobufReader, AppError>` that wraps the geometry bytes (returned by 005-core-data's `Bundle::open` per FR-018 of 005) into a streaming feature reader. Uses the upstream `flatgeobuf` crate per `docs/architecture/client.md` §FlatGeobuf in the client.
+- **FR-026**: System MUST iterate features in the foreground for country-level polygons (200 features through v1; tens of milliseconds total per `docs/architecture/overview.md` §Polygon representation). v2+ subnational features parse in the background after the initial render is up (per `client.md` §FlatGeobuf in the client); the background-parse scheduling is the platform shell's job, NOT this feature's.
+- **FR-027**: System MUST define `core::map::geometry::geometry_model::Feature` per the existing producer-side shape (one feature per country; properties limited to `iso3` + `name_en`; geometry as projected to WGS84 per `docs/architecture/ingestion.md` §FlatGeobuf in the client). Derives `Debug`, `Clone`.
+
+#### Test coverage
+
+- **FR-028**: System MUST cover the following surfaces with TDD per Constitution VII (these are "core logic" per Principle VII's enumeration of "projection geometry, hit-testing, ... statistic math"): `core::map::projection::project` (known input → known output for several latitudes + longitudes); `core::map::projection::unproject` (inverse round-trip within `1e-10` tolerance per P5 acceptance #2); `core::map::hit_test::region_at_point` (P4 acceptance scenarios #1, #2, #3, #4 — including the hover-scale-doesnt-affect-hit-test property and the antimeridian-wrap property); the choropleth color function (FR-016) (white at value=min; accent_active at value=max; correct lerp at value=midpoint; white for None / no-data).
+- **FR-029**: System MUST run the projection + hit_test + color-function tests on both the host target (`cargo test -p core`) and the wasm32 target (`wasm-bindgen-test` per FR-025 of 005-core-data). The renderer's `attach_surface` + `draw_frame` paths are OUT of scope for unit tests at this layer — they require a real GPU surface; their integration tests live in the per-platform implementation features (003-web-client's FR-042 + 004-ios-client's FR-056).
+- **FR-030**: System MUST verify the WGSL shaders compile against wgpu's WGSL parser at build time via a `core/build.rs` step (`println!("cargo:rerun-if-changed=src/render/shaders/")`) or via an `include_str!`-and-compile test that runs in `cargo test`. Catches shader syntax errors at build time rather than runtime adapter-validation time.
+
+### Key Entities
+
+- **`core::map::map_renderer::Renderer`** (held in a `thread_local! { static RENDERER: RefCell<Renderer> = ...; }` on web per `client-web.md` §Threading model; held as a Swift `MapRenderer` class instance owning an `EaforaCore` reference on iOS per `client-ios.md` §Rendering: MTKView + wgpu Metal): the wgpu state machine + lifecycle host. Constructed once per app launch; attached to a platform surface when the view is ready; drawn on demand.
+- **`core::map::Viewport`**: the camera's current geographic bounds. The renderer's `draw_frame` reads it once per frame; the hit-test reads it once per query.
+- **`core::map::FrameState`**: the per-frame state inputs that don't fit in the viewport — active statistic, active period, selected / hovered region. The renderer reads it once per frame to encode the right pipeline-state and per-vertex attributes.
+- **`core::map::WindowHandle`**: the platform-agnostic surface-attach payload. UniFFI-marshaled across the iOS FFI; the web shell uses `attach_surface_from_canvas` instead.
+- **`core::map::RegionCode`**: the `region.code` string slug wrapped in a small struct. Returned by hit-testing; carried in FrameState's selection / hover fields; UniFFI-marshaled across the iOS FFI.
+- **WGSL shaders** (`core/src/render/shaders/{borders,fills,hover_scale}.wgsl`): the three render pipelines' source. Loaded via `include_str!` and compiled at pipeline-build time.
+- **`core::map::projection::{project, unproject}`**: pure closed-form Miller cylindrical projection. The basis of every screen-space ↔ geographic-space conversion in the renderer and hit-test path.
+- **`core::map::hit_test::region_at_point`**: the spatial-index + point-in-polygon lookup. Backed by the FlatGeobuf file's built-in R-tree.
+
+## Success Criteria *(mandatory)*
+
+### Measurable Outcomes
+
+- **SC-001**: `cargo build -p core` and `cargo build -p core --target wasm32-unknown-unknown` succeed with zero new compilation errors after 006 merges (the renderer + WGSL shaders compile across both targets).
+- **SC-002**: `cargo test -p core` covers FR-028's listed surfaces and passes 100%. The projection round-trip test (P5 acceptance #2) passes within `1e-10` tolerance for every latitude in `[-89, 89]` step 1 and every longitude in `[-180, 180]` step 1.
+- **SC-003**: A round-trip integration: a `Renderer::new(receiver)` against a mock bundle on the host succeeds; `attach_surface(...)` against a headless wgpu surface succeeds; `draw_frame(...)` runs without GPU validation errors. (The headless-surface variant is a test-only path; CI's GPU-less runners may skip this scenario with a `#[cfg(any(target_os = "macos", target_os = "linux"))]` gate — plan-time decision.)
+- **SC-004**: After 006 merges, the 003-web-client and 004-ios-client implementation PRs (when they begin) reach `core::map::map_renderer::Renderer::{new, attach_surface, attach_surface_from_canvas, detach_surface, resize_surface, draw_frame}` + `core::map::{Viewport, FrameState, WindowHandle, ScreenPoint, RegionCode}` + `core::map::hit_test::region_at_point` + `core::map::projection::{project, unproject}` via the documented import paths without ambiguity. (Verifiable when those PRs go up; not gated on this PR's CI.)
+- **SC-005**: The `hover_scale` pipeline visually scales the hovered country (verifiable manually on the web client and iOS simulator once 003 / 004 land); the hit-test correctly returns the un-hovered country when the cursor crosses the unscaled border (verifiable via FR-028's hit_test test that exercises P4 acceptance #3).
+- **SC-006**: A horizontal-pan-past-the-antimeridian scenario (verifiable manually on the web client once 003 lands) shows polygons that span the ±180° seam rendered twice without visible discontinuity; the spatial hit-test returns the correct country when clicking on the longitude-wrapped copy (verifiable via FR-028's test that exercises P4 acceptance #4).
+
+## Assumptions
+
+- 005-core-data has merged (or is the direct parent branch this 006 branch stacks on, per the constitution's §Branch per body of work rule — "branches MUST form a linear stack: each phase branched from the previous one's head"). Specifically, the `core::artifact::Bundle`, `core::artifact::cache::ArtifactCache`, `core::license::DistributionContext`, and the `tokio::sync::watch::Receiver<Arc<Bundle>>` channel infrastructure all exist before this feature begins implementation.
+- The `wgpu` crate version pinned in `core/`'s Cargo.toml supports the `WgpuSurface` construction patterns named in FR-006 / FR-007: `Instance::create_surface_unsafe` with `SurfaceTargetUnsafe::Canvas` on wasm32 (per `client-web.md` §Things to verify #2); `wgpu::Surface::from_metal_layer` or equivalent on iOS (per `client-ios.md` §Things to verify #2). Both API names are flagged as "to verify" in the architecture docs because they've shifted across wgpu releases; implementation-time verification is required.
+- The `flatgeobuf` crate provides both streaming and in-memory feature readers; the `core::map::geometry::geometry` module uses whichever shape lines up with the consumer flow — bundle bytes are already in memory by the time the renderer needs them (per 005-core-data's FR-018), so the in-memory reader path is the default. Spatial index access via the FlatGeobuf file's built-in R-tree per `docs/architecture/overview.md` §Polygon representation; verified against the pinned crate version at plan time.
+- The `geo` (or `geo-types`) crate's `Polygon::contains` (or equivalent point-in-polygon) function is what the hit_test path uses. Standard pattern; verified against the workspace's `geo-types` version.
+- The wgpu device's required limits are `Limits::downlevel_webgl2_defaults()` (the WebGL2-equivalent feature set; the renderer is designed against this per `client-web.md` §WebGPU vs WebGL2 fallback policy). If 006-renderer's pipeline implementations end up needing a feature beyond this baseline (e.g. argument buffers), the change requires updating both `client-web.md` §WebGPU vs WebGL2 fallback policy AND the renderer's adapter-request to reflect the new floor — a per-platform conversation.
+- The `raw-window-handle` crate's `RawWindowHandle::UiKit { ui_view, ui_view_controller }` variant (or equivalent) is what the iOS surface-attach path constructs from the `WindowHandle::UiKit { layer_ptr, view_ptr }` UniFFI variant. The exact mapping from UiKit's view pointer to `raw_window_handle`'s representation is plan-time work; if `raw-window-handle` no longer exposes the UiKit variant directly, the fallback is `wgpu::Surface::from_metal_layer` directly bypassing `raw-window-handle`.
+- The choropleth color function (FR-016) computes the per-country normalized value once per `draw_frame` from the bundle's SQLite shard (queried via the connection that 005-core-data's `Bundle::open` opened). The shard's `min` and `max` are cached on the bundle at open time (a small follow-up to 005-core-data's FR-018; flagged for implementation-time confirmation that 005 actually does this rather than recomputing each frame — if 005 doesn't cache, this spec's FR-016 caches in the Renderer or in a per-statistic value-map computed at first draw).
+
+## Scope cutoff
+
+This feature lands the renderer + projection + hit-testing layer of `core/`. Adjacent surfaces that ARE in the architecture but ARE NOT in this feature:
+
+- **`core::ffi::wasm` and `core::ffi::uniffi`** — the per-platform FFI binding modules. The web shell pulls `core::*` directly without an FFI module per `client-web.md` §Workspace placement; the iOS shell needs `core::ffi::uniffi` per `client-ios.md` §UniFFI: proc-macro form. Both land inside their respective per-platform implementation features (003 / 004), not in `core/`.
+- **`hover_scale` animation curves.** Through v1 there are no animations (per `docs/design/README.md` §Animation); the `hover_scale` pipeline renders a discrete-state visual transform (hovered vs not). v2+ adds easing per the design doc's crispness-over-smoothness rule; that's a 006 follow-up at minimum.
+- **`zoom-to-country` `Camera` state machine.** Per `docs/architecture/overview.md` §Zoom-to-country, this animates the viewport on country click. Through v1 the spec doesn't require an animated zoom — the user can pan and zoom manually. v1.5+ feature.
+- **GPU-based country label rendering.** Per `docs/architecture/overview.md` §wgpu rendering pipeline, country labels render as native text overlays on top of the wgpu canvas (HTML / SwiftUI / Compose text widgets positioned by Rust-computed screen coordinates); no GPU-based label pipeline through v1. A future SDF / MSDF text pipeline lives in `core::map::map_renderer` whenever it's added.
+
+## Constitution Check
+
+Per Constitution §Compliance review, this spec honors the binding principles as follows:
+
+- **Principle I (Educational neutrality)**: not directly applicable — the renderer paints choropleths and outlines per the locked design vocabulary; no editorial content.
+- **Principle II (Source provenance — NON-NEGOTIABLE)**: not directly applicable at this layer — provenance metadata is carried on the manifest (005-core-data's FR-010) and surfaced by the per-platform region-detail UI (003 / 004). The renderer reads from the bundle's SQLite shards; the queries it issues respect the provenance chain transparently.
+- **Principle III (Rust core, native UI shells)**: directly served. This feature is the wgpu rendering pipeline + projection math + hit-testing — exactly the "rendering pipeline (`wgpu`)" enumerated in Principle III as core-resident. The platform shells (Leptos, SwiftUI, Compose) consume `core::map::map_renderer::Renderer` and pass platform-shaped surface handles via `WindowHandle`.
+- **Principle IV (Singularity convention parity)**: applies. New crate dependencies pulled in by this feature are `wgpu` (the named "rendering pipeline" library in Principle III; pre-approved at the constitution level); `raw-window-handle` (the cross-platform window-handle abstraction wgpu needs for surface construction; pre-approved by the architecture doc's `client-ios.md` §Rendering: MTKView + wgpu Metal). No new third-party crates beyond what the architecture already names. `geo` (or `geo-types`) is already in workspace deps via ingestion's FlatGeobuf consumers per the workspace `Cargo.toml`. `flatgeobuf` is in workspace deps for the same reason. Wildcard re-exports per `feedback_wildcard_re_exports`.
+- **Principle V (Explicit over implicit)**: applies. The renderer encodes draw calls imperatively (no auto-generated render-graph DSL); WGSL shaders are hand-written and committed; no shader-graph editor or codegen layer. The hit-test path queries the FlatGeobuf R-tree directly via the upstream crate's public API; no auto-generated spatial-index wrapper.
+- **Principle VI (CDN-delivered data, no live API through v2)**: directly served. The renderer reads from the bundle (CDN-sourced); no live API surface in the renderer itself.
+- **Principle VII (Test-first for core logic)**: directly served. FR-028 names the TDD-required surfaces (`project` + `unproject` + `region_at_point` + the choropleth color function); all four are "projection geometry, hit-testing, ... statistic math" per Principle VII's enumeration. The renderer's wgpu-touching surface lifecycle is the OUT-of-strict-TDD surface per Principle VII's UI-shell exception, which is consistent with FR-029's deferral of `attach_surface` / `draw_frame` integration tests to the per-platform implementation features.
+- **Principle VIII (Workflow discipline)**: this is the sixth `/speckit-specify` feature; spec / plan / tasks land in the same PR per `feedback_spec_and_plan_same_pr.md`. Branch `006-core-renderer` stacks on `005-core-data` (NOT off master) per the constitution's §Branch per body of work rule because 006 directly depends on `core::artifact::Bundle` + `tokio::sync::watch::Receiver<Arc<Bundle>>` defined in 005.
+
+No principle violations identified; no constitution amendments proposed.
