@@ -52,7 +52,7 @@ No `async-trait` (stable AFIT covers `ArtifactCache`). No new third-party deps b
 - `Bundle: Send + Sync` (per spec.md §Clarifications Q2): `Arc<Bundle>` crosses thread boundaries on iOS where the live-fetch task runs on a tokio worker thread.
 - No new third-party deps beyond the wasm-bindgen family (per Constitution Principle IV + `feedback_eafora_library_conventions`).
 
-**Scale/Scope**: ~32 FRs across 7 modules (`core/src/{lib,error,filesystem,canonical/canonical_model,artifact/{manifest,bundle,bundle_watch,cache,discovery,geometry},license/license,sqlite/vfs}.rs`). Estimated ~1700 LOC for the implementation (most of it is the moved-from-ingestion types + their conversion impls; the Model + Entity split adds ~100 LOC over the prior estimate because Models move + impls stay), ~800 LOC for tests. The biggest single chunk is `Bundle::open` (~120 LOC) and the WASM VFS (~200 LOC).
+**Scale/Scope**: ~36 FRs across 8 modules (`core/src/{lib,error,filesystem,canonical/canonical_model,artifact/{manifest,bundle,bundle_watch,cache,discovery,geometry},license/license,sqlite/{vfs,schema}}.rs`). Estimated ~1900 LOC for the implementation (the Model + Entity split adds ~100 LOC over the original estimate; the SQLite-schema contract module adds ~150 LOC of constants + DDL + the `validate_shard_header` function), ~900 LOC for tests. The biggest single chunks are `Bundle::open` (~120 LOC), the WASM VFS (~200 LOC), and the SQLite-schema contract (~150 LOC).
 
 ## Constitution Check
 
@@ -115,8 +115,9 @@ core/                                       # NEW workspace member
 │   │   ├── mod.rs                          # pub mod license; pub use license::*;
 │   │   └── license.rs                      # DistributionContext enum + authorized_classes()
 │   └── sqlite/
-│       ├── mod.rs                          # pub mod vfs; pub use vfs::*;
-│       └── vfs.rs                          # SQLite Vec<u8>-backed custom VFS (cfg-gated to wasm32; native target is empty cfg-out)
+│       ├── mod.rs                          # pub mod vfs; pub mod schema; pub use {vfs,schema}::*;
+│       ├── vfs.rs                          # SQLite Vec<u8>-backed custom VFS (cfg-gated to wasm32; native target is empty cfg-out)
+│       └── schema.rs                       # Shared producer/consumer contract: APPLICATION_ID, SCHEMA_VERSION, table + column + index name constants, PERIOD_DATE_FORMAT, shard_schema_ddl(), validate_shard_header()
 
 # MODIFIED:
 ingestion/
@@ -130,8 +131,10 @@ ingestion/
     ├── filesystem.rs                       # `pub use core::filesystem::*;` (single-line re-export; the rest moved to core/src/filesystem.rs). Alternatively delete the file entirely and add `pub use core::filesystem;` to lib.rs — implementation-time choice.
     ├── artifact/
     │   ├── hashing.rs                      # ingestion-side producer orchestrators only (hash_sqlite_shards, hash_geometry). The sha256_hex / sha256_hex_of_file helpers now reach via core::filesystem::*; this file stays for the rename-dance logic that's producer-specific.
+    │   ├── publish.rs                      # `load_build_report_from_disk` rewritten to use `core::artifact::manifest::parse_manifest` instead of its private `ManifestOnDisk` / `ManifestEntryOnDisk` structs (deleted). Eliminates the parallel manifest-deserializer drift risk per FR-020e.
     │   ├── writer/
-    │   │   └── manifest.rs                 # rewritten: use core::artifact::manifest::Manifest; ingestion's write_manifest constructs a Manifest with manifest_schema_version: 1 and serializes via the consumer-side Manifest's Serialize impl. The private ManifestSerializer struct goes away.
+    │   │   ├── manifest.rs                 # rewritten: use core::artifact::manifest::Manifest; ingestion's write_manifest constructs a Manifest with manifest_schema_version: 1 and serializes via the consumer-side Manifest's Serialize impl. The private ManifestSerializer struct goes away.
+    │   │   └── sqlite.rs                   # rewritten to use core::sqlite::schema constants + shard_schema_ddl() per FR-020d. Private SQLITE_APPLICATION_ID / SQLITE_USER_VERSION / create_schema function removed; insert_shard_key + insert_rows SQL strings reference core::sqlite::schema column-name constants via const_format::formatcp!. Existing producer-side tests continue to pass.
     │   └── artifact_model.rs               # `pub use core::artifact::manifest::*;` for any types that moved + ingestion-only types stay (BuildReport, ArtifactVersion, etc.)
 
 # UNCHANGED:
@@ -231,12 +234,13 @@ Rough implementation order inside the single PR (tasks.md will codify this):
 7. `core::license::license` (DistributionContext + authorized_classes).
 8. `core::artifact::geometry` (FlatGeobufReader wrapping the upstream `flatgeobuf` crate's reader + open_flatgeobuf_reader; cfg-gating for any host-vs-wasm differences in the upstream crate's API).
 9. `core::sqlite::vfs` (Vec<u8>-backed VFS for wasm32; native target is `cfg(not(target_arch = "wasm32"))` no-op).
-10. `core::artifact::bundle::Bundle` + `Bundle::open(version_label, &cache, ctx)`.
-11. `core::artifact::bundle_watch` (re-export `tokio::sync::watch::{Sender, Receiver}`).
-12. Test suites (host: `cargo test -p core`; wasm32: `wasm-bindgen-test --headless --chrome`).
-13. Regression check: `cargo test -p ingestion` passes; `cargo build --workspace` succeeds; `cargo build -p core --target wasm32-unknown-unknown` succeeds.
-14. Polish: agent-context update (CLAUDE.md), final clippy sweep, doc-comment review per `feedback_no_process_narration_in_doc_comments`.
+10. `core::sqlite::schema` (FR-020b through FR-020e: constants + `shard_schema_ddl()` + `validate_shard_header()`). Producer-side `ingestion/src/artifact/writer/sqlite.rs` updated to use the constants + DDL function; private `SQLITE_APPLICATION_ID` / `SQLITE_USER_VERSION` / `create_schema` removed. Producer-side `ingestion/src/artifact/publish.rs::load_build_report_from_disk` updated to use `core::artifact::manifest::parse_manifest`; private `ManifestOnDisk` / `ManifestEntryOnDisk` deleted.
+11. `core::artifact::bundle::Bundle` + `Bundle::open(version_label, &cache, ctx)`.
+12. `core::artifact::bundle_watch` (re-export `tokio::sync::watch::{Sender, Receiver}`).
+13. Test suites (host: `cargo test -p core`; wasm32: `wasm-bindgen-test --headless --chrome`).
+14. Regression check: `cargo test -p ingestion` passes; `cargo build --workspace` succeeds; `cargo build -p core --target wasm32-unknown-unknown` succeeds.
+15. Polish: agent-context update (CLAUDE.md), final clippy sweep, doc-comment review per `feedback_no_process_narration_in_doc_comments`.
 
 ## Brief PR description (per `feedback_pr_description_style`)
 
-> Adds a new `core/` Cargo workspace member that compiles for both host (Apple Silicon) and `wasm32-unknown-unknown`. Extracts the canonical-store enums + manifest schema + SHA-256 helpers from `ingestion/`; ingestion re-exports them. Introduces a new `manifest_schema_version: u32` field on the manifest (first key; v1 = 1) as a forward-compat gate for v2+ shape changes. Defines the cross-platform `ArtifactCache` async trait (stable AFIT, no `async-trait` crate). Defines `DiscoveryDocument` + `parse_discovery_document`. Implements `Bundle::open(version_label, &cache, distribution_context)` returning a `Send + Sync` `Bundle` of pure parsed data (manifest + eagerly-parsed FlatGeobufReader + license-filtered shard bytes; no SQLite Connection — the consuming renderer in 006 opens its own thread-local). Re-exports `tokio::sync::watch` for the bundle hot-swap channel. Ships the SQLite `Vec<u8>`-backed VFS for the wasm32 target. Architecture docs (`client.md` §Manifest schema, `ingestion.md` §Manifest format, `overview.md` §Artifact format) updated to include `manifest_schema_version`. Producer-side tests continue to pass; new test suite covers `parse_manifest`, `parse_discovery_document`, `verify_sha256`, `DistributionContext::authorized_classes`, `Bundle::open` on both targets.
+> Adds a new `core/` Cargo workspace member that compiles for both host (Apple Silicon) and `wasm32-unknown-unknown`. Extracts the canonical-store enums + manifest schema + SHA-256 helpers from `ingestion/`; ingestion re-exports them. Introduces a new `manifest_schema_version: u32` field on the manifest (first key; v1 = 1) as a forward-compat gate for v2+ shape changes. Defines the cross-platform `ArtifactCache` async trait (stable AFIT, no `async-trait` crate). Defines `DiscoveryDocument` + `parse_discovery_document`. Implements `Bundle::open(version_label, &cache, distribution_context)` returning a `Send + Sync` `Bundle` of pure parsed data (manifest + eagerly-parsed FlatGeobufReader + license-filtered shard bytes; no SQLite Connection — the consuming renderer in 006 opens its own thread-local). Adds `core::sqlite::schema` as the shared producer / consumer SQLite-shard contract (constants for the `application_id` / `user_version` magic numbers + every table / column / index name + the `PERIOD_DATE_FORMAT`; `shard_schema_ddl()` builds the schema DDL from those constants; `validate_shard_header()` is the consumer-side "is this an Eafora shard with a version I understand?" gate). Producer-side `ingestion/src/artifact/writer/sqlite.rs` now uses those constants instead of its own copies; `ingestion/src/artifact/publish.rs::load_build_report_from_disk` now uses `core::artifact::manifest::parse_manifest` instead of its private deserializer. Re-exports `tokio::sync::watch` for the bundle hot-swap channel. Ships the SQLite `Vec<u8>`-backed VFS for the wasm32 target. Architecture docs (`client.md` §Manifest schema, `ingestion.md` §Manifest format, `overview.md` §Artifact format) updated to include `manifest_schema_version`. Producer-side tests continue to pass; new test suite covers `parse_manifest`, `parse_discovery_document`, `verify_sha256`, `DistributionContext::authorized_classes`, `Bundle::open`, `validate_shard_header`, and `shard_schema_ddl` on both targets.

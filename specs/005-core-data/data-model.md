@@ -644,6 +644,73 @@ Same public function shape across targets so the consuming renderer code in 006 
 
 `name` is the SQLite logical database name (e.g. `"tfr-base"`); used in `ATTACH DATABASE` calls by the renderer.
 
+## Module: `core::sqlite::schema`
+
+Per spec FR-020b through FR-020e. The shared producer / consumer contract for the SQLite shard shape: every magic-number, every table / column / index name, the period date format, the DDL builder, and the consumer-side header-validator all live here. Producer (`ingestion/src/artifact/writer/sqlite.rs`) and consumer (006-core-renderer's renderer when it opens connections) both reach for these constants; the parallel-magic-value drift risk is eliminated.
+
+### Constants
+
+```rust
+/// ASCII "EAFO"; written to SQLite's `application_id` PRAGMA (offset 60).
+/// Lets `file(1)` and hex viewers identify Eafora shards by magic number
+/// alone, independent of filename or context.
+pub const APPLICATION_ID: i32 = 0x4541464F;
+
+/// Schema version written to SQLite's `user_version` PRAGMA (offset 68).
+/// Bump when the shard schema changes in a way consumers need to detect.
+/// Same forward-compat motivation as `MANIFEST_SCHEMA_VERSION` for the manifest JSON.
+pub const SCHEMA_VERSION: i32 = 1;
+
+// Table names:
+pub const TABLE_STATISTIC_VALUE: &str = "statistic_value";
+pub const TABLE_SHARD_KEY: &str = "shard_key";
+
+// Index names:
+pub const INDEX_STATISTIC_VALUE_BY_REGION: &str = "statistic_value_by_region";
+
+// statistic_value columns:
+pub const COL_REGION_ISO3: &str = "region_iso3";
+pub const COL_REGION_ID: &str = "region_id";
+pub const COL_PERIOD_START: &str = "period_start";
+pub const COL_PERIOD_END: &str = "period_end";
+pub const COL_VALUE: &str = "value";
+pub const COL_DATA_STATUS: &str = "data_status";
+pub const COL_DATA_SOURCE_CODE: &str = "data_source_code";
+pub const COL_DATA_SOURCE_REVISION: &str = "data_source_revision";
+
+// shard_key columns:
+pub const COL_STATISTIC_KIND: &str = "statistic_kind";
+pub const COL_LICENSE_SHARD_CLASS: &str = "license_shard_class";
+
+/// ISO 8601 date format used by `period_start` / `period_end` columns. Producer
+/// formats periods with it (via `chrono::NaiveDate::format`); consumer's SQLite
+/// queries assume it for string-comparison-friendly periods without date-function support.
+pub const PERIOD_DATE_FORMAT: &str = "%Y-%m-%d";
+```
+
+### Functions
+
+```rust
+/// The full schema DDL composed from the constants above. Producer calls this
+/// to create the schema; consumer never calls it directly but the column-name
+/// constants it composes from are what consumer queries reference.
+///
+/// Implementation: either built via `const_format::concatcp!` at compile time
+/// (returns `&'static str`) or returned as a runtime-built `String` joined from
+/// the constants. Implementation-time choice; functionally identical.
+pub fn shard_schema_ddl() -> &'static str;
+
+/// Validate a connection's SQLite header. Returns `Ok(())` if the connection's
+/// `application_id` and `user_version` PRAGMAs match `APPLICATION_ID` and
+/// `SCHEMA_VERSION`. On `application_id` mismatch: `AppError` whose message
+/// starts with `"sqlite shard: application_id mismatch"`. On `user_version`
+/// mismatch: `AppError` whose message starts with `"sqlite shard: unknown schema_version"`.
+///
+/// 006-core-renderer's renderer calls this on every connection opened via
+/// `core::sqlite::vfs::open_connection_from_bytes` before issuing any query.
+pub fn validate_shard_header(connection: &rusqlite::Connection) -> Result<(), AppError>;
+```
+
 ## Public-API surface summary (re-exports from `core::lib`)
 
 ```rust
@@ -660,6 +727,7 @@ pub use filesystem::*;
 pub use canonical::canonical_model::*;
 pub use artifact::{manifest::*, bundle::*, bundle_watch::*, cache::*, discovery::*, geometry::*};
 pub use license::license::*;
+pub use sqlite::{vfs::*, schema::*};
 ```
 
 Wildcard re-exports per `feedback_wildcard_re_exports`. Consumers can `use core::*` for the broadest reach or `use core::artifact::{Bundle, Manifest}` for the specific reach.
@@ -673,8 +741,12 @@ Wildcard re-exports per `feedback_wildcard_re_exports`. Consumers can `use core:
 | `verify_sha256`           | Computed hex matches expected hex (case-insensitive).                                    | FR-009     |
 | `Bundle::open`            | Manifest present in cache; every shard present; every SHA-256 matches; geometry parses. | FR-019, §Edge Cases |
 | `DistributionContext::authorized_classes` | Returns `&'static [LicenseShardClass]`; compile-error on new variant.       | FR-022     |
+| `validate_shard_header`   | Connection's `application_id` == `APPLICATION_ID`; connection's `user_version` == `SCHEMA_VERSION`. Mismatch returns `AppError` with documented prefix. | FR-020c |
+| `shard_schema_ddl`        | DDL composed from constants; executing it creates `statistic_value` + `shard_key` tables and `statistic_value_by_region` index with the names from the column-constants. | FR-020b |
 | `MANIFEST_SCHEMA_VERSION` | Compile-time constant; `1`.                                                              | FR-010     |
 | `DISCOVERY_SCHEMA_VERSION`| Compile-time constant; `1`.                                                              | FR-015     |
+| `APPLICATION_ID`          | Compile-time constant; `0x4541464F` ("EAFO").                                            | FR-020b    |
+| `SCHEMA_VERSION` (sqlite) | Compile-time constant; `1`.                                                              | FR-020b    |
 
 ## State transitions
 

@@ -56,6 +56,15 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `DistributionContext::authorized_classes() -> &'static [LicenseShardClass]` | `core::license::license` | function | new |
 | `register_vec_u8_vfs() -> Result<(), AppError>` (wasm32 only)     | `core::sqlite::vfs`             | function | new       |
 | `open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<rusqlite::Connection, AppError>` | `core::sqlite::vfs` | function | new |
+| `APPLICATION_ID`                                                  | `core::sqlite::schema`          | const    | new       |
+| `SCHEMA_VERSION`                                                  | `core::sqlite::schema`          | const    | new       |
+| `TABLE_STATISTIC_VALUE`, `TABLE_SHARD_KEY`                        | `core::sqlite::schema`          | const    | new       |
+| `INDEX_STATISTIC_VALUE_BY_REGION`                                 | `core::sqlite::schema`          | const    | new       |
+| `COL_REGION_ISO3`, `COL_REGION_ID`, `COL_PERIOD_START`, `COL_PERIOD_END`, `COL_VALUE`, `COL_DATA_STATUS`, `COL_DATA_SOURCE_CODE`, `COL_DATA_SOURCE_REVISION` | `core::sqlite::schema` | const | new |
+| `COL_STATISTIC_KIND`, `COL_LICENSE_SHARD_CLASS`                   | `core::sqlite::schema`          | const    | new       |
+| `PERIOD_DATE_FORMAT`                                              | `core::sqlite::schema`          | const    | new       |
+| `shard_schema_ddl() -> &'static str`                              | `core::sqlite::schema`          | function | new       |
+| `validate_shard_header(connection: &rusqlite::Connection) -> Result<(), AppError>` | `core::sqlite::schema` | function | new |
 
 Stability key:
 - **locked**: moves from `ingestion/` with the same shape; `ingestion/` keeps a `pub use` re-export so existing call sites stay valid.
@@ -97,6 +106,10 @@ Per spec FR-024 + FR-025, the following tests are themselves part of the public-
 | `bundle_open_skips_unauthorized_shards`                   | `Embedded` context → only `Base` shards in `bundle.shard_bytes`.        | host    |
 | `bundle_open_eagerly_parses_geometry`                     | Bundle's `geometry_reader` is constructed; iteration returns features.   | host    |
 | `bundle_is_send_sync`                                     | Compile-time assertion: `Arc<Bundle>: Send + Sync` (via `fn assert_send_sync<T: Send + Sync>() {}`). | host |
+| `shard_schema_ddl_creates_expected_tables_and_index`      | Execute `shard_schema_ddl()` against an in-memory rusqlite Connection; assert `statistic_value`, `shard_key` tables exist with the expected columns; assert `statistic_value_by_region` index exists. | host |
+| `validate_shard_header_accepts_correctly_initialized_connection` | Open in-memory Connection; set `application_id` + `user_version` PRAGMAs to the constants; `validate_shard_header(&conn)` returns `Ok(())`. | host |
+| `validate_shard_header_rejects_wrong_application_id`      | Set `application_id` to `0xDEADBEEF`; `validate_shard_header` returns `AppError` whose message starts with `"sqlite shard: application_id mismatch"`. | host |
+| `validate_shard_header_rejects_unknown_schema_version`    | Set `user_version` to `99`; `validate_shard_header` returns `AppError` whose message starts with `"sqlite shard: unknown schema_version"`. | host |
 | `parse_manifest_round_trips_fixture_set` (wasm32 dup)     | Same as host, on wasm32-unknown-unknown.                                 | wasm32  |
 | `parse_discovery_document_round_trips_fixture` (wasm32 dup)| Same as host.                                                            | wasm32  |
 | `verify_sha256_accepts_matching_hash` (wasm32 dup)        | Same as host.                                                            | wasm32  |
