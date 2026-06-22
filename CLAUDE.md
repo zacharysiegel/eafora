@@ -138,6 +138,5 @@ Notable items relevant here:
   afterward and update the plan doc with notes about the deviations.
 
 <!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
+Active plan: `specs/005-core-data/plan.md` (with `data-model.md`, `contracts/core-public-api.md`, `quickstart.md`). Spec: `specs/005-core-data/spec.md`. Branch: `005-core-data`. For additional context about technologies to be used, project structure, shell commands, and other important information, read these files first.
 <!-- SPECKIT END -->

@@ -1,0 +1,592 @@
+# Data model: core/ crate — data layer (005-core-data)
+
+> Phase 1 output of `/speckit-plan` for 005-core-data. Strict definitions of every public type `core/` exposes, plus the trait signatures and constants. Sourced directly from spec.md's FR list + §Clarifications session 2026-06-22.
+
+## Conventions
+
+- Per `docs/conventions/types.md` §Core dichotomy: every DB-touched type has a Model (typed enums; bare-named) + Wire (`String` for text columns; suffixed `Entity` / `Projection`). The types here are CONSUMER-side; they don't touch the database. Most don't need an Entity / Projection pair; the few that do (`Manifest` exists in both Rust-owned consumer form AND wire JSON form) reuse a single struct with serde derives because serde IS the wire layer for these types.
+- Per `docs/conventions/types.md` §Enums: bare descriptive name when the type reads as a classification (`LicenseClass`, `LicenseShardClass`, `DataStatus`, `DistributionContext`); `Kind` suffix when the bare name would shadow a struct (`StatisticKind`, `DataSourceKind`). Both flavors implement `TryFrom<&str>` for the wire-string direction.
+- Per `docs/conventions/types.md` §Variable naming: collection variables prefixed with the type they contain (`shard_bytes` not `bytes`).
+- Per `feedback_inline_sql_constraints` / `feedback_no_dollar_quoted_sql` / etc.: no SQL in this layer (consumer side).
+
+## Module: `core::error`
+
+Canonical home for `AppError` (moves from `ingestion/src/error.rs`). Ingestion `pub use`s `core::error::AppError;` and adds its own additional `From` impls for ingestion-only error families.
+
+### `AppError`
+
+Per `minimer::define_app_error!(pub AppError)`. The `From` impls registered in `core/src/error.rs`:
+
+```rust
+use std::error::Error;
+
+minimer::define_app_error!(pub AppError);
+
+minimer::impl_from_error!(AppError, serde_json::Error);
+minimer::impl_from_error!(AppError, rusqlite::Error);
+minimer::impl_from_error!(AppError, flatgeobuf::Error);
+minimer::impl_from_error!(AppError, geozero::error::GeozeroError);
+minimer::impl_from_error!(AppError, log::SetLoggerError);
+```
+
+(Parser-surface set; covers what `core/` itself touches. Ingestion adds the rest — sqlx, reqwest, zip, shapefile, shapefile::dbase, secr, dotenvy, base64 — in its own `error.rs` via the orphan-rule-friendly local-impl-for-local-deps pattern.)
+
+`render_error_chain(error: &dyn Error) -> String` — moved verbatim from `ingestion/src/error.rs` (walks the error's `source()` chain, joining each level with ` -> `).
+
+## Module: `core::filesystem`
+
+Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items work on both host and wasm32; host-only items are `#[cfg(not(target_arch = "wasm32"))]`-gated. Ingestion `pub use`s `core::filesystem::*;` (single-line re-export keeps existing import paths valid).
+
+### `FileReference`
+
+```rust
+#[derive(Debug, Clone)]
+pub struct FileReference {
+    pub path: PathBuf,
+    pub byte_count: u64,
+}
+```
+
+(Producer-side use case; the consumer-side `Bundle::open` doesn't construct these — it goes through the cache, not the filesystem.)
+
+### `Hashed<T>`
+
+```rust
+#[derive(Debug, Clone)]
+pub struct Hashed<T> {
+    inner: T,
+    sha256_hex: String,
+}
+
+impl<T> Hashed<T> {
+    pub fn new(inner: T, bytes: impl AsRef<[u8]>) -> Self;
+    pub fn new_with_sha(inner: T, sha256_hex: String) -> Self;
+    pub fn sha256_hex(&self) -> &str;
+}
+
+impl<T> Deref for Hashed<T> { /* delegates to inner */ }
+```
+
+### Functions
+
+```rust
+// Cross-target:
+pub fn sha256_hex(bytes: &[u8]) -> String;
+pub fn verify_sha256(bytes: &[u8], expected_hex: &str) -> Result<(), AppError>;
+
+// Host-only:
+#[cfg(not(target_arch = "wasm32"))]
+pub fn sha256_hex_of_file(path: &Path) -> Result<String, AppError>;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn filename_of(path: &Path) -> Result<&str, AppError>;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn read_bytes(path: &Path) -> Result<Vec<u8>, AppError>;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn load_hashed_file(
+    base_dir: &Path,
+    relative_path: &str,
+    expected_sha256_hex: &str,
+) -> Result<Hashed<FileReference>, AppError>;
+```
+
+`verify_sha256` per spec FR-009: on mismatch, returns `AppError` whose message contains both `expected_hex` (first 8 hex chars) and the actual hash (first 8 hex chars). On match, returns `Ok(())`. Cross-target so wasm32 consumers (the web client's loader, when verifying fetched bytes against manifest entries) can use it.
+
+`sha256_hex_of_file`, `filename_of`, `read_bytes`, `load_hashed_file`: host-only (cfg-gated). `Bundle::open` does NOT call any of these — it goes through the cache trait. Producer-side code (ingestion's publish flow) uses them via the re-export.
+
+## Module: `core::canonical::canonical_model`
+
+Moved from `ingestion/src/canonical/canonical_model.rs` per plan.md §Phasing step 3.
+
+### `StatisticKind`
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "&str", into = "&str")]
+pub enum StatisticKind {
+    Tfr,
+    #[cfg(test)]
+    TestAlpha,
+}
+
+impl StatisticKind {
+    pub fn code(self) -> &'static str;
+}
+
+impl TryFrom<&str> for StatisticKind { type Error = AppError; /* ... */ }
+```
+
+Diverges from the producer-side current shape by adding `Serialize` / `Deserialize` derives so the consumer-side `Manifest.statistics: BTreeMap<StatisticKind, _>` round-trips through JSON. The `try_from` / `into` serde attrs delegate to the existing `TryFrom<&str>` + `code()` impls — no separate serializer.
+
+### `DataSourceKind`
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "&str", into = "&str")]
+pub enum DataSourceKind {
+    WorldBankWDI,
+    #[cfg(test)] TestAlpha,
+    #[cfg(test)] TestBeta,
+}
+
+impl DataSourceKind {
+    pub fn code(self) -> &'static str;
+}
+
+impl TryFrom<&str> for DataSourceKind { type Error = AppError; /* ... */ }
+```
+
+Same Serialize / Deserialize addition rationale as `StatisticKind`.
+
+### `DataStatus`
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "&str", into = "&str")]
+pub enum DataStatus {
+    Final,
+    Provisional,
+    Preliminary,
+    Projection,
+    Imputed,
+    Interpolated,
+}
+
+impl DataStatus {
+    pub fn as_str(self) -> &'static str;
+}
+
+impl TryFrom<&str> for DataStatus { type Error = AppError; /* ... */ }
+```
+
+### `LicenseClass`
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "&str", into = "&str")]
+pub enum LicenseClass {
+    PublicDomain,
+    Attribution,
+    AttributionShareAlike,
+    NonCommercial,
+}
+
+impl LicenseClass {
+    pub fn as_str(self) -> &'static str;
+}
+
+impl TryFrom<&str> for LicenseClass { type Error = AppError; /* ... */ }
+```
+
+### `LicenseShardClass`
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "&str", into = "&str")]
+pub enum LicenseShardClass {
+    Base,
+    ShareAlike,
+    NonCommercial,
+}
+
+impl LicenseShardClass {
+    pub fn from_license_class(license_class: LicenseClass) -> LicenseShardClass;
+    pub fn as_str(self) -> &'static str;
+}
+
+impl TryFrom<&str> for LicenseShardClass { type Error = AppError; /* ... */ }
+```
+
+### `SourceRevision`
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SourceRevision {
+    pub revision: String,
+    pub published: Option<DateTime<Utc>>,
+    pub fetched: DateTime<Utc>,
+}
+```
+
+Already has Serialize / Deserialize in the current producer-side definition; moves verbatim.
+
+## Module: `core::artifact::manifest`
+
+### Constants
+
+```rust
+pub const MANIFEST_FILENAME: &str = "manifest.json";
+pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const SUBDIR_GEOMETRY: &str = "geometry";
+pub const SUBDIR_DATA: &str = "data";
+```
+
+### `Manifest`
+
+Per spec FR-010 + §Clarifications Q3:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Manifest {
+    /// Always 1 for v1. First field in serialization order (so a parser can
+    /// fail fast on shape changes before parsing the rest).
+    pub manifest_schema_version: u32,
+
+    /// `YYYY-MM-DD+<surname>` from the Nobel-laureate generator (producer side).
+    pub version: String,
+
+    pub artifact_created: DateTime<Utc>,
+
+    pub geometry: ManifestEntry,
+
+    /// Keyed first by statistic code, then by license shard class.
+    /// BTreeMap (not HashMap) for deterministic serialization order.
+    pub statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>>,
+
+    /// Per-source revision metadata; one entry per data source contributing to the build.
+    pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
+}
+```
+
+Field order in the source matches field order in serialized JSON. `serde_json::to_string_pretty` respects the source order for structs.
+
+### `ManifestEntry`
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ManifestEntry {
+    /// Rooted at the version directory. Validated to NOT contain `..` and NOT
+    /// start with `/` (per FR-012 + §Edge Cases).
+    pub relative_path: String,
+    pub size_bytes: u64,
+    /// Full SHA-256 hex; 64 lowercase hex chars.
+    pub sha256: String,
+}
+```
+
+### Functions
+
+```rust
+/// Parse manifest bytes into the owned consumer-side `Manifest`. Validates
+/// `manifest_schema_version == MANIFEST_SCHEMA_VERSION`; rejects unknown
+/// versions with an `AppError` whose message contains `"unknown manifest_schema_version {N}"`.
+/// Validates each entry's `sha256` is 64 hex chars; rejects path-traversal
+/// `relative_path` (`..` or absolute paths).
+pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError>;
+```
+
+## Module: `core::artifact::discovery`
+
+### Constants
+
+```rust
+pub const DISCOVERY_SCHEMA_VERSION: u32 = 1;
+```
+
+### `DiscoveryDocument`
+
+Per spec FR-014 + `docs/architecture/client.md` §Discovery document shape:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveryDocument {
+    pub schema_version: u32,
+
+    /// e.g. "https://repository.eafora.org"
+    pub repository_base_url: String,
+
+    /// Lowest client version this contract still supports.
+    pub minimum_client_version: String,
+
+    /// `None` in steady state. RFC 3339 timestamp string when the contract is being retired.
+    /// Type is `Option<String>` (not `Option<DateTime>`); the caller decides how to compare against `now()`.
+    pub sunset: Option<String>,
+}
+```
+
+### Functions
+
+```rust
+/// Parse a discovery document JSON. Rejects `schema_version` other than
+/// `DISCOVERY_SCHEMA_VERSION` with an `AppError` whose message contains the
+/// literal `"unknown schema_version {N}"`.
+pub fn parse_discovery_document(bytes: &[u8]) -> Result<DiscoveryDocument, AppError>;
+```
+
+## Module: `core::artifact::cache`
+
+### `ArtifactCache` (trait)
+
+Per spec FR-016 + the §Clarifications Q5 decision (cache trait is the cross-platform "where do bytes live" abstraction):
+
+```rust
+pub trait ArtifactCache {
+    async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError>;
+    async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError>;
+    async fn list_versions(&self) -> Result<Vec<String>, AppError>;
+    async fn delete_version(&self, version_label: &str) -> Result<(), AppError>;
+}
+```
+
+No `Send + Sync` bounds (web's `OpfsArtifactCache` holds `!Send` `JsValue` indirectly). Stable AFIT — no `async-trait` crate per research Topic 1.
+
+### `MockArtifactCache`
+
+Per spec FR-017 + plan §Outstanding decision #3 (`#[cfg(test)]`-only):
+
+```rust
+#[cfg(test)]
+pub struct MockArtifactCache {
+    /// Keyed by (version_label, file_relative_path) — bytes are owned.
+    pub entries: tokio::sync::Mutex<BTreeMap<(String, String), Vec<u8>>>,
+}
+
+#[cfg(test)]
+impl MockArtifactCache {
+    pub fn new() -> Self;
+    pub async fn insert(&self, version_label: &str, file_relative_path: &str, bytes: Vec<u8>);
+}
+
+#[cfg(test)]
+impl ArtifactCache for MockArtifactCache {
+    /* trait impl bodies */
+}
+```
+
+Note: `tokio::sync::Mutex` (not `std::sync::Mutex`) because the trait is async; the mutex is held across awaits in tests. If a downstream crate later needs the mock (today's 003 / 004 build their own platform-specific mocks; no shared-mock need), promote `#[cfg(test)]` to `#[cfg(any(test, feature = "mock"))]` — one-character change per attribute.
+
+## Module: `core::artifact::geometry`
+
+### `FlatGeobufReader`
+
+Per spec FR-020a:
+
+```rust
+pub struct FlatGeobufReader {
+    /// The upstream `flatgeobuf::FgbReader` in its read-everything-into-memory
+    /// state, holding the parsed feature header + the R-tree spatial index.
+    /// Field type resolved at implementation time against the pinned `flatgeobuf`
+    /// version; the exposed surface (Self) is what consumers see.
+    inner: flatgeobuf::FgbReader<std::io::Cursor<Vec<u8>>>,
+}
+
+impl FlatGeobufReader {
+    /// Iterate every feature in the reader (consumed by 006-core-renderer for vertex upload).
+    pub fn iter_features(&mut self) -> impl Iterator<Item = Result<Feature, AppError>> + '_;
+
+    /// Spatial-index query: return all features whose bounding box intersects the given bbox.
+    /// Consumed by 006-core-renderer's hit-test path.
+    pub fn features_in_bbox(&mut self, bbox: BoundingBox) -> impl Iterator<Item = Result<Feature, AppError>> + '_;
+}
+```
+
+The exact method signatures may flex around what the upstream `flatgeobuf` crate's reader exposes; the contract is "iter all features" + "query by bbox."
+
+### Functions
+
+```rust
+/// Parse the geometry bytes eagerly into a `FlatGeobufReader`. Failures wrap
+/// with a descriptive `AppError`.
+pub fn open_flatgeobuf_reader(bytes: Vec<u8>) -> Result<FlatGeobufReader, AppError>;
+```
+
+Note: takes `bytes: Vec<u8>` (owned), not `&[u8]`, because the reader holds the bytes for its lifetime. `Bundle::open` reads the geometry bytes from the cache then passes them in by value.
+
+### `Feature`, `Polygon`, `BoundingBox`
+
+```rust
+#[derive(Debug, Clone)]
+pub struct Feature {
+    pub iso3: String,           // ISO 3166 alpha-3 — matches `region.code` for country-level features
+    pub name_en: String,        // The country's English name (from Natural Earth's `NAME` field)
+    pub polygons: Vec<Polygon>, // A country may be multi-polygon (USA includes Alaska; Russia spans the antimeridian; etc.)
+    pub bbox: BoundingBox,      // Pre-computed bounding box; what `features_in_bbox` indexes on
+}
+
+#[derive(Debug, Clone)]
+pub struct Polygon {
+    /// Outer ring (CCW per WGS84 convention).
+    pub outer: Vec<(f64, f64)>,
+    /// Inner rings (CW per WGS84 convention); zero or more.
+    pub holes: Vec<Vec<(f64, f64)>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoundingBox {
+    pub min_longitude: f64,
+    pub min_latitude: f64,
+    pub max_longitude: f64,
+    pub max_latitude: f64,
+}
+```
+
+## Module: `core::artifact::bundle`
+
+### `Bundle`
+
+Per spec FR-018 + §Clarifications Q1+Q2 (no SQLite Connection; `Send + Sync`; eagerly-parsed FlatGeobufReader):
+
+```rust
+pub struct Bundle {
+    pub manifest: Manifest,
+    pub geometry_reader: FlatGeobufReader,
+    /// Authorized license shards' raw bytes; the renderer opens its own
+    /// `rusqlite::Connection` against these on construction + hot-swap.
+    /// Keyed by `(statistic_kind, license_shard_class)`.
+    /// BTreeMap (not HashMap) for deterministic iteration order in tests.
+    pub shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>>,
+    pub distribution_context: DistributionContext,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct StatisticShardKey {
+    pub statistic_kind: StatisticKind,
+    pub license_shard_class: LicenseShardClass,
+}
+```
+
+`Bundle: Send + Sync`. Every field is `Send + Sync`:
+- `Manifest` derives serde; field types are all `Send + Sync`.
+- `FlatGeobufReader` wraps `flatgeobuf::FgbReader<Cursor<Vec<u8>>>` which is `Send + Sync` (`Cursor<Vec<u8>>: Send + Sync`; `FgbReader` doesn't add unsafe interior mutability).
+- `BTreeMap<K, Vec<u8>>` is `Send + Sync` trivially.
+- `DistributionContext` is `Copy`.
+
+`StatisticShardKey` moves from `ingestion/src/artifact/artifact_model.rs` to `core/`; ingestion re-exports it. The producer side already uses it in the manifest serializer.
+
+### Functions
+
+```rust
+/// Open a complete artifact bundle for `version_label` by reading every file
+/// through the supplied cache. Validates every shard's SHA-256, eagerly parses
+/// the geometry into a FlatGeobufReader, loads byte buffers for every license
+/// shard this distribution context is authorized to access (per
+/// DistributionContext::authorized_classes); unauthorized shards are NOT loaded
+/// into memory.
+///
+/// Returns `Err(AppError)` if:
+/// - The manifest is missing from the cache (`cache.get(version_label, "manifest.json")` returns `Ok(None)`).
+/// - The manifest fails `parse_manifest` (unknown schema_version, malformed sha256, path traversal, etc.).
+/// - Any referenced shard is missing from the cache.
+/// - Any referenced shard's SHA-256 doesn't match the manifest's recorded value.
+/// - The geometry fails `open_flatgeobuf_reader`.
+impl Bundle {
+    pub async fn open(
+        version_label: &str,
+        cache: &dyn ArtifactCache,
+        distribution_context: DistributionContext,
+    ) -> Result<Bundle, AppError>;
+}
+```
+
+## Module: `core::artifact::bundle_watch`
+
+Thin re-export of `tokio::sync::watch` types per spec FR-023 + plan §Outstanding (recommended Option A):
+
+```rust
+pub use tokio::sync::watch::{Sender, Receiver, channel};
+```
+
+Documented import path for consumers: `use core::artifact::bundle_watch::{Sender, Receiver};` then `let (sender, receiver) = bundle_watch::channel(Arc::new(initial_bundle));`.
+
+## Module: `core::license::license`
+
+### `DistributionContext`
+
+Per spec FR-021 + the exact sketch in `docs/architecture/client.md` §Attaching license shards:
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DistributionContext {
+    FirstParty,
+    Embedded,
+}
+
+impl DistributionContext {
+    pub fn authorized_classes(self) -> &'static [LicenseShardClass] {
+        match self {
+            DistributionContext::FirstParty => &[
+                LicenseShardClass::Base,
+                LicenseShardClass::NonCommercial,
+                LicenseShardClass::ShareAlike,
+            ],
+            DistributionContext::Embedded => &[
+                LicenseShardClass::Base,
+            ],
+        }
+    }
+}
+```
+
+Per FR-022: no wildcard arm in the `match`; adding a new `LicenseShardClass` variant requires a compile-error-driven update of every `DistributionContext` arm. Adding a new `DistributionContext` variant requires explicit slice authorship.
+
+## Module: `core::sqlite::vfs`
+
+Per spec FR-020. Cfg-gated to `target_arch = "wasm32"`; on native targets the module is `cfg(not(target_arch = "wasm32"))`-empty (native uses the standard SQLite VFS that reads from `Vec<u8>` directly via rusqlite's `serialize()` / `deserialize()` API — same in-memory pattern, different mechanism).
+
+Public surface (used by 006-core-renderer's renderer when it opens connections against `bundle.shard_bytes`):
+
+```rust
+// On wasm32:
+#[cfg(target_arch = "wasm32")]
+pub fn register_vec_u8_vfs() -> Result<(), AppError>;
+
+#[cfg(target_arch = "wasm32")]
+pub fn open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<rusqlite::Connection, AppError>;
+
+// On native targets:
+#[cfg(not(target_arch = "wasm32"))]
+pub fn open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<rusqlite::Connection, AppError>;
+```
+
+Same public function shape across targets so the consuming renderer code in 006 doesn't need cfg branches; the VFS-registration step is cfg-gated since native targets don't need it.
+
+`name` is the SQLite logical database name (e.g. `"tfr-base"`); used in `ATTACH DATABASE` calls by the renderer.
+
+## Public-API surface summary (re-exports from `core::lib`)
+
+```rust
+// core/src/lib.rs
+pub mod error;
+pub mod filesystem;
+pub mod canonical;
+pub mod artifact;
+pub mod license;
+pub mod sqlite;
+
+pub use error::AppError;
+pub use filesystem::*;
+pub use canonical::canonical_model::*;
+pub use artifact::{manifest::*, bundle::*, bundle_watch::*, cache::*, discovery::*, geometry::*};
+pub use license::license::*;
+```
+
+Wildcard re-exports per `feedback_wildcard_re_exports`. Consumers can `use core::*` for the broadest reach or `use core::artifact::{Bundle, Manifest}` for the specific reach.
+
+## Validation rules from the spec
+
+| Type / function           | Validation                                                                                | Source FR  |
+|---------------------------|-------------------------------------------------------------------------------------------|------------|
+| `parse_manifest`          | `manifest_schema_version == 1`; SHA-256 64 hex chars; no path-traversal `relative_path`. | FR-012     |
+| `parse_discovery_document`| `schema_version == 1`.                                                                    | FR-015     |
+| `verify_sha256`           | Computed hex matches expected hex (case-insensitive).                                    | FR-009     |
+| `Bundle::open`            | Manifest present in cache; every shard present; every SHA-256 matches; geometry parses. | FR-019, §Edge Cases |
+| `DistributionContext::authorized_classes` | Returns `&'static [LicenseShardClass]`; compile-error on new variant.       | FR-022     |
+| `MANIFEST_SCHEMA_VERSION` | Compile-time constant; `1`.                                                              | FR-010     |
+| `DISCOVERY_SCHEMA_VERSION`| Compile-time constant; `1`.                                                              | FR-015     |
+
+## State transitions
+
+`core/`'s types are mostly value-types with no state transitions. The two stateful surfaces:
+
+1. **`Bundle` hot-swap** (state lives outside `core/` in the consuming renderer's `tokio::sync::watch::Sender<Arc<Bundle>>`):
+   - Initial state: renderer holds `Arc<Bundle>` from the embedded bundle.
+   - Transition: loader publishes `Sender::send(Arc<new_bundle>)`.
+   - Reader sees: next `Receiver::borrow_and_update()` call returns the new bundle; in-flight queries holding the old `Arc` complete against the old bundle; old bundle's memory frees when last reference drops.
+
+2. **`MockArtifactCache`** (test helper):
+   - `new()` → empty cache.
+   - `insert(version, path, bytes)` → adds an entry.
+   - `get(version, path)` → returns `Some(bytes)` if inserted, `None` otherwise.
+   - No eviction logic in the mock (production-grade adapters in 003 / 004 handle their own eviction).
