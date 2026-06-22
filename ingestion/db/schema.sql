@@ -280,7 +280,8 @@ CREATE TABLE public.statistic (
     description text NOT NULL,
     units text NOT NULL,
     created timestamp with time zone DEFAULT now() NOT NULL,
-    modified timestamp with time zone DEFAULT now() NOT NULL
+    modified timestamp with time zone DEFAULT now() NOT NULL,
+    name_abbreviated_en text NOT NULL
 );
 
 
@@ -289,6 +290,13 @@ CREATE TABLE public.statistic (
 --
 
 COMMENT ON COLUMN public.statistic.code IS 'short identifier used downstream (''tfr'', ''cbr'', ''asfr_15_19''); stable across versions, renaming is a migration event';
+
+
+--
+-- Name: COLUMN statistic.name_abbreviated_en; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.statistic.name_abbreviated_en IS 'Short English label (often an acronym) for space-constrained UI like breadcrumbs; name_en remains the long form.';
 
 
 --
@@ -619,4 +627,5 @@ ALTER TABLE ONLY public.statistic_value
 INSERT INTO public.schema_migrations (version) VALUES
     ('20260525184135'),
     ('20260525184136'),
-    ('20260603030136');
+    ('20260603030136'),
+    ('20260621120000');
