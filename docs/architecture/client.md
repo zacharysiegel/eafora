@@ -142,7 +142,7 @@ The expected case is "the discovery URL still points at the baked-in repository 
 
 The speculative fetch's errors are silenced *only* while discovery is still in flight. Once we know which URL is authoritative, errors on that URL are real and surface normally.
 
-One implementation note: the speculative fetch must not write into the OPFS / file-system cache until we know we're keeping it. Otherwise a re-platform leaves cached bytes under the old URL's version label that we'd have to garbage-collect. The fetch buffers in memory; cache commit happens only after the URL is confirmed authoritative.
+One implementation note: the speculative fetch writes to the cache as soon as bytes verify against the manifest's SHA-256 entries — no waiting on discovery. The cache is keyed by `version_label`, not by URL; bytes that match a manifest's hashes are correct bytes for that version regardless of which URL served them. If discovery returns a different `repository_base_url` and Swift fetches a different version from there, that version writes under its own subtree; the cache holds both versions briefly until eviction (per §Cache eviction's "keep current + most-recent prior" policy) cleans up. There's no "stale cache from the wrong URL" failure mode because correctness is content-verified, not source-verified.
 
 Decision-tree summary:
 
@@ -230,7 +230,7 @@ The client asks the cache for the `version_label` resolved from `latest/manifest
 
 Fetch missing files via plain HTTP GET. Files are content-addressed and CDN-cached aggressively (`max-age=31536000, immutable`); the manifest is short-cached. The fetcher is platform-specific (`fetch()` in JS-land; `URLSession` on iOS; `OkHttp` on Android per the constitution); the bytes are then handed to the Rust core uniformly as `&[u8]`.
 
-Fetches are issued concurrently up to a per-platform parallelism cap (browser typically 6 per origin; native clients 4). The client renders progress as bytes-received over expected-total (sum of `size_bytes` from the manifest). On any HTTP error or hash mismatch, retry once after a short backoff (~25 ms, doubling to ~100 ms on a second attempt); persistent failure leaves the embedded bundle (native) or loading state (web) in place and surfaces a UI-level banner.
+Fetches are issued concurrently up to a per-platform parallelism cap (browser typically 6 per origin; native clients 4). The client renders progress as bytes-received over expected-total (sum of `size_bytes` from the manifest). On any HTTP error or hash mismatch, retry once after a short backoff (approx. 100 ms, doubling to approx. 400 ms on a second attempt); persistent failure leaves the embedded bundle (native) or loading state (web) in place and surfaces a UI-level banner.
 
 ### Stage 4: persist + attach
 

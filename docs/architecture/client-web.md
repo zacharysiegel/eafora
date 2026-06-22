@@ -19,18 +19,18 @@ Cross-cutting client behavior (artifact-consumption contract, fetch / cache / lo
 
 From the constitution, `docs/architecture/overview.md`, `docs/architecture/client.md`, and `docs/design/README.md`:
 
-- **Framework**: Leptos, built with `cargo-leptos`. (Overview §Web client; Constitution III)
-- **Primary target is desktop browsers**; mobile-browser is a fallback path, not a design target. (Overview §Web client)
-- **Rendering**: wgpu via WebGPU primarily, with WebGL2 fallback through wgpu's downlevel backend. (Overview §Web client; Constitution VI)
-- **Threading**: single-threaded WASM; **no** `SharedArrayBuffer`; no Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers; per-WASM state lives in `thread_local!`. (Overview §Web client)
-- **Cache**: OPFS for the live artifact cache. (Overview §Web client; Client §Fetch / cache / load pipeline)
-- **Embedded bundle on web**: shipped as a static asset alongside the wasm on Cloudflare Workers Assets, fetched on first visit, HTTP-cached for return visits. (Client §Embedded downsampled artifact)
-- **Perf budget**: 2 MB total compressed at first paint (wasm + static-asset embedded bundle + page shell), 3 MB total compressed at second paint (after the live CDN bundle resolves). A target, not a contract — exceeding it produces a CI warning, not a build failure. (Client §Web first-paint perf budget)
-- **CSS**: plain CSS only; **Tailwind and utility-class libraries are explicitly ruled out**. (Project memory; design `README.md`)
-- **Visual identity**: sharp, white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, no animations through v1. (`docs/design/README.md`)
-- **Hot-swap protocol**: renderer subscribes to a `tokio::sync::watch::Receiver<Arc<Bundle>>` published by the loader. (Client §Bundle hot-swap)
-- **No live API through v2**: every datum the user sees came from a versioned CDN artifact. (Constitution VI)
-- **CDN**: Cloudflare R2 for artifacts, Cloudflare Workers Assets for the web app's static files. (Overview §Artifact distribution)
+- Framework: Leptos, built with `cargo-leptos`. (Overview §Web client; Constitution III)
+- Primary target is desktop browsers; mobile-browser is a fallback path, not a design target. (Overview §Web client)
+- Rendering: wgpu via WebGPU primarily, with WebGL2 fallback through wgpu's downlevel backend. (Overview §Web client; Constitution VI)
+- Threading: single-threaded WASM; **no** `SharedArrayBuffer`; no Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers; per-WASM state lives in `thread_local!`. (Overview §Web client)
+- Cache: OPFS for the live artifact cache. (Overview §Web client; Client §Fetch / cache / load pipeline)
+- Embedded bundle on web: shipped as a static asset alongside the wasm on Cloudflare Workers Assets, fetched on first visit, HTTP-cached for return visits. (Client §Embedded downsampled artifact)
+- Perf budget: 2 MB total compressed at first paint (wasm + static-asset embedded bundle + page shell), 3 MB total compressed at second paint (after the live CDN bundle resolves). A target, not a contract; exceeding it produces a CI warning, not a build failure. (Client §Web first-paint perf budget)
+- CSS: plain CSS only; **Tailwind and utility-class libraries are explicitly ruled out**. (Project memory; design `README.md`)
+- Visual identity: sharp, white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, no animations through v1. (`docs/design/README.md`)
+- Hot-swap protocol: renderer subscribes to a `tokio::sync::watch::Receiver<Arc<Bundle>>` published by the loader. (Client §Bundle hot-swap)
+- No live API through v2: every datum the user sees came from a versioned CDN artifact. (Constitution VI)
+- CDN: Cloudflare R2 for artifacts, Cloudflare Workers Assets for the web app's static files. (Overview §Artifact distribution)
 
 ## Workspace placement
 
@@ -454,6 +454,111 @@ Per overview §Web client, mobile-browser is a fallback path, not a design targe
 
 The break point is `max-width: 768px`. Below that, the layout switches to the single-column mobile pattern. Above, the desktop pattern applies.
 
+## Localization scaffolding
+
+v1 ships English-only, but the localization machinery is in place from day one so future locales are mechanical (add a translation file) instead of a refactor (find every bare string literal). Same discipline as the iOS doc's §Localization scaffolding; same overview §FFI split:
+
+- UI-chrome strings (controls, errors, About-page prose, accessibility labels) live in the web app's translation files.
+- Domain-content strings (region names, statistic names, source attributions) live in the SQLite shard built by ingestion. Out of scope for the web shell; the client reads them via `core::*` queries.
+
+For Leptos, **`leptos_i18n`** (verified at v0.6.2 in April 2026, compatible with Leptos 0.8.x; [crate](https://crates.io/crates/leptos_i18n), [book](https://baptistemontan.github.io/leptos_i18n)) is the established choice. It loads translation files at compile time, generates typed accessor macros per key, and reactively re-renders subscribed views when the active locale changes. JSON is the default format (JSON5, YAML, TOML also supported); we use JSON. Translations live as JSON files in `web/locales/<lang>.json`; an `<I18nContextProvider>` wraps the app root; components access translations via `use_i18n()` and the `t!()` macro. JSON files support arbitrary nesting; the macro accesses nested keys with dot notation:
+
+```rust
+// web/locales/en.json
+{
+    "about": {
+        "title": "About Eafora",
+        "etymology": "Old English, masc.: son, descendant, heir."
+    },
+    "controls": {
+        "loading": "Loading data..."
+    }
+}
+
+// in a view
+let i18n = use_i18n();
+view! {
+    <h1>{t!(i18n, about.title)}</h1>
+    <p>{t!(i18n, about.etymology)}</p>
+    <p>{t!(i18n, controls.loading)}</p>
+}
+```
+
+Adding a second locale is a new `web/locales/<lang>.json` file with the same key structure and translated values. Compile-time checks verify every key exists across every locale; a missing translation is a build error, not a runtime miss.
+
+Interpolation uses named arguments. JSON placeholders are `{{ name }}`; the macro takes matching named arguments at the call site:
+
+```json
+{ "click_count": "You clicked {{ count }} times" }
+```
+
+```rust
+t!(i18n, click_count, count = move || counter.get())
+```
+
+The crate also bundles ICU-backed locale-aware formatting for numbers, dates, and plurals via `t_format!` / `t_plural!` macros (gated behind optional features `icu_decimal`, `icu_datetime`, `icu_plurals`). One stack for translations + locale-aware formatting; no separate `Intl.*` calls needed.
+
+#### Integration
+
+The crate uses a build-script-driven setup, not a `[package.metadata.*]` block in `Cargo.toml`. Three pieces:
+
+`web/Cargo.toml` lists `leptos_i18n` as a runtime dependency and `leptos_i18n_build` as a build dependency.
+
+`web/build.rs` runs the codegen against the configured locale list and writes the generated module under `OUT_DIR`:
+
+```rust
+// web/build.rs
+use leptos_i18n_build::{Config, TranslationsInfos};
+use std::path::PathBuf;
+use std::error::Error;
+
+fn main() -> Result<(), Box<dyn Error>> {
+    println!("cargo::rerun-if-changed=build.rs");
+    println!("cargo::rerun-if-changed=Cargo.toml");
+
+    let i18n_mod_directory = PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("i18n");
+
+    let config = Config::new("en")?;
+    // .add_locale("fr")? when v2 adds locales
+
+    let translations_infos = TranslationsInfos::parse(config)?;
+    translations_infos.emit_diagnostics();
+    translations_infos.rerun_if_locales_changed();
+    translations_infos.generate_i18n_module(i18n_mod_directory)?;
+
+    Ok(())
+}
+```
+
+`web/src/lib.rs` brings the generated module into scope at the crate root:
+
+```rust
+include!(concat!(env!("OUT_DIR"), "/i18n/mod.rs"));
+use i18n::*;
+```
+
+`web/src/app.rs` wraps the app root in `<I18nContextProvider>`. The component is auto-generated in the `i18n` module from the locale config:
+
+```rust
+use crate::i18n::*;
+use leptos::prelude::*;
+
+#[component]
+pub fn App() -> impl IntoView {
+    view! {
+        <I18nContextProvider>
+            // routes + map view + region/about pages
+        </I18nContextProvider>
+    }
+}
+```
+
+Default locales path is `./locales`; we put the files at `web/locales/`. To override, pass `.locales_path("...")` on the `Config` builder.
+
+The discipline is "no bare string literal in a user-facing position." `view! { <p>{t!(i18n, key)}</p> }` everywhere; never `view! { <p>"raw text"</p> }` for user-visible content. Bare strings stay fine for log messages, debug output, internal identifiers, anything not user-visible.
+
+Domain-content i18n is deferred per overview §FFI. The producer side adds translation columns to the seed-data tables when a second locale becomes a real deliverable; the web client reads them via `core::canonical::region_name(code, locale)`-shaped queries — same mechanism, different layer of the stack.
+
 ## Browser fetch adapter
 
 The `web/src/fetch.rs` module owns the browser-platform side of the load pipeline. Its public surface mirrors the platform-agnostic loader contract from `core::artifact`:
@@ -467,7 +572,7 @@ Both functions delegate to the browser's `fetch()` API via `web_sys::window().un
 
 Concurrency cap: the loader in `core::artifact` holds a `tokio::sync::Semaphore` whose size is passed in by the platform. Web passes 6, matching `client.md` §Stage 3's per-platform cap. Each `fetch_artifact_file` call acquires a permit before issuing the request and releases on completion. We do not rely on the browser's own per-origin cap (which was 6 in HTTP/1.1 days but is effectively unbounded over HTTP/2 multiplexing, which Cloudflare's CDN uses); imposing our own limit keeps the load pattern under our control, the progress accounting stable, and the behavior testable.
 
-Retry: per `client.md` §Stage 3, on any HTTP error or hash mismatch, retry once after approx. 25 ms, doubling to approx. 100 ms on a second attempt. Implemented in the loader (in `core::artifact`); the fetch adapter just propagates errors.
+Retry: per `client.md` §Stage 3, on any HTTP error or hash mismatch, retry once after approx. 100 ms, doubling to approx. 400 ms on a second attempt. Implemented in the loader (in `core::artifact`); the fetch adapter just propagates errors.
 
 The `repository_base_url` is **not** baked into the binary as a hand-typed constant. It's resolved at runtime via the discovery URL flow defined in `client.md` §Discovery and live bundle resolution: the client fetches `https://eafora.org/discovery`, reads `repository_base_url` from the response, and uses that for every shard fetch. A baked-in fallback (populated at build time by a small script that reads the current discovery doc) handles the case where discovery itself fails. Web doesn't strictly need the indirection — every commit redeploys — but the contract is uniform across platforms; iOS and Android need it (binaries live on devices for months), and there's no cost to web following the same shape.
 
@@ -481,37 +586,23 @@ Workers Assets is Cloudflare's successor to Pages for static-site deploys. The d
 
 Other differences are minor: same edge network, same TLS, same domain wiring, same custom-domain support, same configuration shape for cache headers (via `_headers`). For our use case the migration is mechanical.
 
-### Worker
-
-The Worker source is a single file: `web/src/index.ts`.
-
-```typescript
-export default {
-  async fetch(request, env, ctx) {
-    return env.ASSETS.fetch(request);
-  },
-};
-```
-
-That's the whole thing. `env.ASSETS` is the binding to our uploaded asset set (configured in `wrangler.toml`); `env.ASSETS.fetch(request)` returns whatever asset matches the request path, with the correct headers (including `Content-Encoding: br` when serving the precompressed sibling). The Worker only exists because Workers Assets requires *something* to handle the request; we don't actually need request-time logic.
-
-The Worker grows beyond this only if we want to intercept and modify responses — none of which we need through v1+. If we ever need v2-shaped behavior (e.g. injecting `Set-Cookie` for some analytics, or proxying a subpath to a different origin), the Worker is where it goes.
-
 ### `wrangler.toml`
 
 Configures the deploy. Reference shape:
 
 ```toml
 name = "eafora-web"
-main = "src/index.ts"
 compatibility_date = "2026-06-01"
 
 [assets]
 directory = "../target/site"
-binding = "ASSETS"
 ```
 
-`wrangler deploy` uploads `target/site/` (the cargo-leptos output) as the asset set and the Worker as the request handler. Custom-domain routing to `eafora.org` is configured in the Cloudflare dashboard or via a `routes` block in `wrangler.toml` (verify the exact syntax against current wrangler docs when we deploy).
+That's the whole config. **No `main` field, no Worker script.** Cloudflare's standard mode for "ship a directory of static assets and let the edge serve them" is to declare only the `[assets]` block; the edge handles asset routing directly without invoking any Worker code. We don't need a passthrough handler (`export default { fetch: (req, env) => env.ASSETS.fetch(req) }`) — that pattern exists for the case where you have request-time logic to combine with assets. We don't.
+
+If we ever need request-time logic (response modification, A/B routing, edge-rendered pages), we add a `main = "src/index.ts"` file then. Through v1+ the static-only shape is correct.
+
+`wrangler deploy` uploads `target/site/` (the cargo-leptos output) as the asset set. Custom-domain routing to `eafora.org` is configured in the Cloudflare dashboard or via a `routes` block in `wrangler.toml` (verify the exact syntax against current wrangler docs when we deploy).
 
 ### Headers
 
@@ -531,11 +622,11 @@ The discovery document defined in `client.md` §Discovery and live bundle resolu
 
 Per Constitution Principle VII, the web-only TDD-required surfaces are:
 
-- **OPFS cache adapter contract**: a `cache.put(...)` → `cache.get(...)` round-trip; assert byte-equal returns; assert a missing key returns `None`; assert eviction removes the right versions; assert quota-exceeded surfaces as an `AppError` whose message starts with `cache: quota exceeded`. Runs against a real OPFS in headless Chrome via `wasm-bindgen-test` configured for browser execution.
-- **Browser fetch adapter** error mapping: simulated 4xx / 5xx responses (via a mock server or `web_sys` interception layer; verify the most ergonomic option in headless Chrome) map to `AppError`s carrying the source URL and HTTP status in the message body.
-- **Canvas-to-wgpu-surface bridge**: assert the surface's reported size matches the canvas's `clientWidth`/`clientHeight`; assert resize events propagate. Headless Chrome.
-- **WebGPU vs WebGL2 backend selection**: the `?renderer=webgl2` query-string flag forces the GL backend; assert the resulting `wgpu::Adapter::backend()` is `Backend::Gl`; the unflagged path picks `Backend::WebGpu` on browsers that support it.
-- **Perf-budget reporting**: `scripts/measure-site-budget.sh` is the test surface; CI invokes it on every PR and posts the output as a comment. The script does not fail the build; the warning is in the text output for human review.
+- OPFS cache adapter contract: a `cache.put(...)` → `cache.get(...)` round-trip; assert byte-equal returns; assert a missing key returns `None`; assert eviction removes the right versions; assert quota-exceeded surfaces as an `AppError` whose message starts with `cache: quota exceeded`. Runs against a real OPFS in headless Chrome via `wasm-bindgen-test` configured for browser execution.
+- Browser fetch adapter error mapping: simulated 4xx / 5xx responses (via a mock server or `web_sys` interception layer; verify the most ergonomic option in headless Chrome) map to `AppError`s carrying the source URL and HTTP status in the message body.
+- Canvas-to-wgpu-surface bridge: assert the surface's reported size matches the canvas's `clientWidth`/`clientHeight`; assert resize events propagate. Headless Chrome.
+- WebGPU vs WebGL2 backend selection: the `?renderer=webgl2` query-string flag forces the GL backend; assert the resulting `wgpu::Adapter::backend()` is `Backend::Gl`; the unflagged path picks `Backend::WebGpu` on browsers that support it.
+- Perf-budget reporting: `scripts/measure-site-budget.sh` is the test surface; CI invokes it on every PR and posts the output as a comment. The script does not fail the build; the warning is in the text output for human review.
 
 Cross-platform surfaces (manifest parsing, SHA-256 verification, license-class authorization, FlatGeobuf hit testing) are tested in `core/` once and not re-tested per platform. See `client.md` §Testing strategy.
 
@@ -543,7 +634,7 @@ End-to-end browser tests are **not** in scope for the foreseeable future (throug
 
 ## Decisions still open
 
-- **Page shell HTML structure.** The `index.html` template that cargo-leptos uses as the SSR shell is checked in; its exact `<head>` contents (font preloads, viewport meta, OG tags for social sharing, `<link rel="canonical">`) need a small pass before the first deploy. **Trigger:** the first real deployment to the production domain.
+- Page shell HTML structure. The `index.html` template that cargo-leptos uses as the SSR shell is checked in; its exact `<head>` contents (font preloads, viewport meta, OG tags for social sharing, `<link rel="canonical">`) need a small pass before the first deploy. Trigger: the first real deployment to the production domain.
 
 ## Things to verify
 

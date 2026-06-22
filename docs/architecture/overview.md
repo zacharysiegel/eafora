@@ -3,7 +3,7 @@
 <!--
 Status: draft, 2026-05-21. This document is the cross-cutting architecture for Eafora — the contracts, the workspace shape, the data flow, the per-platform integration patterns, and the cost model. Per-platform implementation plans (web, iOS, Android, ingestion) get their own documents in follow-up branches and reference this overview for shared decisions.
 
-Several specifics — exact pricing, the chosen CI service's free-tier limits, Apple ETP applicability — are approximate and flagged in §Things to verify near the end.
+Several specifics — exact pricing, the chosen CI service's free-tier limits — are approximate and flagged in §Things to verify near the end.
 -->
 
 ## Scope of this document
@@ -88,7 +88,8 @@ eafora/
 ├── secrets.yaml            # secr-encrypted secrets
 ├── setup.sh                # first-time setup: brew install postgresql@17, install launchd plist, decrypt secrets, run migrations, cargo sqlx prepare --workspace
 ├── dbmate.sh               # dbmate wrapper, also runs cargo sqlx prepare --workspace
-├── scripts/                # tooling scripts (branch-init.sh, cleanup-merged.sh, pr-integrate.sh, eafora-postgres.plist.template)
+├── scripts/                # tooling scripts (branch-init.sh, cleanup-merged.sh, pr-integrate.sh, eafora-postgres.plist.template, deploy-aasa.sh, etc.)
+├── tools/                  # cross-cutting tooling that doesn't belong to one platform — e.g. `tools/aasa-deploy/` (the dedicated Cloudflare Worker that serves `/.well-known/apple-app-site-association` for iOS Universal Links; deployed from the iOS pipeline but lives here because the deploy mechanism is cross-cutting infrastructure, not iOS source)
 ├── docs/                   # cross-cutting research and architecture
 ├── specs/                  # per-feature spec-kit artifacts (NNN-slug)
 ├── .specify/               # spec-kit machinery
@@ -124,6 +125,21 @@ Notes on this shape:
 - `web/` is a Cargo workspace member because cargo-leptos drives it. It depends on `core` directly and adds Leptos components, routing, and the wasm-bindgen adapter.
 - The downsampled artifacts (small downsampled FlatGeobuf + SQLite shipped inside each native app build for instant first-launch UX) are produced by `ingestion build --downsampled`, which reads the canonical store directly and applies the downsampling rules (drop sub-national geometry, keep only the most recent year of statistic values per country) during shard emission. The output lands in a single producer-owned directory; each native client's build script (Xcode for iOS, Gradle for Android) fetches the latest output and copies it into its own asset tree (`ios/EaforaApp/Resources/embedded_artifacts/`, `android/app/src/main/assets/embedded_artifacts/`). The dependency direction is client-pulls-from-producer, never producer-pushes-into-client. The web build has no equivalent embedded bundle. Reproducibility for any given commit comes from the canonical store at the producer machine, not from `git`.
 - Per the constitution's Singularity convention parity (Principle IV), `dbmate.sh` / `secrets.yaml` mirror Singularity verbatim. `setup.sh` and the Postgres runtime differ: Eafora installs Postgres via Homebrew and manages it via `launchd` rather than Podman Compose — a Principle IV deviation justified by v1's personal-hardware scope (see Constitution v1.3.3 SYNC IMPACT note). Containerization may return for cloud deployment post-v2.
+
+### Workspace Cargo profile
+
+The workspace `Cargo.toml` sets `panic = "abort"` on `[profile.release]`:
+
+```toml
+[profile.release]
+panic = "abort"
+```
+
+Reason: any Rust panic that crosses an FFI boundary (iOS UniFFI, Android UniFFI, web wasm-bindgen) under the default `panic = "unwind"` setting is undefined behavior — the foreign-language unwinder doesn't know how to handle Rust's exception machinery, and the failure mode varies from "predictable abort" to "silent state corruption" depending on the platform, toolchain, and exact unwinder path. `panic = "abort"` makes the failure mode deterministic: any panic kills the process cleanly, the OS produces a crash log pointing at the panic site, the user (or TestFlight feedback flow, or CI) sees a clean stack trace.
+
+Applies workspace-wide, not just to FFI-heavy targets. `ingestion/` (pure Rust, no FFI) doesn't need it for correctness, but uniformity is cheaper than per-target divergence — ingestion has no `catch_unwind` either, so `abort` and `unwind` produce the same end result; might as well share the setting.
+
+This is a correctness / debuggability decision, not a binary-size optimization. The size benefit of dropping the unwinder is real but secondary; see `client-ios.md` §Build profile for the (separate) decision not to chase size on native builds.
 
 ## Rust core
 
@@ -293,7 +309,19 @@ For wasm-bindgen the facade is similar but uses `#[wasm_bindgen]` and JS-friendl
 
 ### UDL vs proc-macro for UniFFI
 
-Eafora uses **UDL** (the declarative `.udl` file form). Pros: separation between Rust impl and FFI contract; easier IDE navigation; better error messages on schema violations; community norm (1Password, Mozilla AppServices). Proc-macros are slightly more flexible for generics (which we don't use) and inline-with-code. UDL is the boring-correct choice.
+Eafora uses the **proc-macro form** (`#[uniffi::export]` annotations on Rust items) rather than the declarative `.udl` file form.
+
+The discipline that earns the proc-macro form's payoff is **a dedicated FFI module** (`core/src/ffi/uniffi.rs`) that imports types from internal modules and either re-exports them with `#[uniffi::export]` annotations or wraps them in thin FFI-facing adapter types. The module is the single reviewable surface for "what the iOS and Android apps see," same property the `.udl` file would have given us — but without the duplication.
+
+Why this over UDL:
+
+- Single source of truth. Each type is declared in Rust once; UDL would mean every struct exists twice (in `.udl` syntax and in Rust syntax) with the compiler's codegen-time check as the only mechanism keeping them in sync. Matches the project's general code-canonical-over-spec-docs preference.
+- Refactoring is mechanical. Renaming a struct field in Rust updates the FFI surface automatically; nothing to keep in sync.
+- The "FFI surface as a single reviewable thing" benefit comes from the dedicated module, not the file format. A PR that touches `core/src/ffi/uniffi.rs` is a PR that changes the FFI; a PR that doesn't touch it doesn't.
+
+What we give up: `uniffi-bindgen` can lint UDL without compiling Rust, which is a marginal iteration-speed win when shaping the FFI. Outweighed by the duplication cost.
+
+Proc-macros are also slightly more flexible for generics (which we don't use). UDL is more verbose and adds an extra build artifact (`build.rs` running `uniffi_build::generate_scaffolding(...)` on the `.udl`). Neither is decisive.
 
 ## Per-platform v1 build vs iteration scope
 
@@ -501,7 +529,6 @@ iOS signing: App Store Connect API key (.p8) stored in repo secrets, decoded in 
 - **App Store Connect API key** for CI: generated under Users and Access → Keys, downloaded once (cannot be re-downloaded), stored in the chosen CI service's secret store (e.g. GitHub Actions secrets) as `APPSTORE_CONNECT_API_KEY_CONTENT`, `_KEY_ID`, `_ISSUER_ID`.
 - **TestFlight**: internal testing (up to 100 testers, no review); external testing requires beta review (~24–48 hours).
 - **App Store review**: ~24–48 hours typical in 2026 for compliant apps. Common rejection reasons for a map / data viz app: misleading data, claims of endorsement without evidence, mishandling of politically contested borders. Eafora's neutrality principle (no editorial copy) and US-recognized-borders default reduce both risks; the contested-borders abstraction in `core::boundary` lets us swap if a market demands it.
-- **Apple-employee considerations**: per publicly documented policy, Apple employees publish apps via personal Developer accounts; Apple's External Technology Participation policy requires disclosure when an external project competes with Apple products, uses confidential information, or markets Apple trademarks. Eafora plausibly does none of these, but the owner **must verify with Apple internal policy before submitting** (we don't speculate beyond public documentation).
 
 ### Google Play
 
@@ -544,12 +571,11 @@ Headline: **v1 lives within $50/year of recurring infra cost** plus the one-time
 
 These are claims in this document where I'm working from research-agent output without live confirmation. The user should verify any technical claim before relying on it for implementation:
 
-1. **Apple ETP applicability for an Apple employee shipping Eafora** — public policy is summarized; the owner must verify with internal Apple policy before submission.
-2. **wgpu Metal feature target** — confirm against the current wgpu repo if targeting devices below Apple A10.
-3. **WebGPU readiness in Safari and Firefox in mid-2026** — Chromium is stable, Safari 18.4+ is stable as of May 2026, Firefox in progress per agent research; concrete-verify via real browser tests before relying on WebGPU as default.
-4. **UniFFI 0.27+ async cancellation status** — agent research said "no cancellation tokens as of early 2026"; reverify before designing on the assumption.
-5. **MTKView delegate threading guarantee** — long-standing but worth a spot-check against current iOS SDK docs.
-6. **GitHub repo settings (verified 2026-05-23)** — "Automatically delete head branches" is **enabled**. "Rebase and merge" via the GitHub UI does **not** preserve empty commits, so the `>>> branch: <name>` markers do **not** land in master through the standard merge button. **Resolution**: PRs MUST be merged manually via local `git rebase` + `git push origin master` rather than via the GitHub UI button, so the marker survives into master. The constitution's Governance §Git workflow §Merge strategy clause will be amended in a follow-up branch to codify this and a `scripts/pr-integrate.sh` helper will be added.
+1. **wgpu Metal feature target** — confirm against the current wgpu repo if targeting devices below Apple A10.
+2. **WebGPU readiness in Safari and Firefox in mid-2026** — Chromium is stable, Safari 18.4+ is stable as of May 2026, Firefox in progress per agent research; concrete-verify via real browser tests before relying on WebGPU as default.
+3. **UniFFI 0.27+ async cancellation status** — agent research said "no cancellation tokens as of early 2026"; reverify before designing on the assumption.
+4. **MTKView delegate threading guarantee** — long-standing but worth a spot-check against current iOS SDK docs.
+5. **GitHub repo settings (verified 2026-05-23)** — "Automatically delete head branches" is **enabled**. "Rebase and merge" via the GitHub UI does **not** preserve empty commits, so the `>>> branch: <name>` markers do **not** land in master through the standard merge button. **Resolution**: PRs MUST be merged manually via local `git rebase` + `git push origin master` rather than via the GitHub UI button, so the marker survives into master. The constitution's Governance §Git workflow §Merge strategy clause will be amended in a follow-up branch to codify this and a `scripts/pr-integrate.sh` helper will be added.
 
 ## Follow-up work
 
