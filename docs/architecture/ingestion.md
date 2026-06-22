@@ -608,6 +608,7 @@ Filenames are `<statistic_code>-<license_class>-<sha8>.sqlite` (with `base` cove
 
 ```json
 {
+  "manifest_schema_version": 1,
   "version": "2026-05-18",
   "artifact_created": "2026-05-18T03:00:00Z",
   "geometry": {
@@ -629,6 +630,8 @@ Filenames are `<statistic_code>-<license_class>-<sha8>.sqlite` (with `base` cove
   }
 }
 ```
+
+`manifest_schema_version` is the FIRST key and is `1` for v1. Consumers reject manifests whose `manifest_schema_version` they don't recognize, so v2+ shape changes (added field, renamed key, restructured `statistics` map) get a typed parse failure rather than a silent misinterpretation. Producers always emit it; the version bumps when the on-the-wire shape changes in a way old clients can't handle. See `docs/architecture/client.md` §Manifest schema (consumer view) for the consumer-side guarantees and `specs/005-core-data/spec.md` for the parse-and-validate contract.
 
 The client loads the manifest first, then fetches whatever shards its license class permits. The base shard is always present; non-base shards may be missing for a given statistic if no rows in that class exist.
 

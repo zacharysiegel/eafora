@@ -39,6 +39,7 @@ An illustrative on-the-wire shape (the Rust type, not this snippet, is the canon
 
 ```json
 {
+  "manifest_schema_version": 1,
   "version": "2026-06-14+laughlin",
   "artifact_created": "2026-06-14T03:00:12Z",
   "geometry": {
@@ -65,6 +66,7 @@ An illustrative on-the-wire shape (the Rust type, not this snippet, is the canon
 
 Properties the consumer relies on:
 
+- `manifest_schema_version` is `1` for v1; it is the FIRST key so a parser can fail fast on shape changes without parsing the rest. Clients reject manifests whose `manifest_schema_version` they don't recognize with a typed error (same forward-compat pattern as the discovery document's `schema_version`); this is the gate that lets v2+ change the manifest shape without breaking old binaries in the field. Producers always emit it.
 - `version` is the human-readable, monotonically-disambiguated label (`YYYY-MM-DD+<surname>`). It is the cache key and the URL segment.
 - `relative_path` is rooted at the version directory; the absolute URL is `<repository_base_url>/<version_label>/<relative_path>`. Clients must not assume any host or scheme — they read the base URL from configuration.
 - `sha256` is the SHA-256 of the file's bytes, hex-encoded. Clients verify after download and reject the bundle if any hash mismatches.

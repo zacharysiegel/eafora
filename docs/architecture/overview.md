@@ -409,6 +409,7 @@ Comparison (concrete numbers approximate; see §Things to verify):
 ```
 manifest.json:
 {
+  "manifest_schema_version": 1,
   "version": "2026-05-18",
   "artifact_created": "2026-05-18T03:00:00Z",
   "geometry": {
@@ -429,6 +430,7 @@ manifest.json:
 
 Properties:
 
+- `manifest_schema_version` is the FIRST key, `1` for v1; consumers reject manifests with an unknown version (forward-compat gate for v2+ shape changes). See `docs/architecture/client.md` §Manifest schema (consumer view) for the consumer-side contract.
 - Filenames are content-hashed → `Cache-Control: public, max-age=31536000, immutable`. Repeat fetches are free.
 - `manifest.json` itself is short-cached (e.g., `max-age=300`). Clients fetch the manifest on launch, compare versions against their local cache, fetch only what changed.
 - Brotli compression at the CDN; SQLite typically compresses 70%+; FlatGeobuf compresses similarly under brotli (typed binary with run-length-friendly attribute encoding).
