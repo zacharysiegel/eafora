@@ -6,5 +6,7 @@ When a task is picked up, leave it here as **In progress**; delete on the same P
 
 ## Sequence
 
-1. **`/speckit.specify` for the web client** — first client-implementation feature.
-2. **`/speckit.specify` for the iOS client** — second client-implementation feature.
+1. **`005-core-data`** — extract types + manifest schema + cache trait + `Bundle` loader + `DistributionContext` from `ingestion/` into a new `core/` workspace member. Spec: `specs/005-core-data/spec.md`. Off `master`.
+2. **`006-core-renderer`** — wgpu pipelines + WGSL shaders + Miller cylindrical projection + spatial hit-testing + `Renderer` lifecycle inside `core/`. Spec: `specs/006-core-renderer/spec.md`. Stacks on `005-core-data` (needs `Bundle` + watch-channel types).
+3. **`003-web-client`** — WASM bundle + Leptos page shell + map view + OPFS cache adapter + perf-budget script. Spec: `specs/003-web-client/spec.md`. Off `master`; gated on `005`+`006` merged before implementation begins.
+4. **`004-ios-client`** — Xcode project + xcframework + SwiftUI shell + file-system cache adapter + AASA deploy + TestFlight pipeline. Spec: `specs/004-ios-client/spec.md`. Off `master`; gated on `005`+`006` merged before implementation begins. May run in parallel with `003`.
