@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 1.3.3 → 1.4.0 (MINOR — adds Principle IV §Convention specs, a new clause that pulls per-topic operational rule docs (`docs/conventions/`) under the constitution's umbrella. The Constitution Check gate in `plan-template.md` now reaches both the constitution itself AND any applicable convention doc, without requiring a separate "Conventions Check" gate. Triggered by needing somewhere durable to anchor a per-topic convention so future plans automatically consult it. Reference is by directory, not by individual file, so adding/renaming/splitting docs in `docs/conventions/` does NOT require constitutional amendments.)
+Version: 1.4.0 → 1.4.1 (PATCH — tightens the Git workflow §PR description clause: drops the "(c) a brief test plan" requirement and reframes the clause around release-notes-style prose. The test-plan requirement contradicted the owner's standing instruction that PR descriptions are release notes, not chat — verification belongs in the conversation that produced the PR, not in the permanent PR record. No principle added, removed, or redefined; this is a wording tightening of an existing governance subsection.)
 Earlier amendments:
   - 1.0.0 (2026-05-21): initial ratification (8 principles + governance: license, versioning, boundary recognition, app code language, git workflow, tooling discipline, amendments, compliance review)
   - 1.1.0 (2026-05-21): added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh
@@ -10,7 +10,8 @@ Earlier amendments:
   - 1.3.1 (2026-05-23): clarification — removed "semantic Q&A" from Principle VI's v3+ live-API examples list (the binding rule was unchanged).
   - 1.3.2 (2026-05-23): PMTiles → FlatGeobuf in Principle VI; rewrote Branch-marker explanatory paragraph for the rebase-based merge flow + `git log --grep` discovery; propagated PMTiles → FlatGeobuf to overview line 29.
   - 1.3.3 (2026-05-27): Postgres runtime moved to Homebrew + launchd (Singularity deviation); scripts/pr-merge.sh → scripts/pr-integrate.sh.
-Current principles (unchanged in 1.4.0):
+  - 1.4.0 (2026-05-31): added Principle IV §Convention specs, pulling per-topic operational rule docs (`docs/conventions/`) under the constitution's umbrella; the Constitution Check gate reaches applicable convention docs in addition to the constitution itself.
+Current principles (unchanged in 1.4.1):
   - I. Educational neutrality (NON-NEGOTIABLE)
   - II. Source provenance (NON-NEGOTIABLE)
   - III. Rust core, native UI shells
@@ -19,16 +20,10 @@ Current principles (unchanged in 1.4.0):
   - VI. CDN-delivered data, no live data API through v2
   - VII. Test-first for core logic
   - VIII. Workflow discipline
-Added prose in 1.4.0:
-  - Principle IV: new §Convention specs sub-section pointing at `docs/conventions/`. Constitution Check gate scope extended in prose to cover applicable convention docs.
-Modified prose in 1.4.0: N/A (existing principles unchanged).
+Modified prose in 1.4.1: Governance §Git workflow §PR description — test-plan requirement removed; clause reframed around release-notes prose.
 Removed sections: N/A
-Templates requiring updates:
-  - `.specify/templates/plan-template.md` — no structural change required; the existing Constitution Check gate's scope is widened by the new principle clause itself, not by template edits.
-Propagation in this amendment:
-  - `docs/conventions/README.md` (new): index for the conventions area.
-  - `docs/conventions/` (new directory): seeded with the first per-topic convention doc.
-  - `CLAUDE.md`: new §Conventions section pointing at `docs/conventions/`.
+Templates requiring updates: none (no template references the PR-description clause structure).
+Propagation in this amendment: N/A (the operational form of this rule is already recorded in the user's `feedback_pr_description_style` memory; this amendment removes the contradicting governance text).
 Resolved follow-up TODOs (from prior SYNC IMPACT REPORTs): N/A
 Follow-up TODOs (still pending):
   - License revisit before any public source release (Governance §License)
@@ -173,7 +168,7 @@ The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` f
 
 **PR assignment.** Immediately after creating a PR, the assignee MUST be set to `zacharysiegel` via `gh pr edit <number> --add-assignee zacharysiegel`.
 
-**PR description.** Every PR description MUST cover (a) the problem motivating the change, (b) the solution at a high level, and (c) a brief test plan. Use markdown formatting.
+**PR description.** Every PR description MUST read as a release note: tight prose, opening with a verb describing the change, covering (a) the problem motivating the change and (b) the solution at a high level. PR descriptions MUST NOT contain a test plan, a checklist of what was verified, chat narration, file enumeration, forward-looking "next PR" pointers, or process meta about how the change was produced — verification and process belong in the conversation that produced the PR, not in its permanent record. Use markdown formatting.
 
 **Stacked PRs.** When branches are stacked, the PR for each phase targets its parent branch, not `master`. After the parent merges, GitHub will retarget the child PR to `master` automatically.
 
@@ -218,6 +213,6 @@ Every spec produced via `/speckit-specify` MUST include a "Constitution Check" s
 
 ---
 
-**Version**: 1.4.0
+**Version**: 1.4.1
 **Ratified**: 2026-05-21
-**Last amended**: 2026-05-31
+**Last amended**: 2026-06-22
