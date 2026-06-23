@@ -1,0 +1,39 @@
+[package]
+name = "eafora_core"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[lib]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+sha2 = { workspace = true }
+flatgeobuf = { workspace = true }
+geozero = { workspace = true }
+geo-types = { workspace = true }
+minimer = { workspace = true }
+log = { workspace = true }
+bytes = { workspace = true }
+const_format = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["sync"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusqlite = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+uuid = { workspace = true, features = ["js"] }
+sqlite-wasm-rs = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["sync", "macros", "rt"] }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
