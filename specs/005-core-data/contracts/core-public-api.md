@@ -33,6 +33,8 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `DataSource` (Model only; Entity stays in ingestion)              | `core::canonical::canonical_model` | type  | locked    |
 | `MANIFEST_FILENAME`                                               | `core::artifact::manifest`      | const    | locked    |
 | `MANIFEST_SCHEMA_VERSION`                                         | `core::artifact::manifest`      | const    | new       |
+| `MANIFEST_LATEST_KEY`                                             | `core::artifact::manifest`      | const    | new       |
+| `CONTENT_TYPE_MANIFEST`, `CONTENT_TYPE_FLATGEOBUF`, `CONTENT_TYPE_SQLITE` | `core::artifact::manifest` | const | new |
 | `SUBDIR_GEOMETRY`                                                 | `core::artifact::manifest`      | const    | locked    |
 | `SUBDIR_DATA`                                                     | `core::artifact::manifest`      | const    | locked    |
 | `Manifest`                                                        | `core::artifact::manifest`      | type     | new       |
@@ -45,6 +47,9 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `MockArtifactCache` (`#[cfg(test)]`)                              | `core::artifact::cache`         | type     | new       |
 | `FlatGeobufReader`                                                | `core::artifact::geometry`      | type     | new       |
 | `open_flatgeobuf_reader(bytes: Vec<u8>) -> Result<FlatGeobufReader, AppError>` | `core::artifact::geometry` | function | new |
+| `GEOMETRY_LAYER_NAME`, `GEOMETRY_FILENAME_STEM`                   | `core::artifact::geometry`      | const    | new       |
+| `FEATURE_COLUMN_ISO3`, `FEATURE_COLUMN_NAME_EN`                   | `core::artifact::geometry`      | const    | new       |
+| `SHARD_FILENAME_EXTENSION`, `GEOMETRY_FILENAME_EXTENSION`         | `core::artifact::geometry`      | const    | new       |
 | `Feature`                                                         | `core::artifact::geometry`      | type     | new       |
 | `Polygon`                                                         | `core::artifact::geometry`      | type     | new       |
 | `BoundingBox`                                                     | `core::artifact::geometry`      | type     | new       |

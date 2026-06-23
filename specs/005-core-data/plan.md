@@ -52,7 +52,7 @@ No `async-trait` (stable AFIT covers `ArtifactCache`). No new third-party deps b
 - `Bundle: Send + Sync` (per spec.md §Clarifications Q2): `Arc<Bundle>` crosses thread boundaries on iOS where the live-fetch task runs on a tokio worker thread.
 - No new third-party deps beyond the wasm-bindgen family (per Constitution Principle IV + `feedback_eafora_library_conventions`).
 
-**Scale/Scope**: ~36 FRs across 8 modules (`core/src/{lib,error,filesystem,canonical/canonical_model,artifact/{manifest,bundle,bundle_watch,cache,discovery,geometry},license/license,sqlite/{vfs,schema}}.rs`). Estimated ~1900 LOC for the implementation (the Model + Entity split adds ~100 LOC over the original estimate; the SQLite-schema contract module adds ~150 LOC of constants + DDL + the `validate_shard_header` function), ~900 LOC for tests. The biggest single chunks are `Bundle::open` (~120 LOC), the WASM VFS (~200 LOC), and the SQLite-schema contract (~150 LOC).
+**Scale/Scope**: ~39 FRs across 8 modules (`core/src/{lib,error,filesystem,canonical/canonical_model,artifact/{manifest,bundle,bundle_watch,cache,discovery,geometry},license/license,sqlite/{vfs,schema}}.rs`). Estimated ~1950 LOC for the implementation (the Model + Entity split adds ~100 LOC over the original estimate; the SQLite-schema contract module adds ~150 LOC; the geometry + manifest constant additions add ~30 LOC across the two existing modules), ~900 LOC for tests. The biggest single chunks are `Bundle::open` (~120 LOC), the WASM VFS (~200 LOC), and the SQLite-schema contract (~150 LOC).
 
 ## Constitution Check
 
@@ -105,12 +105,12 @@ core/                                       # NEW workspace member
 │   │   └── canonical_model.rs              # StatisticKind, DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, SourceRevision (moved from ingestion)
 │   ├── artifact/
 │   │   ├── mod.rs                          # pub mod manifest; pub mod bundle; pub mod bundle_watch; pub mod cache; pub mod discovery; pub mod geometry; pub use {manifest,bundle,bundle_watch,cache,discovery,geometry}::*;
-│   │   ├── manifest.rs                     # Manifest, ManifestEntry, parse_manifest, MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION constant
+│   │   ├── manifest.rs                     # Manifest, ManifestEntry, parse_manifest, MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION, MANIFEST_LATEST_KEY, CONTENT_TYPE_MANIFEST, CONTENT_TYPE_FLATGEOBUF, CONTENT_TYPE_SQLITE constants
 │   │   ├── bundle.rs                       # Bundle struct (pure data), Bundle::open(version_label, &cache, ctx)
 │   │   ├── bundle_watch.rs                 # pub use tokio::sync::watch::{Sender, Receiver, channel};
 │   │   ├── cache.rs                        # ArtifactCache async trait + MockArtifactCache (#[cfg(test)]-only)
 │   │   ├── discovery.rs                    # DiscoveryDocument, parse_discovery_document, DISCOVERY_SCHEMA_VERSION constant
-│   │   └── geometry.rs                     # FlatGeobufReader, open_flatgeobuf_reader, Feature, Polygon, BoundingBox
+│   │   └── geometry.rs                     # FlatGeobufReader, open_flatgeobuf_reader, Feature, Polygon, BoundingBox, plus producer/consumer-shared constants: GEOMETRY_LAYER_NAME, GEOMETRY_FILENAME_STEM, FEATURE_COLUMN_ISO3, FEATURE_COLUMN_NAME_EN, SHARD_FILENAME_EXTENSION, GEOMETRY_FILENAME_EXTENSION (per FR-020f)
 │   ├── license/
 │   │   ├── mod.rs                          # pub mod license; pub use license::*;
 │   │   └── license.rs                      # DistributionContext enum + authorized_classes()
@@ -131,10 +131,11 @@ ingestion/
     ├── filesystem.rs                       # `pub use core::filesystem::*;` (single-line re-export; the rest moved to core/src/filesystem.rs). Alternatively delete the file entirely and add `pub use core::filesystem;` to lib.rs — implementation-time choice.
     ├── artifact/
     │   ├── hashing.rs                      # ingestion-side producer orchestrators only (hash_sqlite_shards, hash_geometry). The sha256_hex / sha256_hex_of_file helpers now reach via core::filesystem::*; this file stays for the rename-dance logic that's producer-specific.
-    │   ├── publish.rs                      # `load_build_report_from_disk` rewritten to use `core::artifact::manifest::parse_manifest` instead of its private `ManifestOnDisk` / `ManifestEntryOnDisk` structs (deleted). Eliminates the parallel manifest-deserializer drift risk per FR-020e.
+    │   ├── publish.rs                      # `load_build_report_from_disk` rewritten to use `core::artifact::manifest::parse_manifest` instead of its private `ManifestOnDisk` / `ManifestEntryOnDisk` structs (deleted). The `CONTENT_TYPE_*` consts also delete (moved to `core::artifact::manifest` per FR-020g); call sites reach via the moved constants. Eliminates the parallel manifest-deserializer drift risk per FR-020e.
     │   ├── writer/
     │   │   ├── manifest.rs                 # rewritten: use core::artifact::manifest::Manifest; ingestion's write_manifest constructs a Manifest with manifest_schema_version: 1 and serializes via the consumer-side Manifest's Serialize impl. The private ManifestSerializer struct goes away.
-    │   │   └── sqlite.rs                   # rewritten to use core::sqlite::schema constants + shard_schema_ddl() per FR-020d. Private SQLITE_APPLICATION_ID / SQLITE_USER_VERSION / create_schema function removed; insert_shard_key + insert_rows SQL strings reference core::sqlite::schema column-name constants via const_format::formatcp!. Existing producer-side tests continue to pass.
+    │   │   ├── sqlite.rs                   # rewritten to use core::sqlite::schema constants + shard_schema_ddl() per FR-020d. Private SQLITE_APPLICATION_ID / SQLITE_USER_VERSION / create_schema function removed; insert_shard_key + insert_rows SQL strings reference core::sqlite::schema column-name constants via const_format::formatcp!. Existing producer-side tests continue to pass.
+    │   │   └── flatgeobuf.rs               # rewritten per FR-020f to use the moved constants from core::artifact::geometry: GEOMETRY_LAYER_NAME, GEOMETRY_FILENAME_STEM, FEATURE_COLUMN_ISO3, FEATURE_COLUMN_NAME_EN. Private copies of these constants delete; call sites reach via the moved constants. Existing producer-side tests continue to pass.
     │   └── artifact_model.rs               # `pub use core::artifact::manifest::*;` for any types that moved + ingestion-only types stay (BuildReport, ArtifactVersion, etc.)
 
 # UNCHANGED:

@@ -321,6 +321,19 @@ pub const MANIFEST_FILENAME: &str = "manifest.json";
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const SUBDIR_GEOMETRY: &str = "geometry";
 pub const SUBDIR_DATA: &str = "data";
+
+/// The stable-pointer key on the destination per `client.md` §Live bundle.
+/// Producer (when the future `latest/manifest.json` upload step lands) uploads
+/// a byte-for-byte copy of the just-published manifest under this key.
+/// Consumer fetches `<repository_base_url>/<MANIFEST_LATEST_KEY>` at startup.
+pub const MANIFEST_LATEST_KEY: &str = "latest/manifest.json";
+
+/// Content-Type values for the three artifact file types. Producer sets these
+/// as upload metadata; consumers (CDN edge, browser HTTP cache, Accept-header
+/// negotiation) depend on them.
+pub const CONTENT_TYPE_MANIFEST: &str = "application/json";
+pub const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
+pub const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
 ```
 
 ### `Manifest`
@@ -458,6 +471,38 @@ impl ArtifactCache for MockArtifactCache {
 Note: `tokio::sync::Mutex` (not `std::sync::Mutex`) because the trait is async; the mutex is held across awaits in tests. If a downstream crate later needs the mock (today's 003 / 004 build their own platform-specific mocks; no shared-mock need), promote `#[cfg(test)]` to `#[cfg(any(test, feature = "mock"))]` — one-character change per attribute.
 
 ## Module: `core::artifact::geometry`
+
+### Constants
+
+Per spec FR-020f. The producer / consumer shared FlatGeobuf naming + structure contract:
+
+```rust
+/// FlatGeobuf layer name written into the file's header by the producer's
+/// writer; consumers may read for diagnostics. The "world_50m" indicates the
+/// Natural Earth 1:50m source.
+pub const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
+
+/// Filename stem the producer uses; final filename is `{stem}-{sha8}.fgb`.
+/// Consumers don't construct geometry filenames (they read
+/// `manifest.geometry.relative_path`); this constant is for diagnostic logs
+/// that want to identify "is this file the geometry shard?"
+pub const GEOMETRY_FILENAME_STEM: &str = "world-50m";
+
+/// FlatGeobuf feature column carrying the country's ISO 3166 alpha-3 code.
+/// Producer's writer adds the column with this exact name; consumer's
+/// `FlatGeobufReader::iter_features` reads features by this column to populate
+/// `Feature.iso3`.
+pub const FEATURE_COLUMN_ISO3: &str = "iso3";
+
+/// FlatGeobuf feature column carrying the country's English name. Same
+/// producer/consumer contract pattern as `FEATURE_COLUMN_ISO3`.
+pub const FEATURE_COLUMN_NAME_EN: &str = "name_en";
+
+/// File extensions in content-hashed filenames. Producer constructs filenames
+/// with these; consumers may use them to type-dispatch on `relative_path`.
+pub const SHARD_FILENAME_EXTENSION: &str = "sqlite";
+pub const GEOMETRY_FILENAME_EXTENSION: &str = "fgb";
+```
 
 ### `FlatGeobufReader`
 
