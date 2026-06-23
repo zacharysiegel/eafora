@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["core", "ingestion", "tools/seed_generator"]
+members = ["shared", "ingestion", "tools/seed_generator"]
 
 [workspace.package]
 edition = "2024"
 
 [workspace.dependencies]
-eafora_core = { path = "core" }
+shared = { path = "shared" }
 tokio = { version = "1.52.*", default-features = false }
 sqlx = { version = "0.8.*", features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "macros"] }
 reqwest = { version = "0.12.*", default-features = false, features = ["json", "rustls-tls"] }

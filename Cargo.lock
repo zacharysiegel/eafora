@@ -1145,32 +1145,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
-name = "eafora_core"
-version = "0.0.0"
-dependencies = [
- "bytes",
- "chrono",
- "const_format",
- "flatgeobuf",
- "geo-types",
- "geozero",
- "js-sys",
- "log",
- "minimer",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sqlite-wasm-rs",
- "tempfile",
- "tokio",
- "uuid",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
-]
-
-[[package]]
 name = "ecdsa"
 version = "0.16.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2074,7 +2048,6 @@ dependencies = [
  "clap",
  "const_format",
  "dotenvy",
- "eafora_core",
  "env_logger",
  "flatgeobuf",
  "geo-types",
@@ -2088,6 +2061,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "shapefile",
+ "shared",
  "sqlx",
  "tempfile",
  "tokio",
@@ -3332,6 +3306,32 @@ dependencies = [
  "byteorder",
  "dbase",
  "geo-types",
+]
+
+[[package]]
+name = "shared"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "chrono",
+ "const_format",
+ "flatgeobuf",
+ "geo-types",
+ "geozero",
+ "js-sys",
+ "log",
+ "minimer",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlite-wasm-rs",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
 ]
 
 [[package]]

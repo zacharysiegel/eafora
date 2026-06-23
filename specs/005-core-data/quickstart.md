@@ -1,18 +1,18 @@
-# Quickstart: consuming `core/` from a downstream crate
+# Quickstart: consuming `shared/` from a downstream crate
 
-> Phase 1 output of `/speckit-plan` for 005-core-data. For a future contributor implementing 003 (web client), 004 (iOS client), 006 (renderer), or any other crate that depends on `core/`. Read after `data-model.md` and `contracts/core-public-api.md`.
+> Phase 1 output of `/speckit-plan` for 005-core-data. For a future contributor implementing 003 (web client), 004 (iOS client), 006 (renderer), or any other crate that depends on `shared/`. Read after `data-model.md` and `contracts/core-public-api.md`.
 
-## Add `core` as a dependency
+## Add `shared` as a dependency
 
 ```toml
 # In your crate's Cargo.toml:
 [dependencies]
-core = { workspace = true }
+shared = { workspace = true }
 ```
 
-The root workspace `Cargo.toml` registers `core = { path = "core" }` under `[workspace.dependencies]`.
+The root workspace `Cargo.toml` registers `shared = { path = "shared" }` under `[workspace.dependencies]`.
 
-(The in-crate `MockArtifactCache` is `#[cfg(test)]`-only — accessible only inside `core/`'s own tests. If your crate needs a mock cache for its tests, build a small platform-appropriate mock locally; promoting `core`'s mock to a `mock` cargo feature is a one-character change if a real shared-mock need ever surfaces.)
+(The in-crate `MockArtifactCache` is `#[cfg(test)]`-only — accessible only inside `shared/`'s own tests. If your crate needs a mock cache for its tests, build a small platform-appropriate mock locally; promoting `shared`'s mock to a `mock` cargo feature is a one-character change if a real shared-mock need ever surfaces.)
 
 ## Build for both targets
 
@@ -21,11 +21,11 @@ cargo build -p <your-crate>                                       # host (defaul
 cargo build -p <your-crate> --target wasm32-unknown-unknown       # web
 ```
 
-If your crate doesn't compile for wasm32 (e.g. it pulls `sqlx` or `reqwest::blocking`), `core/` still works fine independently — only the consuming crate fails the wasm32 build, not `core/`.
+If your crate doesn't compile for wasm32 (e.g. it pulls `sqlx` or `reqwest::blocking`), `shared/` still works fine independently — only the consuming crate fails the wasm32 build, not `shared/`.
 
 ## Construct an `ArtifactCache` for production
 
-Production cache adapters live in the platform crates, not in `core/`:
+Production cache adapters live in the platform crates, not in `shared/`:
 
 - **Web (003-web-client)**: `web::cache::OpfsArtifactCache` against `<opfs-root>/artifacts/...` (per `client-web.md` §OPFS cache adapter).
 - **iOS (004-ios-client)**: a Swift `FileSystemArtifactCache.swift` against `<app-sandbox>/Library/Caches/artifacts/...`, wrapped via UniFFI as a Rust trait impl (per `client-ios.md` §Cache: Library/Caches/).
@@ -37,10 +37,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use core::artifact::cache::ArtifactCache;
-use core::artifact::{Bundle, MANIFEST_FILENAME};
-use core::license::DistributionContext;
-use core::AppError;
+use shared::artifact::cache::ArtifactCache;
+use shared::artifact::{Bundle, MANIFEST_FILENAME};
+use shared::license::DistributionContext;
+use shared::AppError;
 
 #[cfg(test)]
 struct MockArtifactCache {
@@ -120,7 +120,7 @@ The loader publishes; the renderer subscribes. Per spec FR-023 + `client.md` §B
 
 ```rust
 use std::sync::Arc;
-use core::artifact::{Bundle, bundle_watch};
+use shared::artifact::{Bundle, bundle_watch};
 
 // Loader-side: construct the channel with the initial (embedded) bundle.
 let initial_bundle: Arc<Bundle> = Arc::new(/* Bundle::open(embedded_version, ...) */);
@@ -141,14 +141,14 @@ sender.send(new_bundle)?;
 // memory frees when last reference drops.
 ```
 
-The `channel`, `Sender`, `Receiver` types are re-exports of `tokio::sync::watch::*`; you can also `use tokio::sync::watch::{Sender, Receiver};` directly. The `bundle_watch` re-export exists so consumers can stay within `core::*` namespacing without thinking about tokio.
+The `channel`, `Sender`, `Receiver` types are re-exports of `tokio::sync::watch::*`; you can also `use tokio::sync::watch::{Sender, Receiver};` directly. The `bundle_watch` re-export exists so consumers can stay within `shared::*` namespacing without thinking about tokio.
 
 ## Parse a discovery document
 
 Per spec FR-014 + the iOS / web startup flow in `client.md` §Speculative parallel fetch at startup:
 
 ```rust
-use core::artifact::discovery::{DiscoveryDocument, parse_discovery_document, DISCOVERY_SCHEMA_VERSION};
+use shared::artifact::discovery::{DiscoveryDocument, parse_discovery_document, DISCOVERY_SCHEMA_VERSION};
 
 // Bytes from `fetch("https://eafora.org/discovery")` (web) or `URLSession.shared.data(from: discovery_url)` (iOS).
 let bytes: Vec<u8> = /* ... */;
@@ -171,8 +171,8 @@ If `schema_version != 1`, `parse_discovery_document` returns an `AppError` and t
 When you need to know which license shards apply to your distribution context:
 
 ```rust
-use core::license::DistributionContext;
-use core::canonical::canonical_model::LicenseShardClass;
+use shared::license::DistributionContext;
+use shared::canonical::canonical_model::LicenseShardClass;
 
 let context: DistributionContext = DistributionContext::FirstParty;
 let authorized: &'static [LicenseShardClass] = context.authorized_classes();
@@ -191,7 +191,7 @@ let embedded_authorized: &'static [LicenseShardClass] = embedded_context.authori
 When you've fetched bytes (from anywhere) and want to verify them against a recorded hash:
 
 ```rust
-use core::filesystem::verify_sha256;
+use shared::filesystem::verify_sha256;
 
 let bytes: Vec<u8> = /* ... */;
 let expected_hex: &str = "ddd660b71c1a36c881f8504889efe39845e04fb2b20ca10340a48c9c7dace87f";
@@ -206,9 +206,9 @@ On mismatch, the `AppError` message contains both `expected_hex` (first 8 hex ch
 When 006's renderer needs to query a statistic shard:
 
 ```rust
-use core::canonical::canonical_model::{StatisticKind, LicenseShardClass};
-use core::artifact::bundle::{Bundle, StatisticShardKey};
-use core::sqlite::vfs::open_connection_from_bytes;
+use shared::canonical::canonical_model::{StatisticKind, LicenseShardClass};
+use shared::artifact::bundle::{Bundle, StatisticShardKey};
+use shared::sqlite::vfs::open_connection_from_bytes;
 
 let bundle: &Bundle = /* from the watch channel */;
 let key: StatisticShardKey = StatisticShardKey {
@@ -229,12 +229,12 @@ let mut stmt: rusqlite::Statement = connection.prepare(
 // ... etc.
 ```
 
-The `open_connection_from_bytes` function has the same signature on both targets; the wasm32 implementation goes through `core::sqlite::vfs::register_vec_u8_vfs` machinery internally, while the native implementation goes through rusqlite's `Connection::deserialize` API. Consumers don't see the difference.
+The `open_connection_from_bytes` function has the same signature on both targets; the wasm32 implementation goes through `shared::sqlite::vfs::register_vec_u8_vfs` machinery internally, while the native implementation goes through rusqlite's `Connection::deserialize` API. Consumers don't see the difference.
 
 ## Common pitfalls
 
-1. **Don't pass `core::artifact::cache::ArtifactCache` by trait object across an FFI boundary.** UniFFI doesn't support trait objects. iOS's `FileSystemArtifactCache.swift` wraps the trait at the Swift layer; the Rust UniFFI surface takes a concrete type.
+1. **Don't pass `shared::artifact::cache::ArtifactCache` by trait object across an FFI boundary.** UniFFI doesn't support trait objects. iOS's `FileSystemArtifactCache.swift` wraps the trait at the Swift layer; the Rust UniFFI surface takes a concrete type.
 2. **Don't construct `Bundle` directly — always go through `Bundle::open`.** The fields are public for read access only (the watch channel exposes `Receiver::borrow` which gives `&Bundle`); construction requires the validation steps `Bundle::open` performs (SHA-256, license filtering, geometry parsing).
 3. **Don't expect `Bundle::open` to fetch.** It only reads through the cache. The platform shell is responsible for ensuring the cache has the bytes the requested `version_label` references (via the speculative parallel fetch at startup in `client.md` §Speculative parallel fetch).
-4. **Don't downstream-define your own `AppError` type if you can reach for `core::AppError`.** The `From` impls in `core::error` cover most parser failure modes; only add new conversions in your crate's own error layer.
+4. **Don't downstream-define your own `AppError` type if you can reach for `shared::AppError`.** The `From` impls in `shared::error` cover most parser failure modes; only add new conversions in your crate's own error layer.
 5. **Don't store `&Bundle` across an `.await`.** The `watch::Receiver::borrow_and_update` guard holds a read lock; await-while-borrowed risks the reader-writer-deadlock path (in single-threaded WASM it just hangs; in multi-threaded tokio it deadlocks). Pattern: clone the `Arc<Bundle>` out of the borrow guard, drop the guard, then await against the clone.

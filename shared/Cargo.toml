@@ -1,5 +1,5 @@
 [package]
-name = "eafora_core"
+name = "shared"
 version = "0.0.0"
 edition.workspace = true
 publish = false

@@ -1,6 +1,6 @@
-# Data model: core/ crate — data layer (005-core-data)
+# Data model: shared/ crate — data layer (005-core-data)
 
-> Phase 1 output of `/speckit-plan` for 005-core-data. Strict definitions of every public type `core/` exposes, plus the trait signatures and constants. Sourced directly from spec.md's FR list + §Clarifications session 2026-06-22.
+> Phase 1 output of `/speckit-plan` for 005-core-data. Strict definitions of every public type `shared/` exposes, plus the trait signatures and constants. Sourced directly from spec.md's FR list + §Clarifications session 2026-06-22.
 
 ## Conventions
 
@@ -9,13 +9,13 @@
 - Per `docs/conventions/types.md` §Variable naming: collection variables prefixed with the type they contain (`shard_bytes` not `bytes`).
 - Per `feedback_inline_sql_constraints` / `feedback_no_dollar_quoted_sql` / etc.: no SQL in this layer (consumer side).
 
-## Module: `core::error`
+## Module: `shared::error`
 
-`core::AppError` is core's own newtype, generated via `minimer::define_app_error!`. Ingestion has its own separate `AppError` newtype; the two interconvert at the boundary. (Earlier framing of "ingestion imports it from core" is incompatible with Rust's orphan rule — minimer's macro doc explicitly notes this and says downstream crates should define their own newtype. See plan.md §Outstanding decision #1 for the reasoning.)
+`shared::AppError` is shared's own newtype, generated via `minimer::define_app_error!`. Ingestion has its own separate `AppError` newtype; the two interconvert at the boundary. (Earlier framing of "ingestion imports it from shared" is incompatible with Rust's orphan rule — minimer's macro doc explicitly notes this and says downstream crates should define their own newtype. See plan.md §Outstanding decision #1 for the reasoning.)
 
 ### `AppError`
 
-Per `minimer::define_app_error!(pub AppError)`. The `From` impls registered in `core/src/error.rs`:
+Per `minimer::define_app_error!(pub AppError)`. The `From` impls registered in `shared/src/error.rs`:
 
 ```rust
 use std::error::Error;
@@ -29,7 +29,7 @@ minimer::impl_from_error!(AppError, geozero::error::GeozeroError);
 minimer::impl_from_error!(AppError, log::SetLoggerError);
 ```
 
-Parser-surface set; covers what `core/` itself touches.
+Parser-surface set; covers what `shared/` itself touches.
 
 `render_error_chain(error: &dyn Error) -> String` — moved verbatim from `ingestion/src/error.rs` (walks the error's `source()` chain, joining each level with ` -> `).
 
@@ -52,9 +52,9 @@ minimer::impl_from_error!(AppError, base64::DecodeError);
 
 // One-line cross-conversion bridge — orphan-rule-OK because the target
 // (ingestion::AppError) is local to ingestion. Lets ingestion `?`-propagate
-// from core functions like `core::artifact::manifest::parse_manifest`.
-impl From<core::AppError> for AppError {
-    fn from(err: core::AppError) -> Self {
+// from shared functions like `shared::artifact::manifest::parse_manifest`.
+impl From<shared::AppError> for AppError {
+    fn from(err: shared::AppError) -> Self {
         Self(err.0)
     }
 }
@@ -62,11 +62,11 @@ impl From<core::AppError> for AppError {
 
 Both newtypes wrap the same `minimer::AppError`, so the underlying error storage is uniform across the two crates. The two newtypes are conceptually one error type with two namespaces; the orphan rule forces the dual-newtype shape rather than a single shared type.
 
-## Crate root: `core::REVISION` (and `core/build.rs`)
+## Crate root: `shared::REVISION` (and `shared/build.rs`)
 
 Per spec FR-020k. The source revision the binary was built from, captured at compile time and exposed as a `&'static str` constant at the crate root.
 
-### `core/build.rs`
+### `shared/build.rs`
 
 ```rust
 use std::process::Command;
@@ -88,10 +88,10 @@ fn main() {
 
 The `unwrap_or_else(|| "unknown".to_string())` fallback handles shallow / archive checkouts (no `.git` directory) so the crate compiles in any environment.
 
-### `core/src/lib.rs`
+### `shared/src/lib.rs`
 
 ```rust
-/// Source revision captured at compile time by `core/build.rs`. Truncate at
+/// Source revision captured at compile time by `shared/build.rs`. Truncate at
 /// display time if a short form is desired. The matching iOS-side
 /// `eafora.revision()` UniFFI export lives in 004-ios-client's scope.
 pub const REVISION: &str = env!("EAFORA_REVISION");
@@ -99,9 +99,9 @@ pub const REVISION: &str = env!("EAFORA_REVISION");
 
 The build script reruns when `.git/HEAD` or any ref under `.git/refs` changes (commits, branch switches, etc.), so `REVISION` always reflects the source state of the latest build.
 
-## Module: `core::filesystem`
+## Module: `shared::filesystem`
 
-Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items work on both host and wasm32; host-only items are `#[cfg(not(target_arch = "wasm32"))]`-gated. Ingestion `pub use`s `core::filesystem::*;` (single-line re-export keeps existing import paths valid).
+Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items work on both host and wasm32; host-only items are `#[cfg(not(target_arch = "wasm32"))]`-gated. Ingestion `pub use`s `shared::filesystem::*;` (single-line re-export keeps existing import paths valid).
 
 ### `FileReference`
 
@@ -162,11 +162,11 @@ pub fn load_hashed_file(
 
 `sha256_hex_of_file`, `filename_of`, `read_bytes`, `load_hashed_file`: host-only (cfg-gated). `Bundle::open` does NOT call any of these — it goes through the cache trait. Producer-side code (ingestion's publish flow) uses them via the re-export.
 
-## Module: `core::canonical::canonical_model`
+## Module: `shared::canonical::canonical_model`
 
 Moved from `ingestion/src/canonical/canonical_model.rs` per plan.md §Phasing step 3, with `NaiveDatePeriod` lifted from `ingestion/src/adapter/adapter_model.rs` per spec FR-005a.
 
-Per `docs/conventions/types.md` §Core dichotomy: every DB-touched type has a Model (consumer-facing, typed) + an Entity / Projection (Postgres wire shape). This module holds the **Models**; the matching **Entities stay in `ingestion/src/canonical/canonical_model.rs`** since only the producer's sqlx queries construct them. The `From<Entity> for Model` / `TryFrom<Entity> for Model` impls live next to the Entity (per the same convention) — the orphan rule permits ingestion adding the impl because ingestion owns the Entity even though Model is now foreign (from core).
+Per `docs/conventions/types.md` §Core dichotomy: every DB-touched type has a Model (consumer-facing, typed) + an Entity / Projection (Postgres wire shape). This module holds the **Models**; the matching **Entities stay in `ingestion/src/canonical/canonical_model.rs`** since only the producer's sqlx queries construct them. The `From<Entity> for Model` / `TryFrom<Entity> for Model` impls live next to the Entity (per the same convention) — the orphan rule permits ingestion adding the impl because ingestion owns the Entity even though Model is now foreign (from shared).
 
 ### `StatisticKind`
 
@@ -372,13 +372,13 @@ pub struct DataSource {
 
 ### Types that DO NOT move
 
-These stay in ingestion entirely (not just Entity-stays-Model-moves; nothing about them crosses into `core/`):
+These stay in ingestion entirely (not just Entity-stays-Model-moves; nothing about them crosses into `shared/`):
 
 - **`StatisticValue` + `StatisticValueEntity`**: consumer-side `statistic_value` reads happen against SQLite shards with a different column set (`region_iso3 text` not `region_id uuid`; no `superseded`; no FK references). The Postgres-shaped `StatisticValue` Model isn't the right consumer type; consumers query the shard directly.
 - **`SourceChoice` + `SourceChoiceEntity`**: producer-only merge configuration. Baked into shards at build time; consumers see only the resulting `statistic_value` rows.
 - **`ArtifactVersion` + `ArtifactVersionEntity`**: producer-only publish bookkeeping. The `latest/manifest.json` discovery flow exposes `version_label` + `manifest_url` indirectly (via the manifest's URL), but consumers don't read the Postgres row directly.
 
-## Module: `core::artifact::manifest`
+## Module: `shared::artifact::manifest`
 
 ### Constants
 
@@ -463,7 +463,7 @@ pub struct ManifestEntry {
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError>;
 ```
 
-## Module: `core::artifact::discovery`
+## Module: `shared::artifact::discovery`
 
 ### Constants
 
@@ -508,7 +508,7 @@ pub struct DiscoveryDocument {
 pub fn parse_discovery_document(bytes: &[u8]) -> Result<DiscoveryDocument, AppError>;
 ```
 
-## Module: `core::artifact::cache`
+## Module: `shared::artifact::cache`
 
 ### `ArtifactCache` (trait)
 
@@ -550,7 +550,7 @@ impl ArtifactCache for MockArtifactCache {
 
 Note: `tokio::sync::Mutex` (not `std::sync::Mutex`) because the trait is async; the mutex is held across awaits in tests. If a downstream crate later needs the mock (today's 003 / 004 build their own platform-specific mocks; no shared-mock need), promote `#[cfg(test)]` to `#[cfg(any(test, feature = "mock"))]` — one-character change per attribute.
 
-## Module: `core::artifact::geometry`
+## Module: `shared::artifact::geometry`
 
 ### Constants
 
@@ -647,7 +647,7 @@ pub struct BoundingBox {
 }
 ```
 
-## Module: `core::artifact::bundle`
+## Module: `shared::artifact::bundle`
 
 ### `Bundle`
 
@@ -678,7 +678,7 @@ pub struct StatisticShardKey {
 - `BTreeMap<K, Vec<u8>>` is `Send + Sync` trivially.
 - `DistributionContext` is `Copy`.
 
-`StatisticShardKey` moves from `ingestion/src/artifact/artifact_model.rs` to `core/`; ingestion re-exports it. The producer side already uses it in the manifest serializer.
+`StatisticShardKey` moves from `ingestion/src/artifact/artifact_model.rs` to `shared/`; ingestion re-exports it. The producer side already uses it in the manifest serializer.
 
 ### Functions
 
@@ -705,7 +705,7 @@ impl Bundle {
 }
 ```
 
-## Module: `core::artifact::bundle_watch`
+## Module: `shared::artifact::bundle_watch`
 
 Thin re-export of `tokio::sync::watch` types per spec FR-023 + plan §Outstanding (recommended Option A):
 
@@ -713,9 +713,9 @@ Thin re-export of `tokio::sync::watch` types per spec FR-023 + plan §Outstandin
 pub use tokio::sync::watch::{Sender, Receiver, channel};
 ```
 
-Documented import path for consumers: `use core::artifact::bundle_watch::{Sender, Receiver};` then `let (sender, receiver) = bundle_watch::channel(Arc::new(initial_bundle));`.
+Documented import path for consumers: `use shared::artifact::bundle_watch::{Sender, Receiver};` then `let (sender, receiver) = bundle_watch::channel(Arc::new(initial_bundle));`.
 
-## Module: `core::license::license`
+## Module: `shared::license::license`
 
 ### `DistributionContext`
 
@@ -746,7 +746,7 @@ impl DistributionContext {
 
 Per FR-022: no wildcard arm in the `match`; adding a new `LicenseShardClass` variant requires a compile-error-driven update of every `DistributionContext` arm. Adding a new `DistributionContext` variant requires explicit slice authorship.
 
-## Module: `core::sqlite::vfs`
+## Module: `shared::sqlite::vfs`
 
 Per spec FR-020 + plan.md §Topic 2 (revised 2026-06-22 after empirical wasm32 build failure). Wraps two underlying SQLite libraries — `rusqlite` on native, `sqlite-wasm-rs` on wasm32 — behind a unified `Connection` typedef and a single `open_connection_from_bytes` entry point.
 
@@ -760,7 +760,7 @@ pub type Connection = rusqlite::Connection;
 pub type Connection = sqlite_wasm_rs::Connection;  // verify exact path against pinned sqlite-wasm-rs version
 ```
 
-Renderer code in 006 imports `core::sqlite::Connection` and writes queries that work on both libraries (read-only `SELECT` queries with positional `?1` / `?2` parameters; the renderer's surface is small enough that the rusqlite + sqlite-wasm-rs API divergence doesn't bite). Where any single method's name or signature does diverge, `core::sqlite` exposes a thin facade function with one signature that the renderer calls.
+Renderer code in 006 imports `shared::sqlite::Connection` and writes queries that work on both libraries (read-only `SELECT` queries with positional `?1` / `?2` parameters; the renderer's surface is small enough that the rusqlite + sqlite-wasm-rs API divergence doesn't bite). Where any single method's name or signature does diverge, `shared::sqlite` exposes a thin facade function with one signature that the renderer calls.
 
 ### Functions
 
@@ -778,7 +778,7 @@ pub fn open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<Connecti
 
 `name` is the SQLite logical database name (e.g. `"tfr-base"`); used in `ATTACH DATABASE` calls by the renderer.
 
-## Module: `core::sqlite::schema`
+## Module: `shared::sqlite::schema`
 
 Per spec FR-020b through FR-020e. The shared producer / consumer contract for the SQLite shard shape: every magic-number, every table / column / index name, the period date format, the DDL builder, and the consumer-side header-validator all live here. Producer (`ingestion/src/artifact/writer/sqlite.rs`) and consumer (006-core-renderer's renderer when it opens connections) both reach for these constants; the parallel-magic-value drift risk is eliminated.
 
@@ -841,14 +841,14 @@ pub fn shard_schema_ddl() -> &'static str;
 /// mismatch: `AppError` whose message starts with `"sqlite shard: unknown schema_version"`.
 ///
 /// 006-core-renderer's renderer calls this on every connection opened via
-/// `core::sqlite::vfs::open_connection_from_bytes` before issuing any query.
+/// `shared::sqlite::vfs::open_connection_from_bytes` before issuing any query.
 pub fn validate_shard_header(connection: &rusqlite::Connection) -> Result<(), AppError>;
 ```
 
-## Public-API surface summary (re-exports from `core::lib`)
+## Public-API surface summary (re-exports from `shared::lib`)
 
 ```rust
-// core/src/lib.rs
+// shared/src/lib.rs
 pub mod error;
 pub mod filesystem;
 pub mod canonical;
@@ -866,7 +866,7 @@ pub use license::license::*;
 pub use sqlite::{vfs::*, schema::*};
 ```
 
-Wildcard re-exports per `feedback_wildcard_re_exports`. Consumers can `use core::*` for the broadest reach or `use core::artifact::{Bundle, Manifest}` for the specific reach.
+Wildcard re-exports per `feedback_wildcard_re_exports`. Consumers can `use shared::*` for the broadest reach or `use shared::artifact::{Bundle, Manifest}` for the specific reach.
 
 ## Validation rules from the spec
 
@@ -886,9 +886,9 @@ Wildcard re-exports per `feedback_wildcard_re_exports`. Consumers can `use core:
 
 ## State transitions
 
-`core/`'s types are mostly value-types with no state transitions. The two stateful surfaces:
+`shared/`'s types are mostly value-types with no state transitions. The two stateful surfaces:
 
-1. **`Bundle` hot-swap** (state lives outside `core/` in the consuming renderer's `tokio::sync::watch::Sender<Arc<Bundle>>`):
+1. **`Bundle` hot-swap** (state lives outside `shared/` in the consuming renderer's `tokio::sync::watch::Sender<Arc<Bundle>>`):
    - Initial state: renderer holds `Arc<Bundle>` from the embedded bundle.
    - Transition: loader publishes `Sender::send(Arc<new_bundle>)`.
    - Reader sees: next `Receiver::borrow_and_update()` call returns the new bundle; in-flight queries holding the old `Arc` complete against the old bundle; old bundle's memory frees when last reference drops.

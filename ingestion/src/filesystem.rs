@@ -1,1 +1,1 @@
-pub use eafora_core::filesystem::*;
+pub use shared::filesystem::*;

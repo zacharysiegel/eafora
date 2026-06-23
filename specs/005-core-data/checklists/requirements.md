@@ -1,4 +1,4 @@
-# Specification Quality Checklist: core/ — data layer
+# Specification Quality Checklist: shared/ — data layer
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-06-22
@@ -11,7 +11,7 @@
 - [x] Written for non-technical stakeholders
 - [x] All mandatory sections completed
 
-> Notes: this is a Rust-internal extraction spec — its "users" are the developer building the clients (003 / 004 / 006 and beyond) and the existing producer (ingestion). Naming `core/`, `serde`, `rusqlite`, `tokio::sync::watch`, the `ArtifactCache` trait shape is necessary because those decisions are locked at the architecture level (`docs/architecture/client.md` + `docs/architecture/overview.md`); the spec implements against them rather than re-deriving them.
+> Notes: this is a Rust-internal extraction spec — its "users" are the developer building the clients (003 / 004 / 006 and beyond) and the existing producer (ingestion). Naming `shared/`, `serde`, `rusqlite`, `tokio::sync::watch`, the `ArtifactCache` trait shape is necessary because those decisions are locked at the architecture level (`docs/architecture/client.md` + `docs/architecture/overview.md`); the spec implements against them rather than re-deriving them.
 
 ## Requirement Completeness
 
@@ -26,7 +26,7 @@
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
 
-> §Scope cutoff explicitly names what's NOT in this feature (wgpu pipelines + WGSL, `core::geometry`, `core::map::map_renderer::Renderer`, FFI modules, the bulk of canonical_model entity types). Each cut item is paired with where it lives instead (006-core-renderer, 003 / 004, ingestion-stays-in-place).
+> §Scope cutoff explicitly names what's NOT in this feature (wgpu pipelines + WGSL, `shared::geometry`, `shared::map::map_renderer::Renderer`, FFI modules, the bulk of canonical_model entity types). Each cut item is paired with where it lives instead (006-core-renderer, 003 / 004, ingestion-stays-in-place).
 
 - [x] Dependencies and assumptions identified
 
@@ -59,7 +59,7 @@
 
 - [x] No implementation details leak into specification
 
-> The architecture's locked decisions are surfaced where required (Rust 1.75 AFIT, `tokio::sync::watch`, `rusqlite`, BTreeMap-deterministic-serialization); plan-level decisions (whether `MockArtifactCache` is `#[cfg(test)]` or a feature gate; whether the bundled SQLite WASM path uses `rusqlite` or `sqlite-wasm-rs`; the exact `core/Cargo.toml` shape) are explicitly deferred to plan time.
+> The architecture's locked decisions are surfaced where required (Rust 1.75 AFIT, `tokio::sync::watch`, `rusqlite`, BTreeMap-deterministic-serialization); plan-level decisions (whether `MockArtifactCache` is `#[cfg(test)]` or a feature gate; whether the bundled SQLite WASM path uses `rusqlite` or `sqlite-wasm-rs`; the exact `shared/Cargo.toml` shape) are explicitly deferred to plan time.
 
 ## Notes
 

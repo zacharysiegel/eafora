@@ -5,7 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-eafora_core = { workspace = true }
+shared = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 sqlx = { workspace = true }
 reqwest = { workspace = true }
