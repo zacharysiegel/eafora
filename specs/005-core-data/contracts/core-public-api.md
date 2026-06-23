@@ -62,8 +62,8 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `Sender`, `Receiver`, `channel` (re-exports of `tokio::sync::watch::*`) | `core::artifact::bundle_watch` | re-export | new |
 | `DistributionContext`                                             | `core::license::license`        | type     | new       |
 | `DistributionContext::authorized_classes() -> &'static [LicenseShardClass]` | `core::license::license` | function | new |
-| `register_vec_u8_vfs() -> Result<(), AppError>` (wasm32 only)     | `core::sqlite::vfs`             | function | new       |
-| `open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<rusqlite::Connection, AppError>` | `core::sqlite::vfs` | function | new |
+| `Connection` (typedef: `rusqlite::Connection` on native, `sqlite_wasm_rs::Connection` on wasm32) | `core::sqlite::vfs` | type | new |
+| `open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<Connection, AppError>` | `core::sqlite::vfs` | function | new |
 | `APPLICATION_ID`                                                  | `core::sqlite::schema`          | const    | new       |
 | `SCHEMA_VERSION`                                                  | `core::sqlite::schema`          | const    | new       |
 | `TABLE_STATISTIC_VALUE`, `TABLE_SHARD_KEY`                        | `core::sqlite::schema`          | const    | new       |

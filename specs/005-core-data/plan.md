@@ -18,7 +18,8 @@ The producer side (`ingestion/`) continues to be the canonical author of manifes
 
 | Crate          | Purpose                                                                 | Wildcard pin | Notes |
 |----------------|-------------------------------------------------------------------------|--------------|-------|
-| (existing)     | `serde`, `serde_json`, `chrono`, `uuid`, `sha2`, `rusqlite`, `flatgeobuf`, `geozero`, `geo-types`, `minimer`, `log`, `tokio`, `bytes` | (already pinned) | All consumed by `core/` via `{ workspace = true }`; no new versions. |
+| (existing)     | `serde`, `serde_json`, `chrono`, `uuid`, `sha2`, `rusqlite`, `flatgeobuf`, `geozero`, `geo-types`, `minimer`, `log`, `tokio`, `bytes` | (already pinned) | Consumed by `core/` via `{ workspace = true }`. Note: `rusqlite` is gated to `cfg(not(target_arch = "wasm32"))` in `core/Cargo.toml`. |
+| `sqlite-wasm-rs` | wasm32-only SQLite library (replaces `rusqlite` on the wasm32 target; `rusqlite`'s `bundled` feature does not cross-compile to `wasm32-unknown-unknown` per Topic 2 below). Pinned in the per-target dependency table. | `0.4.*` (verify against latest stable at implementation time) | New addition to `[workspace.dependencies]`. |
 | (existing tokio reduced features) | `tokio` workspace pin already declares `features = ["full"]`. `core/` consumes `tokio` with `features = ["sync"]` only — single-threaded WASM cannot use `rt-multi-thread`; `sync` is enough for `watch`. | (same pin) | Use per-crate `default-features = false, features = ["sync"]` in `core/Cargo.toml`. |
 | `wasm-bindgen` | wasm32-only target dependency; needed by `core::sqlite::vfs` for any JS-bridge calls and for `wasm-bindgen-test` in test mode. | resolve from `wasm-bindgen-test`'s pin (verify against the version `wasm-bindgen-test` requires) | New addition to `[workspace.dependencies]`. |
 | `wasm-bindgen-futures` | wasm32-only; converts JS promises to Rust futures for any async file-reading inside the VFS path. | matches `wasm-bindgen` | New addition. |
@@ -99,7 +100,7 @@ core/                                       # NEW workspace member
 ├── build.rs                                # Captures source revision via `git rev-parse HEAD`; emits `cargo:rustc-env=EAFORA_REVISION=...`; falls back to "unknown" on shallow checkout (per FR-020k)
 ├── src/
 │   ├── lib.rs                              # `pub mod` + `pub use` declarations + `pub const REVISION: &str = env!("EAFORA_REVISION");` (per FR-020k)
-│   ├── error.rs                            # CANONICAL HOME for `AppError` (moved from ingestion). minimer::define_app_error! + From impls for serde_json, rusqlite, flatgeobuf, geozero, log::SetLoggerError (the parser-surface set core touches); ingestion adds the rest in its own error.rs via `pub use core::error::AppError;` + ingestion-side From impls (orphan rule allows: type from core, impl from ingestion for ingestion-side deps).
+│   ├── error.rs                            # `core::AppError` newtype generated via `minimer::define_app_error!(pub AppError);` + parser-surface `From` impls (serde_json, rusqlite, flatgeobuf, geozero, log::SetLoggerError) via `minimer::impl_from_error!`. `render_error_chain` lives here. Ingestion has its OWN `AppError` newtype (orphan rule prevents ingestion from adding `From<sqlx::Error>` to a core-defined type); ingestion's `From<core::AppError> for ingestion::AppError` is the cross-conversion bridge.
 │   ├── filesystem.rs                       # MOVED wholesale from ingestion/src/filesystem.rs. Cross-target: FileReference, Hashed<T>, sha256_hex, verify_sha256 (new). Host-only (cfg(not(target_arch = "wasm32"))): sha256_hex_of_file, filename_of, read_bytes, load_hashed_file.
 │   ├── canonical/
 │   │   ├── mod.rs                          # pub mod canonical_model; pub use canonical_model::*;
@@ -124,7 +125,7 @@ core/                                       # NEW workspace member
 ingestion/
 ├── Cargo.toml                              # add `core = { workspace = true }` to dependencies
 └── src/
-    ├── error.rs                            # `pub use core::error::AppError;` + the additional `From` impls for ingestion-only error families (sqlx, reqwest, zip, shapefile, shapefile::dbase, secr, dotenvy, base64)
+    ├── error.rs                            # ingestion's OWN `AppError` newtype (separate from core's; required by Rust's orphan rule). `minimer::define_app_error!(pub AppError);` + ingestion-only `From` impls (sqlx::Error, reqwest::Error, zip::result::ZipError, shapefile::Error, shapefile::dbase::Error, secr::error::Error, dotenvy::Error, base64::DecodeError) via `impl_from_error!`. Adds one cross-conversion: `impl From<core::AppError> for ingestion::AppError { fn from(err: core::AppError) -> Self { Self(err.0) } }` — lets ingestion `?`-propagate from core functions.
     ├── canonical/
     │   └── canonical_model.rs              # The `*Entity` wire-shape types (`RegionEntity`, `CountryEntity`, `StatisticEntity`, `DataSourceEntity`, `StatisticValueEntity`, `SourceChoiceEntity`) STAY here — they're producer-only Postgres wire shapes. Their `From<Entity> for Model` / `TryFrom<Entity> for Model` impls also stay here (orphan rule allows: ingestion owns the Entity even though Model is foreign from core). `StatisticValue` + `SourceChoice` Models stay too (consumers read `statistic_value` from SQLite shards directly, not via the Postgres Model). At the top of the file: `pub use core::canonical::canonical_model::*;` so existing `crate::canonical::canonical_model::Region` import sites resolve via the moved Model.
     ├── adapter/
@@ -164,18 +165,21 @@ The research output lands at `specs/005-core-data/research.md` (created as Phase
 - **No `rust-toolchain.toml`**: rejected — leaves the floor implicit; CI machines and new contributors could drift.
 - **`#[trait_variant::make(Send)]`** for `Send`-bound async traits: rejected — `ArtifactCache` deliberately does NOT require `Send` (web's `OpfsArtifactCache` holds `!Send` `JsValue` indirectly); the wrapper macro doesn't help.
 
-### Topic 2: SQLite VFS strategy for wasm32 — `rusqlite` bundled vs. `sqlite-wasm-rs` vs. JS-side `sql.js`
+### Topic 2: SQLite library for wasm32 — `rusqlite` bundled rejected; `sqlite-wasm-rs` adopted
 
-**Decision**: `rusqlite` with the `bundled` feature, compiled for `wasm32-unknown-unknown` via a custom VFS that reads pages from a `Vec<u8>` held in the connection's open-state. Same crate as native targets; one source of truth for query code.
+**Decision (revised 2026-06-22 after empirical test)**: native targets use `rusqlite` with `features = ["bundled"]`; wasm32 uses `sqlite-wasm-rs`. The two libraries are exposed through a thin cfg-gated typedef in `core::sqlite` so the renderer's query code is target-agnostic at the surface.
 
-**Rationale**: Per `docs/architecture/client.md` §SQLite in the client, the decision is "rusqlite compiled to WASM, with the database backed by the SQLite VFS reading from a `Vec<u8>` held in WASM linear memory" — that's already a locked architecture decision; this plan just operationalizes it. The `rusqlite = { version = "0.32.*", features = ["bundled"] }` workspace pin already includes the bundled SQLite C source, which cross-compiles cleanly to `wasm32-unknown-unknown` via Emscripten or via the `cc` crate's wasm32 support (verify at implementation time which path `rusqlite`'s bundled feature uses on wasm32 — likely the latter). The custom VFS is ~200 LOC and lives in `core/src/sqlite/vfs.rs` cfg-gated to wasm32.
+**Rationale**: An empirical test confirmed `rusqlite` with `features = ["bundled"]` does NOT cross-compile to `wasm32-unknown-unknown`. The `bundled` feature compiles SQLite's C source via `cc-rs`; that pipeline ultimately invokes clang against `wasm32-unknown-unknown`, which fails because `wasm32-unknown-unknown` has no libc (clang reports `'stdio.h' file not found`). WASI provides a libc via `wasm32-wasip1`, but the web client's compile target is `wasm32-unknown-unknown` per `client-web.md` §`cargo-leptos`; switching the web target to WASI cascades through cargo-leptos, wasm-bindgen, and the wasm bundle shape. The `sqlite-wasm-rs` crate ships a pre-built SQLite WASM blob designed for `wasm32-unknown-unknown` consumers and exposes a near-rusqlite API surface (`Connection`, `prepare`, `query_row`, etc.). This is the pragmatic path. `client.md` §SQLite in the client has been amended to reflect this two-library decision.
 
-**Alternatives considered**:
-- **`sqlite-wasm-rs`**: rejected — separate crate, different query API; would split the codebase's SQLite idiom between native (`rusqlite`) and web. The cost of unified `rusqlite::Connection` is worth the VFS implementation effort.
-- **JS-side `sql.js` (or `wa-sqlite`)**: rejected per `client.md` §SQLite in the client — the query layer would live in JavaScript, marshaling results across wasm-bindgen on every read.
-- **OPFS `FileSystemSyncAccessHandle` directly**: rejected for v1 per `client.md` §SQLite in the client — Worker-only on every shipping browser today; would require hosting SQLite in a Worker with `postMessage` query API. Tracked as backlog item "Move web SQLite engine into a dedicated Worker" with the 30MB-shard trigger.
+**Implementation shape**: `core::sqlite` exposes a target-agnostic `Connection` typedef (`pub type Connection = rusqlite::Connection;` on native, `pub type Connection = sqlite_wasm_rs::Connection;` on wasm32 — verify the exact crate path against the pinned `sqlite-wasm-rs` version at implementation time). Renderer code in 006 uses `core::sqlite::Connection`. Where the API surfaces diverge (any method name or signature differing between rusqlite and sqlite-wasm-rs), `core::sqlite` exposes a thin facade function with a single signature backed by per-target implementation. Both libraries are designed to be near-drop-in replacements for the read-only SELECT queries the renderer issues; the divergence-handling layer should be small.
 
-**Fallback**: if `rusqlite` bundled SQLite does NOT cross-compile cleanly to `wasm32-unknown-unknown` at implementation time (verification step in the first task), switch to `sqlite-wasm-rs` — at the cost of duplicating query code between targets. The fallback would be a real divergence from `client.md`'s locked decision and would require an architecture-doc amendment, but is the recovery path if the bundled cross-compilation fails.
+**Alternatives considered and rejected**:
+- **`rusqlite` bundled** — empirically fails to compile (this section's whole subject); originally the decision; superseded.
+- **JS-side `sql.js` / `wa-sqlite`** — rejected per `client.md` §SQLite in the client: query layer would live in JavaScript, marshaling results across wasm-bindgen on every read.
+- **OPFS `FileSystemSyncAccessHandle` directly** — rejected for v1 per `client.md`: Worker-only on every shipping browser today; would require hosting SQLite in a Worker with `postMessage` query API. Tracked as backlog item with the 30MB-shard trigger.
+- **Switch web target to `wasm32-wasip1`** — rejected: cascades through cargo-leptos / wasm-bindgen / bundle shape; far heavier than swapping one crate.
+
+The original "fallback" note from this Topic 2 (a paragraph proposing exactly this swap) was the recovery path that the implementation-time verification triggered.
 
 ### Topic 3: `tokio` feature flag scope for wasm32
 
@@ -192,22 +196,15 @@ The research output lands at `specs/005-core-data/research.md` (created as Phase
 
 All three items resolved per owner feedback.
 
-1. **`AppError` ownership: transfers from `ingestion` to `core/`. Ingestion imports.**
-   - `core/src/error.rs` defines `AppError` via `minimer::define_app_error!(pub AppError)` and registers the parser-surface `From` impls (serde_json, rusqlite, flatgeobuf, geozero, log::SetLoggerError).
-   - `ingestion/src/error.rs` becomes `pub use core::error::AppError;` plus the additional `From` impls for ingestion-only error families (sqlx, reqwest, zip, shapefile, shapefile::dbase, secr, dotenvy, base64). The orphan rule allows ingestion to add `From` impls for its own deps even when the type is defined in `core/` — that's a standard cross-crate error-conversion pattern.
-   - `render_error_chain` moves to `core::error` alongside `AppError`.
+1. **`AppError` ownership: each crate has its own newtype via `define_app_error!`. Producer-surface From impls live in ingestion; consumer-surface From impls live in core.** (Earlier framing of this — "ownership transfers from ingestion to core; ingestion imports it from core" — turned out to be incompatible with Rust's orphan rule. Verified 2026-06-22 by reading `minimer-2.1.0/src/error.rs:32-39`, whose macro doc explicitly notes: "Rust's orphan rule prevents downstream crates from implementing From<X> for $crate::AppError directly, so the downstream defines its own newtype.")
+   - `core/src/error.rs` calls `minimer::define_app_error!(pub AppError);` to generate `core::AppError` (a newtype wrapping `minimer::AppError`). Adds the parser-surface `From` impls via `minimer::impl_from_error!(AppError, serde_json::Error)` etc. — works because `core::AppError` is local to core.
+   - `ingestion/src/error.rs` ALSO calls `minimer::define_app_error!(pub AppError);` to generate `ingestion::AppError` (a separate newtype, also wrapping `minimer::AppError`). Adds the producer-surface `From` impls (sqlx::Error, reqwest::Error, zip::result::ZipError, shapefile::Error, shapefile::dbase::Error, secr::error::Error, dotenvy::Error, base64::DecodeError) via `impl_from_error!` — works because `ingestion::AppError` is local to ingestion.
+   - Cross-conversion: `ingestion/src/error.rs` adds `impl From<core::AppError> for ingestion::AppError { fn from(err: core::AppError) -> Self { Self(err.0) } }` (one line; orphan-rule-OK since the target type is local to ingestion). Lets ingestion code `?`-propagate from a core function: `let manifest = core::artifact::manifest::parse_manifest(&bytes)?;` works because core's error converts into ingestion's error at the `?` boundary.
+   - Both newtypes wrap the same `minimer::AppError`, so the underlying error storage is uniform. The two newtypes are conceptually one error type with two namespaces.
 
-2. **Move `ingestion/src/filesystem.rs` wholesale to `core/src/filesystem.rs`.**
-   - The previous plan split the file (7 items split 4/3 between `core/` and `ingestion/`). The split was arbitrary; there's no semantic reason to leave host-only helpers in ingestion when the rest of the module is moving.
-   - Whole-file move: `FileReference`, `Hashed<T>`, `sha256_hex`, `sha256_hex_of_file`, `verify_sha256` (new), `filename_of`, `read_bytes`, `load_hashed_file` ALL land in `core/src/filesystem.rs`.
-   - Host-only functions (`sha256_hex_of_file`, `filename_of`, `read_bytes`, `load_hashed_file`) are gated `#[cfg(not(target_arch = "wasm32"))]`.
-   - Cross-target functions (`sha256_hex`, `verify_sha256`, `FileReference`, `Hashed<T>`) work on both targets.
-   - `ingestion/src/filesystem.rs` becomes `pub use core::filesystem::*;` (or the file is deleted entirely and `ingestion/src/lib.rs` does `pub use core::filesystem;` — implementation-time choice).
-   - The originally-planned `core::hashing` module name is dropped; `core::filesystem` is the correct module name (matches the source file).
+2. **Move `ingestion/src/filesystem.rs` wholesale to `core/src/filesystem.rs`.** (Unchanged from earlier resolution.)
 
-3. **`MockArtifactCache` gating: `#[cfg(test)]`-only.**
-   - The mock exists for `core/`'s own tests of `Bundle::open`. The web and iOS clients will build their own platform-specific mocks (web's against OPFS in headless Chrome; iOS's against `Library/Caches/` in XCTest); neither needs to import `core/`'s mock.
-   - Promoting `#[cfg(test)]` to `#[cfg(any(test, feature = "mock"))]` later is a one-character change if a shared-mock need ever surfaces.
+3. **`MockArtifactCache` gating: `#[cfg(test)]`-only.** (Unchanged.)
 
 ## Phase 1: Design & Contracts
 
@@ -223,25 +220,21 @@ Phase 1 also updates the agent context file (`CLAUDE.md`) to point at this plan 
 
 ## Phasing for PRs
 
-This feature is small enough to land as ONE PR (no internal stack). Per `feedback_spec_and_plan_same_pr`, the PR includes spec.md + plan.md + tasks.md + research.md + data-model.md + contracts/ + quickstart.md + the implementation + tests.
+This feature breaks naturally into **5 serial PRs**, stacked linearly per the constitution's §Branch per body of work rule. Each PR ships one logical slice with its own PR description and review boundary; per `feedback_branch_per_body_of_work` and `feedback_pr_description_style`, every PR is `gh pr create`'d and assigned to `zacharysiegel`.
 
-Rough implementation order inside the single PR (tasks.md will codify this):
+The **spec-and-design artifacts** (this `plan.md`, `data-model.md`, `contracts/core-public-api.md`, `quickstart.md`, `tasks.md`, plus the architecture-doc amendments) are already on `005-core-data` per `feedback_spec_and_plan_same_pr`; the implementation PRs stack on that branch.
 
-1. Workspace setup (`core/Cargo.toml`, root `Cargo.toml` members + wasm-bindgen-family deps, `rust-toolchain.toml` pin, `core/build.rs` for revision capture per FR-020k).
-2. `core::error::AppError` (canonical home, moves from ingestion) + `core::filesystem` (moves wholesale from `ingestion/src/filesystem.rs`).
-3. `core::canonical::canonical_model` (move from `ingestion/src/canonical/canonical_model.rs`): the 6 enums + `SourceRevision` + `NaiveDatePeriod` (lifted from `ingestion/src/adapter/adapter_model.rs`) + the 4 consumer-facing Models (`Region`, `Country`, `Statistic`, `DataSource`). The matching `*Entity` types + their `(Try)From<Entity> for Model` impls stay in ingestion. Ingestion re-exports the moved Models via `pub use core::canonical::canonical_model::*;`.
-4. `core::artifact::manifest` (Manifest + ManifestEntry + parse_manifest + MANIFEST_SCHEMA_VERSION = 1); ingestion's `write_manifest` rewritten to use it.
-5. `core::artifact::discovery` (DiscoveryDocument + parse_discovery_document + DISCOVERY_SCHEMA_VERSION = 1).
-6. `core::artifact::cache` (ArtifactCache trait + MockArtifactCache).
-7. `core::license::license` (DistributionContext + authorized_classes).
-8. `core::artifact::geometry` (FlatGeobufReader wrapping the upstream `flatgeobuf` crate's reader + open_flatgeobuf_reader; cfg-gating for any host-vs-wasm differences in the upstream crate's API).
-9. `core::sqlite::vfs` (Vec<u8>-backed VFS for wasm32; native target is `cfg(not(target_arch = "wasm32"))` no-op).
-10. `core::sqlite::schema` (FR-020b through FR-020e: constants + `shard_schema_ddl()` + `validate_shard_header()`). Producer-side `ingestion/src/artifact/writer/sqlite.rs` updated to use the constants + DDL function; private `SQLITE_APPLICATION_ID` / `SQLITE_USER_VERSION` / `create_schema` removed. Producer-side `ingestion/src/artifact/publish.rs::load_build_report_from_disk` updated to use `core::artifact::manifest::parse_manifest`; private `ManifestOnDisk` / `ManifestEntryOnDisk` deleted.
-11. `core::artifact::bundle::Bundle` + `Bundle::open(version_label, &cache, ctx)`.
-12. `core::artifact::bundle_watch` (re-export `tokio::sync::watch::{Sender, Receiver}`).
-13. Test suites (host: `cargo test -p core`; wasm32: `wasm-bindgen-test --headless --chrome`).
-14. Regression check: `cargo test -p ingestion` passes; `cargo build --workspace` succeeds; `cargo build -p core --target wasm32-unknown-unknown` succeeds.
-15. Polish: agent-context update (CLAUDE.md), final clippy sweep, doc-comment review per `feedback_no_process_narration_in_doc_comments`.
+| PR | Branch                                  | Phases (per tasks.md)                    | Off-branch              | Scope summary |
+|----|-----------------------------------------|------------------------------------------|-------------------------|---------------|
+| A  | `impl-005-foundational`                 | 1, 2 (Setup + Foundational)              | `005-core-data`         | Workspace member + `core/Cargo.toml` + `core/build.rs` + `core::AppError` (newtype) + ingestion's own `AppError` newtype + `core::filesystem` whole-file move + ingestion's filesystem re-export. No user-visible behavior change; `cargo test -p ingestion` passes against the moved files. ~150 LOC. |
+| B  | `impl-005-canonical-types`              | 3 (US1)                                  | `impl-005-foundational` | Canonical Models extracted (`Region`, `Country`, `Statistic`, `DataSource`) + enums (`StatisticKind`, `DataSourceKind`, `LicenseClass`, `LicenseShardClass`, `DataStatus`) + `SourceRevision` + `NaiveDatePeriod` + `StatisticShardKey`. Ingestion re-exports the moved types; `From<Entity>` impls stay in ingestion. `cargo build -p core --target wasm32-unknown-unknown` succeeds for the first time at the end of this PR. ~250 LOC. |
+| C  | `impl-005-manifest-discovery-cache`     | 4, 5, 6 (US2 + US3 + US4)                | `impl-005-canonical-types` | `core::artifact::manifest::Manifest` + `parse_manifest` + manifest constants (FR-020g, FR-020h, FR-020j) + `manifest_schema_version: 1`. `core::artifact::discovery::DiscoveryDocument` + `parse_discovery_document` + `DISCOVERY_URL`. `core::artifact::cache::ArtifactCache` trait + `MockArtifactCache`. Producer-side `ingestion/src/artifact/writer/manifest.rs::write_manifest` rewritten to use `core::Manifest`; `ingestion/src/artifact/publish.rs::load_build_report_from_disk` rewritten to use `core::parse_manifest`; producer-side `CONTENT_TYPE_*` consts deleted (moved to core). The MVP-shaped slice. ~400 LOC + tests. |
+| D  | `impl-005-license-bundle-vfs`           | 7, 8 (US6 + US5)                         | `impl-005-manifest-discovery-cache` | `core::license::DistributionContext` + `authorized_classes`. `core::artifact::geometry::FlatGeobufReader` + geometry constants (FR-020f) + producer-side `ingestion/src/artifact/writer/flatgeobuf.rs` rewrite. `core::sqlite::vfs::open_connection_from_bytes` (cfg-gated: rusqlite native, sqlite-wasm-rs wasm32) + `core::sqlite::schema` (FR-020b through FR-020e: constants + DDL + header-validate) + producer-side `ingestion/src/artifact/writer/sqlite.rs` rewrite. `core::artifact::bundle::Bundle` + `Bundle::open(version_label, &cache, ctx)` + `core::artifact::bundle_watch` re-export. The largest PR by LOC; the renderer (006) is fully unblocked at the end of this PR. ~700 LOC + tests. |
+| E  | `impl-005-wasm-tests-polish`            | 9, 10 (wasm32 tests + Polish)            | `impl-005-license-bundle-vfs` | `wasm-bindgen-test` configuration + duplicate test attributes for `parse_manifest`, `parse_discovery_document`, `verify_sha256`, `Bundle::open`, `open_connection_from_bytes`. Final clippy / fmt / coverage / convention audit. CLAUDE.md update. ~150 LOC. |
+
+Each branch starts with the `>>> branch: <name>` marker commit per the constitution + `feedback_branch_marker_commits` (use `./scripts/branch-init.sh <name>`). Each PR's body matches `feedback_pr_description_style`: opens with a verb describing the change; tight summary prose; no chat narration; no file enumeration; no "Next phase" pointers.
+
+Per `feedback_squash_merge_and_rebase_onto`: PRs integrate via `scripts/pr-integrate.sh`; for any stacked child whose parent was squash-merged, use `git rebase --onto master <former-parent>` to rebase the child onto master.
 
 ## Brief PR description (per `feedback_pr_description_style`)
 

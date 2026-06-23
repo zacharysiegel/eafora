@@ -11,7 +11,7 @@
 
 ## Module: `core::error`
 
-Canonical home for `AppError` (moves from `ingestion/src/error.rs`). Ingestion `pub use`s `core::error::AppError;` and adds its own additional `From` impls for ingestion-only error families.
+`core::AppError` is core's own newtype, generated via `minimer::define_app_error!`. Ingestion has its own separate `AppError` newtype; the two interconvert at the boundary. (Earlier framing of "ingestion imports it from core" is incompatible with Rust's orphan rule — minimer's macro doc explicitly notes this and says downstream crates should define their own newtype. See plan.md §Outstanding decision #1 for the reasoning.)
 
 ### `AppError`
 
@@ -29,9 +29,38 @@ minimer::impl_from_error!(AppError, geozero::error::GeozeroError);
 minimer::impl_from_error!(AppError, log::SetLoggerError);
 ```
 
-(Parser-surface set; covers what `core/` itself touches. Ingestion adds the rest — sqlx, reqwest, zip, shapefile, shapefile::dbase, secr, dotenvy, base64 — in its own `error.rs` via the orphan-rule-friendly local-impl-for-local-deps pattern.)
+Parser-surface set; covers what `core/` itself touches.
 
 `render_error_chain(error: &dyn Error) -> String` — moved verbatim from `ingestion/src/error.rs` (walks the error's `source()` chain, joining each level with ` -> `).
+
+### Ingestion's separate newtype + cross-conversion
+
+`ingestion/src/error.rs` keeps its own `AppError` newtype:
+
+```rust
+minimer::define_app_error!(pub AppError);
+
+// Ingestion-only From impls for ingestion-only error families:
+minimer::impl_from_error!(AppError, sqlx::Error);
+minimer::impl_from_error!(AppError, reqwest::Error);
+minimer::impl_from_error!(AppError, zip::result::ZipError);
+minimer::impl_from_error!(AppError, shapefile::Error);
+minimer::impl_from_error!(AppError, shapefile::dbase::Error);
+minimer::impl_from_error!(AppError, secr::error::Error);
+minimer::impl_from_error!(AppError, dotenvy::Error);
+minimer::impl_from_error!(AppError, base64::DecodeError);
+
+// One-line cross-conversion bridge — orphan-rule-OK because the target
+// (ingestion::AppError) is local to ingestion. Lets ingestion `?`-propagate
+// from core functions like `core::artifact::manifest::parse_manifest`.
+impl From<core::AppError> for AppError {
+    fn from(err: core::AppError) -> Self {
+        Self(err.0)
+    }
+}
+```
+
+Both newtypes wrap the same `minimer::AppError`, so the underlying error storage is uniform across the two crates. The two newtypes are conceptually one error type with two namespaces; the orphan rule forces the dual-newtype shape rather than a single shared type.
 
 ## Crate root: `core::REVISION` (and `core/build.rs`)
 
@@ -719,24 +748,33 @@ Per FR-022: no wildcard arm in the `match`; adding a new `LicenseShardClass` var
 
 ## Module: `core::sqlite::vfs`
 
-Per spec FR-020. Cfg-gated to `target_arch = "wasm32"`; on native targets the module is `cfg(not(target_arch = "wasm32"))`-empty (native uses the standard SQLite VFS that reads from `Vec<u8>` directly via rusqlite's `serialize()` / `deserialize()` API — same in-memory pattern, different mechanism).
+Per spec FR-020 + plan.md §Topic 2 (revised 2026-06-22 after empirical wasm32 build failure). Wraps two underlying SQLite libraries — `rusqlite` on native, `sqlite-wasm-rs` on wasm32 — behind a unified `Connection` typedef and a single `open_connection_from_bytes` entry point.
 
-Public surface (used by 006-core-renderer's renderer when it opens connections against `bundle.shard_bytes`):
+### Target-agnostic `Connection` typedef
 
 ```rust
-// On wasm32:
-#[cfg(target_arch = "wasm32")]
-pub fn register_vec_u8_vfs() -> Result<(), AppError>;
-
-#[cfg(target_arch = "wasm32")]
-pub fn open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<rusqlite::Connection, AppError>;
-
-// On native targets:
 #[cfg(not(target_arch = "wasm32"))]
-pub fn open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<rusqlite::Connection, AppError>;
+pub type Connection = rusqlite::Connection;
+
+#[cfg(target_arch = "wasm32")]
+pub type Connection = sqlite_wasm_rs::Connection;  // verify exact path against pinned sqlite-wasm-rs version
 ```
 
-Same public function shape across targets so the consuming renderer code in 006 doesn't need cfg branches; the VFS-registration step is cfg-gated since native targets don't need it.
+Renderer code in 006 imports `core::sqlite::Connection` and writes queries that work on both libraries (read-only `SELECT` queries with positional `?1` / `?2` parameters; the renderer's surface is small enough that the rusqlite + sqlite-wasm-rs API divergence doesn't bite). Where any single method's name or signature does diverge, `core::sqlite` exposes a thin facade function with one signature that the renderer calls.
+
+### Functions
+
+```rust
+/// Open an in-memory SQLite connection seeded with the given bytes. Same
+/// signature on both targets so consumers don't cfg-branch their open code.
+///
+/// Native: uses rusqlite::Connection::deserialize.
+/// wasm32: uses sqlite-wasm-rs's equivalent; the `name` parameter is the
+///         logical database name used in subsequent ATTACH DATABASE calls.
+pub fn open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<Connection, AppError>;
+```
+
+`name` is the SQLite logical database name (e.g. `"tfr-base"`); used in `ATTACH DATABASE` calls by the renderer.
 
 `name` is the SQLite logical database name (e.g. `"tfr-base"`); used in `ATTACH DATABASE` calls by the renderer.
 

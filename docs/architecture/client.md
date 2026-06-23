@@ -248,17 +248,20 @@ Per-platform policy differs in failure modes — see `client-web.md` for OPFS qu
 
 ## SQLite in the client
 
-The chosen approach is **download-the-whole-shard-and-query-in-memory**, on every platform. SQLite's file format is identical across platforms; the only thing that changes per-platform is which library opens the file.
+The chosen approach is **download-the-whole-shard-and-query-in-memory**, on every platform. SQLite's file format is identical across platforms; the only thing that changes per-platform is which Rust SQLite library opens the file.
 
-| Platform | SQLite library                  | File access                                                  |
-| -------- | ------------------------------- | ------------------------------------------------------------ |
-| Web      | `rusqlite` compiled to WASM, with the database backed by the SQLite VFS reading from a `Vec<u8>` held in WASM linear memory. | The downloaded `.sqlite` bytes are passed to a custom VFS layer; no OPFS / no file handle. |
-| iOS      | `rusqlite` (statically linked).  | Open the cached file path via `Connection::open(path)`. |
-| Android  | `rusqlite` (statically linked).  | Open the cached file path via `Connection::open(path)`. |
+| Platform | SQLite library                                                                                                  | File access                                                  |
+| -------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Web      | `sqlite-wasm-rs` (a wasm32-targeted SQLite-in-Rust crate that ships a pre-built sqlite WASM blob with a custom VFS shim). | The downloaded `.sqlite` bytes are deserialized into the in-memory database via the crate's `Connection::deserialize`-equivalent. |
+| iOS      | `rusqlite` (statically linked, `bundled` feature).                                                              | Open the cached file path via `Connection::open(path)`. |
+| Android  | `rusqlite` (statically linked, `bundled` feature).                                                              | Open the cached file path via `Connection::open(path)`. |
 
 The web platform does **not** use OPFS, sql.js, or wa-sqlite. Reasoning:
 
-- `rusqlite`-on-WASM means the same `core::*` query code runs everywhere, byte-for-byte. No JS/TS query layer; no parallel implementation to keep in sync; no FFI marshaling for query results. This is a direct application of Constitution Principle V (explicit over implicit) and the architectural premise that Rust core is the single source of truth.
+- A Rust SQLite library on WASM means the same `core::*` query code runs everywhere with at most a thin cfg-gated alias layer in `core::sqlite` (typedef `Connection = rusqlite::Connection` on native, `Connection = sqlite_wasm_rs::Connection` on wasm32; the renderer's queries are simple enough — `SELECT value FROM statistic_value WHERE region_iso3 = ?1 AND period_start = ?2` — that the API surface both libraries expose covers them. Where the surfaces diverge, `core::sqlite` exposes a thin facade.). No JS/TS query layer; no parallel implementation to keep in sync; no FFI marshaling for query results. This is a direct application of Constitution Principle V (explicit over implicit) and the architectural premise that Rust core is the single source of truth.
+
+> **Why two libraries instead of one.** `rusqlite` with `features = ["bundled"]` does not cross-compile cleanly to `wasm32-unknown-unknown`: the bundled SQLite C source needs a libc, and `wasm32-unknown-unknown` has none. WASI provides one (`wasm32-wasip1`) but the web client's compile target is `wasm32-unknown-unknown` per `client-web.md` §`cargo-leptos`, and switching the web target to WASI would cascade through cargo-leptos, wasm-bindgen, and the wasm bundle shape. `sqlite-wasm-rs` ships a pre-built SQLite WASM blob designed for `wasm32-unknown-unknown` consumers; near-rusqlite-compatible Rust API. The two-library approach is the pragmatic answer.
+
 - Per-statistic shards are tens of KB to a few MB through v2 (memory: `feedback_consolidated_migrations` is unrelated, but the producer-side per-shard size estimates in `docs/architecture/ingestion.md` apply). Holding a 5 MB `Vec<u8>` in WASM linear memory is trivially cheap compared to the ~3 MB raw WASM bundle itself; there's no pressure to stream.
 - OPFS is a 2024+ API. The synchronous file-handle API needed for SQLite is Worker-only on every shipping browser today, so adopting OPFS would mean hosting the SQLite engine in a Worker and going through `postMessage` for every query. That is on the table for the migration path described below, but for current shard sizes the added structural complexity buys nothing — in-memory is faster and simpler.
 - sql.js is JavaScript-implemented SQLite. Using it means parsing query results in JS and marshaling across the wasm-bindgen boundary on every read. wa-sqlite is the modern equivalent. Both have the same problem: the query layer lives outside Rust.
