@@ -33,6 +33,43 @@ minimer::impl_from_error!(AppError, log::SetLoggerError);
 
 `render_error_chain(error: &dyn Error) -> String` — moved verbatim from `ingestion/src/error.rs` (walks the error's `source()` chain, joining each level with ` -> `).
 
+## Crate root: `core::REVISION` (and `core/build.rs`)
+
+Per spec FR-020k. The source revision the binary was built from, captured at compile time and exposed as a `&'static str` constant at the crate root.
+
+### `core/build.rs`
+
+```rust
+use std::process::Command;
+
+fn main() {
+    let revision: String = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|out| if out.status.success() { Some(out.stdout) } else { None })
+        .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    println!("cargo:rustc-env=EAFORA_REVISION={}", revision);
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs");
+}
+```
+
+The `unwrap_or_else(|| "unknown".to_string())` fallback handles shallow / archive checkouts (no `.git` directory) so the crate compiles in any environment.
+
+### `core/src/lib.rs`
+
+```rust
+/// Source revision captured at compile time by `core/build.rs`. Truncate at
+/// display time if a short form is desired. The matching iOS-side
+/// `eafora.revision()` UniFFI export lives in 004-ios-client's scope.
+pub const REVISION: &str = env!("EAFORA_REVISION");
+```
+
+The build script reruns when `.git/HEAD` or any ref under `.git/refs` changes (commits, branch switches, etc.), so `REVISION` always reflects the source state of the latest build.
+
 ## Module: `core::filesystem`
 
 Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items work on both host and wasm32; host-only items are `#[cfg(not(target_arch = "wasm32"))]`-gated. Ingestion `pub use`s `core::filesystem::*;` (single-line re-export keeps existing import paths valid).
@@ -334,6 +371,13 @@ pub const MANIFEST_LATEST_KEY: &str = "latest/manifest.json";
 pub const CONTENT_TYPE_MANIFEST: &str = "application/json";
 pub const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
 pub const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
+
+/// Cache-Control header values for the destination per `client.md` §Live bundle
+/// + `overview.md` §Artifact format. Manifest is short-cached so re-platforms
+/// propagate within minutes; shards are immutable (content-addressed) so they
+/// cache for a year.
+pub const CACHE_CONTROL_MANIFEST: &str = "public, max-age=300";
+pub const CACHE_CONTROL_SHARD: &str = "public, max-age=31536000, immutable";
 ```
 
 ### `Manifest`
@@ -396,6 +440,13 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError>;
 
 ```rust
 pub const DISCOVERY_SCHEMA_VERSION: u32 = 1;
+
+/// The single forever-URL of the Eafora system per `client.md` §Discovery URL.
+/// Consumers commit to exactly one immutable URL; everything else (including
+/// `repository_base_url`) is server-supplied at runtime by the discovery doc
+/// fetched from this URL. Both web (`fetch.rs`) and iOS (`URLSessionFetcher`)
+/// reach for this constant rather than hand-coding the literal independently.
+pub const DISCOVERY_URL: &str = "https://eafora.org/discovery";
 ```
 
 ### `DiscoveryDocument`
@@ -766,6 +817,8 @@ pub mod canonical;
 pub mod artifact;
 pub mod license;
 pub mod sqlite;
+
+pub const REVISION: &str = env!("EAFORA_REVISION");
 
 pub use error::AppError;
 pub use filesystem::*;

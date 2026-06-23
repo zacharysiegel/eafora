@@ -12,6 +12,7 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 |-------------------------------------------------------------------|---------------------------------|----------|-----------|
 | `AppError`                                                        | `core::error`                   | type     | locked    |
 | `render_error_chain(error: &dyn Error) -> String`                | `core::error`                   | function | locked    |
+| `REVISION`                                                        | `core` (crate root)             | const    | new       |
 | `FileReference`                                                   | `core::filesystem`              | type     | locked    |
 | `Hashed<T>`                                                       | `core::filesystem`              | type     | locked    |
 | `sha256_hex(bytes: &[u8]) -> String`                              | `core::filesystem`              | function | locked    |
@@ -34,6 +35,7 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `MANIFEST_FILENAME`                                               | `core::artifact::manifest`      | const    | locked    |
 | `MANIFEST_SCHEMA_VERSION`                                         | `core::artifact::manifest`      | const    | new       |
 | `MANIFEST_LATEST_KEY`                                             | `core::artifact::manifest`      | const    | new       |
+| `CACHE_CONTROL_MANIFEST`, `CACHE_CONTROL_SHARD`                   | `core::artifact::manifest`      | const    | new       |
 | `CONTENT_TYPE_MANIFEST`, `CONTENT_TYPE_FLATGEOBUF`, `CONTENT_TYPE_SQLITE` | `core::artifact::manifest` | const | new |
 | `SUBDIR_GEOMETRY`                                                 | `core::artifact::manifest`      | const    | locked    |
 | `SUBDIR_DATA`                                                     | `core::artifact::manifest`      | const    | locked    |
@@ -41,6 +43,7 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `ManifestEntry`                                                   | `core::artifact::manifest`      | type     | new       |
 | `parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError>`      | `core::artifact::manifest`      | function | new       |
 | `DISCOVERY_SCHEMA_VERSION`                                        | `core::artifact::discovery`     | const    | new       |
+| `DISCOVERY_URL`                                                   | `core::artifact::discovery`     | const    | new       |
 | `DiscoveryDocument`                                               | `core::artifact::discovery`     | type     | new       |
 | `parse_discovery_document(bytes: &[u8]) -> Result<DiscoveryDocument, AppError>` | `core::artifact::discovery` | function | new |
 | `ArtifactCache` (trait)                                           | `core::artifact::cache`         | trait    | new       |

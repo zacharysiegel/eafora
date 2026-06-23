@@ -52,7 +52,7 @@ No `async-trait` (stable AFIT covers `ArtifactCache`). No new third-party deps b
 - `Bundle: Send + Sync` (per spec.md §Clarifications Q2): `Arc<Bundle>` crosses thread boundaries on iOS where the live-fetch task runs on a tokio worker thread.
 - No new third-party deps beyond the wasm-bindgen family (per Constitution Principle IV + `feedback_eafora_library_conventions`).
 
-**Scale/Scope**: ~39 FRs across 8 modules (`core/src/{lib,error,filesystem,canonical/canonical_model,artifact/{manifest,bundle,bundle_watch,cache,discovery,geometry},license/license,sqlite/{vfs,schema}}.rs`). Estimated ~1950 LOC for the implementation (the Model + Entity split adds ~100 LOC over the original estimate; the SQLite-schema contract module adds ~150 LOC; the geometry + manifest constant additions add ~30 LOC across the two existing modules), ~900 LOC for tests. The biggest single chunks are `Bundle::open` (~120 LOC), the WASM VFS (~200 LOC), and the SQLite-schema contract (~150 LOC).
+**Scale/Scope**: ~43 FRs across 8 modules (`core/src/{lib,error,filesystem,canonical/canonical_model,artifact/{manifest,bundle,bundle_watch,cache,discovery,geometry},license/license,sqlite/{vfs,schema}}.rs`) plus `core/build.rs` for the revision capture. Estimated ~2000 LOC for the implementation (the Model + Entity split adds ~100 LOC over the original estimate; the SQLite-schema contract module adds ~150 LOC; the geometry + manifest constant additions add ~30 LOC; the new constants from FR-020i / j + build.rs add ~30 LOC), ~900 LOC for tests. The biggest single chunks are `Bundle::open` (~120 LOC), the WASM VFS (~200 LOC), and the SQLite-schema contract (~150 LOC).
 
 ## Constitution Check
 
@@ -96,8 +96,9 @@ This feature adds the `core/` workspace member and modifies `ingestion/` to re-e
 ```text
 core/                                       # NEW workspace member
 ├── Cargo.toml                              # name="core", version="0.0.0", edition.workspace=true
+├── build.rs                                # Captures source revision via `git rev-parse HEAD`; emits `cargo:rustc-env=EAFORA_REVISION=...`; falls back to "unknown" on shallow checkout (per FR-020k)
 ├── src/
-│   ├── lib.rs                              # `pub mod` + `pub use` declarations + the few crate-root items
+│   ├── lib.rs                              # `pub mod` + `pub use` declarations + `pub const REVISION: &str = env!("EAFORA_REVISION");` (per FR-020k)
 │   ├── error.rs                            # CANONICAL HOME for `AppError` (moved from ingestion). minimer::define_app_error! + From impls for serde_json, rusqlite, flatgeobuf, geozero, log::SetLoggerError (the parser-surface set core touches); ingestion adds the rest in its own error.rs via `pub use core::error::AppError;` + ingestion-side From impls (orphan rule allows: type from core, impl from ingestion for ingestion-side deps).
 │   ├── filesystem.rs                       # MOVED wholesale from ingestion/src/filesystem.rs. Cross-target: FileReference, Hashed<T>, sha256_hex, verify_sha256 (new). Host-only (cfg(not(target_arch = "wasm32"))): sha256_hex_of_file, filename_of, read_bytes, load_hashed_file.
 │   ├── canonical/
@@ -105,11 +106,11 @@ core/                                       # NEW workspace member
 │   │   └── canonical_model.rs              # StatisticKind, DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, SourceRevision (moved from ingestion)
 │   ├── artifact/
 │   │   ├── mod.rs                          # pub mod manifest; pub mod bundle; pub mod bundle_watch; pub mod cache; pub mod discovery; pub mod geometry; pub use {manifest,bundle,bundle_watch,cache,discovery,geometry}::*;
-│   │   ├── manifest.rs                     # Manifest, ManifestEntry, parse_manifest, MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION, MANIFEST_LATEST_KEY, CONTENT_TYPE_MANIFEST, CONTENT_TYPE_FLATGEOBUF, CONTENT_TYPE_SQLITE constants
+│   │   ├── manifest.rs                     # Manifest, ManifestEntry, parse_manifest, MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION, MANIFEST_LATEST_KEY, CONTENT_TYPE_MANIFEST, CONTENT_TYPE_FLATGEOBUF, CONTENT_TYPE_SQLITE, CACHE_CONTROL_MANIFEST, CACHE_CONTROL_SHARD constants (per FR-020j)
 │   │   ├── bundle.rs                       # Bundle struct (pure data), Bundle::open(version_label, &cache, ctx)
 │   │   ├── bundle_watch.rs                 # pub use tokio::sync::watch::{Sender, Receiver, channel};
 │   │   ├── cache.rs                        # ArtifactCache async trait + MockArtifactCache (#[cfg(test)]-only)
-│   │   ├── discovery.rs                    # DiscoveryDocument, parse_discovery_document, DISCOVERY_SCHEMA_VERSION constant
+│   │   ├── discovery.rs                    # DiscoveryDocument, parse_discovery_document, DISCOVERY_SCHEMA_VERSION, DISCOVERY_URL constant (per FR-020i)
 │   │   └── geometry.rs                     # FlatGeobufReader, open_flatgeobuf_reader, Feature, Polygon, BoundingBox, plus producer/consumer-shared constants: GEOMETRY_LAYER_NAME, GEOMETRY_FILENAME_STEM, FEATURE_COLUMN_ISO3, FEATURE_COLUMN_NAME_EN, SHARD_FILENAME_EXTENSION, GEOMETRY_FILENAME_EXTENSION (per FR-020f)
 │   ├── license/
 │   │   ├── mod.rs                          # pub mod license; pub use license::*;
@@ -226,7 +227,7 @@ This feature is small enough to land as ONE PR (no internal stack). Per `feedbac
 
 Rough implementation order inside the single PR (tasks.md will codify this):
 
-1. Workspace setup (`core/Cargo.toml`, root `Cargo.toml` members + wasm-bindgen-family deps, `rust-toolchain.toml` pin).
+1. Workspace setup (`core/Cargo.toml`, root `Cargo.toml` members + wasm-bindgen-family deps, `rust-toolchain.toml` pin, `core/build.rs` for revision capture per FR-020k).
 2. `core::error::AppError` (canonical home, moves from ingestion) + `core::filesystem` (moves wholesale from `ingestion/src/filesystem.rs`).
 3. `core::canonical::canonical_model` (move from `ingestion/src/canonical/canonical_model.rs`): the 6 enums + `SourceRevision` + `NaiveDatePeriod` (lifted from `ingestion/src/adapter/adapter_model.rs`) + the 4 consumer-facing Models (`Region`, `Country`, `Statistic`, `DataSource`). The matching `*Entity` types + their `(Try)From<Entity> for Model` impls stay in ingestion. Ingestion re-exports the moved Models via `pub use core::canonical::canonical_model::*;`.
 4. `core::artifact::manifest` (Manifest + ManifestEntry + parse_manifest + MANIFEST_SCHEMA_VERSION = 1); ingestion's `write_manifest` rewritten to use it.
