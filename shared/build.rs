@@ -17,8 +17,9 @@ fn main() {
              (EAFORA_REVISION) for crash symbolication. Build from a full git clone with `git` on PATH.",
         ),
         None => {
-            println!("cargo:warning=git rev-parse HEAD failed; EAFORA_REVISION=unknown (debug build)");
-            "unknown".to_string()
+            let value: &str = "unknown";
+            println!("cargo:warning=git rev-parse HEAD failed; EAFORA_REVISION={value} (debug build)");
+            value.to_string()
         }
     };
 
