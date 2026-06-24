@@ -72,19 +72,32 @@ Per spec FR-020k. The source revision the binary was built from, captured at com
 use std::process::Command;
 
 fn main() {
-    let revision: String = Command::new("git")
+    let revision: Option<String> = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()
         .ok()
         .and_then(|out| if out.status.success() { Some(out.stdout) } else { None })
-        .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_string());
 
-    println!("cargo:rustc-env=EAFORA_REVISION={}", revision);
+    let is_shipping_build: bool = std::env::var("PROFILE").unwrap_or_default() != "debug";
+
+    let resolved_revision: String = match revision {
+        Some(revision) => revision,
+        None if is_shipping_build => panic!(
+            "git rev-parse HEAD failed: a release build MUST embed a real source revision \
+             (EAFORA_REVISION) for crash symbolication. Build from a full git clone with `git` on PATH.",
+        ),
+        None => {
+            println!("cargo:warning=git rev-parse HEAD failed; EAFORA_REVISION=unknown (debug build)");
+            "unknown".to_string()
+        }
+    };
+
+    println!("cargo:rustc-env=EAFORA_REVISION={}", resolved_revision);
 }
 ```
 
-The `unwrap_or_else(|| "unknown".to_string())` fallback handles shallow / archive checkouts (no `.git` directory) so the crate compiles in any environment.
+Git-unavailable handling is profile-conditional. On a **debug build** the script emits a `cargo:warning` and falls back to `EAFORA_REVISION=unknown`, so the crate builds anywhere (shallow / archive checkout, no `git` on PATH). On any **release build** (`PROFILE != "debug"`) the script `panic!`s and aborts — a shipped binary must never carry `unknown`, since the revision's only load-bearing use is crash symbolication of release builds. The gate is `!= "debug"` (fail-closed) so every non-debug profile is covered.
 
 ### `shared/src/lib.rs`
 
@@ -95,7 +108,7 @@ The `unwrap_or_else(|| "unknown".to_string())` fallback handles shallow / archiv
 pub const REVISION: &str = env!("EAFORA_REVISION");
 ```
 
-No `cargo:rerun-if-changed` directives are emitted (the `.git/HEAD` path-watching is brittle and the value is dubious — see the build-script comment). With no directives, Cargo re-runs the script when any file under `shared/` changes; `REVISION` can therefore lag HEAD during dev iteration when a commit doesn't touch `shared/`, but shipped release builds are clean builds that always capture the correct revision, which is the only context where `REVISION` is load-bearing (crash symbolication).
+No `cargo:rerun-if-changed` directives are emitted (the `.git/HEAD` path-watching is brittle and the value is dubious). With no directives, Cargo re-runs the script when any file under `shared/` changes; `REVISION` can therefore lag HEAD during dev iteration when a commit doesn't touch `shared/`, but shipped release builds are clean builds that always capture the correct revision, which is the only context where `REVISION` is load-bearing (crash symbolication).
 
 ## Module: `shared::filesystem`
 
