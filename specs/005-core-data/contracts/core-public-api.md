@@ -75,7 +75,7 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `validate_shard_header(connection: &rusqlite::Connection) -> Result<(), AppError>` | `shared::sqlite::schema` | function | new |
 
 Stability key:
-- **locked**: moves from `ingestion/` with the same shape; `ingestion/` keeps a `pub use` re-export so existing call sites stay valid.
+- **locked**: moves from `ingestion/` with the same shape; ingestion's call sites are migrated to the `shared::` path directly (no forwarding re-export).
 - **new**: new in this feature; no prior shape to preserve.
 
 ## Compatibility contract

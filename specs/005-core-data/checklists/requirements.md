@@ -38,7 +38,7 @@
 
 > Mapping:
 > - FR-001 / FR-002 / FR-003 / FR-004 → P1 acceptance #1, #2 (workspace member compiles for host + wasm32)
-> - FR-005 / FR-006 → P1 acceptance #3, #4 (ingestion-side tests pass post-move; re-exports in place)
+> - FR-005 / FR-006 → P1 acceptance #3, #4 (ingestion-side tests pass post-move; call sites migrated to `shared::` directly, no re-exports)
 > - FR-007 / FR-013 → P1 acceptance #3 + SC-005 (producer-side regression net + byte-equal round-trip)
 > - FR-008 / FR-009 → P5 acceptance #2 (mismatch surfaces the documented error message shape) + P5 acceptance #5 (sha256_hex stays consistent with producer-side output)
 > - FR-010 / FR-011 / FR-012 → P2 acceptance #1 through #4 (parse round-trip, malformed rejection, path-traversal rejection)

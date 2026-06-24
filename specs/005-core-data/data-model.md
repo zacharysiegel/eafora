@@ -689,7 +689,7 @@ pub struct StatisticShardKey {
 - `BTreeMap<K, Vec<u8>>` is `Send + Sync` trivially.
 - `DistributionContext` is `Copy`.
 
-`StatisticShardKey` moves from `ingestion/src/artifact/artifact_model.rs` to `shared/`; ingestion re-exports it. The producer side already uses it in the manifest serializer.
+`StatisticShardKey` moves from `ingestion/src/artifact/artifact_model.rs` to `shared/`; ingestion migrates its call sites to `shared::artifact::bundle::StatisticShardKey` directly (no re-export). The producer side already uses it in the manifest serializer.
 
 ### Functions
 
