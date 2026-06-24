@@ -81,8 +81,6 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_string());
 
     println!("cargo:rustc-env=EAFORA_REVISION={}", revision);
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/refs");
 }
 ```
 
@@ -97,7 +95,7 @@ The `unwrap_or_else(|| "unknown".to_string())` fallback handles shallow / archiv
 pub const REVISION: &str = env!("EAFORA_REVISION");
 ```
 
-The build script reruns when `.git/HEAD` or any ref under `.git/refs` changes (commits, branch switches, etc.), so `REVISION` always reflects the source state of the latest build.
+No `cargo:rerun-if-changed` directives are emitted (the `.git/HEAD` path-watching is brittle and the value is dubious — see the build-script comment). With no directives, Cargo re-runs the script when any file under `shared/` changes; `REVISION` can therefore lag HEAD during dev iteration when a commit doesn't touch `shared/`, but shipped release builds are clean builds that always capture the correct revision, which is the only context where `REVISION` is load-bearing (crash symbolication).
 
 ## Module: `shared::filesystem`
 

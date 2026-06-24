@@ -10,6 +10,4 @@ fn main() {
         .unwrap_or_else(|| "unknown".to_string());
 
     println!("cargo:rustc-env=EAFORA_REVISION={}", revision);
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/refs");
 }
