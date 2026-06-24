@@ -102,7 +102,7 @@ shared/                                       # NEW workspace member
 │   ├── lib.rs                              # `pub mod` + `pub use` declarations ONLY (per feedback_mod_rs_holds_only_declarations); re-exports `REVISION` via `pub use revision::*;`
 │   ├── revision.rs                         # `pub const REVISION: &str = env!("EAFORA_REVISION");` (per FR-020k; kept out of lib.rs so lib.rs stays pure redirection)
 │   ├── error.rs                            # `shared::AppError` newtype generated via `minimer::define_app_error!(pub AppError);` + parser-surface `From` impls (serde_json, rusqlite, flatgeobuf, geozero, log::SetLoggerError) via `minimer::impl_from_error!`. `render_error_chain` lives here. Ingestion has its OWN `AppError` newtype (orphan rule prevents ingestion from adding `From<sqlx::Error>` to a shared-defined type); ingestion's `From<shared::AppError> for ingestion::AppError` is the cross-conversion bridge.
-│   ├── filesystem.rs                       # MOVED wholesale from ingestion/src/filesystem.rs. Cross-target: FileReference, Hashed<T>, sha256_hex, verify_sha256 (new). Host-only (cfg(not(target_arch = "wasm32"))): sha256_hex_of_file, filename_of, read_bytes, load_hashed_file.
+│   ├── filesystem.rs                       # MOVED wholesale from ingestion/src/filesystem.rs. Cross-target: Hashed<T>, sha256_hex, verify_sha256 (new). Host-only (cfg(not(target_arch = "wasm32"))): FileReference, sha256_hex_of_file, filename_of, read_bytes, load_hashed_file.
 │   ├── canonical/
 │   │   ├── mod.rs                          # pub mod canonical_model; pub use canonical_model::*;
 │   │   └── canonical_model.rs              # StatisticKind, DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, SourceRevision (moved from ingestion)

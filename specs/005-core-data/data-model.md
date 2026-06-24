@@ -116,6 +116,7 @@ Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items work on b
 ### `FileReference`
 
 ```rust
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
 pub struct FileReference {
     pub path: PathBuf,
@@ -123,7 +124,7 @@ pub struct FileReference {
 }
 ```
 
-(Producer-side use case; the consumer-side `Bundle::open` doesn't construct these — it goes through the cache, not the filesystem.)
+(Producer-side use case; host-only because it holds a `PathBuf`. The consumer-side `Bundle::open` doesn't construct these — it goes through the cache, not the filesystem.)
 
 ### `Hashed<T>`
 
