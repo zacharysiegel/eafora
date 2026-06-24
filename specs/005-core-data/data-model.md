@@ -99,20 +99,19 @@ fn main() {
 
 Git-unavailable handling is profile-conditional. On a **debug build** the script emits a `cargo:warning` and falls back to `EAFORA_REVISION=unknown`, so the crate builds anywhere (shallow / archive checkout, no `git` on PATH). On any **release build** (`PROFILE != "debug"`) the script `panic!`s and aborts — a shipped binary must never carry `unknown`, since the revision's only load-bearing use is crash symbolication of release builds. The gate is `!= "debug"` (fail-closed) so every non-debug profile is covered.
 
-### `shared/src/lib.rs`
+### `shared/src/revision.rs`
 
 ```rust
-/// Source revision captured at compile time by `shared/build.rs`. Truncate at
-/// display time if a short form is desired. The matching iOS-side
-/// `eafora.revision()` UniFFI export lives in 004-ios-client's scope.
 pub const REVISION: &str = env!("EAFORA_REVISION");
 ```
+
+`REVISION` lives in its own module (not `lib.rs`) so `lib.rs` stays pure module redirection (`pub mod` + `pub use` only) per `feedback_mod_rs_holds_only_declarations`. `lib.rs` re-exports it via `pub use revision::*;`. The matching iOS-side `eafora.revision()` UniFFI export lives in 004-ios-client's scope.
 
 No `cargo:rerun-if-changed` directives are emitted (the `.git/HEAD` path-watching is brittle and the value is dubious). With no directives, Cargo re-runs the script when any file under `shared/` changes; `REVISION` can therefore lag HEAD during dev iteration when a commit doesn't touch `shared/`, but shipped release builds are clean builds that always capture the correct revision, which is the only context where `REVISION` is load-bearing (crash symbolication).
 
 ## Module: `shared::filesystem`
 
-Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items work on both host and wasm32; host-only items are `#[cfg(not(target_arch = "wasm32"))]`-gated. Ingestion `pub use`s `shared::filesystem::*;` (single-line re-export keeps existing import paths valid).
+Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items work on both host and wasm32; host-only items are `#[cfg(not(target_arch = "wasm32"))]`-gated. `ingestion/src/filesystem.rs` is deleted; ingestion call sites import `shared::filesystem` directly (no re-export).
 
 ### `FileReference`
 
@@ -171,7 +170,7 @@ pub fn load_hashed_file(
 
 `verify_sha256` per spec FR-009: on mismatch, returns `AppError` whose message contains both `expected_hex` (first 8 hex chars) and the actual hash (first 8 hex chars). On match, returns `Ok(())`. Cross-target so wasm32 consumers (the web client's loader, when verifying fetched bytes against manifest entries) can use it.
 
-`sha256_hex_of_file`, `filename_of`, `read_bytes`, `load_hashed_file`: host-only (cfg-gated). `Bundle::open` does NOT call any of these — it goes through the cache trait. Producer-side code (ingestion's publish flow) uses them via the re-export.
+`sha256_hex_of_file`, `filename_of`, `read_bytes`, `load_hashed_file`: host-only (cfg-gated). `Bundle::open` does NOT call any of these — it goes through the cache trait. Producer-side code (ingestion's publish flow) uses them via `shared::filesystem::` paths.
 
 ## Module: `shared::canonical::canonical_model`
 
@@ -862,15 +861,15 @@ pub fn validate_shard_header(connection: &rusqlite::Connection) -> Result<(), Ap
 // shared/src/lib.rs
 pub mod error;
 pub mod filesystem;
+pub mod revision;
 pub mod canonical;
 pub mod artifact;
 pub mod license;
 pub mod sqlite;
 
-pub const REVISION: &str = env!("EAFORA_REVISION");
-
 pub use error::AppError;
 pub use filesystem::*;
+pub use revision::*;
 pub use canonical::canonical_model::*;
 pub use artifact::{manifest::*, bundle::*, bundle_watch::*, cache::*, discovery::*, geometry::*};
 pub use license::license::*;
