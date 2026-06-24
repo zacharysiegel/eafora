@@ -1,9 +1,5 @@
 //! Newtype around `minimer::AppError`. The orphan rule blocks adding
-//! `From` impls for foreign errors directly to the upstream type, so each
-//! crate that wants its own `From<X>` set defines its own newtype via
-//! `minimer::define_app_error!`. `shared::AppError` is the consumer-side
-//! parser-surface newtype; this is the producer-side newtype with HTTP /
-//! database / secrets / archive conversions on top.
+//! `From` impls for foreign errors directly to the upstream type.
 
 minimer::define_app_error!(pub AppError);
 
@@ -21,14 +17,8 @@ minimer::impl_from_error!(AppError, secr::error::Error);
 minimer::impl_from_error!(AppError, dotenvy::Error);
 minimer::impl_from_error!(AppError, base64::DecodeError);
 
-/// Cross-conversion bridge: lets ingestion `?`-propagate from `shared::*`
-/// functions. Both newtypes wrap the same `minimer::AppError`, so the inner
-/// `.0` move is correct. Orphan-rule-OK because the target type
-/// (`ingestion::AppError`) is local to ingestion.
 impl From<shared::AppError> for AppError {
     fn from(err: shared::AppError) -> Self {
         Self(err.0)
     }
 }
-
-pub use shared::error::render_error_chain;

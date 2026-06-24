@@ -5,7 +5,7 @@ use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
 use aws_sdk_s3::primitives::ByteStream;
 
 use crate::artifact::repository::artifact_repository::ArtifactRepository;
-use crate::error::{self, AppError};
+use crate::error::AppError;
 
 const R2_REGION_PLACEHOLDER: &str = "auto";
 const R2_CREDENTIALS_PROVIDER_NAME: &str = "eafora-r2";
@@ -71,7 +71,7 @@ impl ArtifactRepository for CloudflareR2ArtifactRepository {
             .content_type(content_type)
             .send()
             .await
-            .map_err(|err| AppError::from(format!("put_object bucket={} key={}: {}", self.bucket, key, error::render_error_chain(&err))))?;
+            .map_err(|err| AppError::from(format!("put_object bucket={} key={}: {}", self.bucket, key, shared::error::render_error_chain(&err))))?;
 
         Ok(())
     }

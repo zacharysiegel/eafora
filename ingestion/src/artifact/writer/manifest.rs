@@ -11,7 +11,7 @@ use serde::Serialize;
 use crate::artifact::artifact_model::StatisticShard;
 use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
-use crate::filesystem::{FileReference, Hashed};
+use shared::filesystem::{FileReference, Hashed};
 
 pub const MANIFEST_FILENAME: &str = "manifest.json";
 pub const SUBDIR_GEOMETRY: &str = "geometry";
@@ -109,7 +109,7 @@ mod tests {
 
     use crate::artifact::artifact_model::{StatisticShard, StatisticShardKey};
     use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
-    use crate::filesystem;
+    use shared::filesystem;
 
     fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {
         let shards: Vec<StatisticShard<Hashed<FileReference>>> = vec![

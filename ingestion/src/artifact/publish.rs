@@ -17,7 +17,7 @@ use crate::artifact::repository::ArtifactRepositoryKind;
 use crate::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
-use crate::filesystem::{self, FileReference, Hashed};
+use shared::filesystem::{self, FileReference, Hashed};
 
 const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
 const CONTENT_TYPE_MANIFEST: &str = "application/json";

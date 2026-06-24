@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::adapter::adapter_model::NaiveDatePeriod;
 use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
-use crate::filesystem::{FileReference, Hashed};
+use shared::filesystem::{FileReference, Hashed};
 
 /// One value as it sits in the canonical store: a single source's
 /// reading for a `(region, statistic, period)` cell. Multiple candidates

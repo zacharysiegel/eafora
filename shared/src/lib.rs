@@ -1,7 +1,7 @@
 pub mod error;
 pub mod filesystem;
-
-pub const REVISION: &str = env!("EAFORA_REVISION");
+pub mod revision;
 
 pub use error::AppError;
 pub use filesystem::*;
+pub use revision::*;

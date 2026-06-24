@@ -13,7 +13,7 @@ use crate::artifact::{artifact_db, hashing, source_choice, StatisticShard};
 use crate::canonical::canonical_db;
 use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision, StatisticKind};
 use crate::error::AppError;
-use crate::filesystem::{FileReference, Hashed};
+use shared::filesystem::{FileReference, Hashed};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {

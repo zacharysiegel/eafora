@@ -28,7 +28,7 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::artifact::artifact_db;
-use crate::filesystem::FileReference;
+use shared::filesystem::FileReference;
 use crate::artifact::writer::manifest;
 use crate::error::AppError;
 use crate::geometry::natural_earth::{self, ShapefileBytes};

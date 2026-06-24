@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::artifact::artifact_model::StatisticShard;
 use crate::error::AppError;
-use crate::filesystem::{self, FileReference, Hashed};
+use shared::filesystem::{self, FileReference, Hashed};
 
 pub fn hash_sqlite_shards(
     shards: Vec<StatisticShard<FileReference>>,
