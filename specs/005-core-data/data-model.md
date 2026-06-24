@@ -197,7 +197,7 @@ impl StatisticKind {
 impl TryFrom<&str> for StatisticKind { type Error = AppError; /* ... */ }
 ```
 
-Diverges from the producer-side current shape by adding `Serialize` / `Deserialize` derives so the consumer-side `Manifest.statistics: BTreeMap<StatisticKind, _>` round-trips through JSON. The `try_from` / `into` serde attrs delegate to the existing `TryFrom<&str>` + `code()` impls — no separate serializer.
+Adds `Serialize` / `Deserialize` so the consumer-side `Manifest.statistics: BTreeMap<StatisticKind, _>` round-trips through JSON. **As implemented** (code is canonical over this doc): the five string-coded enums get their impls from a local `impl_code_serde!` macro that serializes each value as its `code()` / `as_str()` string and deserializes an owned `String` via `TryFrom<&str>`, so the code strings stay defined once on each enum's own impls. This supersedes the `#[serde(try_from = "&str", into = "&str")]` attribute shown in the blocks above — `&str` deserialization fails on owned / escaped / map-key input, and `into = "&str"` needs an `Into<&str>` impl that was never supplied. The same macro covers `DataSourceKind`, `DataStatus`, `LicenseClass`, and `LicenseShardClass`. The test-only variants are gated `#[cfg(any(test, feature = "testing"))]` (not bare `#[cfg(test)]`, which doesn't cross the crate boundary) so dependent crates' tests can construct them; `shared` exposes a `testing` Cargo feature and ingestion forwards it via its own `testing` feature.
 
 ### `DataSourceKind`
 
