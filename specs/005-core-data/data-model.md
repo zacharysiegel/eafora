@@ -111,7 +111,7 @@ No `cargo:rerun-if-changed` directives are emitted (the `.git/HEAD` path-watchin
 
 ## Module: `shared::filesystem`
 
-Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items work on both host and wasm32; host-only items are `#[cfg(not(target_arch = "wasm32"))]`-gated. `ingestion/src/filesystem.rs` is deleted; ingestion call sites import `shared::filesystem` directly (no re-export).
+Moved wholesale from `ingestion/src/filesystem.rs`. Cross-target items compile for every target; items that can't compile to wasm32 are `#[cfg(not(target_arch = "wasm32"))]`-gated. `ingestion/src/filesystem.rs` is deleted; ingestion call sites import `shared::filesystem` directly (no re-export).
 
 ### `FileReference`
 
@@ -124,7 +124,7 @@ pub struct FileReference {
 }
 ```
 
-(Producer-side use case; host-only because it holds a `PathBuf`. The consumer-side `Bundle::open` doesn't construct these — it goes through the cache, not the filesystem.)
+(Producer-side use case; gated off wasm32 because it holds a `PathBuf`. The consumer-side `Bundle::open` doesn't construct these — it goes through the cache, not the filesystem.)
 
 ### `Hashed<T>`
 
@@ -151,7 +151,7 @@ impl<T> Deref for Hashed<T> { /* delegates to inner */ }
 pub fn sha256_hex(bytes: &[u8]) -> String;
 pub fn verify_sha256(bytes: &[u8], expected_hex: &str) -> Result<(), AppError>;
 
-// Host-only:
+// Not for wasm32:
 #[cfg(not(target_arch = "wasm32"))]
 pub fn sha256_hex_of_file(path: &Path) -> Result<String, AppError>;
 
@@ -171,7 +171,7 @@ pub fn load_hashed_file(
 
 `verify_sha256` per spec FR-009: on mismatch, returns `AppError` whose message contains both `expected_hex` (first 8 hex chars) and the actual hash (first 8 hex chars). On match, returns `Ok(())`. Cross-target so wasm32 consumers (the web client's loader, when verifying fetched bytes against manifest entries) can use it.
 
-`sha256_hex_of_file`, `filename_of`, `read_bytes`, `load_hashed_file`: host-only (cfg-gated). `Bundle::open` does NOT call any of these — it goes through the cache trait. Producer-side code (ingestion's publish flow) uses them via `shared::filesystem::` paths.
+`sha256_hex_of_file`, `filename_of`, `read_bytes`, `load_hashed_file`: gated off wasm32 (cfg-gated). `Bundle::open` does NOT call any of these — it goes through the cache trait. Producer-side code (ingestion's publish flow) uses them via `shared::filesystem::` paths.
 
 ## Module: `shared::canonical::canonical_model`
 
@@ -759,7 +759,7 @@ Per FR-022: no wildcard arm in the `match`; adding a new `LicenseShardClass` var
 
 ## Module: `shared::sqlite::vfs`
 
-Per spec FR-020 + plan.md §Topic 2 (revised 2026-06-22 after empirical wasm32 build failure). Wraps two underlying SQLite libraries — `rusqlite` on native, `sqlite-wasm-rs` on wasm32 — behind a unified `Connection` typedef and a single `open_connection_from_bytes` entry point.
+Per spec FR-020 + plan.md §Topic 2 (revised 2026-06-22 after empirical wasm32 build failure). Wraps two underlying SQLite libraries — `rusqlite` on non-wasm32 targets, `sqlite-wasm-rs` on wasm32 — behind a unified `Connection` typedef and a single `open_connection_from_bytes` entry point.
 
 ### Target-agnostic `Connection` typedef
 
@@ -779,7 +779,7 @@ Renderer code in 006 imports `shared::sqlite::Connection` and writes queries tha
 /// Open an in-memory SQLite connection seeded with the given bytes. Same
 /// signature on both targets so consumers don't cfg-branch their open code.
 ///
-/// Native: uses rusqlite::Connection::deserialize.
+/// Non-wasm32: uses rusqlite::Connection::deserialize.
 /// wasm32: uses sqlite-wasm-rs's equivalent; the `name` parameter is the
 ///         logical database name used in subsequent ATTACH DATABASE calls.
 pub fn open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<Connection, AppError>;

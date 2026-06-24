@@ -16,11 +16,11 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `FileReference`                                                   | `shared::filesystem`              | type     | locked    |
 | `Hashed<T>`                                                       | `shared::filesystem`              | type     | locked    |
 | `sha256_hex(bytes: &[u8]) -> String`                              | `shared::filesystem`              | function | locked    |
-| `sha256_hex_of_file(path: &Path) -> Result<String, AppError>`     | `shared::filesystem` (native only)| function | locked    |
+| `sha256_hex_of_file(path: &Path) -> Result<String, AppError>`     | `shared::filesystem` (non-wasm32) | function | locked    |
 | `verify_sha256(bytes: &[u8], expected_hex: &str) -> Result<(), AppError>` | `shared::filesystem`      | function | new       |
-| `filename_of(path: &Path) -> Result<&str, AppError>`              | `shared::filesystem` (native only)| function | locked    |
-| `read_bytes(path: &Path) -> Result<Vec<u8>, AppError>`            | `shared::filesystem` (native only)| function | locked    |
-| `load_hashed_file(base_dir: &Path, relative_path: &str, expected_sha256_hex: &str) -> Result<Hashed<FileReference>, AppError>` | `shared::filesystem` (native only) | function | locked |
+| `filename_of(path: &Path) -> Result<&str, AppError>`              | `shared::filesystem` (non-wasm32) | function | locked    |
+| `read_bytes(path: &Path) -> Result<Vec<u8>, AppError>`            | `shared::filesystem` (non-wasm32) | function | locked    |
+| `load_hashed_file(base_dir: &Path, relative_path: &str, expected_sha256_hex: &str) -> Result<Hashed<FileReference>, AppError>` | `shared::filesystem` (non-wasm32) | function | locked |
 | `StatisticKind`                                                   | `shared::canonical::canonical_model` | type  | locked    |
 | `DataSourceKind`                                                  | `shared::canonical::canonical_model` | type  | locked    |
 | `DataStatus`                                                      | `shared::canonical::canonical_model` | type  | locked    |
@@ -62,7 +62,7 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `Sender`, `Receiver`, `channel` (re-exports of `tokio::sync::watch::*`) | `shared::artifact::bundle_watch` | re-export | new |
 | `DistributionContext`                                             | `shared::license::license`        | type     | new       |
 | `DistributionContext::authorized_classes() -> &'static [LicenseShardClass]` | `shared::license::license` | function | new |
-| `Connection` (typedef: `rusqlite::Connection` on native, `sqlite_wasm_rs::Connection` on wasm32) | `shared::sqlite::vfs` | type | new |
+| `Connection` (typedef: `rusqlite::Connection` on non-wasm32 targets, `sqlite_wasm_rs::Connection` on wasm32) | `shared::sqlite::vfs` | type | new |
 | `open_connection_from_bytes(name: &str, bytes: Vec<u8>) -> Result<Connection, AppError>` | `shared::sqlite::vfs` | function | new |
 | `APPLICATION_ID`                                                  | `shared::sqlite::schema`          | const    | new       |
 | `SCHEMA_VERSION`                                                  | `shared::sqlite::schema`          | const    | new       |

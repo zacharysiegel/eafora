@@ -229,7 +229,7 @@ let mut stmt: rusqlite::Statement = connection.prepare(
 // ... etc.
 ```
 
-The `open_connection_from_bytes` function has the same signature on both targets; the wasm32 implementation goes through `shared::sqlite::vfs::register_vec_u8_vfs` machinery internally, while the native implementation goes through rusqlite's `Connection::deserialize` API. Consumers don't see the difference.
+The `open_connection_from_bytes` function has the same signature on both targets; the wasm32 implementation goes through `shared::sqlite::vfs::register_vec_u8_vfs` machinery internally, while the non-wasm32 implementation goes through rusqlite's `Connection::deserialize` API. Consumers don't see the difference.
 
 ## Common pitfalls
 
