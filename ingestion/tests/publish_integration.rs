@@ -20,7 +20,7 @@ use ingestion::artifact::artifact_model::{Artifacts, BuildReport, StatisticShard
 use shared::artifact::bundle::StatisticShardKey;
 use ingestion::artifact::publish::PublishReport;
 use ingestion::artifact::repository::{ArtifactRepositoryKind, DryArtifactRepository, LocalArtifactRepository};
-use shared::artifact::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
+use shared::artifact::manifest;
 use shared::canonical::canonical_model::{
     DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind,
 };
@@ -45,13 +45,13 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
         .await
         .expect("publish succeeds");
 
-    let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
+    let manifest_key: String = format!("{}/{}", version_label, manifest::MANIFEST_FILENAME);
     assert_eq!(publish_report.artifact_version.version_label, version_label);
     assert_eq!(publish_report.artifact_version.manifest_url, format!("{}/{}", public_base_url, manifest_key));
     assert_eq!(publish_report.shards_published, 1);
 
-    let shard_destination: PathBuf = destination_dir.path().join(format!("{}/{}/shard.sqlite", version_label, SUBDIR_DATA));
-    let geometry_destination: PathBuf = destination_dir.path().join(format!("{}/{}/world.fgb", version_label, SUBDIR_GEOMETRY));
+    let shard_destination: PathBuf = destination_dir.path().join(format!("{}/{}/shard.sqlite", version_label, manifest::SUBDIR_DATA));
+    let geometry_destination: PathBuf = destination_dir.path().join(format!("{}/{}/world.fgb", version_label, manifest::SUBDIR_GEOMETRY));
     let manifest_destination: PathBuf = destination_dir.path().join(&manifest_key);
     assert!(shard_destination.exists(), "shard at {:?} missing", shard_destination);
     assert!(geometry_destination.exists(), "geometry at {:?} missing", geometry_destination);
@@ -130,8 +130,8 @@ fn unique_version_label() -> String {
 }
 
 fn write_synthetic_bundle(artifact_dir: &Path, version_label: &str) -> BuildReport {
-    let data_dir: PathBuf = artifact_dir.join(SUBDIR_DATA);
-    let geometry_dir: PathBuf = artifact_dir.join(SUBDIR_GEOMETRY);
+    let data_dir: PathBuf = artifact_dir.join(manifest::SUBDIR_DATA);
+    let geometry_dir: PathBuf = artifact_dir.join(manifest::SUBDIR_GEOMETRY);
     fs::create_dir_all(&data_dir).unwrap();
     fs::create_dir_all(&geometry_dir).unwrap();
 

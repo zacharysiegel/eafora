@@ -28,7 +28,7 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::artifact::artifact_db;
-use shared::artifact::manifest::SUBDIR_GEOMETRY;
+use shared::artifact::manifest;
 use shared::filesystem::FileReference;
 use crate::error::AppError;
 use crate::geometry::natural_earth::{self, ShapefileBytes};
@@ -114,7 +114,7 @@ pub fn write_placeholder_geometry(artifact_dir: &Path) -> Result<FileReference, 
 }
 
 fn build_tmp_geometry_path(artifact_dir: &Path) -> Result<PathBuf, AppError> {
-    let geometry_dir: PathBuf = artifact_dir.join(SUBDIR_GEOMETRY);
+    let geometry_dir: PathBuf = artifact_dir.join(manifest::SUBDIR_GEOMETRY);
     fs::create_dir_all(&geometry_dir)?;
     let tmp_uuid: Uuid = Uuid::now_v7();
     Ok(geometry_dir.join(format!("{}.tmp-{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid)))

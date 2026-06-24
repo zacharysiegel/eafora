@@ -8,12 +8,13 @@ use sqlx::PgConnection;
 use crate::artifact::artifact_model::{
     Artifacts, BuildReport, CandidateValue, ResolvedValue,
 };
-use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
+use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
 use crate::artifact::{artifact_db, hashing, source_choice, StatisticShard};
 use crate::canonical::canonical_db;
 use shared::canonical::canonical_model::{DataSourceKind, SourceRevision, StatisticKind};
 use crate::canonical::canonical_entity::SourceChoice;
 use crate::error::AppError;
+use shared::artifact::manifest;
 use shared::filesystem::{FileReference, Hashed};
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -42,7 +43,7 @@ pub async fn build_artifacts(
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
         artifact_db::read_latest_revisions(&mut *connection, &data_sources).await?;
     let manifest: Hashed<FileReference> =
-        manifest::write_manifest(&shards, &geometry, version_label, &data_source_revisions, artifact_dir)?;
+        manifest_writer::write_manifest(&shards, &geometry, version_label, &data_source_revisions, artifact_dir)?;
 
     log::info!(
         "complete in {:?}; manifest sha256={}",
@@ -87,7 +88,7 @@ async fn create_statistic_shards(
         }
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
-        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &artifact_dir.join(shared::artifact::manifest::SUBDIR_DATA))?;
+        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &artifact_dir.join(manifest::SUBDIR_DATA))?;
         let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!(
             "statistic {:?}: {} resolved values across {} shards",

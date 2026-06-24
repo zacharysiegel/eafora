@@ -8,10 +8,7 @@ use std::path::{Path, PathBuf};
 use sqlx::PgPool;
 
 use shared::artifact::bundle::StatisticShardKey;
-use shared::artifact::manifest::{
-    self, Manifest, CONTENT_TYPE_FLATGEOBUF, CONTENT_TYPE_MANIFEST, CONTENT_TYPE_SQLITE,
-    MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY,
-};
+use shared::artifact::manifest::{self, Manifest};
 use shared::filesystem::{self, FileReference, Hashed};
 
 use crate::artifact::artifact_db;
@@ -42,19 +39,19 @@ pub async fn publish_artifacts(
 
     for shard in &build_report.artifacts.shards {
         let filename: &str = filesystem::filename_of(&shard.file.path)?;
-        let key: String = format!("{}/{}/{}", version_label, SUBDIR_DATA, filename);
-        repository.put_file(&key, &shard.file.path, CONTENT_TYPE_SQLITE).await?;
+        let key: String = format!("{}/{}/{}", version_label, manifest::SUBDIR_DATA, filename);
+        repository.put_file(&key, &shard.file.path, manifest::CONTENT_TYPE_SQLITE).await?;
         log::debug!("uploaded shard; [key={}]", key);
     }
     let shards_published: usize = build_report.artifacts.shards.len();
 
     let geometry_filename: &str = filesystem::filename_of(&build_report.artifacts.geometry.path)?;
-    let geometry_key: String = format!("{}/{}/{}", version_label, SUBDIR_GEOMETRY, geometry_filename);
-    repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, CONTENT_TYPE_FLATGEOBUF).await?;
+    let geometry_key: String = format!("{}/{}/{}", version_label, manifest::SUBDIR_GEOMETRY, geometry_filename);
+    repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, manifest::CONTENT_TYPE_FLATGEOBUF).await?;
     log::debug!("uploaded geometry; [key={}]", geometry_key);
 
-    let manifest_key: String = format!("{}/{}", version_label, MANIFEST_FILENAME);
-    repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, CONTENT_TYPE_MANIFEST).await?;
+    let manifest_key: String = format!("{}/{}", version_label, manifest::MANIFEST_FILENAME);
+    repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, manifest::CONTENT_TYPE_MANIFEST).await?;
     let manifest_url: String = repository.url(&manifest_key);
     log::debug!("uploaded manifest; [key={} url={}]", manifest_key, manifest_url);
 
@@ -75,7 +72,7 @@ pub async fn publish_artifacts(
 }
 
 pub fn load_build_report_from_disk(artifact_dir: &Path) -> Result<BuildReport, AppError> {
-    let manifest_path: PathBuf = artifact_dir.join(MANIFEST_FILENAME);
+    let manifest_path: PathBuf = artifact_dir.join(manifest::MANIFEST_FILENAME);
     let manifest_bytes: Vec<u8> = fs::read(&manifest_path)
         .map_err(|err| AppError::from(format!("read {:?}: {}", manifest_path, err)))?;
     let parsed_manifest: Manifest = manifest::parse_manifest(&manifest_bytes)?;

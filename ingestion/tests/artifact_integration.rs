@@ -18,7 +18,7 @@ use uuid::Uuid;
 use ingestion::artifact::{self, BuildOptions, BuildReport};
 use shared::canonical::canonical_model::DataSourceKind;
 use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME, PLACEHOLDER_GEOMETRY_BYTES};
-use shared::artifact::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
+use shared::artifact::manifest;
 use shared::filesystem::FileReference;
 use ingestion::geometry::natural_earth::{self, ShapefileBytes};
 
@@ -69,7 +69,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert!(tfr_base_shard.file.byte_count > 0);
 
     assert!(build.artifacts.manifest.path.exists());
-    assert!(build.artifacts.manifest.path.ends_with(MANIFEST_FILENAME));
+    assert!(build.artifacts.manifest.path.ends_with(manifest::MANIFEST_FILENAME));
     assert_eq!(build.artifacts.manifest.sha256_hex().len(), 64);
     assert!(build.artifacts.manifest.byte_count > 0);
 
@@ -131,7 +131,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     let manifest_tfr_base = &manifest_value["statistics"]["tfr"]["base"];
     assert_eq!(
         manifest_tfr_base["relative_path"].as_str().unwrap(),
-        format!("{}/{}", SUBDIR_DATA, tfr_base_filename),
+        format!("{}/{}", manifest::SUBDIR_DATA, tfr_base_filename),
     );
     assert_eq!(manifest_tfr_base["size_bytes"].as_u64().unwrap(), tfr_base_shard.file.byte_count);
     assert_eq!(manifest_tfr_base["sha256"].as_str().unwrap(), tfr_base_shard.file.sha256_hex());
@@ -139,7 +139,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     let manifest_geometry = &manifest_value["geometry"];
     assert_eq!(
         manifest_geometry["relative_path"].as_str().unwrap(),
-        format!("{}/{}", SUBDIR_GEOMETRY, geometry_filename),
+        format!("{}/{}", manifest::SUBDIR_GEOMETRY, geometry_filename),
     );
     assert_eq!(manifest_geometry["size_bytes"].as_u64().unwrap(), build.artifacts.geometry.byte_count);
     assert_eq!(manifest_geometry["sha256"].as_str().unwrap(), build.artifacts.geometry.sha256_hex());

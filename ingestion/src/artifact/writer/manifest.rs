@@ -7,9 +7,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 
-use shared::artifact::manifest::{
-    Manifest, ManifestEntry, MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION, SUBDIR_DATA, SUBDIR_GEOMETRY,
-};
+use shared::artifact::manifest::{self, Manifest, ManifestEntry};
 use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use shared::filesystem::{FileReference, Hashed};
 
@@ -26,7 +24,7 @@ pub fn write_manifest(
     let artifact_created: DateTime<Utc> = Utc::now();
     let json: String = build_manifest_json(shards, geometry, version_label, &artifact_created, data_source_revisions)?;
 
-    let path: PathBuf = artifact_dir.join(MANIFEST_FILENAME);
+    let path: PathBuf = artifact_dir.join(manifest::MANIFEST_FILENAME);
     fs::write(&path, &json)?;
 
     let byte_count: u64 = json.as_bytes().len() as u64;
@@ -42,7 +40,7 @@ fn build_manifest_json(
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<String, AppError> {
     let geometry_entry: ManifestEntry = ManifestEntry {
-        relative_path: relative_path(SUBDIR_GEOMETRY, geometry)?,
+        relative_path: relative_path(manifest::SUBDIR_GEOMETRY, geometry)?,
         size_bytes: geometry.byte_count,
         sha256: geometry.sha256_hex().to_string(),
     };
@@ -50,7 +48,7 @@ fn build_manifest_json(
     let mut statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>> = BTreeMap::new();
     for statistic_shard in shards {
         let entry: ManifestEntry = ManifestEntry {
-            relative_path: relative_path(SUBDIR_DATA, &statistic_shard.file)?,
+            relative_path: relative_path(manifest::SUBDIR_DATA, &statistic_shard.file)?,
             size_bytes: statistic_shard.file.byte_count,
             sha256: statistic_shard.file.sha256_hex().to_string(),
         };
@@ -61,7 +59,7 @@ fn build_manifest_json(
     }
 
     let manifest: Manifest = Manifest {
-        manifest_schema_version: MANIFEST_SCHEMA_VERSION,
+        manifest_schema_version: manifest::MANIFEST_SCHEMA_VERSION,
         version: version_label.to_string(),
         artifact_created: *artifact_created,
         geometry: geometry_entry,
@@ -189,9 +187,9 @@ mod tests {
 
         let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
-        assert!(json.contains(&format!("\"relative_path\": \"{}/world-50m-ab12cd34.fgb\"", SUBDIR_GEOMETRY)));
-        assert!(json.contains(&format!("\"relative_path\": \"{}/tfr-base-ef561234.sqlite\"", SUBDIR_DATA)));
-        assert!(json.contains(&format!("\"relative_path\": \"{}/_test_alpha-base-cccc1111.sqlite\"", SUBDIR_DATA)));
+        assert!(json.contains(&format!("\"relative_path\": \"{}/world-50m-ab12cd34.fgb\"", manifest::SUBDIR_GEOMETRY)));
+        assert!(json.contains(&format!("\"relative_path\": \"{}/tfr-base-ef561234.sqlite\"", manifest::SUBDIR_DATA)));
+        assert!(json.contains(&format!("\"relative_path\": \"{}/_test_alpha-base-cccc1111.sqlite\"", manifest::SUBDIR_DATA)));
     }
 
     #[test]
