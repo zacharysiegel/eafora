@@ -6,32 +6,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
 
-use crate::artifact::artifact_model::StatisticShard;
-use shared::canonical::canonical_model::{DataSourceKind, SourceRevision};
-use crate::error::AppError;
+use shared::artifact::manifest::{
+    Manifest, ManifestEntry, MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION, SUBDIR_DATA, SUBDIR_GEOMETRY,
+};
+use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use shared::filesystem::{FileReference, Hashed};
 
-pub const MANIFEST_FILENAME: &str = "manifest.json";
-pub const SUBDIR_GEOMETRY: &str = "geometry";
-pub const SUBDIR_DATA: &str = "data";
-
-#[derive(Debug, Serialize)]
-struct ManifestSerializer<'a> {
-    version: &'a str,
-    artifact_created: String,
-    geometry: ManifestEntry<'a>,
-    statistics: BTreeMap<&'a str, BTreeMap<&'a str, ManifestEntry<'a>>>,
-    source_revisions: BTreeMap<&'a str, &'a SourceRevision>,
-}
-
-#[derive(Debug, Serialize)]
-struct ManifestEntry<'a> {
-    relative_path: String,
-    size_bytes: u64,
-    sha256: &'a str,
-}
+use crate::artifact::artifact_model::StatisticShard;
+use crate::error::AppError;
 
 pub fn write_manifest(
     shards: &[StatisticShard<Hashed<FileReference>>],
@@ -58,39 +41,36 @@ fn build_manifest_json(
     artifact_created: &DateTime<Utc>,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<String, AppError> {
-    let geometry_entry: ManifestEntry<'_> = ManifestEntry {
+    let geometry_entry: ManifestEntry = ManifestEntry {
         relative_path: relative_path(SUBDIR_GEOMETRY, geometry)?,
         size_bytes: geometry.byte_count,
-        sha256: geometry.sha256_hex(),
+        sha256: geometry.sha256_hex().to_string(),
     };
 
-    let mut statistics: BTreeMap<&str, BTreeMap<&str, ManifestEntry<'_>>> = BTreeMap::new();
+    let mut statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>> = BTreeMap::new();
     for statistic_shard in shards {
-        let entry: ManifestEntry<'_> = ManifestEntry {
+        let entry: ManifestEntry = ManifestEntry {
             relative_path: relative_path(SUBDIR_DATA, &statistic_shard.file)?,
             size_bytes: statistic_shard.file.byte_count,
-            sha256: statistic_shard.file.sha256_hex(),
+            sha256: statistic_shard.file.sha256_hex().to_string(),
         };
         statistics
-            .entry(statistic_shard.key.statistic_kind.code())
+            .entry(statistic_shard.key.statistic_kind)
             .or_default()
-            .insert(statistic_shard.key.license_shard_class.as_str(), entry);
+            .insert(statistic_shard.key.license_shard_class, entry);
     }
 
-    let source_revisions: BTreeMap<&str, &SourceRevision> = data_source_revisions
-        .iter()
-        .map(|(kind, revision)| (kind.code(), revision))
-        .collect();
-
-    let manifest: ManifestSerializer<'_> = ManifestSerializer {
-        version: version_label,
-        artifact_created: artifact_created.format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+    let manifest: Manifest = Manifest {
+        manifest_schema_version: MANIFEST_SCHEMA_VERSION,
+        version: version_label.to_string(),
+        artifact_created: *artifact_created,
         geometry: geometry_entry,
         statistics,
-        source_revisions,
+        source_revisions: data_source_revisions.clone(),
     };
 
     let json: String = serde_json::to_string_pretty(&manifest)?;
+
     Ok(json)
 }
 
@@ -100,6 +80,7 @@ fn relative_path(subdir: &str, hashed_file: &Hashed<FileReference>) -> Result<St
         .file_name()
         .and_then(|os| os.to_str())
         .ok_or_else(|| AppError::new(&format!("bad path {:?}", hashed_file.path)))?;
+
     Ok(format!("{}/{}", subdir, filename))
 }
 
@@ -108,10 +89,6 @@ mod tests {
     use super::*;
 
     use shared::artifact::bundle::StatisticShardKey;
-    use shared::canonical::canonical_model::{LicenseShardClass, StatisticKind};
-
-    use crate::artifact::artifact_model::StatisticShard;
-    use shared::filesystem;
 
     fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {
         let shards: Vec<StatisticShard<Hashed<FileReference>>> = vec![
@@ -166,7 +143,18 @@ mod tests {
     }
 
     #[test]
-    fn build_manifest_json_sorts_statistics_alphabetically() {
+    fn build_manifest_json_includes_schema_version() {
+        let (shards, geometry) = make_pre_manifest_artifacts();
+        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+        let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
+
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+
+        assert!(json.contains("\"manifest_schema_version\": 1"));
+    }
+
+    #[test]
+    fn build_manifest_json_orders_statistics_by_statistic_kind() {
         let (shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
             (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-12-12".to_string(), published: Some("2024-12-12T00:00:00Z".parse().unwrap()), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
@@ -175,13 +163,13 @@ mod tests {
 
         let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
 
-        let test_alpha_position: usize = json.find("\"_test_alpha\"").expect("_test_alpha present");
         let tfr_position: usize = json.find("\"tfr\"").expect("tfr present");
-        assert!(test_alpha_position < tfr_position);
+        let test_alpha_position: usize = json.find("\"_test_alpha\"").expect("_test_alpha present");
+        assert!(tfr_position < test_alpha_position);
     }
 
     #[test]
-    fn build_manifest_json_sorts_license_classes_alphabetically_within_statistic() {
+    fn build_manifest_json_orders_license_classes_by_shard_class() {
         let (shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
@@ -210,7 +198,6 @@ mod tests {
     fn build_manifest_json_is_deterministic_byte_for_byte() {
         let (shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
-            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-12-12".to_string(), published: Some("2024-12-12T00:00:00Z".parse().unwrap()), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
             (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2026-05-15".to_string(), published: Some("2026-05-15T00:00:00Z".parse().unwrap()), fetched: "2026-05-15T00:00:00Z".parse().unwrap() }),
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
@@ -232,7 +219,7 @@ mod tests {
 
         assert!(manifest.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&manifest.path).unwrap();
-        let computed: String = filesystem::sha256_hex(&bytes_on_disk);
+        let computed: String = shared::filesystem::sha256_hex(&bytes_on_disk);
         assert_eq!(computed, manifest.sha256_hex());
     }
 }

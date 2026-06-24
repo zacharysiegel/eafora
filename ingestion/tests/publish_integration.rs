@@ -20,7 +20,7 @@ use ingestion::artifact::artifact_model::{Artifacts, BuildReport, StatisticShard
 use shared::artifact::bundle::StatisticShardKey;
 use ingestion::artifact::publish::PublishReport;
 use ingestion::artifact::repository::{ArtifactRepositoryKind, DryArtifactRepository, LocalArtifactRepository};
-use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
+use shared::artifact::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use shared::canonical::canonical_model::{
     DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind,
 };

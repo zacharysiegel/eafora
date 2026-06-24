@@ -87,7 +87,7 @@ async fn create_statistic_shards(
         }
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
-        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &artifact_dir.join(manifest::SUBDIR_DATA))?;
+        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &artifact_dir.join(shared::artifact::manifest::SUBDIR_DATA))?;
         let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!(
             "statistic {:?}: {} resolved values across {} shards",

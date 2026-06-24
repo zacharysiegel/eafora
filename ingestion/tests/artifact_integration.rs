@@ -18,7 +18,7 @@ use uuid::Uuid;
 use ingestion::artifact::{self, BuildOptions, BuildReport};
 use shared::canonical::canonical_model::DataSourceKind;
 use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME, PLACEHOLDER_GEOMETRY_BYTES};
-use ingestion::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
+use shared::artifact::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
 use shared::filesystem::FileReference;
 use ingestion::geometry::natural_earth::{self, ShapefileBytes};
 
