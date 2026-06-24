@@ -6,7 +6,7 @@ minimer::impl_from_error!(AppError, serde_json::Error);
 minimer::impl_from_error!(AppError, flatgeobuf::Error);
 minimer::impl_from_error!(AppError, geozero::error::GeozeroError);
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // We use a different SQLite library for the Wasm target
 minimer::impl_from_error!(AppError, rusqlite::Error);
 
 pub fn render_error_chain(error: &dyn Error) -> String {

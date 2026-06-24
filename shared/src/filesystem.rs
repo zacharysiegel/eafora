@@ -2,13 +2,13 @@ use sha2::{Digest, Sha256};
 
 use crate::error::AppError;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // native-only: filesystem access (the wasm32 consumer reads bytes via the ArtifactCache)
 use std::fs;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // native-only: path types for the filesystem helpers below
 use std::path::{Path, PathBuf};
 use std::ops::Deref;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // native-only: holds a PathBuf (a local filesystem path)
 #[derive(Debug, Clone)]
 pub struct FileReference {
     pub path: PathBuf,
@@ -74,19 +74,19 @@ fn hex_encode(bytes: &[u8]) -> String {
     hex_string
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // native-only: filesystem helper (the wasm32 consumer reads bytes via the ArtifactCache)
 pub fn filename_of(path: &Path) -> Result<&str, AppError> {
     path.file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| AppError::from(format!("path missing filename component: {:?}", path)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // native-only: reads from the local filesystem
 pub fn read_bytes(path: &Path) -> Result<Vec<u8>, AppError> {
     fs::read(path).map_err(|err| AppError::from(format!("read {:?}: {}", path, err)))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // native-only: reads from the local filesystem
 pub fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
     let bytes: Vec<u8> = read_bytes(path)?;
     Ok(sha256_hex(&bytes))
@@ -95,7 +95,7 @@ pub fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
 /// Read a file at `<base_dir>/<relative_path>`, hash its bytes, and verify that
 /// the computed sha256 matches `expected_sha256_hex`. Used by readers that
 /// validate a manifest's referenced files against their recorded hashes.
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // native-only: reads from the local filesystem
 pub fn load_hashed_file(
     base_dir: &Path,
     relative_path: &str,

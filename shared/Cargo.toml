@@ -21,9 +21,11 @@ bytes = { workspace = true }
 const_format = { workspace = true }
 tokio = { workspace = true, default-features = false, features = ["sync"] }
 
+# Native target only: rusqlite bundles a C SQLite that can't compile to wasm32 (no libc).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { workspace = true }
 
+# Wasm target only: the browser SQLite (sqlite-wasm-rs) + the wasm-bindgen glue replace the native rusqlite stack.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { workspace = true, features = ["js"] }
 sqlite-wasm-rs = { workspace = true }
@@ -35,5 +37,6 @@ js-sys = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, default-features = false, features = ["sync", "macros", "rt"] }
 
+# Wasm target only: in-browser test harness for `cargo test --target wasm32-unknown-unknown`.
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }
