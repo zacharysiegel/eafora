@@ -11,59 +11,58 @@ pub trait ArtifactCache {
 }
 
 #[cfg(test)]
-pub struct MockArtifactCache {
-    entries: tokio::sync::Mutex<std::collections::BTreeMap<(String, String), Vec<u8>>>,
-}
+pub(crate) mod tests {
+    use std::collections::BTreeMap;
 
-#[cfg(test)]
-impl MockArtifactCache {
-    pub fn new() -> Self {
-        MockArtifactCache {
-            entries: tokio::sync::Mutex::new(std::collections::BTreeMap::new()),
+    use super::*;
+
+    pub(crate) struct MockArtifactCache {
+        entries: tokio::sync::Mutex<BTreeMap<(String, String), Vec<u8>>>,
+    }
+
+    impl MockArtifactCache {
+        pub(crate) fn new() -> Self {
+            MockArtifactCache {
+                entries: tokio::sync::Mutex::new(BTreeMap::new()),
+            }
+        }
+
+        pub(crate) async fn insert(&self, version_label: &str, file_relative_path: &str, bytes: Vec<u8>) {
+            let mut entries = self.entries.lock().await;
+            entries.insert((version_label.to_string(), file_relative_path.to_string()), bytes);
         }
     }
 
-    pub async fn insert(&self, version_label: &str, file_relative_path: &str, bytes: Vec<u8>) {
-        let mut entries = self.entries.lock().await;
-        entries.insert((version_label.to_string(), file_relative_path.to_string()), bytes);
+    impl ArtifactCache for MockArtifactCache {
+        async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError> {
+            self.insert(version_label, file_relative_path, bytes.to_vec()).await;
+            Ok(())
+        }
+
+        async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError> {
+            let entries = self.entries.lock().await;
+            let bytes: Option<Vec<u8>> = entries
+                .get(&(version_label.to_string(), file_relative_path.to_string()))
+                .cloned();
+
+            Ok(bytes)
+        }
+
+        async fn list_versions(&self) -> Result<Vec<String>, AppError> {
+            let entries = self.entries.lock().await;
+            let mut version_labels: Vec<String> = entries.keys().map(|(version_label, _)| version_label.clone()).collect();
+            version_labels.dedup();
+
+            Ok(version_labels)
+        }
+
+        async fn delete_version(&self, version_label: &str) -> Result<(), AppError> {
+            let mut entries = self.entries.lock().await;
+            entries.retain(|(entry_version_label, _), _| entry_version_label != version_label);
+
+            Ok(())
+        }
     }
-}
-
-#[cfg(test)]
-impl ArtifactCache for MockArtifactCache {
-    async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError> {
-        self.insert(version_label, file_relative_path, bytes.to_vec()).await;
-        Ok(())
-    }
-
-    async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError> {
-        let entries = self.entries.lock().await;
-        let bytes: Option<Vec<u8>> = entries
-            .get(&(version_label.to_string(), file_relative_path.to_string()))
-            .cloned();
-
-        Ok(bytes)
-    }
-
-    async fn list_versions(&self) -> Result<Vec<String>, AppError> {
-        let entries = self.entries.lock().await;
-        let mut version_labels: Vec<String> = entries.keys().map(|(version_label, _)| version_label.clone()).collect();
-        version_labels.dedup();
-
-        Ok(version_labels)
-    }
-
-    async fn delete_version(&self, version_label: &str) -> Result<(), AppError> {
-        let mut entries = self.entries.lock().await;
-        entries.retain(|(entry_version_label, _), _| entry_version_label != version_label);
-
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
 
     #[tokio::test]
     async fn mock_cache_put_get_round_trip_returns_byte_equal() {

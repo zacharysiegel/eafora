@@ -538,28 +538,30 @@ No `Send + Sync` bounds (web's `OpfsArtifactCache` holds `!Send` `JsValue` indir
 
 ### `MockArtifactCache`
 
-Per spec FR-017 + plan §Outstanding decision #3 (`#[cfg(test)]`-only):
+Per spec FR-017 + plan §Outstanding decision #3 (test-only). Lives inside `cache.rs`'s `#[cfg(test)] pub(crate) mod tests`, so PR D's `bundle.rs` tests reach it as `crate::artifact::cache::tests::MockArtifactCache` (a `pub(crate)` item inside a `pub(crate)` test module; `cfg(test)` is crate-wide under `cargo test`, so it doesn't need to cross a crate boundary):
 
 ```rust
 #[cfg(test)]
-pub struct MockArtifactCache {
-    /// Keyed by (version_label, file_relative_path) — bytes are owned.
-    pub entries: tokio::sync::Mutex<BTreeMap<(String, String), Vec<u8>>>,
-}
+pub(crate) mod tests {
+    pub(crate) struct MockArtifactCache {
+        /// Keyed by (version_label, file_relative_path) — bytes are owned.
+        entries: tokio::sync::Mutex<BTreeMap<(String, String), Vec<u8>>>,
+    }
 
-#[cfg(test)]
-impl MockArtifactCache {
-    pub fn new() -> Self;
-    pub async fn insert(&self, version_label: &str, file_relative_path: &str, bytes: Vec<u8>);
-}
+    impl MockArtifactCache {
+        pub(crate) fn new() -> Self;
+        pub(crate) async fn insert(&self, version_label: &str, file_relative_path: &str, bytes: Vec<u8>);
+    }
 
-#[cfg(test)]
-impl ArtifactCache for MockArtifactCache {
-    /* trait impl bodies */
+    impl ArtifactCache for MockArtifactCache {
+        /* trait impl bodies */
+    }
+
+    /* the mock's own #[tokio::test] functions */
 }
 ```
 
-Note: `tokio::sync::Mutex` (not `std::sync::Mutex`) because the trait is async; the mutex is held across awaits in tests. If a downstream crate later needs the mock (today's 003 / 004 build their own platform-specific mocks; no shared-mock need), promote `#[cfg(test)]` to `#[cfg(any(test, feature = "mock"))]` — one-character change per attribute.
+Note: `tokio::sync::Mutex` (not `std::sync::Mutex`) because the trait is async; the mutex is held across awaits in tests. If a downstream CRATE later needs the mock (today's 003 / 004 build their own platform-specific mocks; no shared-mock need), promote `#[cfg(test)]` to `#[cfg(any(test, feature = "mock"))]` and lift the type out of `mod tests` — a `cfg(test)` gate does not cross crate boundaries.
 
 ## Module: `shared::artifact::geometry`
 
