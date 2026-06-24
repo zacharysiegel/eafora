@@ -4,6 +4,12 @@ version = "0.1.0"
 edition.workspace = true
 publish = false
 
+[features]
+# Forwards shared's test-only enum variants (e.g. StatisticKind::TestAlpha) into ingestion's
+# test build. Run the test suite with `--features testing`; a dev-dependency feature would leak
+# into the normal binary build (feature unification) and make the source-kind match non-exhaustive.
+testing = ["shared/testing"]
+
 [dependencies]
 shared = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

@@ -11,9 +11,11 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use uuid::Uuid;
 
-use crate::artifact::artifact_model::{ResolvedValue, StatisticShard, StatisticShardKey};
+use shared::artifact::bundle::StatisticShardKey;
+use shared::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use shared::filesystem::FileReference;
-use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
+
+use crate::artifact::artifact_model::{ResolvedValue, StatisticShard};
 use crate::error::AppError;
 
 /// Magic number written into SQLite's 32-bit `application_id` header field
@@ -40,7 +42,7 @@ pub fn write_sqlite_shards(
 fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> {
     let mut grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = BTreeMap::new();
     for resolved_value in resolved {
-        grouped.entry(StatisticShardKey::from_value(resolved_value)).or_default().push(resolved_value);
+        grouped.entry(resolved_value.shard_key()).or_default().push(resolved_value);
     }
     grouped
 }
@@ -157,8 +159,7 @@ fn insert_rows(connection: &mut Connection, values: &[&ResolvedValue]) -> Result
 mod tests {
     use super::*;
 
-    use crate::adapter::adapter_model::NaiveDatePeriod;
-    use crate::canonical::canonical_model::{DataSourceKind, DataStatus};
+    use shared::canonical::canonical_model::{DataSourceKind, DataStatus, NaiveDatePeriod};
 
     fn make_merged(
         statistic_kind: StatisticKind,

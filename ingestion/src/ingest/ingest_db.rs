@@ -3,7 +3,9 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::adapter::NormalizedStatisticValue;
-use crate::canonical::canonical_model::{SourceRevision, StatisticValue, StatisticValueEntity};
+use shared::canonical::canonical_model::SourceRevision;
+
+use crate::canonical::canonical_entity::{StatisticValue, StatisticValueEntity};
 use crate::error::AppError;
 
 /// Latest publication = most recently *published* one. `published` is the

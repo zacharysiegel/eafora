@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::artifact::artifact_model::StatisticShard;
-use crate::canonical::canonical_model::{DataSourceKind, SourceRevision};
+use shared::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use crate::error::AppError;
 use shared::filesystem::{FileReference, Hashed};
 
@@ -107,8 +107,10 @@ fn relative_path(subdir: &str, hashed_file: &Hashed<FileReference>) -> Result<St
 mod tests {
     use super::*;
 
-    use crate::artifact::artifact_model::{StatisticShard, StatisticShardKey};
-    use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
+    use shared::artifact::bundle::StatisticShardKey;
+    use shared::canonical::canonical_model::{LicenseShardClass, StatisticKind};
+
+    use crate::artifact::artifact_model::StatisticShard;
     use shared::filesystem;
 
     fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {

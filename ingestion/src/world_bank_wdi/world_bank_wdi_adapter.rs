@@ -3,10 +3,13 @@ use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::adapter::{
-    AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue, NaiveDatePeriod,
+    AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue,
 };
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{Country, DataSource, DataSourceKind, DataStatus, SourceRevision, Statistic, StatisticKind};
+use shared::canonical::canonical_model::{
+    Country, DataSource, DataSourceKind, DataStatus, NaiveDatePeriod, SourceRevision, Statistic,
+    StatisticKind,
+};
 use crate::error::AppError;
 use crate::ingest;
 use crate::ingest::IngestReport;

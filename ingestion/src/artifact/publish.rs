@@ -10,12 +10,11 @@ use serde::Deserialize;
 use sqlx::PgPool;
 
 use crate::artifact::artifact_db;
-use crate::artifact::artifact_model::{
-    Artifacts, ArtifactVersion, BuildReport, StatisticShard, StatisticShardKey,
-};
+use shared::artifact::bundle::StatisticShardKey;
+use crate::artifact::artifact_model::{Artifacts, ArtifactVersion, BuildReport, StatisticShard};
 use crate::artifact::repository::ArtifactRepositoryKind;
 use crate::artifact::writer::manifest::{MANIFEST_FILENAME, SUBDIR_DATA, SUBDIR_GEOMETRY};
-use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
+use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
 use shared::filesystem::{self, FileReference, Hashed};
 

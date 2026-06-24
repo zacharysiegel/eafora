@@ -12,8 +12,11 @@ use std::collections::BTreeMap;
 
 use uuid::Uuid;
 
-use crate::artifact::artifact_model::{CandidateValue, ResolvedValue, StatisticShardKey};
-use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceChoice, StatisticKind};
+use shared::artifact::bundle::StatisticShardKey;
+use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, StatisticKind};
+
+use crate::artifact::artifact_model::{CandidateValue, ResolvedValue};
+use crate::canonical::canonical_entity::SourceChoice;
 use crate::error::AppError;
 
 /// A series is the time series of one statistic for one region within
@@ -130,8 +133,7 @@ mod tests {
 
     use chrono::{DateTime, Utc};
 
-    use crate::adapter::adapter_model::NaiveDatePeriod;
-    use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, StatisticKind};
+    use shared::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, NaiveDatePeriod, StatisticKind};
 
     const REGION_USA: u128 = 1;
 

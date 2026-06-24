@@ -6,7 +6,7 @@ use crate::artifact::artifact_model::{
     ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryNameProjection,
 };
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{DataSource, DataSourceKind, SourceRevision, StatisticKind};
+use shared::canonical::canonical_model::{DataSource, DataSourceKind, SourceRevision, StatisticKind};
 use crate::error::AppError;
 use crate::ingest::ingest_db;
 
@@ -72,7 +72,11 @@ pub async fn read_all_statistic_kinds<'e>(
     let codes: Vec<String> = sqlx::query_scalar!("select code from statistic")
         .fetch_all(executor)
         .await?;
-    codes.iter().map(|code| StatisticKind::try_from(code.as_str())).collect()
+
+    codes
+        .iter()
+        .map(|code| StatisticKind::try_from(code.as_str()).map_err(AppError::from))
+        .collect()
 }
 
 pub async fn read_latest_revisions(

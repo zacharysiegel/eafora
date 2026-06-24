@@ -12,7 +12,7 @@ use ingestion::artifact::repository::{
     ENV_R2_ACCOUNT_ID, ENV_R2_ARTIFACT_BUCKET, ENV_R2_ARTIFACT_PUBLIC_BASE_URL, ENV_R2_PUBLISH_ACCESS_KEY_ID,
     SECRET_R2_PUBLISH_SECRET_ACCESS_KEY,
 };
-use ingestion::canonical::canonical_model::DataSourceKind;
+use shared::canonical::canonical_model::DataSourceKind;
 use ingestion::db;
 use ingestion::error::AppError;
 use ingestion::ingest::IngestReport;
@@ -152,6 +152,8 @@ async fn run_source(
 ) -> Result<IngestReport, AppError> {
     match source_kind {
         DataSourceKind::WorldBankWDI => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
+        #[cfg(feature = "testing")] // test-only DataSourceKind variants have no real adapter
+        other => Err(AppError::from(format!("no adapter for test-only source {:?}", other))),
     }
 }
 

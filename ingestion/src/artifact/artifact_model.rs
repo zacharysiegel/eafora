@@ -4,10 +4,14 @@ use std::path::PathBuf;
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
-use crate::adapter::adapter_model::NaiveDatePeriod;
-use crate::canonical::canonical_model::{DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, SourceRevision, StatisticKind};
-use crate::error::AppError;
+use shared::artifact::bundle::StatisticShardKey;
+use shared::canonical::canonical_model::{
+    DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, NaiveDatePeriod, SourceRevision,
+    StatisticKind,
+};
 use shared::filesystem::{FileReference, Hashed};
+
+use crate::error::AppError;
 
 /// One value as it sits in the canonical store: a single source's
 /// reading for a `(region, statistic, period)` cell. Multiple candidates
@@ -97,27 +101,19 @@ impl ResolvedValue {
             license_shard_class,
         }
     }
+
+    pub fn shard_key(&self) -> StatisticShardKey {
+        StatisticShardKey {
+            statistic_kind: self.statistic_kind,
+            license_shard_class: self.license_shard_class,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct StatisticShard<F> {
     pub key: StatisticShardKey,
     pub file: F,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct StatisticShardKey {
-    pub statistic_kind: StatisticKind,
-    pub license_shard_class: LicenseShardClass,
-}
-
-impl StatisticShardKey {
-    pub fn from_value(value: &ResolvedValue) -> Self {
-        StatisticShardKey {
-            statistic_kind: value.statistic_kind,
-            license_shard_class: value.license_shard_class,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

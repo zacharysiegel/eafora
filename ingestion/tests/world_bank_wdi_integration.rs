@@ -10,7 +10,8 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::adapter::*;
-use ingestion::canonical::canonical_model::{DataSourceKind, SourceRevision, StatisticValue};
+use shared::canonical::canonical_model::{DataSourceKind, SourceRevision};
+use ingestion::canonical::canonical_entity::StatisticValue;
 use ingestion::ingest;
 use ingestion::ingest::*;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;

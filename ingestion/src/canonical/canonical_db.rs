@@ -1,8 +1,9 @@
 use sqlx::PgExecutor;
 
-use crate::canonical::canonical_model::{
-    Country, CountryEntity, DataSource, DataSourceEntity, DataSourceKind, SourceChoice, SourceChoiceEntity,
-    Statistic, StatisticEntity,
+use shared::canonical::canonical_model::{Country, DataSource, DataSourceKind, Statistic};
+
+use crate::canonical::canonical_entity::{
+    CountryEntity, DataSourceEntity, SourceChoice, SourceChoiceEntity, StatisticEntity,
 };
 use crate::error::AppError;
 

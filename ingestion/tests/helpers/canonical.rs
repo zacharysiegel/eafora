@@ -7,7 +7,7 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::canonical::canonical_db;
-use ingestion::canonical::canonical_model::DataSourceKind;
+use shared::canonical::canonical_model::DataSourceKind;
 
 pub async fn get_data_source_id(transaction: &mut Transaction<'static, Postgres>, kind: DataSourceKind) -> Uuid {
     canonical_db::find_data_source_by_kind(&mut **transaction, kind)

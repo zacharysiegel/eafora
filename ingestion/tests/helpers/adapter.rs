@@ -5,8 +5,8 @@
 
 use uuid::Uuid;
 
-use ingestion::adapter::{NaiveDatePeriod, NormalizedStatisticValue};
-use ingestion::canonical::canonical_model::DataStatus;
+use ingestion::adapter::NormalizedStatisticValue;
+use shared::canonical::canonical_model::{DataStatus, NaiveDatePeriod};
 
 /// Builds a `NormalizedStatisticValue` for the given region + statistic +
 /// year + value, defaulted to `DataStatus::Final`. Used by record-* tests.

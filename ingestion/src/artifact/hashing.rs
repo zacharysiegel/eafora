@@ -81,8 +81,8 @@ mod tests {
     use sha2::{Digest, Sha256};
     use uuid::Uuid;
 
-    use crate::artifact::artifact_model::StatisticShardKey;
-    use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
+    use shared::artifact::bundle::StatisticShardKey;
+    use shared::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 
     fn write_tmp_file(temp_dir: &Path, filename: &str, contents: &[u8]) -> FileReference {
         let path: PathBuf = temp_dir.join(filename);

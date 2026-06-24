@@ -3,7 +3,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::adapter::NormalizedStatisticValue;
-use crate::canonical::canonical_model::StatisticValue;
+use crate::canonical::canonical_entity::StatisticValue;
 use crate::error::AppError;
 use crate::ingest::ingest_db;
 use crate::ingest::{IngestReport, RecordOutcome};

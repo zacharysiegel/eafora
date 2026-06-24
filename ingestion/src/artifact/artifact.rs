@@ -11,7 +11,8 @@ use crate::artifact::artifact_model::{
 use crate::artifact::writer::{flatgeobuf, manifest, sqlite};
 use crate::artifact::{artifact_db, hashing, source_choice, StatisticShard};
 use crate::canonical::canonical_db;
-use crate::canonical::canonical_model::{DataSourceKind, SourceChoice, SourceRevision, StatisticKind};
+use shared::canonical::canonical_model::{DataSourceKind, SourceRevision, StatisticKind};
+use crate::canonical::canonical_entity::SourceChoice;
 use crate::error::AppError;
 use shared::filesystem::{FileReference, Hashed};
 
