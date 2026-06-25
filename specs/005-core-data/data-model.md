@@ -620,6 +620,8 @@ pub fn open_flatgeobuf_reader(bytes: Vec<u8>) -> Result<FlatGeobufReader, AppErr
 
 Note: takes `bytes: Vec<u8>` (owned), not `&[u8]`, because the reader holds the bytes for its lifetime. `Bundle::open` reads the geometry bytes from the cache then passes them in by value.
 
+**As implemented**: `FlatGeobufReader` holds the owned `bytes: Vec<u8>` (not a live `FgbReader`) and opens a fresh `FgbReader` per query — `FgbReader::select_all`/`select_bbox` consume the reader, so one instance can't query repeatedly. `iter_features`/`features_in_bbox` are `(&self) -> Result<Vec<Feature>, AppError>` (eager collect), not `(&mut self) -> impl Iterator` — the upstream `FallibleStreamingIterator` borrows the consumed reader, making a borrowing-iterator return impractical; eager collection over a few hundred countries is negligible. Properties via geozero `FeatureProperties::property::<String>`; geometry via geozero `ToGeo`.
+
 ### `Feature`, `Polygon`, `BoundingBox`
 
 ```rust
@@ -713,13 +715,15 @@ pub struct StatisticShardKey {
 /// - Any referenced shard's SHA-256 doesn't match the manifest's recorded value.
 /// - The geometry fails `open_flatgeobuf_reader`.
 impl Bundle {
-    pub async fn open(
+    pub async fn open<C: ArtifactCache>(
         version_label: &str,
-        cache: &dyn ArtifactCache,
+        cache: &C,
         distribution_context: DistributionContext,
     ) -> Result<Bundle, AppError>;
 }
 ```
+
+**As implemented**: `open` is generic over `C: ArtifactCache`, not `cache: &dyn ArtifactCache` as sketched above — stable async-fn-in-trait makes `ArtifactCache` not dyn-compatible (async methods return opaque futures), so `&dyn` won't compile. Static dispatch is the idiomatic fix and the loader always holds a concrete cache type.
 
 ## Module: `shared::artifact::bundle_watch`
 
@@ -763,6 +767,8 @@ impl DistributionContext {
 Per FR-022: no wildcard arm in the `match`; adding a new `LicenseShardClass` variant requires a compile-error-driven update of every `DistributionContext` arm. Adding a new `DistributionContext` variant requires explicit slice authorship.
 
 ## Module: `shared::sqlite::vfs`
+
+**DEFERRED to 006-core-renderer** (not implemented in 005). `sqlite-wasm-rs` 0.4.x is raw libsqlite3 C bindings with no `Connection` type, so the cross-target `Connection` typedef below cannot exist — the bridge must be a real wrapper (native `rusqlite::Connection::deserialize` behind the `serialize` feature; wasm32 raw `sqlite3_*` FFI) behind one facade, whose method surface is defined by the renderer's queries (006). `Bundle` opens no connection (carries bytes), so 005 doesn't need it; `shared/src/sqlite/mod.rs` declares only `pub mod schema;`. The sketch below is retained as 006's starting point.
 
 Per spec FR-020 + plan.md §Topic 2 (revised 2026-06-22 after empirical wasm32 build failure). Wraps two underlying SQLite libraries — `rusqlite` on non-wasm32 targets, `sqlite-wasm-rs` on wasm32 — behind a unified `Connection` typedef and a single `open_connection_from_bytes` entry point.
 
