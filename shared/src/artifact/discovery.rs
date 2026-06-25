@@ -72,4 +72,19 @@ mod tests {
 
         assert_eq!(document.sunset, None);
     }
+
+    #[test]
+    fn parse_discovery_document_ignores_unknown_fields() {
+        let json: &str = r#"{
+  "schema_version": 1,
+  "repository_base_url": "https://repository.eafora.org",
+  "minimum_client_version": "1.0.0",
+  "sunset": null,
+  "field_added_in_a_future_v1_revision": "ignored"
+}"#;
+
+        let document: DiscoveryDocument = parse_discovery_document(json.as_bytes()).unwrap();
+
+        assert_eq!(document.repository_base_url, "https://repository.eafora.org");
+    }
 }

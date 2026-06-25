@@ -155,4 +155,16 @@ mod tests {
 
         assert!(parse_manifest(json.as_bytes()).is_err());
     }
+
+    #[test]
+    fn parse_manifest_ignores_unknown_fields() {
+        let json: String = valid_manifest_json().replace(
+            "\"manifest_schema_version\": 1,",
+            "\"manifest_schema_version\": 1,\n  \"field_added_in_a_future_v1_revision\": \"ignored\",",
+        );
+
+        let manifest: Manifest = parse_manifest(json.as_bytes()).unwrap();
+
+        assert_eq!(manifest.version, "2026-05-18+laureate");
+    }
 }
