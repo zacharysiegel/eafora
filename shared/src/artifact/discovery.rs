@@ -17,15 +17,23 @@ pub struct DiscoveryDocument {
     pub sunset: Option<String>,
 }
 
-pub fn parse_discovery_document(bytes: &[u8]) -> Result<DiscoveryDocument, AppError> {
-    let document: DiscoveryDocument = serde_json::from_slice(bytes)?;
+/// Peeks only the version field so a shape change in a future schema version is
+/// rejected with a clear message before the full (possibly incompatible) parse.
+#[derive(Deserialize)]
+struct DiscoverySchemaProbe {
+    schema_version: u32,
+}
 
-    if document.schema_version != DISCOVERY_SCHEMA_VERSION {
+pub fn parse_discovery_document(bytes: &[u8]) -> Result<DiscoveryDocument, AppError> {
+    let probe: DiscoverySchemaProbe = serde_json::from_slice(bytes)?;
+    if probe.schema_version != DISCOVERY_SCHEMA_VERSION {
         return Err(AppError::from(format!(
             "unknown schema_version {}",
-            document.schema_version,
+            probe.schema_version,
         )));
     }
+
+    let document: DiscoveryDocument = serde_json::from_slice(bytes)?;
 
     Ok(document)
 }
