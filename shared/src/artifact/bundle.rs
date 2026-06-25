@@ -1,6 +1,14 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
+use crate::artifact::cache::ArtifactCache;
+use crate::artifact::geometry::{self, FlatGeobufReader};
+use crate::artifact::manifest::{self, Manifest};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
+use crate::error::AppError;
+use crate::filesystem;
+use crate::license::DistributionContext;
 
 /// Content-Type the producer sets when uploading each artifact-bundle file kind; the CDN edge,
 /// the browser HTTP cache, and Accept-header negotiation depend on them.
@@ -18,4 +26,202 @@ pub const CACHE_CONTROL_SHARD: &str = "public, max-age=31536000, immutable";
 pub struct StatisticShardKey {
     pub statistic_kind: StatisticKind,
     pub license_shard_class: LicenseShardClass,
+}
+
+/// A fully-loaded artifact bundle: pure parsed data, `Send + Sync`. The renderer
+/// (006) opens its own SQLite connection against `shard_bytes`; the bundle holds
+/// no connection, so `Arc<Bundle>` crosses the hot-swap watch channel cleanly.
+pub struct Bundle {
+    pub manifest: Manifest,
+    pub geometry_reader: FlatGeobufReader,
+    /// Raw bytes of every license shard this `distribution_context` is authorized to
+    /// access (unauthorized shards are never loaded). Keyed by `(statistic_kind, license_shard_class)`.
+    pub shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>>,
+    pub distribution_context: DistributionContext,
+}
+
+impl Bundle {
+    pub async fn open<C: ArtifactCache>(
+        version_label: &str,
+        cache: &C,
+        distribution_context: DistributionContext,
+    ) -> Result<Bundle, AppError> {
+        let manifest_bytes: Vec<u8> = get_required(cache, version_label, manifest::MANIFEST_FILENAME).await?;
+        let manifest: Manifest = manifest::parse_manifest(&manifest_bytes)?;
+
+        let geometry_bytes: Vec<u8> = get_required(cache, version_label, &manifest.geometry.relative_path).await?;
+        filesystem::verify_sha256(&geometry_bytes, &manifest.geometry.sha256)?;
+        let geometry_reader: FlatGeobufReader = geometry::open_flatgeobuf_reader(geometry_bytes)?;
+
+        let authorized_classes: &[LicenseShardClass] = distribution_context.authorized_classes();
+
+        let mut shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>> = BTreeMap::new();
+        for (statistic_kind, license_shard_map) in &manifest.statistics {
+            for (license_shard_class, entry) in license_shard_map {
+                if !authorized_classes.contains(license_shard_class) {
+                    continue;
+                }
+
+                let bytes: Vec<u8> = get_required(cache, version_label, &entry.relative_path).await?;
+                filesystem::verify_sha256(&bytes, &entry.sha256)?;
+
+                let key: StatisticShardKey = StatisticShardKey {
+                    statistic_kind: *statistic_kind,
+                    license_shard_class: *license_shard_class,
+                };
+                shard_bytes.insert(key, bytes);
+            }
+        }
+
+        Ok(Bundle {
+            manifest,
+            geometry_reader,
+            shard_bytes,
+            distribution_context,
+        })
+    }
+}
+
+async fn get_required(cache: &impl ArtifactCache, version_label: &str, relative_path: &str) -> Result<Vec<u8>, AppError> {
+    let bytes: Option<Vec<u8>> = cache.get(version_label, relative_path).await?;
+
+    bytes.ok_or_else(|| {
+        AppError::from(format!("bundle: {:?} missing from cache for version {:?}", relative_path, version_label))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::artifact::cache::tests::MockArtifactCache;
+    use crate::artifact::geometry::tests::one_feature_fgb_bytes;
+    use crate::artifact::manifest::ManifestEntry;
+
+    const VERSION: &str = "2026-05-18+test";
+    const GEOMETRY_PATH: &str = "geometry/world.fgb";
+    const BASE_SHARD_PATH: &str = "data/tfr-base.sqlite";
+    const NONCOMMERCIAL_SHARD_PATH: &str = "data/tfr-noncommercial.sqlite";
+
+    fn entry(relative_path: &str, bytes: &[u8]) -> ManifestEntry {
+        ManifestEntry {
+            relative_path: relative_path.to_string(),
+            size_bytes: bytes.len() as u64,
+            sha256: filesystem::sha256_hex(bytes),
+        }
+    }
+
+    fn tfr_statistic(base: &ManifestEntry, noncommercial: &ManifestEntry) -> BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>> {
+        let mut license_map: BTreeMap<LicenseShardClass, ManifestEntry> = BTreeMap::new();
+        license_map.insert(LicenseShardClass::Base, base.clone());
+        license_map.insert(LicenseShardClass::NonCommercial, noncommercial.clone());
+
+        let mut statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>> = BTreeMap::new();
+        statistics.insert(StatisticKind::Tfr, license_map);
+        statistics
+    }
+
+    fn build_manifest(geometry: ManifestEntry, statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>>) -> Manifest {
+        Manifest {
+            manifest_schema_version: manifest::MANIFEST_SCHEMA_VERSION,
+            version: VERSION.to_string(),
+            artifact_created: "2026-05-18T03:00:00Z".parse().unwrap(),
+            geometry,
+            statistics,
+            source_revisions: BTreeMap::new(),
+        }
+    }
+
+    /// Seed a mock cache with a valid manifest + geometry + Base and NonCommercial Tfr shards.
+    async fn seeded_mock() -> MockArtifactCache {
+        let geometry_bytes: Vec<u8> = one_feature_fgb_bytes();
+        let base_shard: Vec<u8> = b"tfr-base-shard-bytes".to_vec();
+        let noncommercial_shard: Vec<u8> = b"tfr-noncommercial-shard-bytes".to_vec();
+
+        let statistics = tfr_statistic(&entry(BASE_SHARD_PATH, &base_shard), &entry(NONCOMMERCIAL_SHARD_PATH, &noncommercial_shard));
+        let manifest: Manifest = build_manifest(entry(GEOMETRY_PATH, &geometry_bytes), statistics);
+        let manifest_bytes: Vec<u8> = serde_json::to_vec(&manifest).unwrap();
+
+        let cache: MockArtifactCache = MockArtifactCache::new();
+        cache.insert(VERSION, manifest::MANIFEST_FILENAME, manifest_bytes).await;
+        cache.insert(VERSION, GEOMETRY_PATH, geometry_bytes).await;
+        cache.insert(VERSION, BASE_SHARD_PATH, base_shard).await;
+        cache.insert(VERSION, NONCOMMERCIAL_SHARD_PATH, noncommercial_shard).await;
+
+        cache
+    }
+
+    #[tokio::test]
+    async fn bundle_open_round_trip_against_mock_cache() {
+        let cache: MockArtifactCache = seeded_mock().await;
+
+        let bundle: Bundle = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await.unwrap();
+
+        assert_eq!(bundle.manifest.version, VERSION);
+        assert_eq!(bundle.shard_bytes.len(), 2);
+        assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
+        assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::NonCommercial }));
+    }
+
+    #[tokio::test]
+    async fn bundle_open_eagerly_parses_geometry() {
+        let cache: MockArtifactCache = seeded_mock().await;
+
+        let bundle: Bundle = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await.unwrap();
+
+        let features = bundle.geometry_reader.iter_features().unwrap();
+        assert_eq!(features.len(), 1);
+        assert_eq!(features[0].iso3, "TST");
+    }
+
+    #[tokio::test]
+    async fn bundle_open_skips_unauthorized_shards() {
+        let cache: MockArtifactCache = seeded_mock().await;
+
+        let bundle: Bundle = Bundle::open(VERSION, &cache, DistributionContext::Embedded).await.unwrap();
+
+        assert_eq!(bundle.shard_bytes.len(), 1);
+        assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
+    }
+
+    #[tokio::test]
+    async fn bundle_open_rejects_missing_manifest() {
+        let cache: MockArtifactCache = MockArtifactCache::new();
+
+        let result: Result<Bundle, AppError> = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn bundle_open_rejects_sha256_mismatch() {
+        let geometry_bytes: Vec<u8> = one_feature_fgb_bytes();
+        let base_shard: Vec<u8> = b"real-bytes".to_vec();
+
+        let mismatched: ManifestEntry = ManifestEntry {
+            relative_path: BASE_SHARD_PATH.to_string(),
+            size_bytes: base_shard.len() as u64,
+            sha256: "00".repeat(32),
+        };
+        let mut license_map: BTreeMap<LicenseShardClass, ManifestEntry> = BTreeMap::new();
+        license_map.insert(LicenseShardClass::Base, mismatched);
+        let mut statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>> = BTreeMap::new();
+        statistics.insert(StatisticKind::Tfr, license_map);
+
+        let manifest: Manifest = build_manifest(entry(GEOMETRY_PATH, &geometry_bytes), statistics);
+        let cache: MockArtifactCache = MockArtifactCache::new();
+        cache.insert(VERSION, manifest::MANIFEST_FILENAME, serde_json::to_vec(&manifest).unwrap()).await;
+        cache.insert(VERSION, GEOMETRY_PATH, geometry_bytes).await;
+        cache.insert(VERSION, BASE_SHARD_PATH, base_shard).await;
+
+        let result: Result<Bundle, AppError> = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await;
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn bundle_is_send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<std::sync::Arc<Bundle>>();
+    }
 }

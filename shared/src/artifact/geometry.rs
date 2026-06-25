@@ -155,16 +155,16 @@ fn compute_bounding_box(polygons: &[Polygon]) -> Option<BoundingBox> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     use flatgeobuf::{ColumnType, FgbWriter, GeometryType};
     use geozero::{ColumnValue, PropertyProcessor};
 
-    /// Build a one-feature FlatGeobuf in memory (a unit square for "TST" / "Testland")
+    /// Build a one-feature FlatGeobuf in memory (a rectangle for "TST" / "Testland")
     /// via the upstream writer, so the reader round-trip is tested without committing
-    /// an opaque binary fixture.
-    fn one_feature_fgb_bytes() -> Vec<u8> {
+    /// an opaque binary fixture. `pub(crate)` so `bundle.rs`'s tests reuse it.
+    pub(crate) fn one_feature_fgb_bytes() -> Vec<u8> {
         let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon).unwrap();
         writer.add_column(FEATURE_COLUMN_ISO3, ColumnType::String, |_fbb, _col| {});
         writer.add_column(FEATURE_COLUMN_NAME_EN, ColumnType::String, |_fbb, _col| {});
