@@ -28,18 +28,17 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::artifact::artifact_db;
+use shared::artifact::geometry;
 use shared::artifact::manifest;
 use shared::filesystem::FileReference;
 use crate::error::AppError;
 use crate::geometry::natural_earth::{self, ShapefileBytes};
 use crate::http;
 
-pub const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
-pub const GEOMETRY_FILENAME_STEM: &str = "world-50m";
 const ADM0_A3_FIELD: &str = "ADM0_A3";
 pub const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
-const COLUMN_ISO3: Column = Column { index: 0, name: "iso3" };
-const COLUMN_NAME_EN: Column = Column { index: 1, name: "name_en" };
+const COLUMN_ISO3: Column = Column { index: 0, name: geometry::FEATURE_COLUMN_ISO3 };
+const COLUMN_NAME_EN: Column = Column { index: 1, name: geometry::FEATURE_COLUMN_NAME_EN };
 
 struct Column {
     index: usize,
@@ -64,7 +63,7 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
 
     let path: PathBuf = build_tmp_geometry_path(artifact_dir)?;
 
-    let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
+    let mut writer: FgbWriter<'_> = FgbWriter::create(geometry::GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
     writer.add_column(COLUMN_ISO3.name, ColumnType::String, |_fbb, _col| {});
     writer.add_column(COLUMN_NAME_EN.name, ColumnType::String, |_fbb, _col| {});
 
@@ -117,7 +116,7 @@ fn build_tmp_geometry_path(artifact_dir: &Path) -> Result<PathBuf, AppError> {
     let geometry_dir: PathBuf = artifact_dir.join(manifest::SUBDIR_GEOMETRY);
     fs::create_dir_all(&geometry_dir)?;
     let tmp_uuid: Uuid = Uuid::now_v7();
-    Ok(geometry_dir.join(format!("{}.tmp-{}.fgb", GEOMETRY_FILENAME_STEM, tmp_uuid)))
+    Ok(geometry_dir.join(format!("{}.tmp-{}.{}", geometry::GEOMETRY_FILENAME_STEM, tmp_uuid, geometry::GEOMETRY_FILENAME_EXTENSION)))
 }
 
 fn build_shapefile_reader<'a>(

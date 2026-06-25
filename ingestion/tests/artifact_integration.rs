@@ -17,7 +17,8 @@ use uuid::Uuid;
 
 use ingestion::artifact::{self, BuildOptions, BuildReport};
 use shared::canonical::canonical_model::DataSourceKind;
-use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, write_geometry, GEOMETRY_FILENAME_STEM, GEOMETRY_LAYER_NAME, PLACEHOLDER_GEOMETRY_BYTES};
+use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, write_geometry, PLACEHOLDER_GEOMETRY_BYTES};
+use shared::artifact::geometry;
 use shared::artifact::manifest;
 use shared::filesystem::FileReference;
 use ingestion::geometry::natural_earth::{self, ShapefileBytes};
@@ -76,7 +77,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert!(build.artifacts.geometry.path.exists());
     assert_eq!(build.artifacts.geometry.byte_count, PLACEHOLDER_GEOMETRY_BYTES.len() as u64);
     let geometry_filename: &str = build.artifacts.geometry.path.file_name().unwrap().to_str().unwrap();
-    assert!(geometry_filename.starts_with(&format!("{}-", GEOMETRY_FILENAME_STEM)));
+    assert!(geometry_filename.starts_with(&format!("{}-", geometry::GEOMETRY_FILENAME_STEM)));
     assert!(geometry_filename.ends_with(".fgb"));
     assert_eq!(build.artifacts.geometry.sha256_hex().len(), 64);
     assert!(geometry_filename.contains(build.artifacts.geometry.sha256_hex()));
@@ -208,7 +209,7 @@ fn assert_geometry_fgb_well_formed(path: &std::path::Path) {
     let mut reader: BufReader<File> = BufReader::new(File::open(path).unwrap());
     let header_reader = FgbReader::open(&mut reader).expect("FGB header");
     let header = header_reader.header();
-    assert_eq!(header.name(), Some(GEOMETRY_LAYER_NAME));
+    assert_eq!(header.name(), Some(geometry::GEOMETRY_LAYER_NAME));
     assert_eq!(header.geometry_type(), GeometryType::MultiPolygon);
     let features_count: u64 = header.features_count();
     assert!(
