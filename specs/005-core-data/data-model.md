@@ -404,20 +404,6 @@ pub const SUBDIR_DATA: &str = "data";
 /// a byte-for-byte copy of the just-published manifest under this key.
 /// Consumer fetches `<repository_base_url>/<MANIFEST_LATEST_KEY>` at startup.
 pub const MANIFEST_LATEST_KEY: &str = "latest/manifest.json";
-
-/// Content-Type values for the three artifact file types. Producer sets these
-/// as upload metadata; consumers (CDN edge, browser HTTP cache, Accept-header
-/// negotiation) depend on them.
-pub const CONTENT_TYPE_MANIFEST: &str = "application/json";
-pub const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
-pub const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
-
-/// Cache-Control header values for the destination per `client.md` §Live bundle
-/// + `overview.md` §Artifact format. Manifest is short-cached so re-platforms
-/// propagate within minutes; shards are immutable (content-addressed) so they
-/// cache for a year.
-pub const CACHE_CONTROL_MANIFEST: &str = "public, max-age=300";
-pub const CACHE_CONTROL_SHARD: &str = "public, max-age=31536000, immutable";
 ```
 
 ### `Manifest`
@@ -663,6 +649,21 @@ pub struct BoundingBox {
 ```
 
 ## Module: `shared::artifact::bundle`
+
+### Constants
+
+The HTTP-serving metadata for the bundle's three file kinds (manifest JSON, geometry FlatGeobuf, SQLite shards). Producer sets them as upload metadata; the CDN edge / browser HTTP cache honor them. They live here (not in `manifest`) because they describe the artifact bundle's files as HTTP objects, not the manifest schema — `ManifestEntry` carries no content type.
+
+```rust
+pub const CONTENT_TYPE_MANIFEST: &str = "application/json";
+pub const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
+pub const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
+
+/// Short-cached so re-platforms propagate within minutes.
+pub const CACHE_CONTROL_MANIFEST: &str = "public, max-age=300";
+/// Immutable: shard filenames are content-addressed, so a shard's bytes never change.
+pub const CACHE_CONTROL_SHARD: &str = "public, max-age=31536000, immutable";
+```
 
 ### `Bundle`
 

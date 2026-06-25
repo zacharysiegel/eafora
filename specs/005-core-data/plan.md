@@ -108,8 +108,8 @@ shared/                                       # NEW workspace member
 │   │   └── canonical_model.rs              # StatisticKind, DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, SourceRevision (moved from ingestion)
 │   ├── artifact/
 │   │   ├── mod.rs                          # pub mod manifest; pub mod bundle; pub mod bundle_watch; pub mod cache; pub mod discovery; pub mod geometry; pub use {manifest,bundle,bundle_watch,cache,discovery,geometry}::*;
-│   │   ├── manifest.rs                     # Manifest, ManifestEntry, parse_manifest, MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION, MANIFEST_LATEST_KEY, CONTENT_TYPE_MANIFEST, CONTENT_TYPE_FLATGEOBUF, CONTENT_TYPE_SQLITE, CACHE_CONTROL_MANIFEST, CACHE_CONTROL_SHARD constants (per FR-020j)
-│   │   ├── bundle.rs                       # Bundle struct (pure data), Bundle::open(version_label, &cache, ctx)
+│   │   ├── manifest.rs                     # Manifest, ManifestEntry, parse_manifest, MANIFEST_FILENAME, MANIFEST_SCHEMA_VERSION, MANIFEST_LATEST_KEY, SUBDIR_GEOMETRY, SUBDIR_DATA constants
+│   │   ├── bundle.rs                       # Bundle struct (pure data), Bundle::open(version_label, &cache, ctx), StatisticShardKey, CONTENT_TYPE_* + CACHE_CONTROL_* constants (the bundle's file kinds as HTTP objects)
 │   │   ├── bundle_watch.rs                 # pub use tokio::sync::watch::{Sender, Receiver, channel};
 │   │   ├── cache.rs                        # ArtifactCache async trait + MockArtifactCache (#[cfg(test)]-only)
 │   │   ├── discovery.rs                    # DiscoveryDocument, parse_discovery_document, DISCOVERY_SCHEMA_VERSION, DISCOVERY_URL constant (per FR-020i)
@@ -134,7 +134,7 @@ ingestion/
     ├── filesystem.rs                       # DELETED. The whole file moved to shared/src/filesystem.rs; ingestion call sites import `shared::filesystem` directly (no re-export per feedback on forwarding declarations). The `pub mod filesystem;` line is removed from ingestion/src/lib.rs.
     ├── artifact/
     │   ├── hashing.rs                      # ingestion-side producer orchestrators only (hash_sqlite_shards, hash_geometry). The sha256_hex / sha256_hex_of_file helpers now reach via shared::filesystem::*; this file stays for the rename-dance logic that's producer-specific.
-    │   ├── publish.rs                      # `load_build_report_from_disk` rewritten to use `shared::artifact::manifest::parse_manifest` instead of its private `ManifestOnDisk` / `ManifestEntryOnDisk` structs (deleted). The `CONTENT_TYPE_*` consts also delete (moved to `shared::artifact::manifest` per FR-020g); call sites reach via the moved constants. Eliminates the parallel manifest-deserializer drift risk per FR-020e.
+    │   ├── publish.rs                      # `load_build_report_from_disk` rewritten to use `shared::artifact::manifest::parse_manifest` instead of its private `ManifestOnDisk` / `ManifestEntryOnDisk` structs (deleted). The `CONTENT_TYPE_*` consts also delete (moved to `shared::artifact::bundle` per FR-020g); call sites reach via the moved constants. Eliminates the parallel manifest-deserializer drift risk per FR-020e.
     │   ├── writer/
     │   │   ├── manifest.rs                 # rewritten: use shared::artifact::manifest::Manifest; ingestion's write_manifest constructs a Manifest with manifest_schema_version: 1 and serializes via the consumer-side Manifest's Serialize impl. The private ManifestSerializer struct goes away.
     │   │   ├── sqlite.rs                   # rewritten to use shared::sqlite::schema constants + shard_schema_ddl() per FR-020d. Private SQLITE_APPLICATION_ID / SQLITE_USER_VERSION / create_schema function removed; insert_shard_key + insert_rows SQL strings reference shared::sqlite::schema column-name constants via const_format::formatcp!. Existing producer-side tests continue to pass.

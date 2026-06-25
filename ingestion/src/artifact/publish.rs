@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use sqlx::PgPool;
 
-use shared::artifact::bundle::StatisticShardKey;
+use shared::artifact::bundle::{self, StatisticShardKey};
 use shared::artifact::manifest::{self, Manifest};
 use shared::filesystem::{self, FileReference, Hashed};
 
@@ -40,18 +40,18 @@ pub async fn publish_artifacts(
     for shard in &build_report.artifacts.shards {
         let filename: &str = filesystem::filename_of(&shard.file.path)?;
         let key: String = format!("{}/{}/{}", version_label, manifest::SUBDIR_DATA, filename);
-        repository.put_file(&key, &shard.file.path, manifest::CONTENT_TYPE_SQLITE).await?;
+        repository.put_file(&key, &shard.file.path, bundle::CONTENT_TYPE_SQLITE).await?;
         log::debug!("uploaded shard; [key={}]", key);
     }
     let shards_published: usize = build_report.artifacts.shards.len();
 
     let geometry_filename: &str = filesystem::filename_of(&build_report.artifacts.geometry.path)?;
     let geometry_key: String = format!("{}/{}/{}", version_label, manifest::SUBDIR_GEOMETRY, geometry_filename);
-    repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, manifest::CONTENT_TYPE_FLATGEOBUF).await?;
+    repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, bundle::CONTENT_TYPE_FLATGEOBUF).await?;
     log::debug!("uploaded geometry; [key={}]", geometry_key);
 
     let manifest_key: String = format!("{}/{}", version_label, manifest::MANIFEST_FILENAME);
-    repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, manifest::CONTENT_TYPE_MANIFEST).await?;
+    repository.put_file(&manifest_key, &build_report.artifacts.manifest.path, bundle::CONTENT_TYPE_MANIFEST).await?;
     let manifest_url: String = repository.url(&manifest_key);
     log::debug!("uploaded manifest; [key={} url={}]", manifest_key, manifest_url);
 

@@ -35,8 +35,8 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `MANIFEST_FILENAME`                                               | `shared::artifact::manifest`      | const    | locked    |
 | `MANIFEST_SCHEMA_VERSION`                                         | `shared::artifact::manifest`      | const    | new       |
 | `MANIFEST_LATEST_KEY`                                             | `shared::artifact::manifest`      | const    | new       |
-| `CACHE_CONTROL_MANIFEST`, `CACHE_CONTROL_SHARD`                   | `shared::artifact::manifest`      | const    | new       |
-| `CONTENT_TYPE_MANIFEST`, `CONTENT_TYPE_FLATGEOBUF`, `CONTENT_TYPE_SQLITE` | `shared::artifact::manifest` | const | new |
+| `CACHE_CONTROL_MANIFEST`, `CACHE_CONTROL_SHARD`                   | `shared::artifact::bundle`        | const    | new       |
+| `CONTENT_TYPE_MANIFEST`, `CONTENT_TYPE_FLATGEOBUF`, `CONTENT_TYPE_SQLITE` | `shared::artifact::bundle` | const | new |
 | `SUBDIR_GEOMETRY`                                                 | `shared::artifact::manifest`      | const    | locked    |
 | `SUBDIR_DATA`                                                     | `shared::artifact::manifest`      | const    | locked    |
 | `Manifest`                                                        | `shared::artifact::manifest`      | type     | new       |

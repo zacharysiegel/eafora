@@ -17,15 +17,6 @@ pub const SUBDIR_DATA: &str = "data";
 /// `<repository_base_url>/<MANIFEST_LATEST_KEY>` at startup.
 pub const MANIFEST_LATEST_KEY: &str = "latest/manifest.json";
 
-pub const CONTENT_TYPE_MANIFEST: &str = "application/json";
-pub const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
-pub const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
-
-/// Short-cached so re-platforms propagate within minutes.
-pub const CACHE_CONTROL_MANIFEST: &str = "public, max-age=300";
-/// Immutable: shard filenames are content-addressed, so a shard's bytes never change.
-pub const CACHE_CONTROL_SHARD: &str = "public, max-age=31536000, immutable";
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub manifest_schema_version: u32,
