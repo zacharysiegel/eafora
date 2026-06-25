@@ -381,6 +381,8 @@ Per `client.md` §Bundle hot-swap, in-flight queries holding an old `Arc<Bundle>
 
 The Swift side does not see tokio. It calls async UniFFI functions (`async fn` in Rust → `async` in Swift), and Swift's structured concurrency owns the Swift-side task lifecycle. Cancellation is one-way: cancelling a Swift `Task` does not cancel the Rust async future. Long-running Rust futures must self-poll a cancellation flag if the user-visible operation has a "Cancel" button (none through v1).
 
+**Open item — awaiting `Bundle::open` on the multi-threaded runtime.** `shared::artifact::ArtifactCache` deliberately has no `Send` bound on its async functions: the web's `OpfsArtifactCache` holds `!Send` `JsValue`, and one trait serves every platform (see `shared/src/artifact/cache.rs`). So `Bundle::open(&dyn ArtifactCache)` returns a `!Send` future that cannot be `tokio::spawn`'d directly onto the full multi-threaded runtime. The live-bundle fetch task above must therefore run `Bundle::open` on a current-thread / `tokio::task::LocalSet` task (or a dedicated loader thread) and publish only the finished `Arc<Bundle>` — which IS `Send + Sync` — across the watch channel. The trait and `Bundle` shapes are fixed in 005; pick the exact spawn mechanism when 004 implementation begins.
+
 ## Cache: `Library/Caches/`
 
 Per `client.md` §Cache eviction, the cross-platform cache contract is the same across web and native; the platform-specific layer is the implementation. iOS uses the app sandbox's `Library/Caches/` directory.
