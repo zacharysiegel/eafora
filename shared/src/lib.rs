@@ -6,6 +6,7 @@ pub mod revision;
 
 pub use artifact::*;
 pub use canonical::*;
-pub use error::AppError;
 pub use filesystem::*;
 pub use revision::*;
+
+pub use error::AppError;
