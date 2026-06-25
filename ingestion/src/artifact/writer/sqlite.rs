@@ -11,22 +11,15 @@ use std::path::{Path, PathBuf};
 use rusqlite::Connection;
 use uuid::Uuid;
 
+use const_format::formatcp;
+
 use shared::artifact::bundle::StatisticShardKey;
 use shared::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use shared::filesystem::FileReference;
+use shared::sqlite::schema;
 
 use crate::artifact::artifact_model::{ResolvedValue, StatisticShard};
 use crate::error::AppError;
-
-/// Magic number written into SQLite's 32-bit `application_id` header field
-/// at offset 60. Spells `"EAFO"` in ASCII so that hex viewers and tools like
-/// `file(1)` (with the right magic-database entry) can identify these as
-/// Eafora shards independent of filename or context.
-const SQLITE_APPLICATION_ID: i32 = 0x4541464F;
-
-/// Schema version stored in SQLite's `user_version` header field at offset
-/// 68. Bump when the shard schema changes in a way clients need to detect.
-const SQLITE_USER_VERSION: i32 = 0x1;
 
 pub fn write_sqlite_shards(
     values: &[ResolvedValue],
@@ -76,10 +69,10 @@ fn write_one_shard(
 
     let mut connection: Connection = Connection::open(&path)?;
     connection.pragma_update(None, "journal_mode", "MEMORY")?;
-    connection.pragma_update(None, "application_id", SQLITE_APPLICATION_ID)?;
-    connection.pragma_update(None, "user_version", SQLITE_USER_VERSION)?;
+    connection.pragma_update(None, "application_id", schema::APPLICATION_ID)?;
+    connection.pragma_update(None, "user_version", schema::SCHEMA_VERSION)?;
 
-    create_schema(&connection)?;
+    connection.execute_batch(schema::shard_schema_ddl())?;
     insert_shard_key(&connection, statistic_kind, license_shard_class)?;
     insert_rows(&mut connection, values)?;
 
@@ -88,38 +81,16 @@ fn write_one_shard(
     Ok(FileReference { path, byte_count })
 }
 
-fn create_schema(connection: &Connection) -> Result<(), AppError> {
-    connection.execute_batch(
-        r#"
-        create table shard_key (
-            statistic_kind      text not null,
-            license_shard_class text not null
-        );
-
-        create table statistic_value (
-            region_iso3          text not null,
-            region_id            blob not null,
-            period_start         text not null,
-            period_end           text not null,
-            value                real not null,
-            data_status          text not null,
-            data_source_code     text not null,
-            data_source_revision text not null,
-            primary key (region_iso3, period_start, period_end)
-        );
-        create index statistic_value_by_region on statistic_value (region_id);
-        "#,
-    )?;
-    Ok(())
-}
-
 fn insert_shard_key(
     connection: &Connection,
     statistic_kind: StatisticKind,
     license_shard_class: LicenseShardClass,
 ) -> Result<(), AppError> {
     connection.execute(
-        "insert into shard_key (statistic_kind, license_shard_class) values (?1, ?2)",
+        formatcp!(
+            "insert into {} ({}, {}) values (?1, ?2)",
+            schema::TABLE_SHARD_KEY, schema::COL_STATISTIC_KIND, schema::COL_LICENSE_SHARD_CLASS,
+        ),
         (statistic_kind.code(), license_shard_class.as_str()),
     )?;
     Ok(())
@@ -128,21 +99,25 @@ fn insert_shard_key(
 fn insert_rows(connection: &mut Connection, values: &[&ResolvedValue]) -> Result<(), AppError> {
     let transaction: rusqlite::Transaction = connection.transaction()?;
 
-    let mut statement: rusqlite::Statement = transaction.prepare(
-        r#"
-        insert into statistic_value
-            (region_iso3, region_id, period_start, period_end, value,
-             data_status, data_source_code, data_source_revision)
-        values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-        "#,
-    )?;
+    let mut statement: rusqlite::Statement = transaction.prepare(formatcp!(
+        "insert into {} ({}, {}, {}, {}, {}, {}, {}, {}) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        schema::TABLE_STATISTIC_VALUE,
+        schema::COL_REGION_ISO3,
+        schema::COL_REGION_ID,
+        schema::COL_PERIOD_START,
+        schema::COL_PERIOD_END,
+        schema::COL_VALUE,
+        schema::COL_DATA_STATUS,
+        schema::COL_DATA_SOURCE_CODE,
+        schema::COL_DATA_SOURCE_REVISION,
+    ))?;
 
     for resolved_value in values {
         statement.execute((
             &resolved_value.region_iso3,
             resolved_value.region_id.as_bytes().as_slice(),
-            resolved_value.period.start.format("%Y-%m-%d").to_string(),
-            resolved_value.period.end.format("%Y-%m-%d").to_string(),
+            resolved_value.period.start.format(schema::PERIOD_DATE_FORMAT).to_string(),
+            resolved_value.period.end.format(schema::PERIOD_DATE_FORMAT).to_string(),
             resolved_value.value,
             resolved_value.data_status.as_str(),
             resolved_value.data_source_kind.code(),
@@ -283,12 +258,12 @@ mod tests {
         let application_id: i32 = connection
             .pragma_query_value(None, "application_id", |row| row.get(0))
             .unwrap();
-        assert_eq!(application_id, SQLITE_APPLICATION_ID);
+        assert_eq!(application_id, schema::APPLICATION_ID);
 
         let user_version: i32 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
-        assert_eq!(user_version, SQLITE_USER_VERSION);
+        assert_eq!(user_version, schema::SCHEMA_VERSION);
 
         let (statistic_kind, license_shard_class): (String, String) = connection
             .query_row(
