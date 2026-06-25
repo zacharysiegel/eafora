@@ -474,6 +474,8 @@ pub struct ManifestEntry {
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError>;
 ```
 
+The `manifest_schema_version` gate (and the discovery `schema_version` gate) is implemented via the shared `shared::artifact::schema_version::require_schema_version(bytes, field_name, expected)` helper, which reads only the version field through `serde_json::Value` — so a future version that changes the document shape is reported as `unknown {field_name} {found}` rather than a field-level parse error.
+
 ## Module: `shared::artifact::discovery`
 
 ### Constants

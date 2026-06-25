@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::artifact::schema_version;
 use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
 
@@ -44,19 +45,8 @@ pub struct ManifestEntry {
 
 /// Peeks only the version field so a shape change in a future schema version is
 /// rejected with a clear message before the full (possibly incompatible) parse.
-#[derive(Deserialize)]
-struct ManifestSchemaProbe {
-    manifest_schema_version: u32,
-}
-
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError> {
-    let probe: ManifestSchemaProbe = serde_json::from_slice(bytes)?;
-    if probe.manifest_schema_version != MANIFEST_SCHEMA_VERSION {
-        return Err(AppError::from(format!(
-            "unknown manifest_schema_version {}",
-            probe.manifest_schema_version,
-        )));
-    }
+    schema_version::require_schema_version(bytes, "manifest_schema_version", MANIFEST_SCHEMA_VERSION)?;
 
     let manifest: Manifest = serde_json::from_slice(bytes)?;
 

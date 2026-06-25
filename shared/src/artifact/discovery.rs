@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::artifact::schema_version;
 use crate::error::AppError;
 
 pub const DISCOVERY_SCHEMA_VERSION: u32 = 1;
@@ -17,21 +18,8 @@ pub struct DiscoveryDocument {
     pub sunset: Option<String>,
 }
 
-/// Peeks only the version field so a shape change in a future schema version is
-/// rejected with a clear message before the full (possibly incompatible) parse.
-#[derive(Deserialize)]
-struct DiscoverySchemaProbe {
-    schema_version: u32,
-}
-
 pub fn parse_discovery_document(bytes: &[u8]) -> Result<DiscoveryDocument, AppError> {
-    let probe: DiscoverySchemaProbe = serde_json::from_slice(bytes)?;
-    if probe.schema_version != DISCOVERY_SCHEMA_VERSION {
-        return Err(AppError::from(format!(
-            "unknown schema_version {}",
-            probe.schema_version,
-        )));
-    }
+    schema_version::require_schema_version(bytes, "schema_version", DISCOVERY_SCHEMA_VERSION)?;
 
     let document: DiscoveryDocument = serde_json::from_slice(bytes)?;
 
