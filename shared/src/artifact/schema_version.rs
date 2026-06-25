@@ -18,7 +18,9 @@ pub fn require_schema_version(bytes: &[u8], field_name: &str, expected: u32) -> 
         .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| AppError::from(format!("document missing integer {} field", field_name)))?;
 
-    if found != expected as u64 {
+    // `as_u64` is serde_json's only unsigned accessor; compare in u64 (widening the u32 `expected`)
+    // rather than narrowing `found`, so an out-of-u32-range version is rejected, not truncated into a match.
+    if found != u64::from(expected) {
         return Err(AppError::from(format!("unknown {} {}", field_name, found)));
     }
 
