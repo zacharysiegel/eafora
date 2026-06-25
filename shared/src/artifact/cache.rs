@@ -1,7 +1,10 @@
 use crate::error::AppError;
 
-// Stable async-fn-in-trait, no async-trait crate (per the feature design). The lint warns that
-// callers can't add Send bounds to the returned futures; intended — the consumers are single-threaded.
+// Stable async-fn-in-trait (no async-trait crate). The trait deliberately omits a Send bound on
+// the returned futures: the web cache impl (OpfsArtifactCache) holds !Send JsValue handles, so a
+// Send bound would make the web impl impossible, and one trait must serve every platform. Native
+// targets ARE multi-threaded, but that's fine — only the resulting Arc<Bundle> (Send + Sync) crosses
+// threads, via the watch channel; the cache future is awaited within the loader, not sent across threads.
 #[allow(async_fn_in_trait)]
 pub trait ArtifactCache {
     async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError>;
