@@ -24,7 +24,6 @@ minimer = { workspace = true }
 log = { workspace = true }
 bytes = { workspace = true }
 const_format = { workspace = true }
-tokio = { workspace = true, default-features = false, features = ["sync"] }
 
 # Not for wasm32: rusqlite bundles a C SQLite that can't compile to wasm32 (no libc).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

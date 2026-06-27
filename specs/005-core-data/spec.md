@@ -203,7 +203,7 @@ A new `shared/` Cargo workspace member exists at the workspace root. It compiles
 
 #### Hot-swap watch channel
 
-- **FR-023**: System MUST re-export `tokio::sync::watch::{Sender, Receiver}` from `shared::artifact::cache::bundle_watch` (or document the consumer-side import path) so clients use the canonical types. The `shared/Cargo.toml` depends on `tokio` with the `sync` feature only (single-threaded WASM cannot use `rt-multi-thread`; `sync` is enough for the watch primitive). The consumer side per `client.md` §Bundle hot-swap creates a `watch::channel::<Arc<Bundle>>(initial_bundle)` at startup; the renderer holds the `Receiver`; the loader holds the `Sender`.
+- **FR-023**: The bundle hot-swap channel is `tokio::sync::watch`; the consumer side per `client.md` §Bundle hot-swap creates a `watch::channel::<Arc<Bundle>>(initial_bundle)` at startup (the loader holds the `Sender`, the renderer the `Receiver`) by importing `tokio::sync::watch` directly. **Deviation**: 005 does NOT re-export the watch types from a `shared::artifact::bundle_watch` module — a thin third-party re-export was dropped (tokio is a direct dependency of every consumer). Consequently `shared` no longer depends on tokio outside dev/test: its async `ArtifactCache` trait needs no runtime, and the only tokio use (`tokio::sync::Mutex` in the test-only `MockArtifactCache`) is a dev-dependency.
 
 #### Test coverage
 

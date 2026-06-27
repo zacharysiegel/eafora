@@ -120,11 +120,12 @@ The loader publishes; the renderer subscribes. Per spec FR-023 + `client.md` §B
 
 ```rust
 use std::sync::Arc;
-use shared::artifact::{Bundle, bundle_watch};
+use shared::artifact::Bundle;
+use tokio::sync::watch;
 
 // Loader-side: construct the channel with the initial (embedded) bundle.
 let initial_bundle: Arc<Bundle> = Arc::new(/* Bundle::open(embedded_version, ...) */);
-let (sender, receiver) = bundle_watch::channel::<Arc<Bundle>>(initial_bundle);
+let (sender, receiver) = watch::channel::<Arc<Bundle>>(initial_bundle);
 
 // Hand the receiver to the renderer (006-core-renderer's Renderer::new takes it).
 // Hand the sender to the loader task.
@@ -141,7 +142,7 @@ sender.send(new_bundle)?;
 // memory frees when last reference drops.
 ```
 
-The `channel`, `Sender`, `Receiver` types are re-exports of `tokio::sync::watch::*`; you can also `use tokio::sync::watch::{Sender, Receiver};` directly. The `bundle_watch` re-export exists so consumers can stay within `shared::*` namespacing without thinking about tokio.
+The hot-swap channel is `tokio::sync::watch`; the loader holds the `Sender`, the renderer the `Receiver`. 005 does not re-export these — consumers use `tokio::sync::watch` directly (it's a direct dependency of every client).
 
 ## Parse a discovery document
 

@@ -725,15 +725,9 @@ impl Bundle {
 
 **As implemented**: `open` is generic over `C: ArtifactCache`, not `cache: &dyn ArtifactCache` as sketched above — stable async-fn-in-trait makes `ArtifactCache` not dyn-compatible (async methods return opaque futures), so `&dyn` won't compile. Static dispatch is the idiomatic fix and the loader always holds a concrete cache type.
 
-## Module: `shared::artifact::bundle_watch`
+## Hot-swap channel (no `bundle_watch` module)
 
-Thin re-export of `tokio::sync::watch` types per spec FR-023 + plan §Outstanding (recommended Option A):
-
-```rust
-pub use tokio::sync::watch::{Sender, Receiver, channel};
-```
-
-Documented import path for consumers: `use shared::artifact::bundle_watch::{Sender, Receiver};` then `let (sender, receiver) = bundle_watch::channel(Arc::new(initial_bundle));`.
+The bundle hot-swap channel is `tokio::sync::watch::channel::<Arc<Bundle>>(...)`, created and used by consumers via `tokio::sync::watch` directly (the loader holds the `Sender`, the renderer the `Receiver`). 005 does NOT re-export the watch types — a thin third-party re-export module (`shared::artifact::bundle_watch`) was dropped; tokio is a direct dependency of every consumer (003 / 004 / 006). `shared` itself depends on tokio only as a dev-dependency (the test mock's `tokio::sync::Mutex`); its async `ArtifactCache` trait needs no runtime.
 
 ## Module: `shared::license::license`
 
@@ -883,7 +877,7 @@ pub use error::AppError;
 pub use filesystem::*;
 pub use revision::*;
 pub use canonical::canonical_model::*;
-pub use artifact::{manifest::*, bundle::*, bundle_watch::*, cache::*, discovery::*, geometry::*};
+pub use artifact::{manifest::*, bundle::*, cache::*, discovery::*, geometry::*};
 pub use license::license::*;
 pub use sqlite::{vfs::*, schema::*};
 ```

@@ -57,9 +57,8 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `Polygon`                                                         | `shared::artifact::geometry`      | type     | new       |
 | `BoundingBox`                                                     | `shared::artifact::geometry`      | type     | new       |
 | `Bundle`                                                          | `shared::artifact::bundle`        | type     | new       |
-| `Bundle::open(version_label: &str, cache: &dyn ArtifactCache, distribution_context: DistributionContext) -> Result<Bundle, AppError>` (async) | `shared::artifact::bundle` | function | new |
+| `Bundle::open(version_label: &str, cache: &C, distribution_context: DistributionContext) -> Result<Bundle, AppError>` (async, generic `C: ArtifactCache`) | `shared::artifact::bundle` | function | new |
 | `StatisticShardKey`                                               | `shared::artifact::bundle`        | type     | locked    |
-| `Sender`, `Receiver`, `channel` (re-exports of `tokio::sync::watch::*`) | `shared::artifact::bundle_watch` | re-export | new |
 | `DistributionContext`                                             | `shared::license::license`        | type     | new       |
 | `DistributionContext::authorized_classes() -> &'static [LicenseShardClass]` | `shared::license::license` | function | new |
 | `Connection` (typedef: `rusqlite::Connection` on non-wasm32 targets, `sqlite_wasm_rs::Connection` on wasm32) | `shared::sqlite::vfs` | type | new |
