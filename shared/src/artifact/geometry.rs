@@ -1,14 +1,21 @@
 use std::io::Cursor;
 
+use const_format::formatcp;
 use flatgeobuf::{FallibleStreamingIterator, FeatureProperties, FgbFeature, FgbReader};
 use geozero::ToGeo;
 
 use crate::error::AppError;
 
-pub const GEOMETRY_LAYER_NAME: &str = "world_50m_admin_0";
+/// Natural Earth scale denominator (1:50m). The single source for the scale token
+/// shared by the layer name and the filename stem; a bump to 1:10m geometry changes
+/// only this.
+const GEOMETRY_SCALE: &str = "50m";
+
+/// FlatGeobuf layer name baked into the `.fgb` (the producer writes it; readers / QGIS see it).
+pub const GEOMETRY_LAYER_NAME: &str = formatcp!("world_{}_admin_0", GEOMETRY_SCALE);
 
 /// Filename stem the producer uses; final filename is `{stem}-{sha8}.fgb`.
-pub const GEOMETRY_FILENAME_STEM: &str = "world-50m";
+pub const GEOMETRY_FILENAME_STEM: &str = formatcp!("world-{}", GEOMETRY_SCALE);
 
 /// FlatGeobuf feature column carrying the country's ISO 3166 alpha-3 code.
 pub const FEATURE_COLUMN_ISO3: &str = "iso3";
