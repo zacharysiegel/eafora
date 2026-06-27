@@ -635,10 +635,10 @@ pub struct CountryFeature {
 
 #[derive(Debug, Clone)]
 pub struct Polygon {
-    /// Outer ring (CCW per WGS84 convention).
-    pub outer: Vec<(f64, f64)>,
-    /// Inner rings (CW per WGS84 convention); zero or more.
-    pub holes: Vec<Vec<(f64, f64)>>,
+    /// Exterior ring.
+    pub exterior: Vec<(f64, f64)>,
+    /// Interior rings (holes); zero or more.
+    pub interiors: Vec<Vec<(f64, f64)>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

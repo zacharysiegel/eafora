@@ -28,20 +28,20 @@ pub const GEOMETRY_FILENAME_EXTENSION: &str = "fgb";
 
 #[derive(Debug, Clone)]
 pub struct Polygon {
-    pub outer: Vec<(f64, f64)>,
-    pub holes: Vec<Vec<(f64, f64)>>,
+    pub exterior: Vec<(f64, f64)>,
+    pub interiors: Vec<Vec<(f64, f64)>>,
 }
 
 impl From<&geo_types::Polygon<f64>> for Polygon {
     fn from(polygon: &geo_types::Polygon<f64>) -> Self {
-        let outer: Vec<(f64, f64)> = polygon.exterior().coords().map(|coord| (coord.x, coord.y)).collect();
-        let holes: Vec<Vec<(f64, f64)>> = polygon
+        let exterior: Vec<(f64, f64)> = polygon.exterior().coords().map(|coord| (coord.x, coord.y)).collect();
+        let interiors: Vec<Vec<(f64, f64)>> = polygon
             .interiors()
             .iter()
             .map(|ring| ring.coords().map(|coord| (coord.x, coord.y)).collect())
             .collect();
 
-        Polygon { outer, holes }
+        Polygon { exterior, interiors }
     }
 }
 
@@ -57,7 +57,7 @@ impl BoundingBox {
     fn from_polygons(polygons: &[Polygon]) -> Option<Self> {
         let mut coordinates = polygons
             .iter()
-            .flat_map(|polygon| polygon.outer.iter().chain(polygon.holes.iter().flatten()));
+            .flat_map(|polygon| polygon.exterior.iter().chain(polygon.interiors.iter().flatten()));
 
         let &(first_lon, first_lat): &(f64, f64) = coordinates.next()?;
         let mut bounding_box: BoundingBox = BoundingBox {
