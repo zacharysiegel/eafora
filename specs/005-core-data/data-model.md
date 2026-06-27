@@ -620,15 +620,15 @@ pub fn open_flatgeobuf_reader(bytes: Vec<u8>) -> Result<FlatGeobufReader, AppErr
 
 Note: takes `bytes: Vec<u8>` (owned), not `&[u8]`, because the reader holds the bytes for its lifetime. `Bundle::open` reads the geometry bytes from the cache then passes them in by value.
 
-**As implemented**: `FlatGeobufReader` holds the owned `bytes: Vec<u8>` (not a live `FgbReader`) and opens a fresh `FgbReader` per query — `FgbReader::select_all`/`select_bbox` consume the reader, so one instance can't query repeatedly. `iter_features`/`features_in_bbox` are `(&self) -> Result<Vec<Feature>, AppError>` (eager collect), not `(&mut self) -> impl Iterator` — the upstream `FallibleStreamingIterator` borrows the consumed reader, making a borrowing-iterator return impractical; eager collection over a few hundred countries is negligible. Properties via geozero `FeatureProperties::property::<String>`; geometry via geozero `ToGeo`.
+**As implemented**: `FlatGeobufReader` holds the owned `bytes: Vec<u8>` (not a live `FgbReader`) and opens a fresh `FgbReader` per query — `FgbReader::select_all`/`select_bbox` consume the reader, so one instance can't query repeatedly. `iter_features`/`features_in_bbox` are `(&self) -> Result<Vec<CountryFeature>, AppError>` (eager collect), not `(&mut self) -> impl Iterator` — the upstream `FallibleStreamingIterator` borrows the consumed reader, making a borrowing-iterator return impractical; eager collection over a few hundred countries is negligible. Properties via geozero `FeatureProperties::property::<String>`; geometry via geozero `ToGeo`.
 
-### `Feature`, `Polygon`, `BoundingBox`
+### `CountryFeature`, `Polygon`, `BoundingBox`
 
 ```rust
 #[derive(Debug, Clone)]
-pub struct Feature {
+pub struct CountryFeature {
     pub iso3: String,           // ISO 3166 alpha-3 — matches `region.code` for country-level features
-    pub name_en: String,        // The country's English name (from Natural Earth's `NAME` field)
+    pub name_en: String,        // The country's English name (joined from the canonical store by iso3 at write time)
     pub polygons: Vec<Polygon>, // A country may be multi-polygon (USA includes Alaska; Russia spans the antimeridian; etc.)
     pub bbox: BoundingBox,      // Pre-computed bounding box; what `features_in_bbox` indexes on
 }
@@ -649,6 +649,8 @@ pub struct BoundingBox {
     pub max_lat: f64,
 }
 ```
+
+Conversions use the standard traits: `impl From<&geo_types::Polygon<f64>> for Polygon` and `impl TryFrom<&FgbFeature> for CountryFeature` (`Error = AppError`); `BoundingBox::from_polygons(&[Polygon]) -> Option<Self>` derives the extent from the already-converted polygons. A private `polygons_from_geometry` covers the `geo_types::Geometry → Vec<Polygon>` step, which can't be a trait impl (a `Vec` target trips the orphan rule).
 
 ## Module: `shared::artifact::bundle`
 

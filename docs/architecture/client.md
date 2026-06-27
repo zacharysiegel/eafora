@@ -390,7 +390,7 @@ core/
 │   ├── map/                       # interactive atlas view feature
 │   │   ├── geometry/
 │   │   │   ├── geometry.rs        # FlatGeobuf reader wiring; feature iteration
-│   │   │   └── geometry_model.rs  # Feature, Polygon, BoundingBox
+│   │   │   └── geometry_model.rs  # CountryFeature, Polygon, BoundingBox
 │   │   ├── projection.rs          # Miller cylindrical
 │   │   ├── hit_test.rs            # spatial-index lookup
 │   │   └── map_renderer.rs        # wgpu pipeline (shared across platforms)

@@ -27,17 +27,22 @@ pub const SHARD_FILENAME_EXTENSION: &str = "sqlite";
 pub const GEOMETRY_FILENAME_EXTENSION: &str = "fgb";
 
 #[derive(Debug, Clone)]
-pub struct Feature {
-    pub iso3: String,
-    pub name_en: String,
-    pub polygons: Vec<Polygon>,
-    pub bbox: BoundingBox,
-}
-
-#[derive(Debug, Clone)]
 pub struct Polygon {
     pub outer: Vec<(f64, f64)>,
     pub holes: Vec<Vec<(f64, f64)>>,
+}
+
+impl From<&geo_types::Polygon<f64>> for Polygon {
+    fn from(polygon: &geo_types::Polygon<f64>) -> Self {
+        let outer: Vec<(f64, f64)> = polygon.exterior().coords().map(|coord| (coord.x, coord.y)).collect();
+        let holes: Vec<Vec<(f64, f64)>> = polygon
+            .interiors()
+            .iter()
+            .map(|ring| ring.coords().map(|coord| (coord.x, coord.y)).collect())
+            .collect();
+
+        Polygon { outer, holes }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -46,6 +51,56 @@ pub struct BoundingBox {
     pub min_lat: f64,
     pub max_lon: f64,
     pub max_lat: f64,
+}
+
+impl BoundingBox {
+    fn from_polygons(polygons: &[Polygon]) -> Option<Self> {
+        let mut coordinates = polygons
+            .iter()
+            .flat_map(|polygon| polygon.outer.iter().chain(polygon.holes.iter().flatten()));
+
+        let &(first_lon, first_lat): &(f64, f64) = coordinates.next()?;
+        let mut bounding_box: BoundingBox = BoundingBox {
+            min_lon: first_lon,
+            min_lat: first_lat,
+            max_lon: first_lon,
+            max_lat: first_lat,
+        };
+
+        for &(lon, lat) in coordinates {
+            bounding_box.min_lon = bounding_box.min_lon.min(lon);
+            bounding_box.min_lat = bounding_box.min_lat.min(lat);
+            bounding_box.max_lon = bounding_box.max_lon.max(lon);
+            bounding_box.max_lat = bounding_box.max_lat.max(lat);
+        }
+
+        Some(bounding_box)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct CountryFeature {
+    pub iso3: String,
+    pub name_en: String,
+    pub polygons: Vec<Polygon>,
+    pub bbox: BoundingBox,
+}
+
+impl<'a> TryFrom<&'a FgbFeature> for CountryFeature {
+    type Error = AppError;
+
+    fn try_from(fgb_feature: &'a FgbFeature) -> Result<Self, AppError> {
+        let iso3: String = fgb_feature.property(FEATURE_COLUMN_ISO3)?;
+        let name_en: String = fgb_feature.property(FEATURE_COLUMN_NAME_EN)?;
+
+        let geometry: geo_types::Geometry<f64> = fgb_feature.to_geo()?;
+        let polygons: Vec<Polygon> = polygons_from_geometry(geometry)?;
+
+        let bbox: BoundingBox = BoundingBox::from_polygons(&polygons)
+            .ok_or_else(|| AppError::from("geometry feature has no coordinates".to_string()))?;
+
+        Ok(CountryFeature { iso3, name_en, polygons, bbox })
+    }
 }
 
 /// Owns the geometry bytes and opens a fresh `FgbReader` per query. The upstream
@@ -59,20 +114,20 @@ pub struct FlatGeobufReader {
 
 impl FlatGeobufReader {
     /// Every feature in the file (consumed by 006-core-renderer for vertex upload).
-    pub fn iter_features(&self) -> Result<Vec<Feature>, AppError> {
+    pub fn iter_features(&self) -> Result<Vec<CountryFeature>, AppError> {
         let mut feature_iter = FgbReader::open(Cursor::new(self.bytes.as_slice()))?.select_all()?;
 
-        let mut features: Vec<Feature> = Vec::new();
+        let mut country_features: Vec<CountryFeature> = Vec::new();
         while let Some(fgb_feature) = feature_iter.next()? {
-            features.push(extract_feature(fgb_feature)?);
+            country_features.push(CountryFeature::try_from(fgb_feature)?);
         }
 
-        Ok(features)
+        Ok(country_features)
     }
 
     /// Features whose bounding box intersects `bbox`, via the file's R-tree spatial
     /// index (consumed by 006-core-renderer's hit-test path).
-    pub fn features_in_bbox(&self, bbox: BoundingBox) -> Result<Vec<Feature>, AppError> {
+    pub fn features_in_bbox(&self, bbox: BoundingBox) -> Result<Vec<CountryFeature>, AppError> {
         let mut feature_iter = FgbReader::open(Cursor::new(self.bytes.as_slice()))?.select_bbox(
             bbox.min_lon,
             bbox.min_lat,
@@ -80,12 +135,12 @@ impl FlatGeobufReader {
             bbox.max_lat,
         )?;
 
-        let mut features: Vec<Feature> = Vec::new();
+        let mut country_features: Vec<CountryFeature> = Vec::new();
         while let Some(fgb_feature) = feature_iter.next()? {
-            features.push(extract_feature(fgb_feature)?);
+            country_features.push(CountryFeature::try_from(fgb_feature)?);
         }
 
-        Ok(features)
+        Ok(country_features)
     }
 }
 
@@ -97,23 +152,13 @@ pub fn open_flatgeobuf_reader(bytes: Vec<u8>) -> Result<FlatGeobufReader, AppErr
     Ok(FlatGeobufReader { bytes })
 }
 
-fn extract_feature(fgb_feature: &FgbFeature) -> Result<Feature, AppError> {
-    let iso3: String = fgb_feature.property(FEATURE_COLUMN_ISO3)?;
-    let name_en: String = fgb_feature.property(FEATURE_COLUMN_NAME_EN)?;
-
-    let geometry: geo_types::Geometry<f64> = fgb_feature.to_geo()?;
-    let (polygons, bbox): (Vec<Polygon>, BoundingBox) = polygons_and_bounding_box(geometry)?;
-
-    Ok(Feature { iso3, name_en, polygons, bbox })
-}
-
-fn polygons_and_bounding_box(geometry: geo_types::Geometry<f64>) -> Result<(Vec<Polygon>, BoundingBox), AppError> {
+fn polygons_from_geometry(geometry: geo_types::Geometry<f64>) -> Result<Vec<Polygon>, AppError> {
     let mut polygons: Vec<Polygon> = Vec::new();
     match geometry {
-        geo_types::Geometry::Polygon(polygon) => polygons.push(convert_polygon(&polygon)),
+        geo_types::Geometry::Polygon(polygon) => polygons.push(Polygon::from(&polygon)),
         geo_types::Geometry::MultiPolygon(multi_polygon) => {
             for polygon in &multi_polygon {
-                polygons.push(convert_polygon(polygon));
+                polygons.push(Polygon::from(polygon));
             }
         }
         other => {
@@ -121,44 +166,7 @@ fn polygons_and_bounding_box(geometry: geo_types::Geometry<f64>) -> Result<(Vec<
         }
     }
 
-    let bounding_box: BoundingBox = compute_bounding_box(&polygons)
-        .ok_or_else(|| AppError::from("geometry feature has no coordinates".to_string()))?;
-
-    Ok((polygons, bounding_box))
-}
-
-fn convert_polygon(polygon: &geo_types::Polygon<f64>) -> Polygon {
-    let outer: Vec<(f64, f64)> = polygon.exterior().coords().map(|coord| (coord.x, coord.y)).collect();
-    let holes: Vec<Vec<(f64, f64)>> = polygon
-        .interiors()
-        .iter()
-        .map(|ring| ring.coords().map(|coord| (coord.x, coord.y)).collect())
-        .collect();
-
-    Polygon { outer, holes }
-}
-
-fn compute_bounding_box(polygons: &[Polygon]) -> Option<BoundingBox> {
-    let mut coordinates = polygons
-        .iter()
-        .flat_map(|polygon| polygon.outer.iter().chain(polygon.holes.iter().flatten()));
-
-    let &(first_lon, first_lat): &(f64, f64) = coordinates.next()?;
-    let mut bounding_box: BoundingBox = BoundingBox {
-        min_lon: first_lon,
-        min_lat: first_lat,
-        max_lon: first_lon,
-        max_lat: first_lat,
-    };
-
-    for &(lon, lat) in coordinates {
-        bounding_box.min_lon = bounding_box.min_lon.min(lon);
-        bounding_box.min_lat = bounding_box.min_lat.min(lat);
-        bounding_box.max_lon = bounding_box.max_lon.max(lon);
-        bounding_box.max_lat = bounding_box.max_lat.max(lat);
-    }
-
-    Some(bounding_box)
+    Ok(polygons)
 }
 
 #[cfg(test)]
@@ -200,26 +208,26 @@ pub(crate) mod tests {
     fn open_flatgeobuf_reader_parses_known_fixture() {
         let reader: FlatGeobufReader = open_flatgeobuf_reader(one_feature_fgb_bytes()).unwrap();
 
-        let features: Vec<Feature> = reader.iter_features().unwrap();
+        let country_features: Vec<CountryFeature> = reader.iter_features().unwrap();
 
-        assert_eq!(features.len(), 1);
-        let feature: &Feature = &features[0];
-        assert_eq!(feature.iso3, "TST");
-        assert_eq!(feature.name_en, "Testland");
-        assert_eq!(feature.polygons.len(), 1);
-        assert_eq!(feature.bbox, BoundingBox { min_lon: 0.0, min_lat: 0.0, max_lon: 2.0, max_lat: 3.0 });
+        assert_eq!(country_features.len(), 1);
+        let country_feature: &CountryFeature = &country_features[0];
+        assert_eq!(country_feature.iso3, "TST");
+        assert_eq!(country_feature.name_en, "Testland");
+        assert_eq!(country_feature.polygons.len(), 1);
+        assert_eq!(country_feature.bbox, BoundingBox { min_lon: 0.0, min_lat: 0.0, max_lon: 2.0, max_lat: 3.0 });
     }
 
     #[test]
     fn features_in_bbox_returns_intersecting_feature() {
         let reader: FlatGeobufReader = open_flatgeobuf_reader(one_feature_fgb_bytes()).unwrap();
 
-        let hits: Vec<Feature> = reader
+        let country_feature_hits: Vec<CountryFeature> = reader
             .features_in_bbox(BoundingBox { min_lon: 0.5, min_lat: 0.5, max_lon: 1.0, max_lat: 1.0 })
             .unwrap();
 
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].iso3, "TST");
+        assert_eq!(country_feature_hits.len(), 1);
+        assert_eq!(country_feature_hits[0].iso3, "TST");
     }
 
     #[test]

@@ -112,7 +112,7 @@ shared/                                       # NEW workspace member
 │   │   ├── bundle.rs                       # Bundle struct (pure data), Bundle::open(version_label, &cache, ctx), StatisticShardKey, CONTENT_TYPE_* + CACHE_CONTROL_* constants (the bundle's file kinds as HTTP objects)
 │   │   ├── cache.rs                        # ArtifactCache async trait + MockArtifactCache (#[cfg(test)]-only)
 │   │   ├── discovery.rs                    # DiscoveryDocument, parse_discovery_document, DISCOVERY_SCHEMA_VERSION, DISCOVERY_URL constant (per FR-020i)
-│   │   └── geometry.rs                     # FlatGeobufReader, open_flatgeobuf_reader, Feature, Polygon, BoundingBox, plus producer/consumer-shared constants: GEOMETRY_LAYER_NAME, GEOMETRY_FILENAME_STEM, FEATURE_COLUMN_ISO3, FEATURE_COLUMN_NAME_EN, SHARD_FILENAME_EXTENSION, GEOMETRY_FILENAME_EXTENSION (per FR-020f)
+│   │   └── geometry.rs                     # FlatGeobufReader, open_flatgeobuf_reader, CountryFeature, Polygon, BoundingBox, plus producer/consumer-shared constants: GEOMETRY_LAYER_NAME, GEOMETRY_FILENAME_STEM, FEATURE_COLUMN_ISO3, FEATURE_COLUMN_NAME_EN, SHARD_FILENAME_EXTENSION, GEOMETRY_FILENAME_EXTENSION (per FR-020f)
 │   ├── license/
 │   │   ├── mod.rs                          # pub mod license; pub use license::*;
 │   │   └── license.rs                      # DistributionContext enum + authorized_classes()

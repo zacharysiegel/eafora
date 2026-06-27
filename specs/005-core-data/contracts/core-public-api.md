@@ -53,7 +53,7 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `GEOMETRY_LAYER_NAME`, `GEOMETRY_FILENAME_STEM`                   | `shared::artifact::geometry`      | const    | new       |
 | `FEATURE_COLUMN_ISO3`, `FEATURE_COLUMN_NAME_EN`                   | `shared::artifact::geometry`      | const    | new       |
 | `SHARD_FILENAME_EXTENSION`, `GEOMETRY_FILENAME_EXTENSION`         | `shared::artifact::geometry`      | const    | new       |
-| `Feature`                                                         | `shared::artifact::geometry`      | type     | new       |
+| `CountryFeature`                                                  | `shared::artifact::geometry`      | type     | new       |
 | `Polygon`                                                         | `shared::artifact::geometry`      | type     | new       |
 | `BoundingBox`                                                     | `shared::artifact::geometry`      | type     | new       |
 | `Bundle`                                                          | `shared::artifact::bundle`        | type     | new       |
