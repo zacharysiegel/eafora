@@ -464,9 +464,9 @@ This is a working direction for v2+, not a v1 commitment. The first source with 
 **Miller cylindrical**, the sole projection. Closed-form, ~5 lines:
 
 ```rust
-fn miller(longitude: f64, latitude: f64) -> (f64, f64) {
-    let x: f64 = longitude;
-    let y: f64 = 1.25 * ((std::f64::consts::FRAC_PI_4 + 0.4 * latitude).tan()).ln();
+fn miller(lon: f64, lat: f64) -> (f64, f64) {
+    let x: f64 = lon;
+    let y: f64 = 1.25 * ((std::f64::consts::FRAC_PI_4 + 0.4 * lat).tan()).ln();
     (x, y)
 }
 ```

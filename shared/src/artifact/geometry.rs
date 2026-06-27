@@ -42,10 +42,10 @@ pub struct Polygon {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoundingBox {
-    pub min_longitude: f64,
-    pub min_latitude: f64,
-    pub max_longitude: f64,
-    pub max_latitude: f64,
+    pub min_lon: f64,
+    pub min_lat: f64,
+    pub max_lon: f64,
+    pub max_lat: f64,
 }
 
 /// Owns the geometry bytes and opens a fresh `FgbReader` per query. The upstream
@@ -74,10 +74,10 @@ impl FlatGeobufReader {
     /// index (consumed by 006-core-renderer's hit-test path).
     pub fn features_in_bbox(&self, bbox: BoundingBox) -> Result<Vec<Feature>, AppError> {
         let mut feature_iter = FgbReader::open(Cursor::new(self.bytes.as_slice()))?.select_bbox(
-            bbox.min_longitude,
-            bbox.min_latitude,
-            bbox.max_longitude,
-            bbox.max_latitude,
+            bbox.min_lon,
+            bbox.min_lat,
+            bbox.max_lon,
+            bbox.max_lat,
         )?;
 
         let mut features: Vec<Feature> = Vec::new();
@@ -143,19 +143,19 @@ fn compute_bounding_box(polygons: &[Polygon]) -> Option<BoundingBox> {
         .iter()
         .flat_map(|polygon| polygon.outer.iter().chain(polygon.holes.iter().flatten()));
 
-    let &(first_longitude, first_latitude): &(f64, f64) = coordinates.next()?;
+    let &(first_lon, first_lat): &(f64, f64) = coordinates.next()?;
     let mut bounding_box: BoundingBox = BoundingBox {
-        min_longitude: first_longitude,
-        min_latitude: first_latitude,
-        max_longitude: first_longitude,
-        max_latitude: first_latitude,
+        min_lon: first_lon,
+        min_lat: first_lat,
+        max_lon: first_lon,
+        max_lat: first_lat,
     };
 
-    for &(longitude, latitude) in coordinates {
-        bounding_box.min_longitude = bounding_box.min_longitude.min(longitude);
-        bounding_box.min_latitude = bounding_box.min_latitude.min(latitude);
-        bounding_box.max_longitude = bounding_box.max_longitude.max(longitude);
-        bounding_box.max_latitude = bounding_box.max_latitude.max(latitude);
+    for &(lon, lat) in coordinates {
+        bounding_box.min_lon = bounding_box.min_lon.min(lon);
+        bounding_box.min_lat = bounding_box.min_lat.min(lat);
+        bounding_box.max_lon = bounding_box.max_lon.max(lon);
+        bounding_box.max_lat = bounding_box.max_lat.max(lat);
     }
 
     Some(bounding_box)
@@ -207,7 +207,7 @@ pub(crate) mod tests {
         assert_eq!(feature.iso3, "TST");
         assert_eq!(feature.name_en, "Testland");
         assert_eq!(feature.polygons.len(), 1);
-        assert_eq!(feature.bbox, BoundingBox { min_longitude: 0.0, min_latitude: 0.0, max_longitude: 2.0, max_latitude: 3.0 });
+        assert_eq!(feature.bbox, BoundingBox { min_lon: 0.0, min_lat: 0.0, max_lon: 2.0, max_lat: 3.0 });
     }
 
     #[test]
@@ -215,7 +215,7 @@ pub(crate) mod tests {
         let reader: FlatGeobufReader = open_flatgeobuf_reader(one_feature_fgb_bytes()).unwrap();
 
         let hits: Vec<Feature> = reader
-            .features_in_bbox(BoundingBox { min_longitude: 0.5, min_latitude: 0.5, max_longitude: 1.0, max_latitude: 1.0 })
+            .features_in_bbox(BoundingBox { min_lon: 0.5, min_lat: 0.5, max_lon: 1.0, max_lat: 1.0 })
             .unwrap();
 
         assert_eq!(hits.len(), 1);

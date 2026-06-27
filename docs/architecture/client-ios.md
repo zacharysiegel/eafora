@@ -165,10 +165,10 @@ pub enum WindowHandle {
 // re-export internal types that are part of the FFI surface
 #[derive(uniffi::Record)]
 pub struct Viewport {
-    pub longitude_min: f64,
-    pub longitude_max: f64,
-    pub latitude_min: f64,
-    pub latitude_max: f64,
+    pub lon_min: f64,
+    pub lon_max: f64,
+    pub lat_min: f64,
+    pub lat_max: f64,
 }
 
 #[derive(uniffi::Record)]

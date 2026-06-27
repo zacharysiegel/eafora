@@ -643,10 +643,10 @@ pub struct Polygon {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoundingBox {
-    pub min_longitude: f64,
-    pub min_latitude: f64,
-    pub max_longitude: f64,
-    pub max_latitude: f64,
+    pub min_lon: f64,
+    pub min_lat: f64,
+    pub max_lon: f64,
+    pub max_lat: f64,
 }
 ```
 
