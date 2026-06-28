@@ -571,7 +571,7 @@ pub const GEOMETRY_FILENAME_STEM: &str = "world-50m";
 
 /// FlatGeobuf feature column carrying the country's ISO 3166 alpha-3 code.
 /// Producer's writer adds the column with this exact name; consumer's
-/// `FlatGeobufReader::iter_features` reads features by this column to populate
+/// `GeometryLayer::iter_features` reads features by this column to populate
 /// `Feature.iso3`.
 pub const FEATURE_COLUMN_ISO3: &str = "iso3";
 
@@ -585,42 +585,35 @@ pub const SHARD_FILENAME_EXTENSION: &str = "sqlite";
 pub const GEOMETRY_FILENAME_EXTENSION: &str = "fgb";
 ```
 
-### `FlatGeobufReader`
+### `GeometryLayer`
 
-Per spec FR-020a:
+Per spec FR-020a. Owns the geometry file bytes and opens a transient `flatgeobuf::FgbReader` per query — `FgbReader::select_all`/`select_bbox` take `self` by value and move the inner reader into the returned iterator, so a single `FgbReader` can't serve repeated queries. Re-opening only re-reads the small header; bbox queries still use the file's R-tree index.
 
 ```rust
-pub struct FlatGeobufReader {
-    /// The upstream `flatgeobuf::FgbReader` in its read-everything-into-memory
-    /// state, holding the parsed feature header + the R-tree spatial index.
-    /// Field type resolved at implementation time against the pinned `flatgeobuf`
-    /// version; the exposed surface (Self) is what consumers see.
-    inner: flatgeobuf::FgbReader<std::io::Cursor<Vec<u8>>>,
+pub struct GeometryLayer {
+    bytes: Vec<u8>,
 }
 
-impl FlatGeobufReader {
-    /// Iterate every feature in the reader (consumed by 006-core-renderer for vertex upload).
-    pub fn iter_features(&mut self) -> impl Iterator<Item = Result<Feature, AppError>> + '_;
+impl GeometryLayer {
+    /// All features in the file, collected eagerly.
+    pub fn iter_features(&self) -> Result<Vec<CountryFeature>, AppError>;
 
-    /// Spatial-index query: return all features whose bounding box intersects the given bbox.
-    /// Consumed by 006-core-renderer's hit-test path.
-    pub fn features_in_bbox(&mut self, bbox: BoundingBox) -> impl Iterator<Item = Result<Feature, AppError>> + '_;
+    /// Features whose bounding box intersects `bbox`, via the file's R-tree spatial index.
+    pub fn features_in_bbox(&self, bbox: BoundingBox) -> Result<Vec<CountryFeature>, AppError>;
 }
 ```
 
-The exact method signatures may flex around what the upstream `flatgeobuf` crate's reader exposes; the contract is "iter all features" + "query by bbox."
+Both query functions return `Result<Vec<CountryFeature>, AppError>` (eager collect), not `impl Iterator` — the upstream `FallibleStreamingIterator` borrows the consumed reader, making a borrowing-iterator return impractical, and eager collection over a few hundred countries is negligible. Properties via geozero `FeatureProperties::property::<String>`; geometry via geozero `ToGeo`.
 
 ### Functions
 
 ```rust
-/// Parse the geometry bytes eagerly into a `FlatGeobufReader`. Failures wrap
+/// Parse the geometry bytes eagerly into a `GeometryLayer`. Failures wrap
 /// with a descriptive `AppError`.
-pub fn open_flatgeobuf_reader(bytes: Vec<u8>) -> Result<FlatGeobufReader, AppError>;
+pub fn parse_geometry_layer(bytes: Vec<u8>) -> Result<GeometryLayer, AppError>;
 ```
 
-Note: takes `bytes: Vec<u8>` (owned), not `&[u8]`, because the reader holds the bytes for its lifetime. `Bundle::open` reads the geometry bytes from the cache then passes them in by value.
-
-**As implemented**: `FlatGeobufReader` holds the owned `bytes: Vec<u8>` (not a live `FgbReader`) and opens a fresh `FgbReader` per query — `FgbReader::select_all`/`select_bbox` consume the reader, so one instance can't query repeatedly. `iter_features`/`features_in_bbox` are `(&self) -> Result<Vec<CountryFeature>, AppError>` (eager collect), not `(&mut self) -> impl Iterator` — the upstream `FallibleStreamingIterator` borrows the consumed reader, making a borrowing-iterator return impractical; eager collection over a few hundred countries is negligible. Properties via geozero `FeatureProperties::property::<String>`; geometry via geozero `ToGeo`.
+Note: takes `bytes: Vec<u8>` (owned), not `&[u8]`, because `GeometryLayer` holds the bytes for its lifetime. `Bundle::open` reads the geometry bytes from the cache then passes them in by value. `parse_geometry_layer` opens a throwaway `FgbReader` once to validate the header eagerly (a corrupt file fails here, not on first query), then keeps the bytes.
 
 ### `CountryFeature`, `Polygon`, `BoundingBox`
 
@@ -671,12 +664,12 @@ pub const CACHE_CONTROL_SHARD: &str = "public, max-age=31536000, immutable";
 
 ### `Bundle`
 
-Per spec FR-018 + §Clarifications Q1+Q2 (no SQLite Connection; `Send + Sync`; eagerly-parsed FlatGeobufReader):
+Per spec FR-018 + §Clarifications Q1+Q2 (no SQLite Connection; `Send + Sync`; eagerly-parsed GeometryLayer):
 
 ```rust
 pub struct Bundle {
     pub manifest: Manifest,
-    pub geometry_reader: FlatGeobufReader,
+    pub geometry: GeometryLayer,
     /// Authorized license shards' raw bytes; the renderer opens its own
     /// `rusqlite::Connection` against these on construction + hot-swap.
     /// Keyed by `(statistic_kind, license_shard_class)`.
@@ -694,7 +687,7 @@ pub struct StatisticShardKey {
 
 `Bundle: Send + Sync`. Every field is `Send + Sync`:
 - `Manifest` derives serde; field types are all `Send + Sync`.
-- `FlatGeobufReader` wraps `flatgeobuf::FgbReader<Cursor<Vec<u8>>>` which is `Send + Sync` (`Cursor<Vec<u8>>: Send + Sync`; `FgbReader` doesn't add unsafe interior mutability).
+- `GeometryLayer` owns a `Vec<u8>` (the geometry file bytes); its query functions open transient readers and return owned data, so the value itself is plain `Send + Sync` data.
 - `BTreeMap<K, Vec<u8>>` is `Send + Sync` trivially.
 - `DistributionContext` is `Copy`.
 
@@ -705,7 +698,7 @@ pub struct StatisticShardKey {
 ```rust
 /// Open a complete artifact bundle for `version_label` by reading every file
 /// through the supplied cache. Validates every shard's SHA-256, eagerly parses
-/// the geometry into a FlatGeobufReader, loads byte buffers for every license
+/// the geometry into a GeometryLayer, loads byte buffers for every license
 /// shard this distribution context is authorized to access (per
 /// DistributionContext::authorized_classes); unauthorized shards are NOT loaded
 /// into memory.
@@ -715,7 +708,7 @@ pub struct StatisticShardKey {
 /// - The manifest fails `parse_manifest` (unknown schema_version, malformed sha256, path traversal, etc.).
 /// - Any referenced shard is missing from the cache.
 /// - Any referenced shard's SHA-256 doesn't match the manifest's recorded value.
-/// - The geometry fails `open_flatgeobuf_reader`.
+/// - The geometry fails `parse_geometry_layer`.
 impl Bundle {
     pub async fn open<C: ArtifactCache>(
         version_label: &str,

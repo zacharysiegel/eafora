@@ -48,8 +48,8 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `parse_discovery_document(bytes: &[u8]) -> Result<DiscoveryDocument, AppError>` | `shared::artifact::discovery` | function | new |
 | `ArtifactCache` (trait)                                           | `shared::artifact::cache`         | trait    | new       |
 | `MockArtifactCache` (`#[cfg(test)]`)                              | `shared::artifact::cache`         | type     | new       |
-| `FlatGeobufReader`                                                | `shared::artifact::geometry`      | type     | new       |
-| `open_flatgeobuf_reader(bytes: Vec<u8>) -> Result<FlatGeobufReader, AppError>` | `shared::artifact::geometry` | function | new |
+| `GeometryLayer`                                                | `shared::artifact::geometry`      | type     | new       |
+| `parse_geometry_layer(bytes: Vec<u8>) -> Result<GeometryLayer, AppError>` | `shared::artifact::geometry` | function | new |
 | `GEOMETRY_LAYER_NAME`, `GEOMETRY_FILENAME_STEM`                   | `shared::artifact::geometry`      | const    | new       |
 | `FEATURE_COLUMN_ISO3`, `FEATURE_COLUMN_NAME_EN`                   | `shared::artifact::geometry`      | const    | new       |
 | `SHARD_FILENAME_EXTENSION`, `GEOMETRY_FILENAME_EXTENSION`         | `shared::artifact::geometry`      | const    | new       |
@@ -111,7 +111,7 @@ Per spec FR-024 + FR-025, the following tests are themselves part of the public-
 | `bundle_open_rejects_missing_manifest`                    | `cache.get(version, "manifest.json")` returns `Ok(None)` → `AppError`.   | host    |
 | `bundle_open_rejects_sha256_mismatch`                     | Shard bytes don't match SHA-256 → `AppError` naming the mismatched entry.| host    |
 | `bundle_open_skips_unauthorized_shards`                   | `Embedded` context → only `Base` shards in `bundle.shard_bytes`.        | host    |
-| `bundle_open_eagerly_parses_geometry`                     | Bundle's `geometry_reader` is constructed; iteration returns features.   | host    |
+| `bundle_open_eagerly_parses_geometry`                     | Bundle's `geometry` is constructed; iteration returns features.   | host    |
 | `bundle_is_send_sync`                                     | Compile-time assertion: `Arc<Bundle>: Send + Sync` (via `fn assert_send_sync<T: Send + Sync>() {}`). | host |
 | `shard_schema_ddl_creates_expected_tables_and_index`      | Execute `shard_schema_ddl()` against an in-memory rusqlite Connection; assert `statistic_value`, `shard_key` tables exist with the expected columns; assert `statistic_value_by_region` index exists. | host |
 | `validate_shard_header_accepts_correctly_initialized_connection` | Open in-memory Connection; set `application_id` + `user_version` PRAGMAs to the constants; `validate_shard_header(&conn)` returns `Ok(())`. | host |

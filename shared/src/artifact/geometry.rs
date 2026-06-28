@@ -105,14 +105,14 @@ impl<'a> TryFrom<&'a FgbFeature> for CountryFeature {
 
 /// Owns the geometry bytes and opens a fresh `FgbReader` per query. The upstream
 /// `FgbReader::select_*` consume the reader (one pass each), so re-opening over
-/// the owned bytes is how a single `FlatGeobufReader` serves repeated queries;
+/// the owned bytes is how a single `GeometryLayer` serves repeated queries;
 /// re-opening only re-reads the small header, and bbox queries still use the
 /// file's R-tree index.
-pub struct FlatGeobufReader {
+pub struct GeometryLayer {
     bytes: Vec<u8>,
 }
 
-impl FlatGeobufReader {
+impl GeometryLayer {
     /// All features in the file, collected eagerly.
     pub fn iter_features(&self) -> Result<Vec<CountryFeature>, AppError> {
         let mut feature_iter = FgbReader::open(Cursor::new(self.bytes.as_slice()))?.select_all()?;
@@ -145,10 +145,10 @@ impl FlatGeobufReader {
 
 /// Parse the geometry bytes eagerly; a parse failure (bad header) surfaces here
 /// rather than on first query.
-pub fn open_flatgeobuf_reader(bytes: Vec<u8>) -> Result<FlatGeobufReader, AppError> {
+pub fn parse_geometry_layer(bytes: Vec<u8>) -> Result<GeometryLayer, AppError> {
     FgbReader::open(Cursor::new(bytes.as_slice()))?;
 
-    Ok(FlatGeobufReader { bytes })
+    Ok(GeometryLayer { bytes })
 }
 
 fn polygons_from_geometry(geometry: geo_types::Geometry<f64>) -> Result<Vec<Polygon>, AppError> {
@@ -204,10 +204,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn open_flatgeobuf_reader_parses_known_fixture() {
-        let reader: FlatGeobufReader = open_flatgeobuf_reader(one_feature_fgb_bytes()).unwrap();
+    fn parse_geometry_layer_parses_known_fixture() {
+        let geometry_layer: GeometryLayer = parse_geometry_layer(one_feature_fgb_bytes()).unwrap();
 
-        let country_features: Vec<CountryFeature> = reader.iter_features().unwrap();
+        let country_features: Vec<CountryFeature> = geometry_layer.iter_features().unwrap();
 
         assert_eq!(country_features.len(), 1);
         let country_feature: &CountryFeature = &country_features[0];
@@ -219,9 +219,9 @@ pub(crate) mod tests {
 
     #[test]
     fn features_in_bbox_returns_intersecting_feature() {
-        let reader: FlatGeobufReader = open_flatgeobuf_reader(one_feature_fgb_bytes()).unwrap();
+        let geometry_layer: GeometryLayer = parse_geometry_layer(one_feature_fgb_bytes()).unwrap();
 
-        let country_feature_hits: Vec<CountryFeature> = reader
+        let country_feature_hits: Vec<CountryFeature> = geometry_layer
             .features_in_bbox(BoundingBox { min_lon: 0.5, min_lat: 0.5, max_lon: 1.0, max_lat: 1.0 })
             .unwrap();
 
@@ -230,8 +230,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn open_flatgeobuf_reader_rejects_garbage_bytes() {
-        let result: Result<FlatGeobufReader, AppError> = open_flatgeobuf_reader(b"not a flatgeobuf".to_vec());
+    fn parse_geometry_layer_rejects_garbage_bytes() {
+        let result: Result<GeometryLayer, AppError> = parse_geometry_layer(b"not a flatgeobuf".to_vec());
 
         assert!(result.is_err());
     }

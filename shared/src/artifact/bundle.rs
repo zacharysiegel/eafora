@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::artifact::cache::ArtifactCache;
-use crate::artifact::geometry::{self, FlatGeobufReader};
+use crate::artifact::geometry::{self, GeometryLayer};
 use crate::artifact::manifest::{self, Manifest};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
@@ -33,7 +33,7 @@ pub struct StatisticShardKey {
 /// `Arc<Bundle>` crosses the hot-swap watch channel cleanly.
 pub struct Bundle {
     pub manifest: Manifest,
-    pub geometry_reader: FlatGeobufReader,
+    pub geometry: GeometryLayer,
     /// Raw bytes of every license shard this `distribution_context` is authorized to
     /// access (unauthorized shards are never loaded). Keyed by `(statistic_kind, license_shard_class)`.
     pub shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>>,
@@ -51,7 +51,7 @@ impl Bundle {
 
         let geometry_bytes: Vec<u8> = get_required(cache, version_label, &manifest.geometry.relative_path).await?;
         filesystem::verify_sha256(&geometry_bytes, &manifest.geometry.sha256)?;
-        let geometry_reader: FlatGeobufReader = geometry::open_flatgeobuf_reader(geometry_bytes)?;
+        let geometry: GeometryLayer = geometry::parse_geometry_layer(geometry_bytes)?;
 
         let authorized_classes: &[LicenseShardClass] = distribution_context.authorized_classes();
 
@@ -75,7 +75,7 @@ impl Bundle {
 
         Ok(Bundle {
             manifest,
-            geometry_reader,
+            geometry,
             shard_bytes,
             distribution_context,
         })
@@ -169,7 +169,7 @@ mod tests {
 
         let bundle: Bundle = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await.unwrap();
 
-        let features = bundle.geometry_reader.iter_features().unwrap();
+        let features = bundle.geometry.iter_features().unwrap();
         assert_eq!(features.len(), 1);
         assert_eq!(features[0].iso3, "TST");
     }
