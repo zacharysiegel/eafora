@@ -28,9 +28,9 @@ pub struct StatisticShardKey {
     pub license_shard_class: LicenseShardClass,
 }
 
-/// A fully-loaded artifact bundle: pure parsed data, `Send + Sync`. The renderer
-/// (006) opens its own SQLite connection against `shard_bytes`; the bundle holds
-/// no connection, so `Arc<Bundle>` crosses the hot-swap watch channel cleanly.
+/// A fully-loaded artifact bundle: pure parsed data, `Send + Sync`. It holds no
+/// SQLite connection (a consumer opens its own against `shard_bytes`), so
+/// `Arc<Bundle>` crosses the hot-swap watch channel cleanly.
 pub struct Bundle {
     pub manifest: Manifest,
     pub geometry_reader: FlatGeobufReader,

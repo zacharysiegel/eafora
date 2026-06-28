@@ -113,7 +113,7 @@ pub struct FlatGeobufReader {
 }
 
 impl FlatGeobufReader {
-    /// Every feature in the file (consumed by 006-core-renderer for vertex upload).
+    /// All features in the file, collected eagerly.
     pub fn iter_features(&self) -> Result<Vec<CountryFeature>, AppError> {
         let mut feature_iter = FgbReader::open(Cursor::new(self.bytes.as_slice()))?.select_all()?;
 
@@ -125,8 +125,7 @@ impl FlatGeobufReader {
         Ok(country_features)
     }
 
-    /// Features whose bounding box intersects `bbox`, via the file's R-tree spatial
-    /// index (consumed by 006-core-renderer's hit-test path).
+    /// Features whose bounding box intersects `bbox`, via the file's R-tree spatial index.
     pub fn features_in_bbox(&self, bbox: BoundingBox) -> Result<Vec<CountryFeature>, AppError> {
         let mut feature_iter = FgbReader::open(Cursor::new(self.bytes.as_slice()))?.select_bbox(
             bbox.min_lon,

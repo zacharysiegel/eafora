@@ -58,8 +58,7 @@ create index {INDEX_STATISTIC_VALUE_BY_REGION} on {TABLE_STATISTIC_VALUE} ({COL_
 
 /// Consumer-side gate: confirm a connection's SQLite header marks it as an Eafora
 /// shard with a schema version we understand, before issuing any query.
-// native-only: takes a rusqlite::Connection (rusqlite doesn't compile to wasm32; the wasm32
-// renderer validates through its own sqlite-wasm-rs connection in 006).
+// not for wasm32: takes a rusqlite::Connection, and rusqlite doesn't compile to wasm32
 #[cfg(not(target_arch = "wasm32"))]
 pub fn validate_shard_header(connection: &rusqlite::Connection) -> Result<(), crate::error::AppError> {
     use crate::error::AppError;
