@@ -42,8 +42,8 @@ pub struct Bundle {
 
 impl Bundle {
     pub async fn open<C: ArtifactCache>(
-        version_label: &str,
         cache: &C,
+        version_label: &str,
         distribution_context: DistributionContext,
     ) -> Result<Bundle, AppError> {
         let manifest_bytes: Vec<u8> = get_required(cache, version_label, manifest::MANIFEST_FILENAME).await?;
@@ -53,9 +53,8 @@ impl Bundle {
         filesystem::verify_sha256(&geometry_bytes, &manifest.geometry.sha256)?;
         let geometry: GeometryLayer = geometry::parse_geometry_layer(geometry_bytes)?;
 
-        let authorized_classes: &[LicenseShardClass] = distribution_context.authorized_classes();
-
         let mut shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>> = BTreeMap::new();
+        let authorized_classes: &[LicenseShardClass] = distribution_context.authorized_classes();
         for (statistic_kind, license_shard_map) in &manifest.statistics {
             for (license_shard_class, entry) in license_shard_map {
                 if !authorized_classes.contains(license_shard_class) {
@@ -155,7 +154,7 @@ mod tests {
     async fn bundle_open_round_trip_against_mock_cache() {
         let cache: MockArtifactCache = seeded_mock().await;
 
-        let bundle: Bundle = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await.unwrap();
+        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await.unwrap();
 
         assert_eq!(bundle.manifest.version, VERSION);
         assert_eq!(bundle.shard_bytes.len(), 2);
@@ -167,7 +166,7 @@ mod tests {
     async fn bundle_open_eagerly_parses_geometry() {
         let cache: MockArtifactCache = seeded_mock().await;
 
-        let bundle: Bundle = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await.unwrap();
+        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await.unwrap();
 
         let features = bundle.geometry.iter_features().unwrap();
         assert_eq!(features.len(), 1);
@@ -178,7 +177,7 @@ mod tests {
     async fn bundle_open_skips_unauthorized_shards() {
         let cache: MockArtifactCache = seeded_mock().await;
 
-        let bundle: Bundle = Bundle::open(VERSION, &cache, DistributionContext::Embedded).await.unwrap();
+        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::Embedded).await.unwrap();
 
         assert_eq!(bundle.shard_bytes.len(), 1);
         assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
@@ -188,7 +187,7 @@ mod tests {
     async fn bundle_open_rejects_missing_manifest() {
         let cache: MockArtifactCache = MockArtifactCache::new();
 
-        let result: Result<Bundle, AppError> = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await;
+        let result: Result<Bundle, AppError> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
 
         assert!(result.is_err());
     }
@@ -214,7 +213,7 @@ mod tests {
         cache.insert(VERSION, GEOMETRY_PATH, geometry_bytes).await;
         cache.insert(VERSION, BASE_SHARD_PATH, base_shard).await;
 
-        let result: Result<Bundle, AppError> = Bundle::open(VERSION, &cache, DistributionContext::FirstParty).await;
+        let result: Result<Bundle, AppError> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
 
         assert!(result.is_err());
     }
