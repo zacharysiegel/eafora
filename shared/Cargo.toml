@@ -6,11 +6,6 @@ publish = false
 
 [lib]
 
-# Exposes the test-only enum variants (e.g. StatisticKind::TestAlpha) to dependent crates' test
-# builds; a plain cfg(test) gate only applies when `shared` itself is the crate under test.
-[features]
-testing = []
-
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

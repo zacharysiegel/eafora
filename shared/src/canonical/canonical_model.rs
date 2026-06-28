@@ -74,7 +74,6 @@ pub struct DataSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StatisticKind {
     Tfr,
-    #[cfg(any(test, feature = "testing"))]
     TestAlpha,
 }
 
@@ -82,7 +81,6 @@ impl StatisticKind {
     pub fn code(self) -> &'static str {
         match self {
             StatisticKind::Tfr => "tfr",
-            #[cfg(any(test, feature = "testing"))]
             StatisticKind::TestAlpha => "_test_alpha",
         }
     }
@@ -94,7 +92,10 @@ impl TryFrom<&str> for StatisticKind {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "tfr" => Ok(StatisticKind::Tfr),
-            #[cfg(any(test, feature = "testing"))]
+            // Parse arm gated to test: the variant exists for test construction, but a
+            // production build must reject "_test_alpha" as an unknown code (serde Deserialize
+            // routes through this TryFrom).
+            #[cfg(test)]
             "_test_alpha" => Ok(StatisticKind::TestAlpha),
             other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
@@ -109,9 +110,7 @@ impl_code_serde!(StatisticKind, code);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DataSourceKind {
     WorldBankWDI,
-    #[cfg(any(test, feature = "testing"))]
     TestAlpha,
-    #[cfg(any(test, feature = "testing"))]
     TestBeta,
 }
 
@@ -119,9 +118,7 @@ impl DataSourceKind {
     pub fn code(self) -> &'static str {
         match self {
             DataSourceKind::WorldBankWDI => "wb_wdi",
-            #[cfg(any(test, feature = "testing"))]
             DataSourceKind::TestAlpha => "_test_alpha",
-            #[cfg(any(test, feature = "testing"))]
             DataSourceKind::TestBeta => "_test_beta",
         }
     }
@@ -133,9 +130,12 @@ impl TryFrom<&str> for DataSourceKind {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "wb_wdi" => Ok(DataSourceKind::WorldBankWDI),
-            #[cfg(any(test, feature = "testing"))]
+            // Parse arms gated to test: the variants exist for test construction, but a
+            // production build must reject these codes as unknown (serde Deserialize routes
+            // through this TryFrom).
+            #[cfg(test)]
             "_test_alpha" => Ok(DataSourceKind::TestAlpha),
-            #[cfg(any(test, feature = "testing"))]
+            #[cfg(test)]
             "_test_beta" => Ok(DataSourceKind::TestBeta),
             other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
