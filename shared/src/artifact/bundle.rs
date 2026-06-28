@@ -150,7 +150,10 @@ mod tests {
         cache
     }
 
-    #[tokio::test]
+    // Host: tokio runtime drives the async test. wasm32: wasm-bindgen-futures drives it in the
+    // browser (no tokio runtime on wasm32). Same body; the attribute is target-split.
+    #[cfg_attr(not(target_arch = "wasm32"), tokio::test)]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     async fn bundle_open_round_trip_against_mock_cache() {
         let cache: MockArtifactCache = seeded_mock().await;
 

@@ -117,3 +117,38 @@ pub fn load_hashed_file(
 
     Ok(hashed)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE_BYTES: &[u8] = b"eafora fertility atlas";
+
+    #[test]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn verify_sha256_accepts_matching_hash() {
+        let expected_hex: String = sha256_hex(SAMPLE_BYTES);
+
+        verify_sha256(SAMPLE_BYTES, &expected_hex).unwrap();
+    }
+
+    #[test]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn verify_sha256_rejects_mismatch_with_truncated_prefixes() {
+        let wrong_hex: String = sha256_hex(b"a different payload");
+
+        let error: AppError = verify_sha256(SAMPLE_BYTES, &wrong_hex).unwrap_err();
+
+        let message: String = error.to_string();
+        assert!(message.contains(&wrong_hex[..8]));
+        assert!(message.contains(&sha256_hex(SAMPLE_BYTES)[..8]));
+    }
+
+    #[test]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn verify_sha256_is_case_insensitive() {
+        let expected_hex: String = sha256_hex(SAMPLE_BYTES).to_uppercase();
+
+        verify_sha256(SAMPLE_BYTES, &expected_hex).unwrap();
+    }
+}

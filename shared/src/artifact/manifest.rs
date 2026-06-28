@@ -93,6 +93,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn parse_manifest_round_trips_fixture_set() {
         let manifest: Manifest = parse_manifest(valid_manifest_json().as_bytes()).unwrap();
 
