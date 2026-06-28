@@ -21,7 +21,6 @@ dotenvy = "0.15.*"
 minimer = "2.1.*"
 secr = "1.2.*"
 rusqlite = { version = "0.32.*", features = ["bundled"] }
-sqlite-wasm-rs = { version = "0.4.*", default-features = false, features = ["precompiled"] }
 flatgeobuf = "4.6.*"
 shapefile = { version = "0.7.*", features = ["geo-types"] }
 zip = "4.5.*"
@@ -34,7 +33,4 @@ const_format = "0.2.*"
 geozero = { version = "0.14.*", default-features = false, features = ["with-geo"] }
 geo-types = "0.7.*"
 tempfile = "3.27.*"
-wasm-bindgen = "0.2.*"
-wasm-bindgen-futures = "0.4.*"
 wasm-bindgen-test = "0.3.*"
-js-sys = "0.3.*"

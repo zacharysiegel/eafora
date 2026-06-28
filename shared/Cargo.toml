@@ -24,13 +24,11 @@ const_format = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { workspace = true }
 
-# wasm32 only: sqlite-wasm-rs + the wasm-bindgen glue replace the rusqlite stack used elsewhere.
+# wasm32 only: uuid's `js` feature gives getrandom a browser RNG backend so the workspace-wide
+# `v7` feature compiles for wasm32-unknown-unknown. shared uses Uuid only as a field type, but the
+# dependency graph still needs a wasm getrandom backend to build.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { workspace = true, features = ["js"] }
-sqlite-wasm-rs = { workspace = true }
-wasm-bindgen = { workspace = true }
-wasm-bindgen-futures = { workspace = true }
-js-sys = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
