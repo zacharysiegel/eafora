@@ -1,4 +1,4 @@
-# Specification Quality Checklist: core/ — renderer layer
+# Specification Quality Checklist: shared/ — renderer layer
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-06-22
@@ -64,6 +64,6 @@
 - All checklist items pass on first iteration.
 - Zero `[NEEDS CLARIFICATION]` markers. Every potentially-ambiguous decision had a load-bearing default in the architecture docs or in the existing producer-side implementation.
 - 006 stacks on 005-core-data per the constitution's §Branch per body of work rule because 006's `Renderer::new` takes a `tokio::sync::watch::Receiver<Arc<Bundle>>` that 005 introduces; if these were unrelated, both could branch off master, but the type dependency forces the stack.
-- The `core::ffi::wasm` and `core::ffi::uniffi` modules are deliberately deferred to the per-platform implementation features (003 / 004) because the consuming code lives in those platforms and the FFI shapes are platform-specific.
+- The `shared::ffi::wasm` and `shared::ffi::uniffi` modules are deliberately deferred to the per-platform implementation features (003 / 004) because the consuming code lives in those platforms and the FFI shapes are platform-specific.
 - The hover-scale animation curve is deferred per the design doc's v1-no-animation rule; the `hover_scale` pipeline still ships (it renders the discrete hovered vs not-hovered visual state) but the easing curve is a v2+ concern.
 - Spec is ready for `/speckit-clarify` (if reviewer surfaces ambiguity) or `/speckit-plan`. Per `feedback_spec_and_plan_same_pr.md`, both land in the same PR.
