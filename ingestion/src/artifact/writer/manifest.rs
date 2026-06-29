@@ -27,7 +27,7 @@ pub fn write_manifest(
     let path: PathBuf = artifact_dir.join(manifest::MANIFEST_FILENAME);
     fs::write(&path, &json)?;
 
-    let byte_count: u64 = json.as_bytes().len() as u64;
+    let byte_count: u64 = json.len() as u64;
 
     Ok(Hashed::new(FileReference { path, byte_count }, json.as_bytes()))
 }

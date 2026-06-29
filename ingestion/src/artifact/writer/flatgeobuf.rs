@@ -119,9 +119,11 @@ fn build_tmp_geometry_path(artifact_dir: &Path) -> Result<PathBuf, AppError> {
     Ok(geometry_dir.join(format!("{}.tmp-{}.{}", geometry::GEOMETRY_FILENAME_STEM, tmp_uuid, geometry::GEOMETRY_FILENAME_EXTENSION)))
 }
 
+type ShapefileReader<'a> = Reader<Cursor<&'a [u8]>, Cursor<&'a [u8]>>;
+
 fn build_shapefile_reader<'a>(
     shapefile_bytes: &'a ShapefileBytes,
-) -> Result<Reader<Cursor<&'a [u8]>, Cursor<&'a [u8]>>, AppError> {
+) -> Result<ShapefileReader<'a>, AppError> {
     let shape_cursor: Cursor<&'a [u8]> = Cursor::new(shapefile_bytes.shp.as_slice());
     let shx_cursor: Cursor<&'a [u8]> = Cursor::new(shapefile_bytes.shx.as_slice());
     let dbf_cursor: Cursor<&'a [u8]> = Cursor::new(shapefile_bytes.dbf.as_slice());

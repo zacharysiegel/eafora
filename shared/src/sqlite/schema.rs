@@ -102,7 +102,7 @@ mod tests {
 
         let table_count: i64 = connection
             .query_row(
-                &formatcp!("select count(*) from sqlite_master where type = 'table' and name in ('{TABLE_SHARD_KEY}', '{TABLE_STATISTIC_VALUE}')"),
+                formatcp!("select count(*) from sqlite_master where type = 'table' and name in ('{TABLE_SHARD_KEY}', '{TABLE_STATISTIC_VALUE}')"),
                 [],
                 |row| row.get(0),
             )
@@ -111,7 +111,7 @@ mod tests {
 
         let index_count: i64 = connection
             .query_row(
-                &formatcp!("select count(*) from sqlite_master where type = 'index' and name = '{INDEX_STATISTIC_VALUE_BY_REGION}'"),
+                formatcp!("select count(*) from sqlite_master where type = 'index' and name = '{INDEX_STATISTIC_VALUE_BY_REGION}'"),
                 [],
                 |row| row.get(0),
             )
@@ -120,7 +120,7 @@ mod tests {
 
         let region_iso3_count: i64 = connection
             .query_row(
-                &formatcp!("select count(*) from pragma_table_info('{TABLE_STATISTIC_VALUE}') where name = '{COL_REGION_ISO3}'"),
+                formatcp!("select count(*) from pragma_table_info('{TABLE_STATISTIC_VALUE}') where name = '{COL_REGION_ISO3}'"),
                 [],
                 |row| row.get(0),
             )

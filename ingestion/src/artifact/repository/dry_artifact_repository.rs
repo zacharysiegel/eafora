@@ -5,6 +5,12 @@ use crate::error::AppError;
 
 pub struct DryArtifactRepository {}
 
+impl Default for DryArtifactRepository {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DryArtifactRepository {
     pub fn new() -> Self {
         DryArtifactRepository {}

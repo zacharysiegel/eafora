@@ -213,7 +213,7 @@ fn assert_geometry_fgb_well_formed(path: &std::path::Path) {
     assert_eq!(header.geometry_type(), GeometryType::MultiPolygon);
     let features_count: u64 = header.features_count();
     assert!(
-        features_count >= 200 && features_count <= 300,
+        (200..=300).contains(&features_count),
         "feature count {} outside expected admin-0 range [200, 300]",
         features_count,
     );

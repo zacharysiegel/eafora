@@ -66,7 +66,7 @@ pub async fn build_artifacts(
 async fn create_statistic_shards(
     connection: &mut PgConnection,
     artifact_dir: &Path,
-    source_choices: &Vec<SourceChoice>,
+    source_choices: &[SourceChoice],
     statistic_kinds: BTreeSet<StatisticKind>,
 ) -> Result<(Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>), AppError> {
     let mut shards: Vec<StatisticShard<Hashed<FileReference>>> = Vec::new();
@@ -87,7 +87,7 @@ async fn create_statistic_shards(
             data_sources.insert(candidate.data_source_kind);
         }
 
-        let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, &source_choices)?;
+        let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, source_choices)?;
         let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &artifact_dir.join(manifest::SUBDIR_DATA))?;
         let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!(

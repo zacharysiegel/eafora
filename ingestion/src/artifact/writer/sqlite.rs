@@ -25,10 +25,10 @@ pub fn write_sqlite_shards(
     values: &[ResolvedValue],
     data_dir: &Path,
 ) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
-    fs::create_dir_all(&data_dir)?;
+    fs::create_dir_all(data_dir)?;
 
     let groups: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = group_values(values);
-    let shards: Vec<StatisticShard<FileReference>> = shard_values(&data_dir, groups)?;
+    let shards: Vec<StatisticShard<FileReference>> = shard_values(data_dir, groups)?;
     Ok(shards)
 }
 
@@ -43,7 +43,7 @@ fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<StatisticShardKey, Vec<&
 fn shard_values(data_dir: &Path, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
     let mut shards: Vec<StatisticShard<FileReference>> = Vec::with_capacity(grouped.len());
     for (shard_key, values) in grouped {
-        let file: FileReference = write_one_shard(&data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
+        let file: FileReference = write_one_shard(data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
         shards.push(StatisticShard {
             key: shard_key,
             file,

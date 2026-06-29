@@ -5,6 +5,16 @@ members = ["shared", "ingestion", "tools/seed_generator"]
 [workspace.package]
 edition = "2024"
 
+# These clippy lints fight deliberate project conventions, so they are allowed workspace-wide.
+# Members opt in with `lints.workspace = true`.
+#   module_inception: the `mod.rs`-holds-only-declarations + `<parent>/<parent>.rs` layout means a
+#     module legitimately contains a submodule of the same name (e.g. `artifact/mod.rs` -> `pub mod artifact;`).
+#   explicit_auto_deref: db helpers thread `&mut *tx` through every call per the sqlx transaction
+#     convention; clippy would rewrite that to `&mut tx` and rely on deref coercion.
+[workspace.lints.clippy]
+module_inception = "allow"
+explicit_auto_deref = "allow"
+
 [workspace.dependencies]
 shared = { path = "shared" }
 tokio = { version = "1.52.*", default-features = false }
