@@ -38,7 +38,6 @@ mod tests {
 }"#;
 
     #[test]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn parse_discovery_document_round_trips_fixture() {
         let document: DiscoveryDocument = parse_discovery_document(VALID_DISCOVERY_JSON.as_bytes()).unwrap();
 

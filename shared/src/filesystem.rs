@@ -125,7 +125,6 @@ mod tests {
     const SAMPLE_BYTES: &[u8] = b"eafora fertility atlas";
 
     #[test]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn verify_sha256_accepts_matching_hash() {
         let expected_hex: String = sha256_hex(SAMPLE_BYTES);
 
@@ -133,7 +132,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn verify_sha256_rejects_mismatch_with_truncated_prefixes() {
         let wrong_hex: String = sha256_hex(b"a different payload");
 
@@ -145,7 +143,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn verify_sha256_is_case_insensitive() {
         let expected_hex: String = sha256_hex(SAMPLE_BYTES).to_uppercase();
 

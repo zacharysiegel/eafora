@@ -15,8 +15,6 @@ pub use sqlite::*;
 
 pub use error::AppError;
 
-// Routes the target-agnostic #[wasm_bindgen_test] cases (gated via cfg_attr in each module's
-// test block) through a headless browser, so the same parse/verify/bundle logic is exercised on
-// wasm32, not just the host. Run with `wasm-pack test --headless --chrome --package shared`.
+// wasm32 only: configures wasm-bindgen-test to run #[wasm_bindgen_test] cases in a headless browser.
 #[cfg(all(test, target_arch = "wasm32"))]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);

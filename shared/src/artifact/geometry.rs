@@ -177,6 +177,8 @@ pub(crate) mod tests {
         include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/one-feature.fgb")).to_vec()
     }
 
+    // flatgeobuf/geozero can compile for wasm yet trap at runtime (e.g. filesystem access), so a
+    // green `cargo check --target wasm32` doesn't prove the reader runs there; this checks it does.
     #[test]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn parse_geometry_layer_parses_known_fixture() {
