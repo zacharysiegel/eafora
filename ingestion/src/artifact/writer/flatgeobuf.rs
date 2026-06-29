@@ -45,6 +45,8 @@ struct Column {
     name: &'static str,
 }
 
+type ShapefileReader<'a> = Reader<Cursor<&'a [u8]>, Cursor<&'a [u8]>>;
+
 pub async fn write_geometry<'e>(
     executor: impl PgExecutor<'e>,
     artifact_dir: &Path,
@@ -118,8 +120,6 @@ fn build_tmp_geometry_path(artifact_dir: &Path) -> Result<PathBuf, AppError> {
     let tmp_uuid: Uuid = Uuid::now_v7();
     Ok(geometry_dir.join(format!("{}.tmp-{}.{}", geometry::GEOMETRY_FILENAME_STEM, tmp_uuid, geometry::GEOMETRY_FILENAME_EXTENSION)))
 }
-
-type ShapefileReader<'a> = Reader<Cursor<&'a [u8]>, Cursor<&'a [u8]>>;
 
 fn build_shapefile_reader<'a>(
     shapefile_bytes: &'a ShapefileBytes,
