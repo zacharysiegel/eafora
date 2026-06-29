@@ -58,24 +58,29 @@ The `shared` crate's wasm32 tests run in a real headless browser via
 - `wasm-pack` — drives the wasm test harness (installs `wasm-bindgen-cli` and the
   test runner on first use). Install with `cargo install wasm-pack`.
 - Google Chrome (or Chromium) — the headless browser the tests run in.
-- `chromedriver` — must match the installed Chrome's **major** version.
-  Homebrew's `chromedriver` cask tends to track the newest Chrome and skew ahead
-  of a slightly older installed Chrome, so install the version-matched driver
-  from Chrome for Testing instead. Resolve the URL for your Chrome milestone at
-  https://googlechromelabs.github.io/chrome-for-testing/ , then, for example on
-  Apple Silicon:
+- `chromedriver` — drives the headless browser. Treat it like any other tool: it
+  must be on your `PATH`, and its **major** version must match the installed
+  Chrome (`wasm-pack` finds it on `PATH` automatically). Homebrew's `chromedriver`
+  cask tends to track the newest Chrome and skew ahead of a slightly older
+  installed Chrome, so install the version-matched driver from Chrome for Testing
+  instead. Resolve the URL for your Chrome milestone at
+  https://googlechromelabs.github.io/chrome-for-testing/ , then install it into a
+  directory on your `PATH` (the example uses `~/.local/bin`; pick any `PATH`
+  directory). For example on Apple Silicon:
 
   ```sh
-  cd /tmp && curl -sSL -o chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/<version>/mac-arm64/chromedriver-mac-arm64.zip" && unzip -o chromedriver.zip && mkdir -p ~/.local/bin && mv -f chromedriver-mac-arm64/chromedriver ~/.local/bin/chromedriver && codesign --force --sign - ~/.local/bin/chromedriver && ~/.local/bin/chromedriver --version
+  cd /tmp && curl -sSL -o chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/<version>/mac-arm64/chromedriver-mac-arm64.zip" && unzip -o chromedriver.zip && mkdir -p ~/.local/bin && mv -f chromedriver-mac-arm64/chromedriver ~/.local/bin/chromedriver && codesign --force --sign - ~/.local/bin/chromedriver && chromedriver --version
   ```
 
-  Run the tests from the `shared` directory (`wasm-pack` needs a package
-  manifest, not the workspace root). If `chromedriver` is not on `PATH`, point at
-  it with `CHROMEDRIVER`:
+Run the wasm tests with the wrapper script, which runs from `shared/` (`wasm-pack`
+needs a package manifest, not the workspace root) and forwards extra arguments to
+`wasm-pack`:
 
-  ```sh
-  cd shared && CHROMEDRIVER="$HOME/.local/bin/chromedriver" wasm-pack test --headless --chrome
-  ```
+```sh
+./scripts/test-wasm.sh
+```
+
+It is equivalent to `cd shared && wasm-pack test --headless --chrome`.
 
 ## Contribution workflow
 
@@ -110,7 +115,7 @@ Spec Kit.
   work offline). Running `ingestion`'s integration tests does require a database
   (`scripts/setup-test-db.sh` provisions `eafora_test`).
 - Routine verification commands: `cargo test --workspace` (host) and
-  `cd shared && wasm-pack test --headless --chrome` (wasm32).
+  `./scripts/test-wasm.sh` (wasm32).
 - A Nix-based reproducible dev environment is under consideration; see
   `docs/research/nix-reproducible-dev.md`. It would subsume most of this list,
   but is not yet adopted.
