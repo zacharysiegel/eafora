@@ -3,6 +3,7 @@ pub mod canonical;
 pub mod error;
 pub mod filesystem;
 pub mod license;
+pub mod map;
 pub mod revision;
 pub mod sqlite;
 
@@ -10,6 +11,7 @@ pub use artifact::*;
 pub use canonical::*;
 pub use filesystem::*;
 pub use license::*;
+pub use map::*;
 pub use revision::*;
 pub use sqlite::*;
 
