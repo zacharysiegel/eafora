@@ -143,6 +143,19 @@ fn open_and_read_shard(vfs_filename: &str) -> Result<ShardValues, AppError> {
     result
 }
 
+/// Owns a prepared statement and finalizes it on drop, so every early return releases it.
+#[cfg(target_arch = "wasm32")]
+struct Statement {
+    handle: *mut sqlite_wasm_rs::sqlite3_stmt,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl Drop for Statement {
+    fn drop(&mut self) {
+        unsafe { sqlite_wasm_rs::sqlite3_finalize(self.handle) };
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppError> {
     use std::ffi::CString;
@@ -160,23 +173,26 @@ fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppErr
     ))
     .unwrap();
 
-    let mut statement: *mut ffi::sqlite3_stmt = std::ptr::null_mut();
+    let mut raw_statement: *mut ffi::sqlite3_stmt = std::ptr::null_mut();
     let prepare_rc: std::os::raw::c_int =
-        unsafe { ffi::sqlite3_prepare_v2(db, query.as_ptr(), -1, &mut statement, std::ptr::null_mut()) };
+        unsafe { ffi::sqlite3_prepare_v2(db, query.as_ptr(), -1, &mut raw_statement, std::ptr::null_mut()) };
     if prepare_rc != ffi::SQLITE_OK {
-        return Err(AppError::from(format!("shard_db: prepare failed: {}", ffi_conversions::error_message(db))));
+        let message: String = ffi_conversions::error_message(db);
+        return Err(AppError::from(format!("shard_db: prepare failed: {message}")));
     }
+
+    let statement: Statement = Statement { handle: raw_statement };
 
     let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
     let mut min: f64 = f64::INFINITY;
     let mut max: f64 = f64::NEG_INFINITY;
 
     loop {
-        let step_rc: std::os::raw::c_int = unsafe { ffi::sqlite3_step(statement) };
+        let step_rc: std::os::raw::c_int = unsafe { ffi::sqlite3_step(statement.handle) };
         if step_rc == ffi::SQLITE_ROW {
-            let region_iso3: String = ffi_conversions::column_text(statement, 0)?;
-            let period_start: String = ffi_conversions::column_text(statement, 1)?;
-            let value: f64 = unsafe { ffi::sqlite3_column_double(statement, 2) };
+            let region_iso3: String = ffi_conversions::column_text(statement.handle, 0)?;
+            let period_start: String = ffi_conversions::column_text(statement.handle, 1)?;
+            let value: f64 = unsafe { ffi::sqlite3_column_double(statement.handle, 2) };
             let period: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                 .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
 
@@ -187,12 +203,9 @@ fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppErr
             break;
         } else {
             let message: String = ffi_conversions::error_message(db);
-            unsafe { ffi::sqlite3_finalize(statement) };
             return Err(AppError::from(format!("shard_db: step failed: {message}")));
         }
     }
-
-    unsafe { ffi::sqlite3_finalize(statement) };
 
     Ok(ShardValues { by_region, min, max })
 }
