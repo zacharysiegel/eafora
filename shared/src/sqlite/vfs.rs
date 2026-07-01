@@ -1,17 +1,14 @@
-//! Read-only SQLite VFS backed by an in-memory byte buffer — a statistic shard's bytes.
+//! Read-only SQLite VFS that serves a statistic shard's bytes from an in-memory buffer.
 //!
-//! Why this exists: the renderer queries statistic shards, which arrive as in-memory SQLite
-//! database images on the bundle (`bundle.shard_bytes: BTreeMap<_, Vec<u8>>`). On wasm32 there is
-//! no filesystem, so SQLite's default (unix) VFS cannot open them; and Eafora renders
-//! single-threaded on the main thread with no `SharedArrayBuffer`, so the OPFS-backed `sahpool` VFS
-//! (which needs a Worker's `FileSystemSyncAccessHandle`) is unavailable too. This VFS lets SQLite
-//! read a shard's bytes directly from memory. It is the wasm counterpart to the native reader,
-//! which uses rusqlite's `deserialize`; native does not compile or need this module.
+//! A shard is loaded entirely into memory as a SQLite database image (`bundle.shard_bytes:
+//! BTreeMap<_, Vec<u8>>`). SQLite reads a database through a VFS, so this module is the facade that
+//! hands SQLite that in-memory buffer. It is the wasm32 counterpart to the non-wasm32 path, which
+//! serves the same bytes through rusqlite's `deserialize`.
 //!
 //! Read-only because shards are content-addressed and immutable. Built on `sqlite-wasm-rs`'s
 //! `SQLiteVfs` / `SQLiteIoMethods` framework, which owns the raw `sqlite3_vfs` C ABI; this module
-//! only implements the safe-side trait impls. Note the framework's app-data is `'static`, so the
-//! VFS holds an owned copy of each shard's bytes — the value here is encapsulating the byte-serving
+//! only implements the safe-side trait impls. The framework's app-data is `'static`, so the VFS
+//! holds an owned copy of each shard's bytes; the value here is encapsulating the byte-serving
 //! behind trait impls, not avoiding a copy.
 
 use std::cell::RefCell;

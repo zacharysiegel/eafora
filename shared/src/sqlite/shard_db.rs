@@ -1,10 +1,9 @@
-//! Load a statistic shard's values into memory. A shard is one (statistic, license class)'s time
-//! series across regions and periods; the renderer loads it once per bundle swap and then looks up
-//! values per (country, period) from the in-memory map — no per-frame SQLite.
+//! Load a statistic shard's bytes into an in-memory `(region, period) -> value` map with its
+//! min/max value range precomputed.
 //!
-//! Native reads the shard's in-memory bytes through rusqlite's `deserialize` (a safe `Connection`
-//! over a SQLite-owned copy of the buffer); the wasm32 loader (raw `sqlite3_deserialize` against
-//! `sqlite-wasm-rs`) lands in a later increment behind the same `load_shard` signature.
+//! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
+//! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::vfs`. Both sit behind
+//! one `load_shard` signature.
 
 use std::collections::HashMap;
 
@@ -13,7 +12,7 @@ use chrono::NaiveDate;
 use crate::error::AppError;
 
 /// The values of one statistic shard, keyed by country ISO 3166 alpha-3 and period, with the
-/// value range precomputed for the choropleth color scale.
+/// min/max value range precomputed.
 #[derive(Debug, Clone)]
 pub struct ShardValues {
     by_region: HashMap<String, HashMap<NaiveDate, f64>>,
@@ -37,7 +36,7 @@ impl ShardValues {
 
 /// Read every `(region_iso3, period_start, value)` row of a statistic shard into a [`ShardValues`].
 /// The shard's SQLite header is validated before any query per [`crate::sqlite::schema::validate_shard_header`].
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: rusqlite doesn't compile there; the wasm loader lands separately
+#[cfg(not(target_arch = "wasm32"))] // not for wasm32: rusqlite doesn't compile there
 pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
     use crate::sqlite::schema;
 
@@ -234,8 +233,8 @@ mod tests {
 
     use crate::sqlite::schema;
 
-    /// Build a real shard in memory via the shared DDL, then serialize it to bytes — so the loader
-    /// round-trip is tested against the actual schema without committing an opaque binary.
+    /// Build a real shard in memory via the shared DDL, then serialize it to bytes. The loader
+    /// round-trip is then tested against the actual schema without committing an opaque binary.
     fn sample_shard_bytes() -> Vec<u8> {
         let connection: Connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(schema::shard_schema_ddl()).unwrap();
