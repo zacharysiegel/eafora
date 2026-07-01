@@ -2,7 +2,7 @@
 //! min/max value range precomputed.
 //!
 //! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
-//! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::vfs`. Both sit behind
+//! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::ro_memory_vfs`. Both sit behind
 //! one `load_shard` signature.
 
 use std::collections::HashMap;
@@ -108,11 +108,11 @@ fn deserialize_read_only(bytes: &[u8]) -> Result<rusqlite::Connection, AppError>
 /// query wrapper. Same result shape as the native path.
 #[cfg(target_arch = "wasm32")]
 pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
-    use crate::sqlite::vfs;
+    use crate::sqlite::ro_memory_vfs;
 
-    let filename: String = vfs::register_shard(bytes);
+    let filename: String = ro_memory_vfs::register_shard(bytes);
     let result: Result<ShardValues, AppError> = query_registered_shard(&filename);
-    vfs::unregister_shard(&filename);
+    ro_memory_vfs::unregister_shard(&filename);
 
     result
 }
@@ -123,13 +123,13 @@ fn query_registered_shard(vfs_filename: &str) -> Result<ShardValues, AppError> {
 
     use sqlite_wasm_rs as ffi;
 
-    use crate::sqlite::vfs;
+    use crate::sqlite::ro_memory_vfs;
 
     let filename: CString = CString::new(vfs_filename).unwrap();
     let mut db: *mut ffi::sqlite3 = std::ptr::null_mut();
 
     let open_rc: std::os::raw::c_int =
-        unsafe { ffi::sqlite3_open_v2(filename.as_ptr(), &mut db, ffi::SQLITE_OPEN_READONLY, vfs::VFS_NAME.as_ptr()) };
+        unsafe { ffi::sqlite3_open_v2(filename.as_ptr(), &mut db, ffi::SQLITE_OPEN_READONLY, ro_memory_vfs::VFS_NAME.as_ptr()) };
     if open_rc != ffi::SQLITE_OK {
         let message: String = errmsg(db);
         unsafe { ffi::sqlite3_close(db) };
