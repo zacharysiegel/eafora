@@ -20,7 +20,7 @@
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
 
-> SC-001 through SC-006 are verifiable via build / test output (compile success, projection round-trip tolerance, test pass count) or via downstream-PR import resolution and manual visual checks once 003 / 004 land.
+> SC-001 through SC-006 are verifiable via build / test output (compile success, projection round-trip tolerance, test pass count) or via downstream-PR import resolution and manual visual checks once 003 / 004 ship.
 
 - [x] All acceptance scenarios are defined
 - [x] Edge cases are identified
@@ -66,4 +66,4 @@
 - 006 stacks on 005-core-data per the constitution's §Branch per body of work rule because 006's `Renderer::new` takes a `tokio::sync::watch::Receiver<Arc<Bundle>>` that 005 introduces; if these were unrelated, both could branch off master, but the type dependency forces the stack.
 - The `shared::ffi::wasm` and `shared::ffi::uniffi` modules are deliberately deferred to the per-platform implementation features (003 / 004) because the consuming code lives in those platforms and the FFI shapes are platform-specific.
 - The hover-scale animation curve is deferred per the design doc's v1-no-animation rule; the `hover_scale` pipeline still ships (it renders the discrete hovered vs not-hovered visual state) but the easing curve is a v2+ concern.
-- Spec is ready for `/speckit-clarify` (if reviewer surfaces ambiguity) or `/speckit-plan`. Per `feedback_spec_and_plan_same_pr.md`, both land in the same PR.
+- Spec is ready for `/speckit-clarify` (if reviewer surfaces ambiguity) or `/speckit-plan`. Per `feedback_spec_and_plan_same_pr.md`, both ship in the same PR.
