@@ -1,15 +1,6 @@
-//! Read-only SQLite VFS that serves a statistic shard's bytes from an in-memory buffer.
-//!
-//! A shard is loaded entirely into memory as a SQLite database image (`bundle.shard_bytes:
-//! BTreeMap<_, Vec<u8>>`). SQLite reads a database through a VFS, so this module is the facade that
-//! hands SQLite that in-memory buffer. It is the wasm32 counterpart to the non-wasm32 path, which
-//! serves the same bytes through rusqlite's `deserialize`.
-//!
-//! Read-only because shards are content-addressed and immutable. Built on `sqlite-wasm-rs`'s
-//! `SQLiteVfs` / `SQLiteIoMethods` framework, which owns the raw `sqlite3_vfs` C ABI; this module
-//! only implements the safe-side trait impls. The framework's app-data is `'static`, so the VFS
-//! holds an owned copy of each shard's bytes; the value here is encapsulating the byte-serving
-//! behind trait impls, not avoiding a copy.
+//! Read-only SQLite VFS that lets SQLite read a shard's bytes from an in-memory buffer: the wasm32
+//! counterpart to the non-wasm32 path's rusqlite `deserialize`. Read-only because shards are
+//! immutable. Built on `sqlite-wasm-rs`'s `SQLiteVfs` framework.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
