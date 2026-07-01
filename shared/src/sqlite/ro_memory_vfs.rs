@@ -61,9 +61,8 @@ type ShardAppData = RefCell<HashMap<String, ReadOnlyShardFile>>;
 struct ShardStore;
 
 impl VfsStore<ReadOnlyShardFile, ShardAppData> for ShardStore {
+    /// Rejects: this read-only store never creates files; shards are added via `register_shard`.
     fn add_file(_vfs: *mut sqlite3_vfs, file: &str, _flags: i32) -> VfsResult<()> {
-        // Unreachable: shards are pre-registered by `open_shard` and opened READONLY (no CREATE),
-        // so xOpen finds the existing file and never asks the store to create one.
         Err(VfsError::new(SQLITE_READONLY, format!("cannot create {file} in the read-only shard VFS")))
     }
 
@@ -72,6 +71,7 @@ impl VfsStore<ReadOnlyShardFile, ShardAppData> for ShardStore {
         Ok(app_data.borrow().contains_key(file))
     }
 
+    /// The store's `xDelete` / `xClose` delete hook; succeeds whether or not the file is present.
     fn delete_file(vfs: *mut sqlite3_vfs, file: &str) -> VfsResult<()> {
         let app_data: &VfsAppData<ShardAppData> = unsafe { Self::app_data(vfs) };
         app_data.borrow_mut().remove(file);
