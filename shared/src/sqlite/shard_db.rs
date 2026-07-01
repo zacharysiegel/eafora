@@ -111,19 +111,19 @@ pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
     use crate::sqlite::ro_memory_vfs;
 
     let filename: String = ro_memory_vfs::register_shard(bytes);
-    let result: Result<ShardValues, AppError> = query_registered_shard(&filename);
+    let result: Result<ShardValues, AppError> = open_and_read_shard(&filename);
     ro_memory_vfs::unregister_shard(&filename);
 
     result
 }
 
 #[cfg(target_arch = "wasm32")]
-fn query_registered_shard(vfs_filename: &str) -> Result<ShardValues, AppError> {
+fn open_and_read_shard(vfs_filename: &str) -> Result<ShardValues, AppError> {
     use std::ffi::CString;
 
     use sqlite_wasm_rs as ffi;
 
-    use crate::sqlite::ro_memory_vfs;
+    use crate::sqlite::{ffi_conversions, ro_memory_vfs};
 
     let filename: CString = CString::new(vfs_filename).unwrap();
     let mut db: *mut ffi::sqlite3 = std::ptr::null_mut();
@@ -131,7 +131,7 @@ fn query_registered_shard(vfs_filename: &str) -> Result<ShardValues, AppError> {
     let open_rc: std::os::raw::c_int =
         unsafe { ffi::sqlite3_open_v2(filename.as_ptr(), &mut db, ffi::SQLITE_OPEN_READONLY, ro_memory_vfs::VFS_NAME.as_ptr()) };
     if open_rc != ffi::SQLITE_OK {
-        let message: String = errmsg(db);
+        let message: String = ffi_conversions::error_message(db);
         unsafe { ffi::sqlite3_close(db) };
         return Err(AppError::from(format!("shard_db: open failed: {message}")));
     }
@@ -149,7 +149,7 @@ fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppErr
 
     use sqlite_wasm_rs as ffi;
 
-    use crate::sqlite::schema;
+    use crate::sqlite::{ffi_conversions, schema};
 
     let query: CString = CString::new(format!(
         "select {}, {}, {} from {}",
@@ -164,7 +164,7 @@ fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppErr
     let prepare_rc: std::os::raw::c_int =
         unsafe { ffi::sqlite3_prepare_v2(db, query.as_ptr(), -1, &mut statement, std::ptr::null_mut()) };
     if prepare_rc != ffi::SQLITE_OK {
-        return Err(AppError::from(format!("shard_db: prepare failed: {}", errmsg(db))));
+        return Err(AppError::from(format!("shard_db: prepare failed: {}", ffi_conversions::error_message(db))));
     }
 
     let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
@@ -174,8 +174,8 @@ fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppErr
     loop {
         let step_rc: std::os::raw::c_int = unsafe { ffi::sqlite3_step(statement) };
         if step_rc == ffi::SQLITE_ROW {
-            let region_iso3: String = column_text(statement, 0)?;
-            let period_start: String = column_text(statement, 1)?;
+            let region_iso3: String = ffi_conversions::column_text(statement, 0)?;
+            let period_start: String = ffi_conversions::column_text(statement, 1)?;
             let value: f64 = unsafe { ffi::sqlite3_column_double(statement, 2) };
             let period: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                 .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
@@ -186,7 +186,7 @@ fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppErr
         } else if step_rc == ffi::SQLITE_DONE {
             break;
         } else {
-            let message: String = errmsg(db);
+            let message: String = ffi_conversions::error_message(db);
             unsafe { ffi::sqlite3_finalize(statement) };
             return Err(AppError::from(format!("shard_db: step failed: {message}")));
         }
@@ -195,34 +195,6 @@ fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppErr
     unsafe { ffi::sqlite3_finalize(statement) };
 
     Ok(ShardValues { by_region, min, max })
-}
-
-#[cfg(target_arch = "wasm32")]
-fn column_text(statement: *mut sqlite_wasm_rs::sqlite3_stmt, index: std::os::raw::c_int) -> Result<String, AppError> {
-    use std::ffi::CStr;
-
-    let text: *const std::os::raw::c_uchar = unsafe { sqlite_wasm_rs::sqlite3_column_text(statement, index) };
-    if text.is_null() {
-        return Err(AppError::from(format!("shard_db: null text column {index}")));
-    }
-
-    let text: &CStr = unsafe { CStr::from_ptr(text as *const std::os::raw::c_char) };
-
-    text.to_str()
-        .map(|value| value.to_string())
-        .map_err(|err| AppError::from(format!("shard_db: non-utf8 text column {index}: {err}")))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn errmsg(db: *mut sqlite_wasm_rs::sqlite3) -> String {
-    use std::ffi::CStr;
-
-    let raw: *const std::os::raw::c_char = unsafe { sqlite_wasm_rs::sqlite3_errmsg(db) };
-    if raw.is_null() {
-        return "unknown sqlite error".to_string();
-    }
-
-    unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned()
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
