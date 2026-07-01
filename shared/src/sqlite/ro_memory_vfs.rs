@@ -13,7 +13,7 @@ use sqlite_wasm_rs::utils::{
 };
 use sqlite_wasm_rs::{sqlite3_vfs, sqlite3_vfs_find, sqlite3_vfs_register, SQLITE_IOERR, SQLITE_OK, SQLITE_READONLY};
 
-pub(crate) const VFS_NAME: &CStr = c"eafora-shard-ro";
+pub(crate) const VFS_NAME: &CStr = c"eafora-shard-ro-memory";
 
 struct ReadOnlyShardFile {
     bytes: Arc<Vec<u8>>,
