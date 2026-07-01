@@ -1,11 +1,10 @@
 pub mod schema;
-
-// Not for wasm32 yet: the native loader uses rusqlite; the wasm32 loader (raw sqlite-wasm-rs) lands
-// in a later increment behind the same `load_shard` signature.
-#[cfg(not(target_arch = "wasm32"))]
 pub mod shard_db;
 
-pub use schema::*;
+// wasm32 only: the read-only VFS that lets SQLite read a shard's in-memory bytes (native uses
+// rusqlite's deserialize instead). See vfs.rs for why it exists.
+#[cfg(target_arch = "wasm32")]
+pub mod vfs;
 
-#[cfg(not(target_arch = "wasm32"))]
+pub use schema::*;
 pub use shard_db::*;

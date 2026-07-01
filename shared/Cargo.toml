@@ -30,6 +30,9 @@ rusqlite = { workspace = true, features = ["serialize"] }
 # dependency graph still needs a wasm getrandom backend to build.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { workspace = true, features = ["js"] }
+# wasm32 only: the SQLite build the shard reader's read-only VFS registers against (native uses
+# rusqlite instead). See shared/src/sqlite/vfs.rs for why the VFS exists.
+sqlite-wasm-rs = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

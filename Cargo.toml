@@ -21,6 +21,7 @@ dotenvy = "0.15.*"
 minimer = "2.1.*"
 secr = "1.2.*"
 rusqlite = { version = "0.32.*", features = ["bundled"] }
+sqlite-wasm-rs = { version = "0.4.*", default-features = false, features = ["precompiled"] }
 flatgeobuf = "4.6.*"
 shapefile = { version = "0.7.*", features = ["geo-types"] }
 zip = "4.5.*"

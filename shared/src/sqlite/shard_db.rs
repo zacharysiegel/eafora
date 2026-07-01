@@ -104,6 +104,128 @@ fn deserialize_read_only(bytes: &[u8]) -> Result<rusqlite::Connection, AppError>
     Ok(connection)
 }
 
+/// wasm32 loader: open the shard's bytes through the read-only VFS (native has no such module) and
+/// step the one load-once query via the raw `sqlite3_*` FFI, since `sqlite-wasm-rs` exposes no safe
+/// query wrapper. Same result shape as the native path.
+#[cfg(target_arch = "wasm32")]
+pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
+    use crate::sqlite::vfs;
+
+    let filename: String = vfs::register_shard(bytes);
+    let result: Result<ShardValues, AppError> = query_registered_shard(&filename);
+    vfs::unregister_shard(&filename);
+
+    result
+}
+
+#[cfg(target_arch = "wasm32")]
+fn query_registered_shard(vfs_filename: &str) -> Result<ShardValues, AppError> {
+    use std::ffi::CString;
+
+    use sqlite_wasm_rs as ffi;
+
+    use crate::sqlite::vfs;
+
+    let filename: CString = CString::new(vfs_filename).unwrap();
+    let mut db: *mut ffi::sqlite3 = std::ptr::null_mut();
+
+    let open_rc: std::os::raw::c_int =
+        unsafe { ffi::sqlite3_open_v2(filename.as_ptr(), &mut db, ffi::SQLITE_OPEN_READONLY, vfs::VFS_NAME.as_ptr()) };
+    if open_rc != ffi::SQLITE_OK {
+        let message: String = errmsg(db);
+        unsafe { ffi::sqlite3_close(db) };
+        return Err(AppError::from(format!("shard_db: open failed: {message}")));
+    }
+
+    let result: Result<ShardValues, AppError> = read_all_rows(db);
+
+    unsafe { ffi::sqlite3_close(db) };
+
+    result
+}
+
+#[cfg(target_arch = "wasm32")]
+fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppError> {
+    use std::ffi::CString;
+
+    use sqlite_wasm_rs as ffi;
+
+    use crate::sqlite::schema;
+
+    let query: CString = CString::new(format!(
+        "select {}, {}, {} from {}",
+        schema::COL_REGION_ISO3,
+        schema::COL_PERIOD_START,
+        schema::COL_VALUE,
+        schema::TABLE_STATISTIC_VALUE,
+    ))
+    .unwrap();
+
+    let mut statement: *mut ffi::sqlite3_stmt = std::ptr::null_mut();
+    let prepare_rc: std::os::raw::c_int =
+        unsafe { ffi::sqlite3_prepare_v2(db, query.as_ptr(), -1, &mut statement, std::ptr::null_mut()) };
+    if prepare_rc != ffi::SQLITE_OK {
+        return Err(AppError::from(format!("shard_db: prepare failed: {}", errmsg(db))));
+    }
+
+    let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
+    let mut min: f64 = f64::INFINITY;
+    let mut max: f64 = f64::NEG_INFINITY;
+
+    loop {
+        let step_rc: std::os::raw::c_int = unsafe { ffi::sqlite3_step(statement) };
+        if step_rc == ffi::SQLITE_ROW {
+            let region_iso3: String = column_text(statement, 0)?;
+            let period_start: String = column_text(statement, 1)?;
+            let value: f64 = unsafe { ffi::sqlite3_column_double(statement, 2) };
+            let period: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
+                .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
+
+            by_region.entry(region_iso3).or_default().insert(period, value);
+            min = min.min(value);
+            max = max.max(value);
+        } else if step_rc == ffi::SQLITE_DONE {
+            break;
+        } else {
+            let message: String = errmsg(db);
+            unsafe { ffi::sqlite3_finalize(statement) };
+            return Err(AppError::from(format!("shard_db: step failed: {message}")));
+        }
+    }
+
+    unsafe { ffi::sqlite3_finalize(statement) };
+
+    Ok(ShardValues { by_region, min, max })
+}
+
+#[cfg(target_arch = "wasm32")]
+fn column_text(statement: *mut sqlite_wasm_rs::sqlite3_stmt, index: std::os::raw::c_int) -> Result<String, AppError> {
+    use std::ffi::CStr;
+
+    let text: *const std::os::raw::c_uchar = unsafe { sqlite_wasm_rs::sqlite3_column_text(statement, index) };
+    if text.is_null() {
+        return Err(AppError::from(format!("shard_db: null text column {index}")));
+    }
+
+    let text: &CStr = unsafe { CStr::from_ptr(text as *const std::os::raw::c_char) };
+
+    text.to_str()
+        .map(|value| value.to_string())
+        .map_err(|err| AppError::from(format!("shard_db: non-utf8 text column {index}: {err}")))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn errmsg(db: *mut sqlite_wasm_rs::sqlite3) -> String {
+    use std::ffi::CStr;
+
+    let raw: *const std::os::raw::c_char = unsafe { sqlite_wasm_rs::sqlite3_errmsg(db) };
+    if raw.is_null() {
+        return "unknown sqlite error".to_string();
+    }
+
+    unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned()
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
@@ -175,5 +297,37 @@ mod tests {
         let result: Result<ShardValues, AppError> = load_shard(b"not a sqlite database");
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    #[ignore = "run manually to regenerate tests/samples/tfr-sample.sqlite"]
+    fn dump_sample_shard() {
+        std::fs::write(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/tfr-sample.sqlite"),
+            sample_shard_bytes(),
+        )
+        .unwrap();
+    }
+}
+
+// The wasm loader can't build a fixture (no rusqlite there), so it reads the committed sample that
+// the native `dump_sample_shard` produced. This is the one runtime wasm test: the VFS + raw-FFI
+// query is the genuinely target-divergent surface (native goes through rusqlite instead).
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    #[wasm_bindgen_test]
+    fn load_shard_reads_committed_sample_through_the_vfs() {
+        let bytes: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/tfr-sample.sqlite"));
+
+        let shard: ShardValues = load_shard(bytes).unwrap();
+
+        assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.6));
+        assert_eq!(shard.value("DEU", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
+        assert_eq!(shard.range(), Some((1.5, 1.7)));
+        assert_eq!(shard.value("XKX", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), None);
     }
 }
