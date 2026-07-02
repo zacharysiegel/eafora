@@ -1,4 +1,4 @@
-//! Load a statistic shard's bytes into an in-memory `(region, period) -> value` map with its
+//! Load a statistic shard's bytes into an in-memory `(region, period_start) -> value` map with its
 //! min/max value range precomputed.
 //!
 //! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
-/// The values of one statistic shard, keyed by country ISO 3166 alpha-3 and period, with the
+/// The values of one statistic shard, keyed by country ISO 3166 alpha-3 and period start, with the
 /// min/max value range precomputed.
 #[derive(Debug, Clone)]
 pub struct ShardValues {
@@ -19,8 +19,8 @@ pub struct ShardValues {
 }
 
 impl ShardValues {
-    pub fn value(&self, region_iso3: &str, period: NaiveDate) -> Option<f64> {
-        self.by_region.get(region_iso3)?.get(&period).copied()
+    pub fn value(&self, region_iso3: &str, period_start: NaiveDate) -> Option<f64> {
+        self.by_region.get(region_iso3)?.get(&period_start).copied()
     }
 
     pub fn range(&self) -> Option<(f64, f64)> {
@@ -79,10 +79,10 @@ mod native {
 
         for row in row_iter {
             let (region_iso3, period_start, value): (String, String, f64) = row?;
-            let period: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
+            let period_start: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                 .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
 
-            by_region.entry(region_iso3).or_default().insert(period, value);
+            by_region.entry(region_iso3).or_default().insert(period_start, value);
             min = min.min(value);
             max = max.max(value);
         }
@@ -199,10 +199,10 @@ mod wasm {
                 let region_iso3: String = ffi_conversions::column_text(statement.handle, 0)?;
                 let period_start: String = ffi_conversions::column_text(statement.handle, 1)?;
                 let value: f64 = unsafe { sqlite_wasm_rs::sqlite3_column_double(statement.handle, 2) };
-                let period: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
+                let period_start: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                     .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
 
-                by_region.entry(region_iso3).or_default().insert(period, value);
+                by_region.entry(region_iso3).or_default().insert(period_start, value);
                 min = min.min(value);
                 max = max.max(value);
             } else if step_res == sqlite_wasm_rs::SQLITE_DONE {
