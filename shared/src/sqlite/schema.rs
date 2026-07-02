@@ -1,5 +1,9 @@
 use const_format::formatcp;
 
+// not for wasm32: the only consumer, validate_shard_header, is itself native-only
+#[cfg(not(target_arch = "wasm32"))]
+use crate::error::AppError;
+
 /// ASCII "EAFO"; written to SQLite's `application_id` PRAGMA (offset 60) so hex
 /// viewers and `file(1)` can identify Eafora shards by magic number alone.
 pub const APPLICATION_ID: i32 = 0x4541464F;
@@ -60,9 +64,7 @@ create index {INDEX_STATISTIC_VALUE_BY_REGION} on {TABLE_STATISTIC_VALUE} ({COL_
 /// shard with a schema version we understand, before issuing any query.
 // not for wasm32: takes a rusqlite::Connection, and rusqlite doesn't compile to wasm32
 #[cfg(not(target_arch = "wasm32"))]
-pub fn validate_shard_header(connection: &rusqlite::Connection) -> Result<(), crate::error::AppError> {
-    use crate::error::AppError;
-
+pub fn validate_shard_header(connection: &rusqlite::Connection) -> Result<(), AppError> {
     let application_id: i32 = connection.pragma_query_value(None, "application_id", |row| row.get::<_, i32>(0))?;
     if application_id != APPLICATION_ID {
         return Err(AppError::from(format!(

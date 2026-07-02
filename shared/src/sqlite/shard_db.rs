@@ -2,14 +2,12 @@
 //! min/max value range precomputed.
 //!
 //! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
-//! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::ro_memory_vfs`. Both sit behind
-//! one `load_shard` signature.
+//! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::ro_memory_vfs`. Each is
+//! a target-gated submodule scoping its own bindings; both re-export the one `load_shard` signature.
 
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
-
-use crate::error::AppError;
 
 /// The values of one statistic shard, keyed by country ISO 3166 alpha-3 and period, with the
 /// min/max value range precomputed.
@@ -34,180 +32,189 @@ impl ShardValues {
     }
 }
 
-/// Read every `(region_iso3, period_start, value)` row of a statistic shard into a [`ShardValues`].
-/// The shard's SQLite header is validated before any query per [`crate::sqlite::schema::validate_shard_header`].
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: rusqlite doesn't compile there
-pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
-    use crate::sqlite::schema;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::load_shard;
 
-    let connection: rusqlite::Connection = deserialize_read_only(bytes)?;
-    schema::validate_shard_header(&connection)?;
-
-    let query: String = format!(
-        "select {}, {}, {} from {}",
-        schema::COL_REGION_ISO3,
-        schema::COL_PERIOD_START,
-        schema::COL_VALUE,
-        schema::TABLE_STATISTIC_VALUE,
-    );
-
-    let mut statement: rusqlite::Statement<'_> = connection.prepare(&query)?;
-    let row_iter = statement.query_map([], |row| {
-        let region_iso3: String = row.get(0)?;
-        let period_start: String = row.get(1)?;
-        let value: f64 = row.get(2)?;
-
-        Ok((region_iso3, period_start, value))
-    })?;
-
-    let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
-    let mut min: f64 = f64::INFINITY;
-    let mut max: f64 = f64::NEG_INFINITY;
-
-    for row in row_iter {
-        let (region_iso3, period_start, value): (String, String, f64) = row?;
-        let period: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
-            .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
-
-        by_region.entry(region_iso3).or_default().insert(period, value);
-        min = min.min(value);
-        max = max.max(value);
-    }
-
-    Ok(ShardValues { by_region, min, max })
-}
-
-/// Open a read-only `Connection` over the shard's in-memory bytes. rusqlite's `deserialize` takes a
-/// SQLite-owned (`sqlite3_malloc`'d) buffer that it frees on close, so the bytes are copied into one;
-/// `read_only` = true since shards are immutable.
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: uses rusqlite + libsqlite3-sys
-fn deserialize_read_only(bytes: &[u8]) -> Result<rusqlite::Connection, AppError> {
+#[cfg(not(target_arch = "wasm32"))]
+mod native {
+    use std::collections::HashMap;
     use std::ptr::NonNull;
+
+    use chrono::NaiveDate;
 
     use rusqlite::serialize::OwnedData;
     use rusqlite::{Connection, DatabaseName};
 
-    let mut connection: Connection = Connection::open_in_memory()?;
+    use crate::error::AppError;
+    use crate::sqlite::schema;
 
-    let byte_count: usize = bytes.len();
-    let owned_data: OwnedData = unsafe {
-        let raw: *mut u8 = rusqlite::ffi::sqlite3_malloc(byte_count as std::os::raw::c_int) as *mut u8;
-        let raw: NonNull<u8> = NonNull::new(raw).ok_or_else(|| AppError::from("shard_db: sqlite3_malloc returned null"))?;
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw.as_ptr(), byte_count);
+    use super::ShardValues;
 
-        OwnedData::from_raw_nonnull(raw, byte_count)
-    };
+    /// Read every `(region_iso3, period_start, value)` row of a statistic shard into a [`ShardValues`].
+    /// The shard's SQLite header is validated before any query per [`crate::sqlite::schema::validate_shard_header`].
+    pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
+        let connection: Connection = deserialize_read_only(bytes)?;
+        schema::validate_shard_header(&connection)?;
 
-    connection.deserialize(DatabaseName::Main, owned_data, true)?;
+        let query: String = format!(
+            "select {}, {}, {} from {}",
+            schema::COL_REGION_ISO3,
+            schema::COL_PERIOD_START,
+            schema::COL_VALUE,
+            schema::TABLE_STATISTIC_VALUE,
+        );
 
-    Ok(connection)
-}
+        let mut statement: rusqlite::Statement<'_> = connection.prepare(&query)?;
+        let row_iter = statement.query_map([], |row| {
+            let region_iso3: String = row.get(0)?;
+            let period_start: String = row.get(1)?;
+            let value: f64 = row.get(2)?;
 
-/// wasm32 loader: open the shard's bytes through the read-only VFS (native has no such module) and
-/// step the one load-once query via the raw `sqlite3_*` FFI, since `sqlite-wasm-rs` exposes no safe
-/// query wrapper. Same result shape as the native path.
-#[cfg(target_arch = "wasm32")]
-pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
-    use crate::sqlite::ro_memory_vfs;
+            Ok((region_iso3, period_start, value))
+        })?;
 
-    let filename: String = ro_memory_vfs::register_shard(bytes);
-    let result: Result<ShardValues, AppError> = open_and_read_shard(&filename);
-    ro_memory_vfs::unregister_shard(&filename);
+        let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
+        let mut min: f64 = f64::INFINITY;
+        let mut max: f64 = f64::NEG_INFINITY;
 
-    result
-}
-
-#[cfg(target_arch = "wasm32")]
-fn open_and_read_shard(vfs_filename: &str) -> Result<ShardValues, AppError> {
-    use std::ffi::CString;
-
-    use sqlite_wasm_rs as ffi;
-
-    use crate::sqlite::{ffi_conversions, ro_memory_vfs};
-
-    let filename: CString = CString::new(vfs_filename).unwrap();
-    let mut db: *mut ffi::sqlite3 = std::ptr::null_mut();
-
-    let open_rc: std::os::raw::c_int =
-        unsafe { ffi::sqlite3_open_v2(filename.as_ptr(), &mut db, ffi::SQLITE_OPEN_READONLY, ro_memory_vfs::VFS_NAME.as_ptr()) };
-    if open_rc != ffi::SQLITE_OK {
-        let message: String = ffi_conversions::error_message(db);
-        unsafe { ffi::sqlite3_close(db) };
-        return Err(AppError::from(format!("shard_db: open failed: {message}")));
-    }
-
-    let result: Result<ShardValues, AppError> = read_all_rows(db);
-
-    unsafe { ffi::sqlite3_close(db) };
-
-    result
-}
-
-/// Owns a prepared statement and finalizes it on drop, so every early return releases it.
-#[cfg(target_arch = "wasm32")]
-struct Statement {
-    handle: *mut sqlite_wasm_rs::sqlite3_stmt,
-}
-
-#[cfg(target_arch = "wasm32")]
-impl Drop for Statement {
-    fn drop(&mut self) {
-        unsafe { sqlite_wasm_rs::sqlite3_finalize(self.handle) };
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-fn read_all_rows(db: *mut sqlite_wasm_rs::sqlite3) -> Result<ShardValues, AppError> {
-    use std::ffi::CString;
-
-    use sqlite_wasm_rs as ffi;
-
-    use crate::sqlite::{ffi_conversions, schema};
-
-    let query: CString = CString::new(format!(
-        "select {}, {}, {} from {}",
-        schema::COL_REGION_ISO3,
-        schema::COL_PERIOD_START,
-        schema::COL_VALUE,
-        schema::TABLE_STATISTIC_VALUE,
-    ))
-    .unwrap();
-
-    let mut raw_statement: *mut ffi::sqlite3_stmt = std::ptr::null_mut();
-    let prepare_rc: std::os::raw::c_int =
-        unsafe { ffi::sqlite3_prepare_v2(db, query.as_ptr(), -1, &mut raw_statement, std::ptr::null_mut()) };
-    if prepare_rc != ffi::SQLITE_OK {
-        let message: String = ffi_conversions::error_message(db);
-        return Err(AppError::from(format!("shard_db: prepare failed: {message}")));
-    }
-
-    let statement: Statement = Statement { handle: raw_statement };
-
-    let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
-    let mut min: f64 = f64::INFINITY;
-    let mut max: f64 = f64::NEG_INFINITY;
-
-    loop {
-        let step_rc: std::os::raw::c_int = unsafe { ffi::sqlite3_step(statement.handle) };
-        if step_rc == ffi::SQLITE_ROW {
-            let region_iso3: String = ffi_conversions::column_text(statement.handle, 0)?;
-            let period_start: String = ffi_conversions::column_text(statement.handle, 1)?;
-            let value: f64 = unsafe { ffi::sqlite3_column_double(statement.handle, 2) };
+        for row in row_iter {
+            let (region_iso3, period_start, value): (String, String, f64) = row?;
             let period: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                 .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
 
             by_region.entry(region_iso3).or_default().insert(period, value);
             min = min.min(value);
             max = max.max(value);
-        } else if step_rc == ffi::SQLITE_DONE {
-            break;
-        } else {
+        }
+
+        Ok(ShardValues { by_region, min, max })
+    }
+
+    /// Open a read-only `Connection` over the shard's in-memory bytes. rusqlite's `deserialize` takes a
+    /// SQLite-owned (`sqlite3_malloc`'d) buffer that it frees on close, so the bytes are copied into one;
+    /// `read_only` = true since shards are immutable.
+    fn deserialize_read_only(bytes: &[u8]) -> Result<Connection, AppError> {
+        let mut connection: Connection = Connection::open_in_memory()?;
+
+        let byte_count: usize = bytes.len();
+        let owned_data: OwnedData = unsafe {
+            let raw: *mut u8 = rusqlite::ffi::sqlite3_malloc(byte_count as std::os::raw::c_int) as *mut u8;
+            let raw: NonNull<u8> = NonNull::new(raw).ok_or_else(|| AppError::from("shard_db: sqlite3_malloc returned null"))?;
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), raw.as_ptr(), byte_count);
+
+            OwnedData::from_raw_nonnull(raw, byte_count)
+        };
+
+        connection.deserialize(DatabaseName::Main, owned_data, true)?;
+
+        Ok(connection)
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub use wasm::load_shard;
+
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use std::collections::HashMap;
+    use std::ffi::CString;
+
+    use chrono::NaiveDate;
+
+    use sqlite_wasm_rs as ffi;
+
+    use crate::error::AppError;
+    use crate::sqlite::{ffi_conversions, ro_memory_vfs, schema};
+
+    use super::ShardValues;
+
+    /// Open the shard's bytes through the read-only VFS (native has no such module) and step the one
+    /// load-once query via the raw `sqlite3_*` FFI, since `sqlite-wasm-rs` exposes no safe query
+    /// wrapper. Same result shape as the native path.
+    pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
+        let filename: String = ro_memory_vfs::register_shard(bytes);
+        let result: Result<ShardValues, AppError> = open_and_read_shard(&filename);
+        ro_memory_vfs::unregister_shard(&filename);
+
+        result
+    }
+
+    fn open_and_read_shard(vfs_filename: &str) -> Result<ShardValues, AppError> {
+        let filename: CString = CString::new(vfs_filename).unwrap();
+        let mut db: *mut ffi::sqlite3 = std::ptr::null_mut();
+
+        let open_rc: std::os::raw::c_int =
+            unsafe { ffi::sqlite3_open_v2(filename.as_ptr(), &mut db, ffi::SQLITE_OPEN_READONLY, ro_memory_vfs::VFS_NAME.as_ptr()) };
+        if open_rc != ffi::SQLITE_OK {
             let message: String = ffi_conversions::error_message(db);
-            return Err(AppError::from(format!("shard_db: step failed: {message}")));
+            unsafe { ffi::sqlite3_close(db) };
+            return Err(AppError::from(format!("shard_db: open failed: {message}")));
+        }
+
+        let result: Result<ShardValues, AppError> = read_all_rows(db);
+
+        unsafe { ffi::sqlite3_close(db) };
+
+        result
+    }
+
+    /// Owns a prepared statement and finalizes it on drop, so every early return releases it.
+    struct Statement {
+        handle: *mut ffi::sqlite3_stmt,
+    }
+
+    impl Drop for Statement {
+        fn drop(&mut self) {
+            unsafe { ffi::sqlite3_finalize(self.handle) };
         }
     }
 
-    Ok(ShardValues { by_region, min, max })
+    fn read_all_rows(db: *mut ffi::sqlite3) -> Result<ShardValues, AppError> {
+        let query: CString = CString::new(format!(
+            "select {}, {}, {} from {}",
+            schema::COL_REGION_ISO3,
+            schema::COL_PERIOD_START,
+            schema::COL_VALUE,
+            schema::TABLE_STATISTIC_VALUE,
+        ))
+        .unwrap();
+
+        let mut raw_statement: *mut ffi::sqlite3_stmt = std::ptr::null_mut();
+        let prepare_rc: std::os::raw::c_int =
+            unsafe { ffi::sqlite3_prepare_v2(db, query.as_ptr(), -1, &mut raw_statement, std::ptr::null_mut()) };
+        if prepare_rc != ffi::SQLITE_OK {
+            let message: String = ffi_conversions::error_message(db);
+            return Err(AppError::from(format!("shard_db: prepare failed: {message}")));
+        }
+
+        let statement: Statement = Statement { handle: raw_statement };
+
+        let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
+        let mut min: f64 = f64::INFINITY;
+        let mut max: f64 = f64::NEG_INFINITY;
+
+        loop {
+            let step_rc: std::os::raw::c_int = unsafe { ffi::sqlite3_step(statement.handle) };
+            if step_rc == ffi::SQLITE_ROW {
+                let region_iso3: String = ffi_conversions::column_text(statement.handle, 0)?;
+                let period_start: String = ffi_conversions::column_text(statement.handle, 1)?;
+                let value: f64 = unsafe { ffi::sqlite3_column_double(statement.handle, 2) };
+                let period: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
+                    .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
+
+                by_region.entry(region_iso3).or_default().insert(period, value);
+                min = min.min(value);
+                max = max.max(value);
+            } else if step_rc == ffi::SQLITE_DONE {
+                break;
+            } else {
+                let message: String = ffi_conversions::error_message(db);
+                return Err(AppError::from(format!("shard_db: step failed: {message}")));
+            }
+        }
+
+        Ok(ShardValues { by_region, min, max })
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -216,6 +223,7 @@ mod tests {
 
     use rusqlite::{Connection, DatabaseName};
 
+    use crate::error::AppError;
     use crate::sqlite::schema;
 
     /// Build a real shard in memory via the shared DDL, then serialize it to bytes. The loader
