@@ -143,9 +143,9 @@ mod wasm {
         let filename: CString = CString::new(vfs_filename).expect("no null byte");
         let mut db: *mut sqlite3 = std::ptr::null_mut();
 
-        let open_rc: std::os::raw::c_int =
+        let open_res: std::os::raw::c_int =
             unsafe { sqlite_wasm_rs::sqlite3_open_v2(filename.as_ptr(), &mut db, sqlite_wasm_rs::SQLITE_OPEN_READONLY, ro_memory_vfs::VFS_NAME.as_ptr()) };
-        if open_rc != sqlite_wasm_rs::SQLITE_OK {
+        if open_res != sqlite_wasm_rs::SQLITE_OK {
             let message: String = ffi_conversions::error_message(db);
             unsafe { sqlite_wasm_rs::sqlite3_close(db) };
             return Err(AppError::from(format!("shard_db: open failed: {message}")));
@@ -180,9 +180,9 @@ mod wasm {
         .unwrap();
 
         let mut raw_statement: *mut sqlite3_stmt = std::ptr::null_mut();
-        let prepare_rc: std::os::raw::c_int =
+        let prepare_res: std::os::raw::c_int =
             unsafe { sqlite_wasm_rs::sqlite3_prepare_v2(db, query.as_ptr(), -1, &mut raw_statement, std::ptr::null_mut()) };
-        if prepare_rc != sqlite_wasm_rs::SQLITE_OK {
+        if prepare_res != sqlite_wasm_rs::SQLITE_OK {
             let message: String = ffi_conversions::error_message(db);
             return Err(AppError::from(format!("shard_db: prepare failed: {message}")));
         }
@@ -194,8 +194,8 @@ mod wasm {
         let mut max: f64 = f64::NEG_INFINITY;
 
         loop {
-            let step_rc: std::os::raw::c_int = unsafe { sqlite_wasm_rs::sqlite3_step(statement.handle) };
-            if step_rc == sqlite_wasm_rs::SQLITE_ROW {
+            let step_res: std::os::raw::c_int = unsafe { sqlite_wasm_rs::sqlite3_step(statement.handle) };
+            if step_res == sqlite_wasm_rs::SQLITE_ROW {
                 let region_iso3: String = ffi_conversions::column_text(statement.handle, 0)?;
                 let period_start: String = ffi_conversions::column_text(statement.handle, 1)?;
                 let value: f64 = unsafe { sqlite_wasm_rs::sqlite3_column_double(statement.handle, 2) };
@@ -205,7 +205,7 @@ mod wasm {
                 by_region.entry(region_iso3).or_default().insert(period, value);
                 min = min.min(value);
                 max = max.max(value);
-            } else if step_rc == sqlite_wasm_rs::SQLITE_DONE {
+            } else if step_res == sqlite_wasm_rs::SQLITE_DONE {
                 break;
             } else {
                 let message: String = ffi_conversions::error_message(db);

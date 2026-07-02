@@ -113,8 +113,8 @@ fn install() -> &'static VfsAppData<ShardAppData> {
             VFS_NAME.as_ptr(),
             VfsAppData::new(ShardAppData::default()).leak(),
         )));
-        let register_rc: std::os::raw::c_int = unsafe { sqlite3_vfs_register(vfs, 0) };
-        assert_eq!(register_rc, SQLITE_OK, "failed to register the eafora shard VFS");
+        let register_res: std::os::raw::c_int = unsafe { sqlite3_vfs_register(vfs, 0) };
+        assert_eq!(register_res, SQLITE_OK, "failed to register the eafora shard VFS");
         vfs as *mut sqlite3_vfs
     } else {
         existing
