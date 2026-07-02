@@ -40,7 +40,7 @@ const ADM0_A3_FIELD: &str = "ADM0_A3";
 pub const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 const COLUMN_ISO3: Column = Column { index: 0, name: geometry::FEATURE_COLUMN_ISO3 };
 const COLUMN_NAME_EN: Column = Column { index: 1, name: geometry::FEATURE_COLUMN_NAME_EN };
-const COLUMN_CODE: Column = Column { index: 2, name: geometry::FEATURE_COLUMN_CODE };
+const COLUMN_REGION_CODE: Column = Column { index: 2, name: geometry::FEATURE_COLUMN_REGION_CODE };
 
 struct Column {
     index: usize,
@@ -70,7 +70,7 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     let mut writer: FgbWriter<'_> = FgbWriter::create(geometry::GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
     writer.add_column(COLUMN_ISO3.name, ColumnType::String, |_fbb, _col| {});
     writer.add_column(COLUMN_NAME_EN.name, ColumnType::String, |_fbb, _col| {});
-    writer.add_column(COLUMN_CODE.name, ColumnType::String, |_fbb, _col| {});
+    writer.add_column(COLUMN_REGION_CODE.name, ColumnType::String, |_fbb, _col| {});
 
     let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(shapefile_bytes)?;
 
@@ -91,12 +91,12 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
         let geometry: geo_types::Geometry<f64> = geo_types::Geometry::try_from(shape)?;
         let iso3_property: String = iso3.clone();
         let name_en_property: String = metadata.name_en.clone();
-        let code_property: String = metadata.code.clone();
+        let region_code_property: String = metadata.region_code.clone();
 
         writer.add_feature_geom(geometry, |feature| {
             feature.property(COLUMN_ISO3.index, COLUMN_ISO3.name, &ColumnValue::String(&iso3_property)).ok();
             feature.property(COLUMN_NAME_EN.index, COLUMN_NAME_EN.name, &ColumnValue::String(&name_en_property)).ok();
-            feature.property(COLUMN_CODE.index, COLUMN_CODE.name, &ColumnValue::String(&code_property)).ok();
+            feature.property(COLUMN_REGION_CODE.index, COLUMN_REGION_CODE.name, &ColumnValue::String(&region_code_property)).ok();
         })?;
     }
 

@@ -52,7 +52,7 @@ pub async fn read_country_iso3_to_metadata<'e>(
     let projections: Vec<CountryMetadataProjection> = sqlx::query_as!(
         CountryMetadataProjection,
         r#"
-        select country.iso3, region.name_en, region.code
+        select country.iso3, region.name_en, region.code as region_code
         from country
         join region on region.id = country.region_id
         "#,
@@ -61,7 +61,7 @@ pub async fn read_country_iso3_to_metadata<'e>(
     .await?;
 
     let map: BTreeMap<String, CountryMetadata> = projections.into_iter()
-        .map(|projection| (projection.iso3, CountryMetadata { name_en: projection.name_en, code: projection.code }))
+        .map(|projection| (projection.iso3, CountryMetadata { name_en: projection.name_en, region_code: projection.region_code }))
         .collect();
     Ok(map)
 }

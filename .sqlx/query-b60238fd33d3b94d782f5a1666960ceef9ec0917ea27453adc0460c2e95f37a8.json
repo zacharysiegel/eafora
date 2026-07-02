@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select country.iso3, region.name_en, region.code\n        from country\n        join region on region.id = country.region_id\n        ",
+  "query": "\n        select country.iso3, region.name_en, region.code as region_code\n        from country\n        join region on region.id = country.region_id\n        ",
   "describe": {
     "columns": [
       {
@@ -15,7 +15,7 @@
       },
       {
         "ordinal": 2,
-        "name": "code",
+        "name": "region_code",
         "type_info": "Text"
       }
     ],
@@ -28,5 +28,5 @@
       false
     ]
   },
-  "hash": "907ad2ada5687b6e94ce225f4c09655548b1fd74a2c6413a8c7288c512b02bd0"
+  "hash": "b60238fd33d3b94d782f5a1666960ceef9ec0917ea27453adc0460c2e95f37a8"
 }
