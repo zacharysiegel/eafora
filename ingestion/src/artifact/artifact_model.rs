@@ -66,9 +66,17 @@ impl TryFrom<CandidateValueProjection> for CandidateValue {
 }
 
 #[derive(Debug, Clone)]
-pub struct CountryNameProjection {
+pub struct CountryMetadataProjection {
     pub iso3: String,
     pub name_en: String,
+    pub code: String,
+}
+
+/// Per-country geometry attributes: the English name and the `region.code` slug the country maps to.
+#[derive(Debug, Clone)]
+pub struct CountryMetadata {
+    pub name_en: String,
+    pub code: String,
 }
 
 /// A "resolved" `CandidateValue` (after data source selection). Exactly one

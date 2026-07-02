@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use sqlx::{PgConnection, PgExecutor};
 
 use crate::artifact::artifact_model::{
-    ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryNameProjection,
+    ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryMetadata, CountryMetadataProjection,
 };
 use crate::canonical::canonical_db;
 use shared::canonical::canonical_model::{DataSource, DataSourceKind, SourceRevision, StatisticKind};
@@ -46,13 +46,13 @@ pub async fn read_candidate_values_for_statistic<'e>(
         .collect()
 }
 
-pub async fn read_country_iso3_to_name_en<'e>(
+pub async fn read_country_iso3_to_metadata<'e>(
     executor: impl PgExecutor<'e>,
-) -> Result<BTreeMap<String, String>, AppError> {
-    let projections: Vec<CountryNameProjection> = sqlx::query_as!(
-        CountryNameProjection,
+) -> Result<BTreeMap<String, CountryMetadata>, AppError> {
+    let projections: Vec<CountryMetadataProjection> = sqlx::query_as!(
+        CountryMetadataProjection,
         r#"
-        select country.iso3, region.name_en
+        select country.iso3, region.name_en, region.code
         from country
         join region on region.id = country.region_id
         "#,
@@ -60,8 +60,8 @@ pub async fn read_country_iso3_to_name_en<'e>(
     .fetch_all(executor)
     .await?;
 
-    let map: BTreeMap<String, String> = projections.into_iter()
-        .map(|projection| (projection.iso3, projection.name_en))
+    let map: BTreeMap<String, CountryMetadata> = projections.into_iter()
+        .map(|projection| (projection.iso3, CountryMetadata { name_en: projection.name_en, code: projection.code }))
         .collect();
     Ok(map)
 }

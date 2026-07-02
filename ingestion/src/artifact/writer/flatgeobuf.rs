@@ -28,6 +28,7 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::artifact::artifact_db;
+use crate::artifact::artifact_model::CountryMetadata;
 use shared::artifact::geometry;
 use shared::artifact::manifest;
 use shared::filesystem::FileReference;
@@ -39,6 +40,7 @@ const ADM0_A3_FIELD: &str = "ADM0_A3";
 pub const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 const COLUMN_ISO3: Column = Column { index: 0, name: geometry::FEATURE_COLUMN_ISO3 };
 const COLUMN_NAME_EN: Column = Column { index: 1, name: geometry::FEATURE_COLUMN_NAME_EN };
+const COLUMN_CODE: Column = Column { index: 2, name: geometry::FEATURE_COLUMN_CODE };
 
 struct Column {
     index: usize,
@@ -60,14 +62,15 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     shapefile_bytes: &ShapefileBytes,
     artifact_dir: &Path,
 ) -> Result<FileReference, AppError> {
-    let iso3_to_name_en: BTreeMap<String, String> =
-        artifact_db::read_country_iso3_to_name_en(executor).await?;
+    let iso3_to_metadata: BTreeMap<String, CountryMetadata> =
+        artifact_db::read_country_iso3_to_metadata(executor).await?;
 
     let path: PathBuf = build_tmp_geometry_path(artifact_dir)?;
 
     let mut writer: FgbWriter<'_> = FgbWriter::create(geometry::GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
     writer.add_column(COLUMN_ISO3.name, ColumnType::String, |_fbb, _col| {});
     writer.add_column(COLUMN_NAME_EN.name, ColumnType::String, |_fbb, _col| {});
+    writer.add_column(COLUMN_CODE.name, ColumnType::String, |_fbb, _col| {});
 
     let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(shapefile_bytes)?;
 
@@ -77,7 +80,7 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
         let Some(iso3) = read_character_field(&record, ADM0_A3_FIELD) else {
             continue;
         };
-        let Some(name_en) = iso3_to_name_en.get(&iso3) else {
+        let Some(metadata) = iso3_to_metadata.get(&iso3) else {
             log::warn!(
                 "dropping Natural Earth feature with unknown ADM0_A3={}",
                 iso3,
@@ -87,11 +90,13 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
 
         let geometry: geo_types::Geometry<f64> = geo_types::Geometry::try_from(shape)?;
         let iso3_property: String = iso3.clone();
-        let name_en_property: String = name_en.clone();
+        let name_en_property: String = metadata.name_en.clone();
+        let code_property: String = metadata.code.clone();
 
         writer.add_feature_geom(geometry, |feature| {
             feature.property(COLUMN_ISO3.index, COLUMN_ISO3.name, &ColumnValue::String(&iso3_property)).ok();
             feature.property(COLUMN_NAME_EN.index, COLUMN_NAME_EN.name, &ColumnValue::String(&name_en_property)).ok();
+            feature.property(COLUMN_CODE.index, COLUMN_CODE.name, &ColumnValue::String(&code_property)).ok();
         })?;
     }
 
