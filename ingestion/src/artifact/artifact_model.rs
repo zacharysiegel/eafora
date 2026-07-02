@@ -65,16 +65,11 @@ impl TryFrom<CandidateValueProjection> for CandidateValue {
     }
 }
 
+/// Per-country geometry attributes read from `country`/`region`: iso3 (the map key), the English
+/// name, and the `region.code` slug the country maps to.
 #[derive(Debug, Clone)]
 pub struct CountryMetadataProjection {
     pub iso3: String,
-    pub name_en: String,
-    pub region_code: String,
-}
-
-/// Per-country geometry attributes: the English name and the `region.code` slug the country maps to.
-#[derive(Debug, Clone)]
-pub struct CountryMetadata {
     pub name_en: String,
     pub region_code: String,
 }

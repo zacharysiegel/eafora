@@ -28,7 +28,7 @@ use sqlx::PgExecutor;
 use uuid::Uuid;
 
 use crate::artifact::artifact_db;
-use crate::artifact::artifact_model::CountryMetadata;
+use crate::artifact::artifact_model::CountryMetadataProjection;
 use shared::artifact::geometry;
 use shared::artifact::manifest;
 use shared::filesystem::FileReference;
@@ -62,7 +62,7 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     shapefile_bytes: &ShapefileBytes,
     artifact_dir: &Path,
 ) -> Result<FileReference, AppError> {
-    let iso3_to_metadata: BTreeMap<String, CountryMetadata> =
+    let iso3_to_metadata: BTreeMap<String, CountryMetadataProjection> =
         artifact_db::read_country_iso3_to_metadata(executor).await?;
 
     let path: PathBuf = build_tmp_geometry_path(artifact_dir)?;
