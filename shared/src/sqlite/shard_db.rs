@@ -33,7 +33,7 @@ impl ShardValues {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::load_shard;
+pub use native::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
@@ -112,7 +112,7 @@ mod native {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use wasm::load_shard;
+pub use wasm::*;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
