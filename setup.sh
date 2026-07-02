@@ -3,7 +3,7 @@
 #   - generates .env from template.env if missing
 #   - installs Postgres 18 via Homebrew if missing, starts it as a launchd service
 #   - creates the eafora database (no-op if it already exists)
-#   - applies migrations to eafora via dbmate.sh
+#   - applies migrations to eafora via scripts/dbmate.sh
 #   - applies migrations to eafora_test via scripts/setup-test-db.sh
 
 set -euo pipefail
@@ -81,7 +81,7 @@ if ! psql -p "${postgres_port}" -lqt | cut -d '|' -f 1 | grep -qw eafora; then
 fi
 
 echo "Applying migrations to eafora"
-./dbmate.sh up
+./scripts/dbmate.sh up
 
 echo "Applying migrations to eafora_test"
 ./scripts/setup-test-db.sh

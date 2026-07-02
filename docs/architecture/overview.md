@@ -87,8 +87,7 @@ eafora/
 ├── rustfmt.toml            # max_width=120, chain_width=100, edition 2024
 ├── secrets.yaml            # secr-encrypted secrets
 ├── setup.sh                # first-time setup: brew install postgresql@17, install launchd plist, decrypt secrets, run migrations, cargo sqlx prepare --workspace
-├── dbmate.sh               # dbmate wrapper, also runs cargo sqlx prepare --workspace
-├── scripts/                # tooling scripts (branch-init.sh, cleanup-merged.sh, pr-integrate.sh, eafora-postgres.plist.template, deploy-aasa.sh, etc.)
+├── scripts/                # tooling scripts (dbmate.sh [dbmate wrapper + cargo sqlx prepare], branch-init.sh, cleanup-merged.sh, pr-integrate.sh, eafora-postgres.plist.template, deploy-aasa.sh, etc.)
 ├── tools/                  # cross-cutting tooling that doesn't belong to one platform — e.g. `tools/aasa-deploy/` (the dedicated Cloudflare Worker that serves `/.well-known/apple-app-site-association` for iOS Universal Links; deployed from the iOS pipeline but lives here because the deploy mechanism is cross-cutting infrastructure, not iOS source)
 ├── docs/                   # cross-cutting research and architecture
 ├── specs/                  # per-feature spec-kit artifacts (NNN-slug)
@@ -124,7 +123,7 @@ Notes on this shape:
 - `ios/` and `android/` are not Cargo crates — they're native projects that consume artifacts produced by `core`. The `core` crate's UniFFI build emits an `xcframework` and an AAR that these projects link against.
 - `web/` is a Cargo workspace member because cargo-leptos drives it. It depends on `core` directly and adds Leptos components, routing, and the wasm-bindgen adapter.
 - The downsampled artifacts (small downsampled FlatGeobuf + SQLite shipped inside each native app build for instant first-launch UX) are produced by `ingestion build --downsampled`, which reads the canonical store directly and applies the downsampling rules (drop sub-national geometry, keep only the most recent year of statistic values per country) during shard emission. The output lands in a single producer-owned directory; each native client's build script (Xcode for iOS, Gradle for Android) fetches the latest output and copies it into its own asset tree (`ios/EaforaApp/Resources/embedded_artifacts/`, `android/app/src/main/assets/embedded_artifacts/`). The dependency direction is client-pulls-from-producer, never producer-pushes-into-client. The web build has no equivalent embedded bundle. Reproducibility for any given commit comes from the canonical store at the producer machine, not from `git`.
-- Per the constitution's Singularity convention parity (Principle IV), `dbmate.sh` / `secrets.yaml` mirror Singularity verbatim. `setup.sh` and the Postgres runtime differ: Eafora installs Postgres via Homebrew and manages it via `launchd` rather than Podman Compose — a Principle IV deviation justified by v1's personal-hardware scope (see Constitution v1.3.3 SYNC IMPACT note). Containerization may return for cloud deployment post-v2.
+- Per the constitution's Singularity convention parity (Principle IV), `scripts/dbmate.sh` / `secrets.yaml` mirror Singularity verbatim. `setup.sh` and the Postgres runtime differ: Eafora installs Postgres via Homebrew and manages it via `launchd` rather than Podman Compose — a Principle IV deviation justified by v1's personal-hardware scope (see Constitution v1.3.3 SYNC IMPACT note). Containerization may return for cloud deployment post-v2.
 
 ### Workspace Cargo profile
 
@@ -497,7 +496,7 @@ The local-dev story mostly mirrors Singularity (deviation: Postgres runtime, see
 
 - `setup.sh` checks prerequisites (cargo, brew, dbmate, secr, websocat where applicable), runs `brew install postgresql@17`, renders `scripts/eafora-postgres.plist.template` into `~/Library/LaunchAgents/org.eafora.postgres.plist` and loads it via `launchctl bootstrap gui/$(id -u)`, creates the `eafora` database, decrypts secrets, generates `.env` from the template, runs migrations, and runs `cargo sqlx prepare --workspace`.
 - Postgres runs on the host as a launchd-managed service (port 5432; `DATABASE_URL` is `postgresql://localhost/eafora` by default). If a developer already has Postgres bound to 5432, `setup.sh` errors out and the developer overrides via `DATABASE_URL` or rebinds the existing instance.
-- `dbmate.sh` wraps dbmate and re-runs `cargo sqlx prepare --workspace`.
+- `scripts/dbmate.sh` wraps dbmate and re-runs `cargo sqlx prepare --workspace`.
 - `cargo leptos watch` runs the web app on localhost.
 - iOS dev: open `ios/Eafora.xcodeproj` in Xcode; the xcframework is rebuilt on the host by a Run Script build phase that invokes `cargo build` and `xcodebuild -create-xcframework`. iterations are slower than web (Xcode build + run on simulator is ~30–90 s after first build).
 - Android dev: open `android/` in Android Studio; the AAR is rebuilt by a Gradle task that wraps `cargo-ndk`. Iterations are similar to iOS.

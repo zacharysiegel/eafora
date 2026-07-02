@@ -382,7 +382,7 @@ comment on column artifact_version.data_source_versions_jsonb is $$snapshot of e
 
 ### Migrations
 
-Migrations live in `ingestion/db/migrations/` as dbmate timestamped SQL files (`20260524123000_create_country.sql`, etc.). Each file has `-- migrate:up` and `-- migrate:down` sections. The `dbmate.sh` wrapper at the workspace root runs migrations and then re-runs `cargo sqlx prepare --workspace` to refresh the offline cache. Per the Singularity convention, `dbmate.sh` is the only supported way to apply migrations locally.
+Migrations live in `ingestion/db/migrations/` as dbmate timestamped SQL files (`20260524123000_create_country.sql`, etc.). Each file has `-- migrate:up` and `-- migrate:down` sections. The `scripts/dbmate.sh` wrapper runs migrations and then re-runs `cargo sqlx prepare --workspace` to refresh the offline cache. Per the Singularity convention, `scripts/dbmate.sh` is the only supported way to apply migrations locally.
 
 Seed data (country list from ISO 3166, statistic definitions, source records) lives in `ingestion/db/migrations/` as ordinary INSERT migrations rather than a separate seed mechanism — this keeps the canonical reference data versioned and reproducible across dev/CI/prod.
 
@@ -728,7 +728,7 @@ cargo run -p ingestion -- seed
 
 This loads sample responses from `ingestion/samples/<source_code>/` and replays them through each adapter's normalize-and-insert path. The result is a fully-populated canonical store with the same shape production would have, but with fixed test data.
 
-`seed` does NOT run migrations — that's dbmate's job. The expected workflow is `./dbmate.sh up` first (which applies schema migrations including the seed-data migrations for `country`, `statistic`, and `data_source` reference rows), then `cargo run -p ingestion -- seed` to fill in the sample `statistic_value` rows on top of that schema. `setup.sh` chains them on first-time setup; manual re-seeding after a schema change runs them in that order.
+`seed` does NOT run migrations — that's dbmate's job. The expected workflow is `./scripts/dbmate.sh up` first (which applies schema migrations including the seed-data migrations for `country`, `statistic`, and `data_source` reference rows), then `cargo run -p ingestion -- seed` to fill in the sample `statistic_value` rows on top of that schema. `setup.sh` chains them on first-time setup; manual re-seeding after a schema change runs them in that order.
 
 ### Running an adapter locally
 
