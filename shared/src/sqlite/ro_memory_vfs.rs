@@ -15,28 +15,19 @@ use sqlite_wasm_rs::{sqlite3_vfs, sqlite3_vfs_find, sqlite3_vfs_register, SQLITE
 
 pub(crate) const VFS_NAME: &CStr = c"eafora-shard-ro-memory";
 
-struct ReadOnlyShardFile {
+struct ReadOnlyMemory {
     bytes: Arc<Vec<u8>>,
 }
 
-impl VfsFile for ReadOnlyShardFile {
+impl VfsFile for ReadOnlyMemory {
     fn read(&self, buf: &mut [u8], offset: usize) -> VfsResult<bool> {
-        let size: usize = self.bytes.len();
-        if offset >= size {
-            buf.fill(0);
-            return Ok(false);
-        }
+        let source: &[u8] = self.bytes.get(offset..).unwrap_or(&[]);
+        let copy_len: usize = buf.len().min(source.len());
 
-        let available: usize = size - offset;
-        let copy_len: usize = buf.len().min(available);
-        buf[..copy_len].copy_from_slice(&self.bytes[offset..offset + copy_len]);
+        buf[..copy_len].copy_from_slice(&source[..copy_len]);
+        buf[copy_len..].fill(0);
 
-        if copy_len < buf.len() {
-            buf[copy_len..].fill(0);
-            Ok(false)
-        } else {
-            Ok(true)
-        }
+        Ok(copy_len == buf.len())
     }
 
     fn write(&mut self, _buf: &[u8], _offset: usize) -> VfsResult<()> {
@@ -56,11 +47,11 @@ impl VfsFile for ReadOnlyShardFile {
     }
 }
 
-type ShardAppData = RefCell<HashMap<String, ReadOnlyShardFile>>;
+type ShardAppData = RefCell<HashMap<String, ReadOnlyMemory>>;
 
 struct ShardStore;
 
-impl VfsStore<ReadOnlyShardFile, ShardAppData> for ShardStore {
+impl VfsStore<ReadOnlyMemory, ShardAppData> for ShardStore {
     /// Rejects: this read-only store never creates files; shards are added via `register_shard`.
     fn add_file(_vfs: *mut sqlite3_vfs, file: &str, _flags: i32) -> VfsResult<()> {
         Err(VfsError::new(SQLITE_READONLY, format!("cannot create {file} in the read-only shard VFS")))
@@ -78,7 +69,7 @@ impl VfsStore<ReadOnlyShardFile, ShardAppData> for ShardStore {
         Ok(())
     }
 
-    fn with_file<F: Fn(&ReadOnlyShardFile) -> VfsResult<i32>>(vfs_file: &SQLiteVfsFile, f: F) -> VfsResult<i32> {
+    fn with_file<F: Fn(&ReadOnlyMemory) -> VfsResult<i32>>(vfs_file: &SQLiteVfsFile, f: F) -> VfsResult<i32> {
         let name: &str = unsafe { vfs_file.name() };
         let app_data: &VfsAppData<ShardAppData> = unsafe { Self::app_data(vfs_file.vfs) };
         match app_data.borrow().get(name) {
@@ -87,7 +78,7 @@ impl VfsStore<ReadOnlyShardFile, ShardAppData> for ShardStore {
         }
     }
 
-    fn with_file_mut<F: Fn(&mut ReadOnlyShardFile) -> VfsResult<i32>>(vfs_file: &SQLiteVfsFile, f: F) -> VfsResult<i32> {
+    fn with_file_mut<F: Fn(&mut ReadOnlyMemory) -> VfsResult<i32>>(vfs_file: &SQLiteVfsFile, f: F) -> VfsResult<i32> {
         let name: &str = unsafe { vfs_file.name() };
         let app_data: &VfsAppData<ShardAppData> = unsafe { Self::app_data(vfs_file.vfs) };
         match app_data.borrow_mut().get_mut(name) {
@@ -100,7 +91,7 @@ impl VfsStore<ReadOnlyShardFile, ShardAppData> for ShardStore {
 struct ShardIoMethods;
 
 impl SQLiteIoMethods for ShardIoMethods {
-    type File = ReadOnlyShardFile;
+    type File = ReadOnlyMemory;
     type AppData = ShardAppData;
     type Store = ShardStore;
 
@@ -141,7 +132,7 @@ pub(crate) fn register_shard(bytes: &[u8]) -> String {
     let app_data: &VfsAppData<ShardAppData> = install();
     app_data
         .borrow_mut()
-        .insert(filename.clone(), ReadOnlyShardFile { bytes: Arc::new(bytes.to_vec()) });
+        .insert(filename.clone(), ReadOnlyMemory { bytes: Arc::new(bytes.to_vec()) });
 
     filename
 }
