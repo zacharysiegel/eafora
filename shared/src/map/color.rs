@@ -1,15 +1,12 @@
-//! Choropleth fill color: a continuous single-hue lerp between the accent red at the statistic's
-//! minimum and white at its maximum, per `docs/design/README.md` §Map. No data renders white.
-
-/// The saturated accent (`#e60019`), mapped to the statistic's minimum value.
+/// The accent red, `#e60019`.
 const ACCENT_FILL: [f32; 4] = [230.0 / 255.0, 0.0, 25.0 / 255.0, 1.0];
 
-/// The white base (`#fff`), mapped to the statistic's maximum value and to no data.
+/// The white base, `#fff`.
 const WHITE_FILL: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 
-/// RGBA fill for one country. `None` (no value at the active period) is white; otherwise a
-/// continuous lerp with the accent at `statistic_min` and white at `statistic_max` — the direction
-/// the TFR design uses, where the most-saturated red marks the lowest value.
+/// RGBA fill for one country per `docs/design/README.md` §Map: a continuous lerp with the accent at
+/// `statistic_min` and white at `statistic_max` (the TFR direction, where the most-saturated red
+/// marks the lowest value). `None` (no value at the active period) is white.
 pub fn choropleth_fill(value: Option<f64>, statistic_min: f64, statistic_max: f64) -> [f32; 4] {
     let Some(value) = value else {
         return WHITE_FILL;

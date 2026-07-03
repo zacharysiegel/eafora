@@ -1,8 +1,4 @@
-//! The map's public value types: the geographic camera bounds (`Viewport`), a screen-space input
-//! point (`ScreenPoint`), and a region identifier (`RegionCode`) — the hit-test's inputs and output.
-
-/// The camera's current geographic bounds. Longitudes may fall outside ±180 after a horizontal pan
-/// past the antimeridian; the hit-test wraps them back before querying.
+/// Longitudes may fall outside ±180 after a horizontal pan past the antimeridian.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
     pub longitude_min: f64,
@@ -11,8 +7,8 @@ pub struct Viewport {
     pub latitude_max: f64,
 }
 
-/// A device-pixel-logical screen coordinate. The platform shell pre-divides by `devicePixelRatio`
-/// before passing it in, so the hit-test never sees physical pixels.
+/// Device-pixel-logical coordinates; the platform shell pre-divides by `devicePixelRatio` before
+/// passing them in.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScreenPoint {
     pub x: f64,
