@@ -34,6 +34,7 @@ const WHITE_FILL: Rgba = Rgba {
     a: 1.0,
 };
 
+/// The no-data grey, `#e6e6e6`.
 const NO_DATA_FILL: Rgba = Rgba {
     r: 230.0 / 255.0,
     g: 230.0 / 255.0,
@@ -41,9 +42,10 @@ const NO_DATA_FILL: Rgba = Rgba {
     a: 1.0,
 };
 
-/// RGBA fill for one country per `docs/design/README.md` §Map: a continuous lerp with the accent at
-/// `statistic_min` and white at `statistic_max` (the TFR direction, where the most-saturated red
-/// marks the lowest value). `None` (no value at the active period) is white.
+/// RGBA fill for one country: a continuous lerp with the accent at `statistic_min` and white at
+/// `statistic_max` (the TFR direction, where the most-saturated red marks the lowest value). A
+/// `None` value (no data at the active period) is the no-data grey, kept distinct from the white
+/// max-value endpoint so absent data does not read as a high value.
 pub fn choropleth_fill(value: Option<f64>, statistic_min: f64, statistic_max: f64) -> Rgba {
     let Some(value) = value else {
         return NO_DATA_FILL;
