@@ -7,6 +7,17 @@ pub struct Rgba {
     pub a: f32,
 }
 
+impl Rgba {
+    fn lerp(self, to: Rgba, t: f32) -> Rgba {
+        Rgba {
+            r: lerp(self.r, to.r, t),
+            g: lerp(self.g, to.g, t),
+            b: lerp(self.b, to.b, t),
+            a: lerp(self.a, to.a, t),
+        }
+    }
+}
+
 /// The accent red, `#e60019`.
 const ACCENT_FILL: Rgba = Rgba { r: 230.0 / 255.0, g: 0.0, b: 25.0 / 255.0, a: 1.0 };
 
@@ -28,16 +39,11 @@ pub fn choropleth_fill(value: Option<f64>, statistic_min: f64, statistic_max: f6
         ((value - statistic_min) / range).clamp(0.0, 1.0)
     };
 
-    lerp(ACCENT_FILL, WHITE_FILL, normalized as f32)
+    ACCENT_FILL.lerp(WHITE_FILL, normalized as f32)
 }
 
-fn lerp(from: Rgba, to: Rgba, t: f32) -> Rgba {
-    Rgba {
-        r: from.r + t * (to.r - from.r),
-        g: from.g + t * (to.g - from.g),
-        b: from.b + t * (to.b - from.b),
-        a: from.a + t * (to.a - from.a),
-    }
+fn lerp(from: f32, to: f32, t: f32) -> f32 {
+    from + t * (to - from)
 }
 
 #[cfg(test)]
