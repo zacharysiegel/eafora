@@ -19,17 +19,34 @@ impl Rgba {
 }
 
 /// The accent red, `#e60019`.
-const ACCENT_FILL: Rgba = Rgba { r: 230.0 / 255.0, g: 0.0, b: 25.0 / 255.0, a: 1.0 };
+const ACCENT_FILL: Rgba = Rgba {
+    r: 230.0 / 255.0,
+    g: 0.0,
+    b: 25.0 / 255.0,
+    a: 1.0,
+};
 
 /// The white base, `#fff`.
-const WHITE_FILL: Rgba = Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+const WHITE_FILL: Rgba = Rgba {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+    a: 1.0,
+};
+
+const NO_DATA_FILL: Rgba = Rgba {
+    r: 230.0 / 255.0,
+    g: 230.0 / 255.0,
+    b: 230.0 / 255.0,
+    a: 1.0,
+};
 
 /// RGBA fill for one country per `docs/design/README.md` §Map: a continuous lerp with the accent at
 /// `statistic_min` and white at `statistic_max` (the TFR direction, where the most-saturated red
 /// marks the lowest value). `None` (no value at the active period) is white.
 pub fn choropleth_fill(value: Option<f64>, statistic_min: f64, statistic_max: f64) -> Rgba {
     let Some(value) = value else {
-        return WHITE_FILL;
+        return NO_DATA_FILL;
     };
 
     let range: f64 = statistic_max - statistic_min;
@@ -53,15 +70,35 @@ mod tests {
     const TOLERANCE: f32 = 1e-6;
 
     fn assert_fill_approx(actual: Rgba, expected: Rgba) {
-        assert!((actual.r - expected.r).abs() < TOLERANCE, "r: {} vs {}", actual.r, expected.r);
-        assert!((actual.g - expected.g).abs() < TOLERANCE, "g: {} vs {}", actual.g, expected.g);
-        assert!((actual.b - expected.b).abs() < TOLERANCE, "b: {} vs {}", actual.b, expected.b);
-        assert!((actual.a - expected.a).abs() < TOLERANCE, "a: {} vs {}", actual.a, expected.a);
+        assert!(
+            (actual.r - expected.r).abs() < TOLERANCE,
+            "r: {} vs {}",
+            actual.r,
+            expected.r
+        );
+        assert!(
+            (actual.g - expected.g).abs() < TOLERANCE,
+            "g: {} vs {}",
+            actual.g,
+            expected.g
+        );
+        assert!(
+            (actual.b - expected.b).abs() < TOLERANCE,
+            "b: {} vs {}",
+            actual.b,
+            expected.b
+        );
+        assert!(
+            (actual.a - expected.a).abs() < TOLERANCE,
+            "a: {} vs {}",
+            actual.a,
+            expected.a
+        );
     }
 
     #[test]
-    fn choropleth_fill_maps_none_to_white() {
-        assert_fill_approx(choropleth_fill(None, 1.0, 3.0), WHITE_FILL);
+    fn choropleth_fill_maps_none_to_no_data_gray() {
+        assert_fill_approx(choropleth_fill(None, 1.0, 3.0), NO_DATA_FILL);
     }
 
     #[test]
