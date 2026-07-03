@@ -4,6 +4,9 @@ pub mod error;
 pub mod filesystem;
 pub mod license;
 pub mod map;
+// render: the wgpu GPU stack. Feature-gated so the ingestion producer never links wgpu.
+#[cfg(feature = "render")]
+pub mod render;
 pub mod revision;
 pub mod sqlite;
 
@@ -12,6 +15,8 @@ pub use canonical::*;
 pub use filesystem::*;
 pub use license::*;
 pub use map::*;
+#[cfg(feature = "render")]
+pub use render::*;
 pub use revision::*;
 pub use sqlite::*;
 

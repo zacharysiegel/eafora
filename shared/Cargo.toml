@@ -21,12 +21,13 @@ bytes = { workspace = true }
 const_format = { workspace = true }
 
 bytemuck = { workspace = true, optional = true }
+earcutr = { workspace = true, optional = true }
 raw-window-handle = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, default-features = false, features = ["sync"] }
 
 [features]
 # render: pulls the wgpu GPU stack. Off by default so the ingestion producer never links wgpu.
-render = ["dep:wgpu", "dep:raw-window-handle", "dep:bytemuck", "dep:tokio"]
+render = ["dep:wgpu", "dep:raw-window-handle", "dep:bytemuck", "dep:earcutr", "dep:tokio"]
 
 # Not for wasm32: rusqlite bundles a C SQLite that can't compile to wasm32 (no libc). The
 # `serialize` feature adds Connection::deserialize, used to open a shard's in-memory bytes.
