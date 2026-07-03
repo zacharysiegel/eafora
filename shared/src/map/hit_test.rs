@@ -22,20 +22,16 @@ pub fn region_at_point(
     }
 
     let geo_point: GeoPoint = screen_to_geo(viewport, surface_dimensions, screen_point);
-    let lon: f64 = wrap_longitude(geo_point.lon);
-    let lat: f64 = geo_point.lat;
-
-    let query_bbox: BoundingBox = BoundingBox {
-        min_lon: lon,
-        min_lat: lat,
-        max_lon: lon,
-        max_lat: lat,
+    let geo_point: GeoPoint = GeoPoint {
+        lon: wrap_longitude(geo_point.lon),
+        ..geo_point
     };
-    let candidate_features: Vec<CountryFeature> = geometry.features_in_bbox(query_bbox).ok()?;
+    let query_bbox: BoundingBox = BoundingBox::from_point(geo_point);
 
+    let candidate_features: Vec<CountryFeature> = geometry.features_in_bbox(query_bbox).ok()?;
     let hit_feature: &CountryFeature = candidate_features
         .iter()
-        .find(|candidate_feature| feature_contains(candidate_feature, lon, lat))?;
+        .find(|candidate_feature| feature_contains(candidate_feature, geo_point.lat, geo_point.lon))?;
 
     Some(RegionCode(hit_feature.region_code.clone()))
 }
@@ -58,26 +54,26 @@ fn wrap_longitude(lon: f64) -> f64 {
     (lon + 180.0).rem_euclid(360.0) - 180.0
 }
 
-fn feature_contains(feature: &CountryFeature, lon: f64, lat: f64) -> bool {
-    feature.polygons.iter().any(|polygon| point_in_polygon(polygon, lon, lat))
+fn feature_contains(feature: &CountryFeature, lat: f64, lon: f64) -> bool {
+    feature.polygons.iter().any(|polygon| point_in_polygon(polygon, lat, lon))
 }
 
-fn point_in_polygon(polygon: &Polygon, lon: f64, lat: f64) -> bool {
-    if !point_in_ring(&polygon.exterior, lon, lat) {
+fn point_in_polygon(polygon: &Polygon, lat: f64, lon: f64) -> bool {
+    if !point_in_ring(&polygon.exterior, lat, lon) {
         return false;
     }
 
     let inside_a_hole: bool = polygon
         .interiors
         .iter()
-        .any(|interior_ring| point_in_ring(interior_ring, lon, lat));
+        .any(|interior_ring| point_in_ring(interior_ring, lat, lon));
 
     !inside_a_hole
 }
 
 /// Even-odd ray casting: a point is inside when a ray cast to +longitude crosses an odd number of
 /// ring edges.
-fn point_in_ring(ring: &[(f64, f64)], lon: f64, lat: f64) -> bool {
+fn point_in_ring(ring: &[(f64, f64)], lat: f64, lon: f64) -> bool {
     let vertex_count: usize = ring.len();
     if vertex_count < 3 {
         return false;
