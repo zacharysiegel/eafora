@@ -1,13 +1,22 @@
+/// An sRGB color; each component is in `[0, 1]`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rgba {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
 /// The accent red, `#e60019`.
-const ACCENT_FILL: [f32; 4] = [230.0 / 255.0, 0.0, 25.0 / 255.0, 1.0];
+const ACCENT_FILL: Rgba = Rgba { r: 230.0 / 255.0, g: 0.0, b: 25.0 / 255.0, a: 1.0 };
 
 /// The white base, `#fff`.
-const WHITE_FILL: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const WHITE_FILL: Rgba = Rgba { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 
 /// RGBA fill for one country per `docs/design/README.md` §Map: a continuous lerp with the accent at
 /// `statistic_min` and white at `statistic_max` (the TFR direction, where the most-saturated red
 /// marks the lowest value). `None` (no value at the active period) is white.
-pub fn choropleth_fill(value: Option<f64>, statistic_min: f64, statistic_max: f64) -> [f32; 4] {
+pub fn choropleth_fill(value: Option<f64>, statistic_min: f64, statistic_max: f64) -> Rgba {
     let Some(value) = value else {
         return WHITE_FILL;
     };
@@ -22,13 +31,13 @@ pub fn choropleth_fill(value: Option<f64>, statistic_min: f64, statistic_max: f6
     lerp(ACCENT_FILL, WHITE_FILL, normalized as f32)
 }
 
-fn lerp(from: [f32; 4], to: [f32; 4], t: f32) -> [f32; 4] {
-    [
-        from[0] + t * (to[0] - from[0]),
-        from[1] + t * (to[1] - from[1]),
-        from[2] + t * (to[2] - from[2]),
-        from[3] + t * (to[3] - from[3]),
-    ]
+fn lerp(from: Rgba, to: Rgba, t: f32) -> Rgba {
+    Rgba {
+        r: from.r + t * (to.r - from.r),
+        g: from.g + t * (to.g - from.g),
+        b: from.b + t * (to.b - from.b),
+        a: from.a + t * (to.a - from.a),
+    }
 }
 
 #[cfg(test)]
@@ -37,15 +46,11 @@ mod tests {
 
     const TOLERANCE: f32 = 1e-6;
 
-    fn assert_fill_approx(actual: [f32; 4], expected: [f32; 4]) {
-        for channel in 0..4 {
-            assert!(
-                (actual[channel] - expected[channel]).abs() < TOLERANCE,
-                "channel {channel}: {} vs {}",
-                actual[channel],
-                expected[channel],
-            );
-        }
+    fn assert_fill_approx(actual: Rgba, expected: Rgba) {
+        assert!((actual.r - expected.r).abs() < TOLERANCE, "r: {} vs {}", actual.r, expected.r);
+        assert!((actual.g - expected.g).abs() < TOLERANCE, "g: {} vs {}", actual.g, expected.g);
+        assert!((actual.b - expected.b).abs() < TOLERANCE, "b: {} vs {}", actual.b, expected.b);
+        assert!((actual.a - expected.a).abs() < TOLERANCE, "a: {} vs {}", actual.a, expected.a);
     }
 
     #[test]
@@ -65,13 +70,13 @@ mod tests {
 
     #[test]
     fn choropleth_fill_lerps_the_midpoint() {
-        let midpoint_fill: [f32; 4] = choropleth_fill(Some(2.0), 1.0, 3.0);
-        let expected: [f32; 4] = [
-            (ACCENT_FILL[0] + WHITE_FILL[0]) / 2.0,
-            (ACCENT_FILL[1] + WHITE_FILL[1]) / 2.0,
-            (ACCENT_FILL[2] + WHITE_FILL[2]) / 2.0,
-            1.0,
-        ];
+        let midpoint_fill: Rgba = choropleth_fill(Some(2.0), 1.0, 3.0);
+        let expected: Rgba = Rgba {
+            r: (ACCENT_FILL.r + WHITE_FILL.r) / 2.0,
+            g: (ACCENT_FILL.g + WHITE_FILL.g) / 2.0,
+            b: (ACCENT_FILL.b + WHITE_FILL.b) / 2.0,
+            a: 1.0,
+        };
         assert_fill_approx(midpoint_fill, expected);
     }
 
