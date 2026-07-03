@@ -2,7 +2,7 @@
 //! it through the viewport into Miller projected space, inverse-project to a coordinate, then
 //! point-in-polygon against the geometry layer's features.
 
-use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer, Polygon};
+use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer};
 use crate::map::projection::{self, GeoPoint};
 use crate::map::value_types::{RegionCode, ScreenPoint, SurfaceDimensions, Viewport};
 
@@ -31,7 +31,7 @@ pub fn region_at_point(
     let candidate_features: Vec<CountryFeature> = geometry.features_intersecting_bbox(query_bbox).ok()?;
     let hit_feature: &CountryFeature = candidate_features
         .iter()
-        .find(|candidate_feature| feature_contains(candidate_feature, geo_point.lat, geo_point.lon))?;
+        .find(|candidate_feature| candidate_feature.contains(geo_point))?;
 
     Some(RegionCode(hit_feature.region_code.clone()))
 }
@@ -52,53 +52,6 @@ fn screen_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, scre
 
 fn wrap_longitude(lon: f64) -> f64 {
     (lon + 180.0).rem_euclid(360.0) - 180.0
-}
-
-fn feature_contains(feature: &CountryFeature, lat: f64, lon: f64) -> bool {
-    feature.polygons.iter().any(|polygon| point_in_polygon(polygon, lat, lon))
-}
-
-fn point_in_polygon(polygon: &Polygon, lat: f64, lon: f64) -> bool {
-    if !point_in_ring(&polygon.exterior, lat, lon) {
-        return false;
-    }
-
-    let inside_a_hole: bool = polygon
-        .interiors
-        .iter()
-        .any(|interior_ring| point_in_ring(interior_ring, lat, lon));
-
-    !inside_a_hole
-}
-
-/// Even-odd ray casting: a point is inside when a ray cast to +longitude crosses an odd number of
-/// ring edges.
-fn point_in_ring(ring: &[(f64, f64)], lat: f64, lon: f64) -> bool {
-    let vertex_count: usize = ring.len();
-    if vertex_count < 3 {
-        return false;
-    }
-
-    let mut inside: bool = false;
-    let mut previous_index: usize = vertex_count - 1;
-    for current_index in 0..vertex_count {
-        let (current_lon, current_lat): (f64, f64) = ring[current_index];
-        let (previous_lon, previous_lat): (f64, f64) = ring[previous_index];
-
-        let edge_straddles_latitude: bool = (current_lat > lat) != (previous_lat > lat);
-        if edge_straddles_latitude {
-            let crossing_lon: f64 =
-                (previous_lon - current_lon) * (lat - current_lat) / (previous_lat - current_lat) + current_lon;
-
-            if lon < crossing_lon {
-                inside = !inside;
-            }
-        }
-
-        previous_index = current_index;
-    }
-
-    inside
 }
 
 #[cfg(test)]

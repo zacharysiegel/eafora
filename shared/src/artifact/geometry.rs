@@ -49,6 +49,51 @@ impl From<&geo_types::Polygon<f64>> for Polygon {
     }
 }
 
+impl Polygon {
+    pub fn contains(&self, point: GeoPoint) -> bool {
+        if !Self::point_in_ring(&self.exterior, point) {
+            return false;
+        }
+
+        let inside_a_hole: bool = self
+            .interiors
+            .iter()
+            .any(|interior_ring| Self::point_in_ring(interior_ring, point));
+
+        !inside_a_hole
+    }
+
+    /// Even-odd ray casting: a point is inside when a ray cast to +longitude crosses an odd number of
+    /// ring edges.
+    fn point_in_ring(ring: &[(f64, f64)], point: GeoPoint) -> bool {
+        let vertex_count: usize = ring.len();
+        if vertex_count < 3 {
+            return false;
+        }
+
+        let mut inside: bool = false;
+        let mut previous_index: usize = vertex_count - 1;
+        for current_index in 0..vertex_count {
+            let (current_lon, current_lat): (f64, f64) = ring[current_index];
+            let (previous_lon, previous_lat): (f64, f64) = ring[previous_index];
+
+            let edge_straddles_latitude: bool = (current_lat > point.lat) != (previous_lat > point.lat);
+            if edge_straddles_latitude {
+                let crossing_lon: f64 =
+                    (previous_lon - current_lon) * (point.lat - current_lat) / (previous_lat - current_lat) + current_lon;
+
+                if point.lon < crossing_lon {
+                    inside = !inside;
+                }
+            }
+
+            previous_index = current_index;
+        }
+
+        inside
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoundingBox {
     pub min_lon: f64,
@@ -115,6 +160,12 @@ impl<'a> TryFrom<&'a FgbFeature> for CountryFeature {
             .ok_or_else(|| AppError::from("geometry feature has no coordinates".to_string()))?;
 
         Ok(CountryFeature { iso3, name_en, region_code, polygons, bbox })
+    }
+}
+
+impl CountryFeature {
+    pub fn contains(&self, point: GeoPoint) -> bool {
+        self.polygons.iter().any(|polygon| polygon.contains(point))
     }
 }
 
