@@ -100,8 +100,8 @@ impl Polygon {
             return false;
         }
 
-        let fraction_along_edge: f64 = inverse_lerp(b_lat, a_lat, point.lat);
-        let crossing_lon: f64 = lerp(b_lon, a_lon, fraction_along_edge);
+        let t: f64 = inverse_lerp(b_lat, a_lat, point.lat);
+        let crossing_lon: f64 = lerp(b_lon, a_lon, t);
 
         let crossing_is_east_of_point: bool = point.lon < crossing_lon;
         crossing_is_east_of_point
