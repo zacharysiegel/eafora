@@ -77,10 +77,11 @@ impl Polygon {
             let (current_lon, current_lat): (f64, f64) = ring[current_index];
             let (previous_lon, previous_lat): (f64, f64) = ring[previous_index];
 
-            let edge_straddles_latitude: bool = (current_lat > point.lat) != (previous_lat > point.lat);
-            if edge_straddles_latitude {
-                let crossing_lon: f64 =
-                    (previous_lon - current_lon) * (point.lat - current_lat) / (previous_lat - current_lat) + current_lon;
+            let current_is_above: bool = current_lat > point.lat;
+            let previous_is_above: bool = previous_lat > point.lat;
+            if current_is_above != previous_is_above {
+                let latitude_fraction: f64 = (point.lat - current_lat) / (previous_lat - current_lat);
+                let crossing_lon: f64 = current_lon + latitude_fraction * (previous_lon - current_lon);
 
                 if point.lon < crossing_lon {
                     inside = !inside;
