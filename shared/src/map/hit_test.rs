@@ -4,24 +4,24 @@
 
 use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer, Polygon};
 use crate::map::projection::{self, GeoPoint};
-use crate::map::value_types::{RegionCode, ScreenPoint, SurfaceSize, Viewport};
+use crate::map::value_types::{RegionCode, ScreenPoint, SurfaceDimensions, Viewport};
 
 /// The region whose polygon contains `screen_point`, or `None` when the point is off every country
-/// (open ocean) or off the map. `surface_size` is required because `screen_point` is in device
+/// (open ocean) or off the map. `surface_dimensions` is required because `screen_point` is in device
 /// pixels: the point is normalized against the surface extent before it can be mapped through the
 /// viewport. A longitude past the ±180 seam (from a pan across the antimeridian) is wrapped back
 /// into range so the cursor resolves to the same country as its on-map copy.
 pub fn region_at_point(
     geometry: &GeometryLayer,
     viewport: Viewport,
-    surface_size: SurfaceSize,
+    surface_dimensions: SurfaceDimensions,
     screen_point: ScreenPoint,
 ) -> Option<RegionCode> {
-    if surface_size.width == 0 || surface_size.height == 0 {
+    if surface_dimensions.width == 0 || surface_dimensions.height == 0 {
         return None;
     }
 
-    let geo_point: GeoPoint = screen_to_geo(viewport, surface_size, screen_point);
+    let geo_point: GeoPoint = screen_to_geo(viewport, surface_dimensions, screen_point);
     let lon: f64 = wrap_longitude(geo_point.lon);
     let lat: f64 = geo_point.lat;
 
@@ -40,9 +40,9 @@ pub fn region_at_point(
     Some(RegionCode(hit_feature.region_code.clone()))
 }
 
-fn screen_to_geo(viewport: Viewport, surface_size: SurfaceSize, screen_point: ScreenPoint) -> GeoPoint {
-    let horizontal_fraction: f64 = screen_point.x / surface_size.width as f64;
-    let vertical_fraction: f64 = screen_point.y / surface_size.height as f64;
+fn screen_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, screen_point: ScreenPoint) -> GeoPoint {
+    let horizontal_fraction: f64 = screen_point.x / surface_dimensions.width as f64;
+    let vertical_fraction: f64 = screen_point.y / surface_dimensions.height as f64;
 
     let projected_x: f64 =
         viewport.longitude_min + horizontal_fraction * (viewport.longitude_max - viewport.longitude_min);
@@ -111,7 +111,7 @@ mod tests {
     use crate::artifact::geometry::parse_geometry_layer;
     use crate::artifact::geometry::tests::one_feature_fgb_bytes;
 
-    const SURFACE_SIZE: SurfaceSize = SurfaceSize { width: 200, height: 200 };
+    const SURFACE_DIMENSIONS: SurfaceDimensions = SurfaceDimensions { width: 200, height: 200 };
 
     // Testland: a rectangle over lon 0..2, lat 0..3, region_code "testland".
     fn testland_geometry() -> GeometryLayer {
@@ -134,7 +134,7 @@ mod tests {
         let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
 
         let result: Option<RegionCode> =
-            region_at_point(&geometry, viewport, SURFACE_SIZE, ScreenPoint { x: 110.0, y: 100.0 });
+            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 110.0, y: 100.0 });
 
         assert_eq!(result, Some(RegionCode("testland".to_string())));
     }
@@ -145,7 +145,7 @@ mod tests {
         let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
 
         let result: Option<RegionCode> =
-            region_at_point(&geometry, viewport, SURFACE_SIZE, ScreenPoint { x: 50.0, y: 100.0 });
+            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 50.0, y: 100.0 });
 
         assert_eq!(result, None);
     }
@@ -156,7 +156,7 @@ mod tests {
         let viewport: Viewport = latitude_band_viewport(-370.0, -170.0);
 
         let result: Option<RegionCode> =
-            region_at_point(&geometry, viewport, SURFACE_SIZE, ScreenPoint { x: 11.0, y: 100.0 });
+            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 11.0, y: 100.0 });
 
         assert_eq!(result, Some(RegionCode("testland".to_string())));
     }

@@ -18,7 +18,7 @@ pub struct ScreenPoint {
 /// The attached surface's extent, in the same device-pixel-logical space as `ScreenPoint`. A hit-test
 /// needs it to normalize a device-pixel point against the viewport.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SurfaceSize {
+pub struct SurfaceDimensions {
     pub width: u32,
     pub height: u32,
 }
