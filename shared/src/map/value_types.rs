@@ -15,6 +15,14 @@ pub struct ScreenPoint {
     pub y: f64,
 }
 
+/// The attached surface's extent, in the same device-pixel-logical space as `ScreenPoint`. A hit-test
+/// needs it to normalize a device-pixel point against the viewport.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfaceSize {
+    pub width: u32,
+    pub height: u32,
+}
+
 /// A region's `code` slug (e.g. `"usa"`, `"germany"`), wrapping the canonical `region.code`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RegionCode(pub String);
