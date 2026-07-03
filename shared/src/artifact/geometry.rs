@@ -63,8 +63,8 @@ impl Polygon {
         !inside_a_hole
     }
 
-    /// Even-odd ray casting: a point is inside when a ray cast to +longitude crosses an odd number of
-    /// ring edges.
+    /// Even-odd rule: `point` is inside the ring when a ray cast east from it crosses an odd number
+    /// of the ring's edges.
     fn point_in_ring(ring: &[(f64, f64)], point: GeoPoint) -> bool {
         let vertex_count: usize = ring.len();
         if vertex_count < 3 {
@@ -74,24 +74,36 @@ impl Polygon {
         let mut inside: bool = false;
         let mut previous_index: usize = vertex_count - 1;
         for current_index in 0..vertex_count {
-            let (current_lon, current_lat): (f64, f64) = ring[current_index];
-            let (previous_lon, previous_lat): (f64, f64) = ring[previous_index];
+            let edge_start: (f64, f64) = ring[previous_index];
+            let edge_end: (f64, f64) = ring[current_index];
 
-            let current_is_above: bool = current_lat > point.lat;
-            let previous_is_above: bool = previous_lat > point.lat;
-            if current_is_above != previous_is_above {
-                let latitude_fraction: f64 = (point.lat - current_lat) / (previous_lat - current_lat);
-                let crossing_lon: f64 = current_lon + latitude_fraction * (previous_lon - current_lon);
-
-                if point.lon < crossing_lon {
-                    inside = !inside;
-                }
+            if Self::edge_crosses_eastward_ray(edge_start, edge_end, point) {
+                inside = !inside;
             }
 
             previous_index = current_index;
         }
 
         inside
+    }
+
+    /// Whether the edge from `start` to `end` crosses a ray cast east from `point` (latitude held at
+    /// `point.lat`, longitude increasing). True only when the endpoints sit on opposite sides of
+    /// `point.lat` and the edge meets that latitude at a longitude east of `point.lon`.
+    fn edge_crosses_eastward_ray(start: (f64, f64), end: (f64, f64), point: GeoPoint) -> bool {
+        let (start_lon, start_lat): (f64, f64) = start;
+        let (end_lon, end_lat): (f64, f64) = end;
+
+        let start_is_above: bool = start_lat > point.lat;
+        let end_is_above: bool = end_lat > point.lat;
+        if start_is_above == end_is_above {
+            return false;
+        }
+
+        let latitude_fraction: f64 = (point.lat - end_lat) / (start_lat - end_lat);
+        let crossing_lon: f64 = end_lon + latitude_fraction * (start_lon - end_lon);
+
+        point.lon < crossing_lon
     }
 }
 
