@@ -6,8 +6,8 @@ use std::f64::consts::FRAC_PI_4;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GeoPoint {
-    pub lon: f64,
     pub lat: f64,
+    pub lon: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -16,7 +16,7 @@ pub struct ProjectedPoint {
     pub y: f64,
 }
 
-pub fn project(lon: f64, lat: f64) -> ProjectedPoint {
+pub fn project(lat: f64, lon: f64) -> ProjectedPoint {
     let lat_radians: f64 = lat.to_radians();
     let y: f64 = 1.25 * (FRAC_PI_4 + 0.4 * lat_radians).tan().ln();
 
@@ -27,7 +27,7 @@ pub fn unproject(x: f64, y: f64) -> GeoPoint {
     let lat_radians: f64 = ((y / 1.25).exp().atan() - FRAC_PI_4) / 0.4;
     let lat: f64 = lat_radians.to_degrees();
 
-    GeoPoint { lon: x, lat }
+    GeoPoint { lat, lon: x }
 }
 
 #[cfg(test)]
@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn project_passes_longitude_through_without_clamping() {
-        let projected: ProjectedPoint = project(-185.0, 0.0);
+        let projected: ProjectedPoint = project(0.0, -185.0);
 
         assert_eq!(projected.x, -185.0);
         assert!(projected.y.abs() < TOLERANCE);
@@ -59,7 +59,7 @@ mod tests {
                 let lon: f64 = longitude_degrees as f64;
                 let lat: f64 = latitude_degrees as f64;
 
-                let projected: ProjectedPoint = project(lon, lat);
+                let projected: ProjectedPoint = project(lat, lon);
                 let recovered: GeoPoint = unproject(projected.x, projected.y);
 
                 assert!((recovered.lon - lon).abs() < TOLERANCE, "lon {lon}: recovered {}", recovered.lon);

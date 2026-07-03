@@ -64,21 +64,21 @@ Rendering is **event-driven**, NOT loop-driven — `draw_frame` runs only when t
 
 ### Projection (Miller cylindrical) (P5)
 
-`shared::map::projection` provides closed-form `project(longitude: f64, latitude: f64) -> (f64, f64)` and `unproject(x: f64, y: f64) -> (f64, f64)` per `docs/architecture/overview.md` §Projection. Miller cylindrical formula (~5 lines):
+`shared::map::projection` provides closed-form `project(latitude: f64, longitude: f64) -> ProjectedPoint` and `unproject(x: f64, y: f64) -> GeoPoint` per `docs/architecture/overview.md` §Projection. Miller cylindrical formula (~5 lines):
 ```rust
-fn project(longitude: f64, latitude: f64) -> (f64, f64) {
-    let x: f64 = longitude;
-    let y: f64 = 1.25 * ((std::f64::consts::FRAC_PI_4 + 0.4 * latitude).tan()).ln();
-    (x, y)
+fn project(latitude: f64, longitude: f64) -> ProjectedPoint {
+    let latitude_radians: f64 = latitude.to_radians();
+    let y: f64 = 1.25 * (FRAC_PI_4 + 0.4 * latitude_radians).tan().ln();
+    ProjectedPoint { x: longitude, y }
 }
 ```
-Aspect ratio approximately 5:3; no alternate projections; no toggle; no v2+ plans for additional projections (the architecture explicitly closes this decision). The `unproject` inverse is used by `hit_test` to convert screen-space cursor positions back to (longitude, latitude) for the spatial-index query.
+Aspect ratio approximately 5:3; no alternate projections; no toggle; no v2+ plans for additional projections (the architecture explicitly closes this decision). The `unproject` inverse is used by `hit_test` to convert screen-space cursor positions back to (latitude, longitude) for the spatial-index query.
 
 **Acceptance Scenarios**:
 
 1. **Given** `project(0.0, 0.0)`, **When** the function runs, **Then** the result is `(0.0, 0.0)` (the origin maps to the origin in the unit-radius spherical frame).
-2. **Given** any `(longitude, latitude)` pair within Miller's defined domain (longitude in [-180, 180], latitude in [-90, 90] excluding the poles), **When** `unproject(project(longitude, latitude))` runs, **Then** the result is approximately equal to the input (within `1e-10` tolerance). The round-trip property exercises both halves of the projection.
-3. **Given** longitudes outside [-180, 180] (e.g. -185 after a horizontal pan past the antimeridian), **When** `project(-185, 0)` runs, **Then** the function returns `(-185, 0)` (it does NOT clamp to -180); the renderer's wraparound code path is responsible for the visual seam handling, not the projection function.
+2. **Given** any `(latitude, longitude)` pair within Miller's defined domain (longitude in [-180, 180], latitude in [-90, 90] excluding the poles), **When** `unproject(project(latitude, longitude))` runs, **Then** the result is approximately equal to the input (within `1e-10` tolerance). The round-trip property exercises both halves of the projection.
+3. **Given** longitudes outside [-180, 180] (e.g. -185 after a horizontal pan past the antimeridian), **When** `project(0, -185)` runs, **Then** the projected `x` is `-185` (it does NOT clamp to -180); the renderer's wraparound code path is responsible for the visual seam handling, not the projection function.
 
 ---
 
@@ -131,8 +131,8 @@ Aspect ratio approximately 5:3; no alternate projections; no toggle; no v2+ plan
 
 #### Projection
 
-- **FR-020**: System MUST implement `shared::map::projection::project(longitude: f64, latitude: f64) -> (f64, f64)` per `docs/architecture/overview.md` §Projection (the closed-form Miller cylindrical formula). The function MUST be pure (no I/O, no global state); the math operates on `f64`s in radians-converted form internally and returns the projected (x, y) in the unit-square frame.
-- **FR-021**: System MUST implement `shared::map::projection::unproject(x: f64, y: f64) -> (f64, f64)` as the closed-form inverse of `project`. Used by hit_test to convert screen-space cursor positions back to (longitude, latitude) for the spatial-index query.
+- **FR-020**: System MUST implement `shared::map::projection::project(latitude: f64, longitude: f64) -> ProjectedPoint` per `docs/architecture/overview.md` §Projection (the closed-form Miller cylindrical formula). The function MUST be pure (no I/O, no global state); the math operates on `f64`s in radians-converted form internally and returns the projected (x, y) in the unit-square frame.
+- **FR-021**: System MUST implement `shared::map::projection::unproject(x: f64, y: f64) -> GeoPoint` as the closed-form inverse of `project`. Used by hit_test to convert screen-space cursor positions back to (latitude, longitude) for the spatial-index query.
 - **FR-022**: System MUST NOT introduce alternate projections, a globe-view toggle, or v2+ projection plans per the explicit closed decision in `docs/architecture/overview.md` §Projection. Miller cylindrical is the only projection.
 
 #### Hit testing

@@ -599,7 +599,7 @@ impl GeometryLayer {
     pub fn iter_features(&self) -> Result<Vec<CountryFeature>, AppError>;
 
     /// Features whose bounding box intersects `bbox`, via the file's R-tree spatial index.
-    pub fn features_in_bbox(&self, bbox: BoundingBox) -> Result<Vec<CountryFeature>, AppError>;
+    pub fn features_intersecting_bbox(&self, bbox: BoundingBox) -> Result<Vec<CountryFeature>, AppError>;
 }
 ```
 
@@ -623,7 +623,7 @@ pub struct CountryFeature {
     pub iso3: String,           // ISO 3166 alpha-3 — matches `region.code` for country-level features
     pub name_en: String,        // The country's English name (joined from the canonical store by iso3 at write time)
     pub polygons: Vec<Polygon>, // A country may be multi-polygon (USA includes Alaska; Russia spans the antimeridian; etc.)
-    pub bbox: BoundingBox,      // Pre-computed bounding box; what `features_in_bbox` indexes on
+    pub bbox: BoundingBox,      // Pre-computed bounding box; what `features_intersecting_bbox` indexes on
 }
 
 #[derive(Debug, Clone)]

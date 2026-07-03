@@ -43,8 +43,8 @@ fn screen_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, scre
     let projected_x: f64 =
         viewport.longitude_min + horizontal_fraction * (viewport.longitude_max - viewport.longitude_min);
 
-    let projected_y_top: f64 = projection::project(0.0, viewport.latitude_max).y;
-    let projected_y_bottom: f64 = projection::project(0.0, viewport.latitude_min).y;
+    let projected_y_top: f64 = projection::project(viewport.latitude_max, 0.0).y;
+    let projected_y_bottom: f64 = projection::project(viewport.latitude_min, 0.0).y;
     let projected_y: f64 = projected_y_top + vertical_fraction * (projected_y_bottom - projected_y_top);
 
     projection::unproject(projected_x, projected_y)
