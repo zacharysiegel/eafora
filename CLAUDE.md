@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > properties. It is not load-bearing. Once the project's actual conventions and
 > architecture are established (after `specify init` and `/speckit.constitution`),
 > rewrite this file freely — clobber any of the content below that no longer
-> serves you. The decisions in `BRAND.md` are the only thing worth preserving
+> serves you. The decisions in `docs/product/brand.md` are the only thing worth preserving
 > verbatim.
 
 ## Project
@@ -22,7 +22,7 @@ native iOS and Android apps. The owner is using this project to practice
 multiplatform application development as preparation for a more ambitious
 parallel project (a native game, currently a Rust macOS app, eventually mobile).
 
-See `BRAND.md` for naming, etymology, and external property reservations.
+See `docs/product/brand.md` for naming, etymology, and external property reservations.
 
 ## Stage
 
@@ -118,7 +118,6 @@ holds principles; these docs operationalize them.
 .
 ├── .claude/        # Claude Code session machinery (will gain commands/ once spec-kit is initialized)
 ├── .git/
-├── BRAND.md        # Name, pronunciation, etymology, external property reservations
 ├── CLAUDE.md       # This file
 └── plans/          # Vestigial; will be removed in favor of spec-kit's specs/ and a docs/
 ```
