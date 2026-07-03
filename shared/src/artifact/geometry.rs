@@ -5,6 +5,7 @@ use flatgeobuf::{FallibleStreamingIterator, FeatureProperties, FgbFeature, FgbRe
 use geozero::ToGeo;
 
 use crate::error::AppError;
+use crate::GeoPoint;
 
 /// Natural Earth scale denominator (1:50m). The single source for the scale token
 /// shared by the layer name and the filename stem; a bump to 1:10m geometry changes
@@ -57,6 +58,15 @@ pub struct BoundingBox {
 }
 
 impl BoundingBox {
+    pub fn from_point(geo_point: GeoPoint) -> Self {
+        BoundingBox {
+            min_lon: geo_point.lon,
+            min_lat: geo_point.lat,
+            max_lon: geo_point.lon,
+            max_lat: geo_point.lat,
+        }
+    }
+
     fn from_polygons(polygons: &[Polygon]) -> Option<Self> {
         let mut coordinates = polygons
             .iter()
@@ -131,7 +141,7 @@ impl GeometryLayer {
     }
 
     /// Features whose bounding box intersects `bbox`, via the file's R-tree spatial index.
-    pub fn features_in_bbox(&self, bbox: BoundingBox) -> Result<Vec<CountryFeature>, AppError> {
+    pub fn features_intersecting_bbox(&self, bbox: BoundingBox) -> Result<Vec<CountryFeature>, AppError> {
         let mut feature_iter = FgbReader::open(Cursor::new(self.bytes.as_slice()))?.select_bbox(
             bbox.min_lon,
             bbox.min_lat,
@@ -235,11 +245,11 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn features_in_bbox_returns_intersecting_feature() {
+    fn features_intersecting_bbox_returns_matching_feature() {
         let geometry_layer: GeometryLayer = parse_geometry_layer(one_feature_fgb_bytes()).unwrap();
 
         let country_feature_hits: Vec<CountryFeature> = geometry_layer
-            .features_in_bbox(BoundingBox { min_lon: 0.5, min_lat: 0.5, max_lon: 1.0, max_lat: 1.0 })
+            .features_intersecting_bbox(BoundingBox { min_lon: 0.5, min_lat: 0.5, max_lon: 1.0, max_lat: 1.0 })
             .unwrap();
 
         assert_eq!(country_feature_hits.len(), 1);

@@ -28,7 +28,7 @@ pub fn region_at_point(
     };
     let query_bbox: BoundingBox = BoundingBox::from_point(geo_point);
 
-    let candidate_features: Vec<CountryFeature> = geometry.features_in_bbox(query_bbox).ok()?;
+    let candidate_features: Vec<CountryFeature> = geometry.features_intersecting_bbox(query_bbox).ok()?;
     let hit_feature: &CountryFeature = candidate_features
         .iter()
         .find(|candidate_feature| feature_contains(candidate_feature, geo_point.lat, geo_point.lon))?;
