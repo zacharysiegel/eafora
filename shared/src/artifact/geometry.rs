@@ -90,20 +90,21 @@ impl Polygon {
     /// Whether the edge from `start` to `end` crosses a ray cast east from `point` (latitude held at
     /// `point.lat`, longitude increasing). True only when the endpoints sit on opposite sides of
     /// `point.lat` and the edge meets that latitude at a longitude east of `point.lon`.
-    fn edge_crosses_eastward_ray(start: (f64, f64), end: (f64, f64), point: GeoPoint) -> bool {
-        let (start_lon, start_lat): (f64, f64) = start;
-        let (end_lon, end_lat): (f64, f64) = end;
+    fn edge_crosses_eastward_ray(a: (f64, f64), b: (f64, f64), point: GeoPoint) -> bool {
+        let (a_lon, a_lat): (f64, f64) = a;
+        let (b_lon, b_lat): (f64, f64) = b;
 
-        let start_is_above: bool = start_lat > point.lat;
-        let end_is_above: bool = end_lat > point.lat;
-        if start_is_above == end_is_above {
+        let a_is_above: bool = a_lat > point.lat;
+        let b_is_above: bool = b_lat > point.lat;
+        if a_is_above == b_is_above {
             return false;
         }
 
-        let latitude_fraction: f64 = (point.lat - end_lat) / (start_lat - end_lat);
-        let crossing_lon: f64 = end_lon + latitude_fraction * (start_lon - end_lon);
+        let crossing_fraction: f64 = inverse_lerp(b_lat, a_lat, point.lat);
+        let crossing_lon: f64 = lerp(b_lon, a_lon, crossing_fraction);
 
-        point.lon < crossing_lon
+        let crossing_is_east_of_point: bool = point.lon < crossing_lon;
+        crossing_is_east_of_point
     }
 }
 
@@ -245,6 +246,14 @@ fn polygons_from_geometry(geometry: geo_types::Geometry<f64>) -> Result<Vec<Poly
     }
 
     Ok(polygons)
+}
+
+fn inverse_lerp(from: f64, to: f64, value: f64) -> f64 {
+    (value - from) / (to - from)
+}
+
+fn lerp(from: f64, to: f64, t: f64) -> f64 {
+    from + t * (to - from)
 }
 
 #[cfg(test)]
