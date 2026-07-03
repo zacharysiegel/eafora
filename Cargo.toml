@@ -35,3 +35,6 @@ geozero = { version = "0.14.*", default-features = false, features = ["with-geo"
 geo-types = "0.7.*"
 tempfile = "3.27.*"
 wasm-bindgen-test = "0.3.*"
+wgpu = { version = "30.0.*", default-features = false }
+raw-window-handle = "0.6.*"
+bytemuck = { version = "1.*", features = ["derive"] }

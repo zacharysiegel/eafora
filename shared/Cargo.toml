@@ -20,10 +20,21 @@ log = { workspace = true }
 bytes = { workspace = true }
 const_format = { workspace = true }
 
+bytemuck = { workspace = true, optional = true }
+raw-window-handle = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, default-features = false, features = ["sync"] }
+
+[features]
+# render: pulls the wgpu GPU stack. Off by default so the ingestion producer never links wgpu.
+render = ["dep:wgpu", "dep:raw-window-handle", "dep:bytemuck", "dep:tokio"]
+
 # Not for wasm32: rusqlite bundles a C SQLite that can't compile to wasm32 (no libc). The
 # `serialize` feature adds Connection::deserialize, used to open a shard's in-memory bytes.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { workspace = true, features = ["serialize"] }
+# Not for wasm32: native GPU backends (Metal on Apple, Vulkan on the Linux CI host and Android).
+# wasm32 gets webgpu/webgl below. A backend only exists if its wgpu feature is compiled in.
+wgpu = { workspace = true, optional = true, features = ["metal", "vulkan"] }
 
 # wasm32 only: uuid's `js` feature gives getrandom a browser RNG backend so the workspace-wide
 # `v7` feature compiles for wasm32-unknown-unknown. shared uses Uuid only as a field type, but the
@@ -31,8 +42,11 @@ rusqlite = { workspace = true, features = ["serialize"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 uuid = { workspace = true, features = ["js"] }
 # wasm32 only: the SQLite build the shard reader's read-only VFS registers against (native uses
-# rusqlite instead). See shared/src/sqlite/vfs.rs for why the VFS exists.
+# rusqlite instead). See shared/src/sqlite/ro_memory_vfs.rs for why the VFS exists.
 sqlite-wasm-rs = { workspace = true }
+# wasm32 only: WebGPU is the primary browser backend and WebGL2 the downlevel fallback; native gets
+# metal/vulkan above. A backend only exists if its wgpu feature is compiled in.
+wgpu = { workspace = true, optional = true, features = ["webgpu", "webgl"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
