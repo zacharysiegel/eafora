@@ -1,32 +1,7 @@
 use crate::artifact::geometry::{CountryFeature, GeometryLayer, Polygon};
 use crate::error::AppError;
 use crate::map::projection::{self, ProjectedPoint};
-
-/// One map vertex in Miller-projected space, before the viewport transform the vertex shader applies.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct MapVertex {
-    pub position: [f32; 2],
-}
-
-/// The fills pipeline's per-vertex color, uploaded as a second vertex buffer parallel to the static
-/// `MapVertex` positions. Kept separate because the color changes per frame (the active statistic
-/// and period drive the choropleth) while the positions are fixed once triangulated.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct FillVertex {
-    pub color: [f32; 4],
-}
-
-/// The shared vertex-stage uniform. `bounds` packs the projected viewport as `[min_x, min_y, max_x,
-/// max_y]`; `offset[0]` is the horizontal shift for an antimeridian wraparound draw. Packed into two
-/// `[f32; 4]` so the layout is unambiguously 16-byte aligned to match the WGSL uniform.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ViewportUniform {
-    pub bounds: [f32; 4],
-    pub offset: [f32; 4],
-}
+use crate::render::gpu_types::ProjectedVertex;
 
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, the fill triangle
 /// indices (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
@@ -36,7 +11,7 @@ pub struct ViewportUniform {
 pub struct CountryMesh {
     pub iso3: String,
     pub region_code: String,
-    pub vertices: Vec<MapVertex>,
+    pub vertices: Vec<ProjectedVertex>,
     pub fill_indices: Vec<u32>,
     pub border_indices: Vec<u32>,
 }
@@ -50,7 +25,7 @@ pub fn build_country_meshes(geometry: &GeometryLayer) -> Result<Vec<CountryMesh>
 }
 
 fn build_country_mesh(feature: &CountryFeature) -> Result<CountryMesh, AppError> {
-    let mut vertices: Vec<MapVertex> = Vec::new();
+    let mut vertices: Vec<ProjectedVertex> = Vec::new();
     let mut fill_indices: Vec<u32> = Vec::new();
     let mut border_indices: Vec<u32> = Vec::new();
 
@@ -69,7 +44,7 @@ fn build_country_mesh(feature: &CountryFeature) -> Result<CountryMesh, AppError>
 
 fn append_polygon(
     polygon: &Polygon,
-    vertices: &mut Vec<MapVertex>,
+    vertices: &mut Vec<ProjectedVertex>,
     fill_indices: &mut Vec<u32>,
     border_indices: &mut Vec<u32>,
 ) -> Result<(), AppError> {
@@ -101,7 +76,7 @@ fn append_polygon(
     }
 
     for coordinate_pair in projected_coordinates.chunks_exact(2) {
-        vertices.push(MapVertex { position: [coordinate_pair[0] as f32, coordinate_pair[1] as f32] });
+        vertices.push(ProjectedVertex { position: [coordinate_pair[0] as f32, coordinate_pair[1] as f32] });
     }
 
     append_border_edges(&rings, base, border_indices);

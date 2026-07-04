@@ -2,7 +2,14 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use tokio::sync::watch;
-use wgpu::util::DeviceExt;
+use wgpu::util::{BufferInitDescriptor, DeviceExt};
+use wgpu::{
+    Adapter, BindGroup, BindGroupDescriptor, BindGroupEntry, Buffer, BufferAddress, BufferDescriptor, BufferUsages,
+    Color, CommandBuffer, CommandEncoder, CommandEncoderDescriptor, CurrentSurfaceTexture, Device, DeviceDescriptor,
+    ExperimentalFeatures, Features, IndexFormat, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference,
+    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture,
+    TextureView, TextureViewDescriptor, Trace,
+};
 
 use crate::artifact::{Bundle, StatisticShardKey};
 use crate::canonical::StatisticKind;
@@ -10,9 +17,10 @@ use crate::error::AppError;
 use crate::map::color::{self, Rgba};
 use crate::map::projection;
 use crate::map::value_types::{FrameState, Viewport};
+use crate::render::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
 use crate::render::pipeline::RenderPipelines;
 use crate::render::surface::WgpuSurface;
-use crate::render::vertex::{self, CountryMesh, FillVertex, MapVertex, ViewportUniform};
+use crate::render::vertex::{self, CountryMesh};
 use crate::sqlite::shard_db::{self, ShardValues};
 
 // not for wasm32: the native attach path takes a raw window handle; the web attaches from a canvas.
@@ -22,10 +30,10 @@ use crate::map::value_types::WindowHandle;
 /// The wgpu state machine. `!Send` (the `PhantomData<*const ()>`) because wgpu resources are bound
 /// to the thread that created them: the single WASM thread on web, the Swift main thread on iOS.
 pub struct Renderer {
-    instance: wgpu::Instance,
-    adapter: wgpu::Adapter,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    instance: Instance,
+    adapter: Adapter,
+    device: Device,
+    queue: Queue,
     bundle_receiver: watch::Receiver<Arc<Bundle>>,
     country_geometry: CountryGeometry,
     attached: Option<AttachedSurface>,
@@ -35,10 +43,10 @@ pub struct Renderer {
 /// The country polygons uploaded to the GPU once: one shared position buffer, the fill triangle
 /// indices, the border line indices, and the per-country vertex ranges the choropleth colors each.
 struct CountryGeometry {
-    positions: wgpu::Buffer,
-    fill_indices: wgpu::Buffer,
+    positions: Buffer,
+    fill_indices: Buffer,
     fill_index_count: u32,
-    border_indices: wgpu::Buffer,
+    border_indices: Buffer,
     border_index_count: u32,
     vertex_count: u32,
     spans: Vec<CountrySpan>,
@@ -55,17 +63,17 @@ struct CountrySpan {
 struct AttachedSurface {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
-    viewport_buffer: wgpu::Buffer,
-    viewport_bind_group: wgpu::BindGroup,
+    viewport_buffer: Buffer,
+    viewport_bind_group: BindGroup,
 }
 
 impl Renderer {
     pub async fn new(bundle_receiver: watch::Receiver<Arc<Bundle>>) -> Result<Renderer, AppError> {
-        let instance: wgpu::Instance = wgpu::Instance::default();
+        let instance: Instance = Instance::default();
 
-        let adapter: wgpu::Adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+        let adapter: Adapter = instance
+            .request_adapter(&RequestAdapterOptions {
+                power_preference: PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: None,
                 apply_limit_buckets: false,
@@ -73,14 +81,14 @@ impl Renderer {
             .await
             .map_err(|error| AppError::from(format!("requesting a GPU adapter failed: {error}")))?;
 
-        let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
+        let (device, queue): (Device, Queue) = adapter
+            .request_device(&DeviceDescriptor {
                 label: Some("eafora-renderer-device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
-                experimental_features: wgpu::ExperimentalFeatures::default(),
-                memory_hints: wgpu::MemoryHints::Performance,
-                trace: wgpu::Trace::Off,
+                required_features: Features::empty(),
+                required_limits: Limits::downlevel_webgl2_defaults(),
+                experimental_features: ExperimentalFeatures::default(),
+                memory_hints: MemoryHints::Performance,
+                trace: Trace::Off,
             })
             .await
             .map_err(|error| AppError::from(format!("requesting a GPU device failed: {error}")))?;
@@ -106,16 +114,16 @@ impl Renderer {
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
         let pipelines: RenderPipelines = RenderPipelines::create(&self.device, surface.format());
 
-        let viewport_buffer: wgpu::Buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+        let viewport_buffer: Buffer = self.device.create_buffer(&BufferDescriptor {
             label: Some("eafora-viewport-uniform"),
-            size: std::mem::size_of::<ViewportUniform>() as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            size: std::mem::size_of::<ViewportUniform>() as BufferAddress,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let viewport_bind_group: wgpu::BindGroup = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let viewport_bind_group: BindGroup = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("eafora-viewport-bind-group"),
             layout: &pipelines.viewport_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: viewport_buffer.as_entire_binding() }],
+            entries: &[BindGroupEntry { binding: 0, resource: viewport_buffer.as_entire_binding() }],
         });
 
         self.attached = Some(AttachedSurface { surface, pipelines, viewport_buffer, viewport_bind_group });
@@ -142,16 +150,16 @@ impl Renderer {
         let attached: &AttachedSurface =
             self.attached.as_ref().expect("draw_frame: attach_surface must be called first");
 
-        let surface_texture: wgpu::SurfaceTexture = match attached.surface.inner().get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(texture) | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+        let surface_texture: SurfaceTexture = match attached.surface.inner().get_current_texture() {
+            CurrentSurfaceTexture::Success(texture) | CurrentSurfaceTexture::Suboptimal(texture) => texture,
+            CurrentSurfaceTexture::Outdated | CurrentSurfaceTexture::Lost => {
                 attached.surface.reconfigure(&self.device);
                 return Ok(());
             }
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => {
                 return Ok(());
             }
-            wgpu::CurrentSurfaceTexture::Validation => {
+            CurrentSurfaceTexture::Validation => {
                 return Err(AppError::from("draw_frame: acquiring the surface texture failed validation".to_string()));
             }
         };
@@ -159,27 +167,24 @@ impl Renderer {
         let viewport_uniform: ViewportUniform = viewport_to_uniform(viewport);
         self.queue.write_buffer(&attached.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
 
-        let fill_color_buffer: wgpu::Buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let fill_color_buffer: Buffer = self.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("eafora-fill-colors"),
             contents: bytemuck::cast_slice(&fill_colors),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: BufferUsages::VERTEX,
         });
 
-        let view: wgpu::TextureView = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder: wgpu::CommandEncoder =
-            self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("eafora-frame-encoder") });
+        let view: TextureView = surface_texture.texture.create_view(&TextureViewDescriptor::default());
+        let mut encoder: CommandEncoder =
+            self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-frame-encoder") });
 
         {
-            let mut render_pass: wgpu::RenderPass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass: RenderPass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("eafora-map-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                color_attachments: &[Some(RenderPassColorAttachment {
                     view: &view,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                        store: wgpu::StoreOp::Store,
-                    },
+                    ops: Operations { load: LoadOp::Clear(Color::WHITE), store: StoreOp::Store },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
@@ -189,19 +194,19 @@ impl Renderer {
 
             render_pass.set_bind_group(0, &attached.viewport_bind_group, &[]);
 
-            render_pass.set_pipeline(&attached.pipelines.fills);
+            render_pass.set_pipeline(&attached.pipelines.fill);
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.slice(..));
             render_pass.set_vertex_buffer(1, fill_color_buffer.slice(..));
-            render_pass.set_index_buffer(self.country_geometry.fill_indices.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.set_index_buffer(self.country_geometry.fill_indices.slice(..), IndexFormat::Uint32);
             render_pass.draw_indexed(0..self.country_geometry.fill_index_count, 0, 0..1);
 
-            render_pass.set_pipeline(&attached.pipelines.borders);
+            render_pass.set_pipeline(&attached.pipelines.border);
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.slice(..));
-            render_pass.set_index_buffer(self.country_geometry.border_indices.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.set_index_buffer(self.country_geometry.border_indices.slice(..), IndexFormat::Uint32);
             render_pass.draw_indexed(0..self.country_geometry.border_index_count, 0, 0..1);
         }
 
-        let command_buffer: wgpu::CommandBuffer = encoder.finish();
+        let command_buffer: CommandBuffer = encoder.finish();
         self.queue.submit([command_buffer]);
         self.queue.present(surface_texture);
 
@@ -233,10 +238,10 @@ impl Renderer {
     }
 }
 
-fn upload_country_geometry(device: &wgpu::Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
+fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
     let country_meshes: Vec<CountryMesh> = vertex::build_country_meshes(&bundle.geometry)?;
 
-    let mut positions: Vec<MapVertex> = Vec::new();
+    let mut positions: Vec<ProjectedVertex> = Vec::new();
     let mut fill_indices: Vec<u32> = Vec::new();
     let mut border_indices: Vec<u32> = Vec::new();
     let mut spans: Vec<CountrySpan> = Vec::new();
@@ -253,20 +258,20 @@ fn upload_country_geometry(device: &wgpu::Device, bundle: &Bundle) -> Result<Cou
         });
     }
 
-    let positions_buffer: wgpu::Buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let positions_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("eafora-country-positions"),
         contents: bytemuck::cast_slice(&positions),
-        usage: wgpu::BufferUsages::VERTEX,
+        usage: BufferUsages::VERTEX,
     });
-    let fill_index_buffer: wgpu::Buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let fill_index_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("eafora-country-fill-indices"),
         contents: bytemuck::cast_slice(&fill_indices),
-        usage: wgpu::BufferUsages::INDEX,
+        usage: BufferUsages::INDEX,
     });
-    let border_index_buffer: wgpu::Buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+    let border_index_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("eafora-country-border-indices"),
         contents: bytemuck::cast_slice(&border_indices),
-        usage: wgpu::BufferUsages::INDEX,
+        usage: BufferUsages::INDEX,
     });
 
     Ok(CountryGeometry {
