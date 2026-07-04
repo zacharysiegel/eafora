@@ -18,6 +18,16 @@ pub struct FillVertex {
     pub color: [f32; 4],
 }
 
+/// The shared vertex-stage uniform. `bounds` packs the projected viewport as `[min_x, min_y, max_x,
+/// max_y]`; `offset[0]` is the horizontal shift for an antimeridian wraparound draw. Packed into two
+/// `[f32; 4]` so the layout is unambiguously 16-byte aligned to match the WGSL uniform.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ViewportUniform {
+    pub bounds: [f32; 4],
+    pub offset: [f32; 4],
+}
+
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, the fill triangle
 /// indices (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
 /// Built off the GPU thread and owned outright, so it is `Send` and can be produced on a worker or

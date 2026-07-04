@@ -6,6 +6,7 @@ use crate::render::vertex::{FillVertex, MapVertex};
 pub struct RenderPipelines {
     pub borders: wgpu::RenderPipeline,
     pub fills: wgpu::RenderPipeline,
+    pub viewport_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl RenderPipelines {
@@ -20,11 +21,11 @@ impl RenderPipelines {
         let borders: wgpu::RenderPipeline = create_borders_pipeline(device, &pipeline_layout, surface_format);
         let fills: wgpu::RenderPipeline = create_fills_pipeline(device, &pipeline_layout, surface_format);
 
-        RenderPipelines { borders, fills }
+        RenderPipelines { borders, fills, viewport_bind_group_layout }
     }
 }
 
-pub fn create_viewport_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+fn create_viewport_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("eafora-viewport-bind-group-layout"),
         entries: &[wgpu::BindGroupLayoutEntry {
