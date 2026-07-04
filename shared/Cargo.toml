@@ -19,7 +19,6 @@ minimer = { workspace = true }
 log = { workspace = true }
 bytes = { workspace = true }
 const_format = { workspace = true }
-
 bytemuck = { workspace = true, optional = true }
 earcutr = { workspace = true, optional = true }
 raw-window-handle = { workspace = true, optional = true }
