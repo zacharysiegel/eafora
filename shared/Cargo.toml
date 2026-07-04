@@ -34,7 +34,7 @@ render = ["dep:wgpu", "dep:raw-window-handle", "dep:bytemuck", "dep:earcutr", "d
 rusqlite = { workspace = true, features = ["serialize"] }
 # Not for wasm32: native GPU backends (Metal on Apple, Vulkan on the Linux CI host and Android).
 # wasm32 gets webgpu/webgl below. A backend only exists if its wgpu feature is compiled in.
-wgpu = { workspace = true, optional = true, features = ["metal", "vulkan"] }
+wgpu = { workspace = true, optional = true, features = ["metal", "vulkan", "wgsl"] }
 
 # wasm32 only: uuid's `js` feature gives getrandom a browser RNG backend so the workspace-wide
 # `v7` feature compiles for wasm32-unknown-unknown. shared uses Uuid only as a field type, but the
@@ -46,7 +46,7 @@ uuid = { workspace = true, features = ["js"] }
 sqlite-wasm-rs = { workspace = true }
 # wasm32 only: WebGPU is the primary browser backend and WebGL2 the downlevel fallback; native gets
 # metal/vulkan above. A backend only exists if its wgpu feature is compiled in.
-wgpu = { workspace = true, optional = true, features = ["webgpu", "webgl"] }
+wgpu = { workspace = true, optional = true, features = ["webgpu", "webgl", "wgsl"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

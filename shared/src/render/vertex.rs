@@ -9,6 +9,15 @@ pub struct MapVertex {
     pub position: [f32; 2],
 }
 
+/// The fills pipeline's per-vertex color, uploaded as a second vertex buffer parallel to the static
+/// `MapVertex` positions. Kept separate because the color changes per frame (the active statistic
+/// and period drive the choropleth) while the positions are fixed once triangulated.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct FillVertex {
+    pub color: [f32; 4],
+}
+
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, the fill triangle
 /// indices (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
 /// Built off the GPU thread and owned outright, so it is `Send` and can be produced on a worker or
