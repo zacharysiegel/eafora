@@ -14,7 +14,7 @@ use wgpu::{
 use crate::artifact::{Bundle, StatisticShardKey};
 use crate::canonical::StatisticKind;
 use crate::error::AppError;
-use crate::map::color::{self, Rgba};
+use crate::map::color;
 use crate::map::projection;
 use crate::map::value_types::{FrameState, Viewport};
 use crate::render::gpu_types::{FillVertex, ProjectedVertex, Vec2, ViewportUniform};
@@ -214,7 +214,7 @@ impl Renderer {
     }
 
     fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Result<Vec<FillVertex>, AppError> {
-        let no_data_fill: FillVertex = to_fill_vertex(color::choropleth_fill(None, 0.0, 1.0));
+        let no_data_fill: FillVertex = FillVertex { color: color::choropleth_fill(None, 0.0, 1.0) };
         let mut fill_colors: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.vertex_count as usize];
 
         let Some(shard_bytes) = select_shard(bundle, frame_state.active_statistic) else {
@@ -228,7 +228,7 @@ impl Renderer {
 
         for span in &self.country_geometry.spans {
             let value: Option<f64> = shard_values.value(&span.iso3, frame_state.active_period_start);
-            let fill_vertex: FillVertex = to_fill_vertex(color::choropleth_fill(value, statistic_min, statistic_max));
+            let fill_vertex: FillVertex = FillVertex { color: color::choropleth_fill(value, statistic_min, statistic_max) };
             for vertex_index in span.vertex_start..(span.vertex_start + span.vertex_count) {
                 fill_colors[vertex_index as usize] = fill_vertex;
             }
@@ -311,10 +311,6 @@ fn viewport_to_uniform(viewport: Viewport) -> ViewportUniform {
         longitude_offset: 0.0,
         _padding: [0.0, 0.0, 0.0],
     }
-}
-
-fn to_fill_vertex(color: Rgba) -> FillVertex {
-    FillVertex { color: [color.r, color.g, color.b, color.a] }
 }
 
 #[cfg(test)]

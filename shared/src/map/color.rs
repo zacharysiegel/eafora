@@ -1,5 +1,8 @@
 /// An sRGB color; each component is in `[0, 1]`.
+#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq)]
+// bytemuck is a render-only optional dependency; gate its derives so this stays buildable without it.
+#[cfg_attr(feature = "render", derive(bytemuck::Pod, bytemuck::Zeroable))]
 pub struct Rgba {
     pub r: f32,
     pub g: f32,
