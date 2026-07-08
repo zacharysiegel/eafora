@@ -1,8 +1,7 @@
-// Packed into vec4s for unambiguous 16-byte uniform alignment: bounds.xy = projected min,
-// bounds.zw = projected max, offset.x = the horizontal shift for antimeridian wraparound draws.
 struct ViewportUniform {
-    bounds: vec4<f32>,
-    offset: vec4<f32>,
+    projected_min: vec2<f32>,
+    projected_max: vec2<f32>,
+    longitude_offset: f32,
 };
 
 @group(0) @binding(0)
@@ -20,9 +19,9 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
-    let projected_min: vec2<f32> = viewport.bounds.xy;
-    let projected_max: vec2<f32> = viewport.bounds.zw;
-    let shifted_x: f32 = input.position.x + viewport.offset.x;
+    let projected_min: vec2<f32> = viewport.projected_min;
+    let projected_max: vec2<f32> = viewport.projected_max;
+    let shifted_x: f32 = input.position.x + viewport.longitude_offset;
     let span: vec2<f32> = projected_max - projected_min;
     let normalized_x: f32 = (shifted_x - projected_min.x) / span.x;
     let normalized_y: f32 = (input.position.y - projected_min.y) / span.y;

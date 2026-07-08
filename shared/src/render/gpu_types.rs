@@ -16,13 +16,16 @@ pub struct FillVertex {
     pub color: [f32; 4],
 }
 
-/// `bounds` packs the projected viewport as `[min_x, min_y, max_x, max_y]`; `offset[0]` is a
-/// horizontal longitude shift. WGSL aligns uniform members to 16 bytes, so packing these as two
-/// `vec4`-sized arrays makes the `#[repr(C)]` layout meet that requirement without hand-computed
-/// padding.
+/// The projected viewport corners plus a horizontal longitude shift. `_padding` brings the size to
+/// 32 bytes (a multiple of 16); the field offsets (0, 8, 16) match the `vec2, vec2, f32` the shaders
+/// declare for this uniform.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewportUniform {
-    pub bounds: [f32; 4],
-    pub offset: [f32; 4],
+    pub projected_min: [f32; 2],
+    pub projected_max: [f32; 2],
+    pub longitude_offset: f32,
+    pub _padding: [f32; 3],
 }
+
+const _: () = assert!(std::mem::size_of::<ViewportUniform>() == 32);

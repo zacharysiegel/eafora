@@ -306,13 +306,10 @@ fn viewport_to_uniform(viewport: Viewport) -> ViewportUniform {
     let projected_max_y: f32 = projection::project(viewport.latitude_max, 0.0).y as f32;
 
     ViewportUniform {
-        bounds: [
-            viewport.longitude_min as f32,
-            projected_min_y,
-            viewport.longitude_max as f32,
-            projected_max_y,
-        ],
-        offset: [0.0, 0.0, 0.0, 0.0],
+        projected_min: [viewport.longitude_min as f32, projected_min_y],
+        projected_max: [viewport.longitude_max as f32, projected_max_y],
+        longitude_offset: 0.0,
+        _padding: [0.0, 0.0, 0.0],
     }
 }
 
@@ -338,10 +335,10 @@ mod tests {
         let uniform: ViewportUniform = viewport_to_uniform(viewport);
 
         // Longitude passes through as x; the equator projects to y = 0; the offset defaults to zero.
-        assert!((uniform.bounds[0] - (-10.0)).abs() < TOLERANCE);
-        assert!((uniform.bounds[1] - 0.0).abs() < TOLERANCE);
-        assert!((uniform.bounds[2] - 30.0).abs() < TOLERANCE);
-        assert!(uniform.bounds[3] > 0.0);
-        assert_eq!(uniform.offset, [0.0, 0.0, 0.0, 0.0]);
+        assert!((uniform.projected_min[0] - (-10.0)).abs() < TOLERANCE);
+        assert!((uniform.projected_min[1] - 0.0).abs() < TOLERANCE);
+        assert!((uniform.projected_max[0] - 30.0).abs() < TOLERANCE);
+        assert!(uniform.projected_max[1] > 0.0);
+        assert_eq!(uniform.longitude_offset, 0.0);
     }
 }
