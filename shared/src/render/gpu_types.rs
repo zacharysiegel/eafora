@@ -10,6 +10,16 @@ pub struct Vec2 {
     pub y: f32,
 }
 
+/// A 4D `f32` vector, matching WGSL's `vec4<f32>` (16 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vec4 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
+
 /// A Miller-projected 2D position.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -17,11 +27,11 @@ pub struct ProjectedVertex {
     pub position: Vec2,
 }
 
-/// An RGBA color, one component per channel in `[0, 1]`.
+/// A per-vertex fill color; the RGBA channels map to the `Vec4`'s x, y, z, w.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct FillVertex {
-    pub color: [f32; 4],
+    pub color: Vec4,
 }
 
 /// The projected viewport corners plus a horizontal longitude shift. `_padding` brings the size to

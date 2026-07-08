@@ -17,7 +17,7 @@ use crate::error::AppError;
 use crate::map::color::{self, Rgba};
 use crate::map::projection;
 use crate::map::value_types::{FrameState, Viewport};
-use crate::render::gpu_types::{FillVertex, ProjectedVertex, Vec2, ViewportUniform};
+use crate::render::gpu_types::{FillVertex, ProjectedVertex, Vec2, Vec4, ViewportUniform};
 use crate::render::pipeline::RenderPipelines;
 use crate::render::surface::WgpuSurface;
 use crate::render::vertex::{self, CountryMesh};
@@ -314,7 +314,7 @@ fn viewport_to_uniform(viewport: Viewport) -> ViewportUniform {
 }
 
 fn to_fill_vertex(color: Rgba) -> FillVertex {
-    FillVertex { color: [color.r, color.g, color.b, color.a] }
+    FillVertex { color: Vec4 { x: color.r, y: color.g, z: color.b, w: color.a } }
 }
 
 #[cfg(test)]
