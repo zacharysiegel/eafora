@@ -2,11 +2,19 @@
 //! alignment must match what the WGSL shaders read, which is why they carry `bytemuck` derives and
 //! fixed-size array fields rather than idiomatic Rust shapes.
 
+/// A 2D `f32` vector, matching WGSL's `vec2<f32>` (8 bytes, components at offsets 0 and 4).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
+}
+
 /// A Miller-projected 2D position.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ProjectedVertex {
-    pub position: [f32; 2],
+    pub position: Vec2,
 }
 
 /// An RGBA color, one component per channel in `[0, 1]`.
@@ -22,8 +30,8 @@ pub struct FillVertex {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewportUniform {
-    pub projected_min: [f32; 2],
-    pub projected_max: [f32; 2],
+    pub projected_min: Vec2,
+    pub projected_max: Vec2,
     pub longitude_offset: f32,
     pub _padding: [f32; 3],
 }

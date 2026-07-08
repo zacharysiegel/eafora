@@ -1,7 +1,7 @@
 use crate::artifact::geometry::{CountryFeature, GeometryLayer, Polygon};
 use crate::error::AppError;
 use crate::map::projection::{self, ProjectedPoint};
-use crate::render::gpu_types::ProjectedVertex;
+use crate::render::gpu_types::{ProjectedVertex, Vec2};
 
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, the fill triangle
 /// indices (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
@@ -76,7 +76,9 @@ fn append_polygon(
     }
 
     for coordinate_pair in projected_coordinates.chunks_exact(2) {
-        vertices.push(ProjectedVertex { position: [coordinate_pair[0] as f32, coordinate_pair[1] as f32] });
+        vertices.push(ProjectedVertex {
+            position: Vec2 { x: coordinate_pair[0] as f32, y: coordinate_pair[1] as f32 },
+        });
     }
 
     append_border_edges(&rings, base, border_indices);
