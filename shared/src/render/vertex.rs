@@ -38,8 +38,8 @@ impl CountryMesh {
         let base: u32 = self.vertices.len() as u32;
         let rings: Vec<&[(f64, f64)]> = collect_rings(polygon);
 
-        let projected_coordinates: Vec<f64> = project_rings(&rings);
-        let hole_indices: Vec<usize> = hole_start_indices(&rings);
+        let (geographic_points, hole_indices): (Vec<(f64, f64)>, Vec<usize>) = flatten_rings(&rings);
+        let projected_coordinates: Vec<f64> = project_points(&geographic_points);
         let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, base)?;
 
         self.fill_indices.extend(fill_triangle_indices);
@@ -64,42 +64,40 @@ fn collect_rings(polygon: &Polygon) -> Vec<&[(f64, f64)]> {
         .collect()
 }
 
-/// The vertex index at which each interior ring (a hole) begins, which earcut uses to bridge the
-/// holes into the exterior. The first ring is the exterior, so it contributes no entry.
-fn hole_start_indices(rings: &[&[(f64, f64)]]) -> Vec<usize> {
+/// Concatenates the rings into one point sequence, returned alongside the vertex index at which each
+/// interior ring (a hole) begins. The first ring is the exterior, so it contributes no entry.
+fn flatten_rings(rings: &[&[(f64, f64)]]) -> (Vec<(f64, f64)>, Vec<usize>) {
+    let mut geographic_points: Vec<(f64, f64)> = Vec::new();
     let mut hole_indices: Vec<usize> = Vec::new();
-    let mut vertex_offset: usize = 0;
 
     for (ring_index, ring) in rings.iter().enumerate() {
         if ring_index > 0 {
-            hole_indices.push(vertex_offset);
+            hole_indices.push(geographic_points.len());
         }
 
-        vertex_offset += ring.len();
+        geographic_points.extend_from_slice(ring);
     }
 
-    hole_indices
+    (geographic_points, hole_indices)
 }
 
-/// Flattens the rings into the `[x0, y0, x1, y1, ...]` coordinate array earcut expects.
-fn project_rings(rings: &[&[(f64, f64)]]) -> Vec<f64> {
+/// Projects each (lon, lat) point through Miller into the `[x0, y0, x1, y1, ...]` array earcut expects.
+fn project_points(geographic_points: &[(f64, f64)]) -> Vec<f64> {
     let mut projected_coordinates: Vec<f64> = Vec::new();
 
-    for ring in rings {
-        // Antimeridian-crossing rings are not handled here. A ring whose source vertices span the
-        // +180/-180 seam (e.g. Russia's Chukotka, Fiji, Kiribati) projects to x-values on both far
-        // ends of the range, and earcut then triangulates the polygon across the entire ~358 degree
-        // span instead of the thin sliver hugging the seam, smearing the country across the map. This
-        // only matters if the geometry source stores such features as a single unsplit ring; if the
-        // source already splits them per hemisphere, the naive projection below is correct. If it
-        // does manifest, the fix is to clip each crossing ring against the antimeridian: insert new
-        // vertices where edges cross +/-180, split the ring into two rings (one per side of the
-        // line), and triangulate each independently.
-        for &(lon, lat) in *ring {
-            let projected: ProjectedPoint = projection::project(lat, lon);
-            projected_coordinates.push(projected.x);
-            projected_coordinates.push(projected.y);
-        }
+    // Antimeridian-crossing rings are not handled here. A ring whose source vertices span the
+    // +180/-180 seam (e.g. Russia's Chukotka, Fiji, Kiribati) projects to x-values on both far
+    // ends of the range, and earcut then triangulates the polygon across the entire ~358 degree
+    // span instead of the thin sliver hugging the seam, smearing the country across the map. This
+    // only matters if the geometry source stores such features as a single unsplit ring; if the
+    // source already splits them per hemisphere, the naive projection below is correct. If it
+    // does manifest, the fix is to clip each crossing ring against the antimeridian: insert new
+    // vertices where edges cross +/-180, split the ring into two rings (one per side of the
+    // line), and triangulate each independently.
+    for &(lon, lat) in geographic_points {
+        let projected: ProjectedPoint = projection::project(lat, lon);
+        projected_coordinates.push(projected.x);
+        projected_coordinates.push(projected.y);
     }
 
     projected_coordinates
