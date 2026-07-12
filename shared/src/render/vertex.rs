@@ -152,19 +152,69 @@ mod tests {
     use crate::artifact::geometry::parse_geometry_layer;
     use crate::artifact::geometry::tests::one_feature_fgb_bytes;
 
-    #[test]
-    fn build_country_meshes_triangulates_the_testland_rectangle() {
-        let geometry: GeometryLayer = parse_geometry_layer(one_feature_fgb_bytes()).unwrap();
+    const TOLERANCE: f64 = 1e-4;
 
-        let country_meshes: Vec<CountryMesh> = build_country_meshes(&geometry).unwrap();
+    // Testland is a rectangle over lon 0..2, lat 0..3; its exterior ring is the four corners
+    // (0,0), (2,0), (2,3), (0,3) wound counterclockwise, with the closing duplicate dropped.
+    const TESTLAND_CORNERS: [(f64, f64); 4] = [(0.0, 0.0), (2.0, 0.0), (2.0, 3.0), (0.0, 3.0)];
+
+    fn testland_mesh() -> CountryMesh {
+        let geometry: GeometryLayer = parse_geometry_layer(one_feature_fgb_bytes()).unwrap();
+        let mut country_meshes: Vec<CountryMesh> = build_country_meshes(&geometry).unwrap();
 
         assert_eq!(country_meshes.len(), 1);
-        let mesh: &CountryMesh = &country_meshes[0];
+
+        country_meshes.remove(0)
+    }
+
+    fn vertex_position(mesh: &CountryMesh, vertex_index: u32) -> (f64, f64) {
+        let vertex: &ProjectedVertex = &mesh.vertices[vertex_index as usize];
+
+        (vertex.position.x as f64, vertex.position.y as f64)
+    }
+
+    #[test]
+    fn from_feature_projects_the_corners_in_ring_order() {
+        let mesh: CountryMesh = testland_mesh();
+
         assert_eq!(mesh.iso3, "TST");
         assert_eq!(mesh.region_code, "testland");
-        // Four corners (the closing duplicate dropped), two triangles, one four-edge ring.
-        assert_eq!(mesh.vertices.len(), 4);
+        assert_eq!(mesh.vertices.len(), TESTLAND_CORNERS.len());
+
+        for (vertex_index, &(lon, lat)) in TESTLAND_CORNERS.iter().enumerate() {
+            let expected: ProjectedPoint = projection::project(lat, lon);
+            let (x, y): (f64, f64) = vertex_position(&mesh, vertex_index as u32);
+
+            assert!((x - expected.x).abs() < TOLERANCE);
+            assert!((y - expected.y).abs() < TOLERANCE);
+        }
+    }
+
+    #[test]
+    fn from_feature_triangulation_tiles_the_whole_rectangle() {
+        let mesh: CountryMesh = testland_mesh();
+
         assert_eq!(mesh.fill_indices.len(), 6);
-        assert_eq!(mesh.border_indices.len(), 8);
+
+        let mut triangulated_area: f64 = 0.0;
+        for triangle in mesh.fill_indices.chunks_exact(3) {
+            let (ax, ay): (f64, f64) = vertex_position(&mesh, triangle[0]);
+            let (bx, by): (f64, f64) = vertex_position(&mesh, triangle[1]);
+            let (cx, cy): (f64, f64) = vertex_position(&mesh, triangle[2]);
+
+            triangulated_area += ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)).abs() / 2.0;
+        }
+
+        // The projected rectangle is lon-width 2 by the projected height of lat 0..3; a correct
+        // triangulation covers exactly that area, so a wrong winding or degenerate triangle fails.
+        let rectangle_area: f64 = 2.0 * projection::project(3.0, 0.0).y;
+        assert!((triangulated_area - rectangle_area).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn from_feature_emits_the_closed_border_loop() {
+        let mesh: CountryMesh = testland_mesh();
+
+        assert_eq!(mesh.border_indices, vec![0, 1, 1, 2, 2, 3, 3, 0]);
     }
 }
