@@ -14,7 +14,9 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @location(0) color: vec4<f32>,
+    // Flat: the choropleth color is uniform per country, so take the provoking vertex's value rather
+    // than interpolate identical corners.
+    @location(0) @interpolate(flat) color: vec4<f32>,
 };
 
 @vertex
