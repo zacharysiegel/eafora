@@ -15,11 +15,12 @@ use wgpu::{
 use crate::artifact::{Bundle, StatisticShardKey};
 use crate::canonical::StatisticKind;
 use crate::error::AppError;
-use crate::map::color;
+use crate::map::color::{self, Rgba};
 use crate::map::value_types::{FrameState, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
 use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
 use crate::map::pipeline::RenderPipelines;
+use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
 use crate::sqlite::shard_db::{self, ShardValues};
 
@@ -162,8 +163,8 @@ impl Renderer {
     }
 
     pub fn resize_surface(&mut self, width: u32, height: u32) -> Result<(), AppError> {
-        let attached: &mut AttachedState =
-            self.attached.as_mut().expect("resize_surface: attach_surface must be called first");
+        let attached: &mut AttachedState = self.attached.as_mut()
+                .expect("resize_surface: attach_surface must be called first");
         attached.surface.resize(&self.device, width, height);
 
         Ok(())
@@ -355,6 +356,21 @@ fn select_shard(bundle: &Bundle, statistic_kind: StatisticKind) -> Option<&Vec<u
         })
 }
 
+impl Viewport {
+    fn to_gpu(&self) -> ViewportUniform {
+        ViewportUniform {
+            projected_min: Vec2 { x: self.min.x as f32, y: self.min.y as f32 },
+            projected_max: Vec2 { x: self.max.x as f32, y: self.max.y as f32 },
+        }
+    }
+}
+
+impl Rgba {
+    fn to_gpu(&self) -> FillVertex {
+        FillVertex { color: Vec4 { x: self.r, y: self.g, z: self.b, w: self.a } }
+    }
+}
+
 fn is_antimeridian_wrap(viewport: Viewport) -> bool {
     viewport.min.x < -180.0 || viewport.max.x > 180.0
 }
@@ -382,23 +398,23 @@ mod tests {
     }
 
     #[test]
-    fn wrap_instance_count_is_two_only_when_the_viewport_crosses_the_seam() {
+    fn is_antimeridian_wrap_is_true_only_when_the_viewport_crosses_the_seam() {
         let within_one_world: Viewport = Viewport {
             min: ProjectedPoint { x: -170.0, y: -1.0 },
             max: ProjectedPoint { x: 170.0, y: 1.0 },
         };
-        assert_eq!(wrap_instance_count(within_one_world), 1);
+        assert!(!is_antimeridian_wrap(within_one_world));
 
         let past_west_edge: Viewport = Viewport {
             min: ProjectedPoint { x: -190.0, y: -1.0 },
             max: ProjectedPoint { x: -10.0, y: 1.0 },
         };
-        assert_eq!(wrap_instance_count(past_west_edge), 2);
+        assert!(is_antimeridian_wrap(past_west_edge));
 
         let past_east_edge: Viewport = Viewport {
             min: ProjectedPoint { x: 10.0, y: -1.0 },
             max: ProjectedPoint { x: 190.0, y: 1.0 },
         };
-        assert_eq!(wrap_instance_count(past_east_edge), 2);
+        assert!(is_antimeridian_wrap(past_east_edge));
     }
 }

@@ -2,10 +2,6 @@ use chrono::NaiveDate;
 
 use crate::canonical::StatisticKind;
 use crate::map::projection::ProjectedPoint;
-#[cfg(feature = "render")]
-use crate::map::gpu_types::ViewportUniform;
-#[cfg(feature = "render")]
-use crate::render::gpu_types::Vec2;
 
 /// The camera window in Miller-projected space. Stored projected, not geographic, so pan/zoom
 /// arithmetic is uniform on screen: a constant projected increment moves the view a constant screen
@@ -15,16 +11,6 @@ use crate::render::gpu_types::Vec2;
 pub struct Viewport {
     pub min: ProjectedPoint,
     pub max: ProjectedPoint,
-}
-
-#[cfg(feature = "render")]
-impl Viewport {
-    pub(crate) fn to_gpu(&self) -> ViewportUniform {
-        ViewportUniform {
-            projected_min: Vec2 { x: self.min.x as f32, y: self.min.y as f32 },
-            projected_max: Vec2 { x: self.max.x as f32, y: self.max.y as f32 },
-        }
-    }
 }
 
 /// Device-pixel-logical coordinates; the platform shell pre-divides by `devicePixelRatio` before
