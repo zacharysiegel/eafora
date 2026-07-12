@@ -37,8 +37,8 @@ impl CountryMesh {
     }
 }
 
-/// Project and triangulate every country in the layer. Pure and `Send`-returning: the only
-/// GPU-thread-bound step is uploading the result into buffers, which the renderer does separately.
+/// Project and triangulate every country in the layer into owned meshes. There is no wgpu here; the
+/// renderer uploads the meshes into GPU buffers as a separate step.
 pub fn build_country_meshes(geometry: &GeometryLayer) -> Result<Vec<CountryMesh>, AppError> {
     let country_features: Vec<CountryFeature> = geometry.iter_features()?;
 
@@ -107,7 +107,9 @@ fn triangulate_fill(projected_coordinates: &[f64], hole_indices: &[usize], base:
     let fill_triangle_indices: Vec<usize> = earcutr::earcut(projected_coordinates, hole_indices, 2)
         .map_err(|error| AppError::from(format!("triangulation failed for a country polygon: {error:?}")))?;
 
-    Ok(fill_triangle_indices.into_iter().map(|index| base + index as u32).collect())
+    Ok(fill_triangle_indices.into_iter()
+        .map(|index| base + index as u32)
+        .collect())
 }
 
 fn to_projected_vertices(projected_coordinates: &[f64]) -> Vec<ProjectedVertex> {
