@@ -95,6 +95,7 @@ fn create_border_pipeline(
             conservative: false,
         },
         depth_stencil: None,
+        // No MSAA in v1; revisit to anti-alias the jagged border and coastline edges.
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,
@@ -151,6 +152,7 @@ fn create_fill_pipeline(
             conservative: false,
         },
         depth_stencil: None,
+        // No MSAA in v1; revisit to anti-alias the jagged border and coastline edges.
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,
