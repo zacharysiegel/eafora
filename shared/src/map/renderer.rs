@@ -181,6 +181,72 @@ impl Renderer {
         let bundle: Arc<Bundle> = self.bundle_receiver.borrow_and_update().clone();
         self.refresh_fill_colors(&bundle, &frame_state)?;
 
+        let Some(surface_texture) = self.acquire_surface_texture()? else {
+            return Ok(());
+        };
+
+        self.write_viewport_uniform(viewport);
+
+        let view: TextureView = surface_texture.texture.create_view(&TextureViewDescriptor::default());
+        let instance_count: u32 = if is_antimeridian_wrap(viewport) { 2 } else { 1 };
+        let command_buffer: CommandBuffer = self.record_map_pass(&view, instance_count);
+
+        self.queue.submit([command_buffer]);
+        self.queue.present(surface_texture);
+
+        Ok(())
+    }
+
+    /// Maps each wgpu surface state to a frame action: `Some(texture)` to render, `None` to skip this
+    /// frame, `Err` to abort. A lost surface detaches and errors because recreating it needs the
+    /// window handle the renderer doesn't retain; only the shell can, by calling `attach_surface`.
+    fn acquire_surface_texture(&mut self) -> Result<Option<SurfaceTexture>, AppError> {
+        let acquired: CurrentSurfaceTexture = self
+            .attached
+            .as_ref()
+            .expect("draw_frame: attach_surface must be called first")
+            .surface
+            .inner()
+            .get_current_texture();
+
+        match acquired {
+            CurrentSurfaceTexture::Success(texture) => Ok(Some(texture)),
+            CurrentSurfaceTexture::Suboptimal(texture) => {
+                self.reconfigure_surface();
+                Ok(Some(texture))
+            }
+            CurrentSurfaceTexture::Outdated => {
+                self.reconfigure_surface();
+                Ok(None)
+            }
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => Ok(None),
+            CurrentSurfaceTexture::Lost => {
+                self.attached = None;
+                Err(AppError::from("draw_frame: surface lost; the shell must re-attach".to_string()))
+            }
+            CurrentSurfaceTexture::Validation => {
+                Err(AppError::from("draw_frame: acquiring the surface texture failed validation".to_string()))
+            }
+        }
+    }
+
+    fn reconfigure_surface(&self) {
+        self.attached
+            .as_ref()
+            .expect("draw_frame: attach_surface must be called first")
+            .surface
+            .reconfigure(&self.device);
+    }
+
+    fn write_viewport_uniform(&self, viewport: Viewport) {
+        let attached: &AttachedState = self.attached.as_ref()
+            .expect("draw_frame: attach_surface must be called first");
+        let viewport_uniform: ViewportUniform = viewport.to_gpu();
+
+        self.queue.write_buffer(&attached.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
+    }
+
+    fn record_map_pass(&self, view: &TextureView, instance_count: u32) -> CommandBuffer {
         let attached: &AttachedState = self.attached.as_ref()
             .expect("draw_frame: attach_surface must be called first");
         let fill_color_buffer: &Buffer = &self
@@ -189,30 +255,6 @@ impl Renderer {
             .expect("refresh_fill_colors populates the cache")
             .buffer;
 
-        let surface_texture: SurfaceTexture = match attached.surface.inner().get_current_texture() {
-            CurrentSurfaceTexture::Success(texture) | CurrentSurfaceTexture::Suboptimal(texture) => texture,
-            CurrentSurfaceTexture::Outdated | CurrentSurfaceTexture::Lost => {
-                attached.surface.reconfigure(&self.device);
-                return Ok(());
-            }
-            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => {
-                return Ok(());
-            }
-            CurrentSurfaceTexture::Validation => {
-                return Err(AppError::from("draw_frame: acquiring the surface texture failed validation".to_string()));
-            }
-        };
-
-        let viewport_uniform: ViewportUniform = viewport.to_gpu();
-        self.queue.write_buffer(&attached.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
-
-        let instance_count: u32 = if is_antimeridian_wrap(viewport) {
-            2
-        } else {
-            1
-        };
-
-        let view: TextureView = surface_texture.texture.create_view(&TextureViewDescriptor::default());
         let mut encoder: CommandEncoder =
             self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-frame-encoder") });
 
@@ -220,7 +262,7 @@ impl Renderer {
             let mut render_pass: RenderPass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("eafora-map-pass"),
                 color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &view,
+                    view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: Operations { load: LoadOp::Clear(Color::WHITE), store: StoreOp::Store },
@@ -245,11 +287,7 @@ impl Renderer {
             render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
         }
 
-        let command_buffer: CommandBuffer = encoder.finish();
-        self.queue.submit([command_buffer]);
-        self.queue.present(surface_texture);
-
-        Ok(())
+        encoder.finish()
     }
 
     /// Rebuilds the fill-color buffer only when its inputs (active statistic, period, or the bundle)
