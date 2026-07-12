@@ -59,22 +59,27 @@ struct CountrySpan {
     vertex_count: u32,
 }
 
-/// The per-country choropleth colors uploaded to the GPU, held with the inputs that determine them.
-/// Rebuilt only when the active statistic, period, or bundle changes; a viewport pan/zoom or a hover
-/// reuses the same buffer.
-struct CachedFillColors {
-    buffer: Buffer,
+/// The inputs that determine the choropleth colors — the cache key for the color buffer. The bundle
+/// is compared by identity (`Arc::ptr_eq`), since a hot-swap publishes a new `Arc`.
+struct FillColorKey {
     statistic: StatisticKind,
     period_start: NaiveDate,
     bundle: Arc<Bundle>,
 }
 
-impl CachedFillColors {
-    fn matches(&self, statistic: StatisticKind, period_start: NaiveDate, bundle: &Arc<Bundle>) -> bool {
-        self.statistic == statistic
-            && self.period_start == period_start
-            && Arc::ptr_eq(&self.bundle, bundle)
+impl FillColorKey {
+    fn matches(&self, other: &FillColorKey) -> bool {
+        self.statistic == other.statistic
+            && self.period_start == other.period_start
+            && Arc::ptr_eq(&self.bundle, &other.bundle)
     }
+}
+
+/// The choropleth color buffer plus the key it was built for. Rebuilt only when the key changes;
+/// a viewport pan/zoom or a hover reuses the same buffer.
+struct CachedFillColors {
+    buffer: Buffer,
+    key: FillColorKey,
 }
 
 /// The surface-dependent state, built together at attach and dropped together at detach.
@@ -237,10 +242,13 @@ impl Renderer {
     /// have changed since the last frame. A pan, zoom, or hover leaves them untouched and reuses the
     /// cached buffer.
     fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) -> Result<(), AppError> {
-        let is_current: bool = self.cached_fill_colors.as_ref().is_some_and(|cached| {
-            cached.matches(frame_state.active_statistic, frame_state.active_period_start, bundle)
-        });
+        let key: FillColorKey = FillColorKey {
+            statistic: frame_state.active_statistic,
+            period_start: frame_state.active_period_start,
+            bundle: Arc::clone(bundle),
+        };
 
+        let is_current: bool = self.cached_fill_colors.as_ref().is_some_and(|cached| cached.key.matches(&key));
         if is_current {
             return Ok(());
         }
@@ -252,12 +260,7 @@ impl Renderer {
             usage: BufferUsages::VERTEX,
         });
 
-        self.cached_fill_colors = Some(CachedFillColors {
-            buffer,
-            statistic: frame_state.active_statistic,
-            period_start: frame_state.active_period_start,
-            bundle: Arc::clone(bundle),
-        });
+        self.cached_fill_colors = Some(CachedFillColors { buffer, key });
 
         Ok(())
     }
