@@ -42,19 +42,19 @@ pub struct Renderer {
     _not_send: PhantomData<*const ()>,
 }
 
-/// A GPU index buffer paired with the number of indices to draw from it.
-struct IndexBuffer {
-    buffer: Buffer,
-    count: u32,
-}
-
-/// Uploaded to the GPU once at construction and reused every frame; only the fill colors change.
+/// Uploaded to the GPU once at construction and never rebuilt.
 struct CountryGeometry {
     positions: Buffer,
     vertex_count: u32,
     fill: IndexBuffer,
     border: IndexBuffer,
     spans: Vec<CountrySpan>,
+}
+
+/// A GPU index buffer paired with the number of indices to draw from it.
+struct IndexBuffer {
+    buffer: Buffer,
+    count: u32,
 }
 
 struct CountrySpan {
