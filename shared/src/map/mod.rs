@@ -10,7 +10,7 @@ pub mod country_mesh;
 #[cfg(feature = "render")]
 pub mod gpu_types;
 #[cfg(feature = "render")]
-pub mod map_renderer;
+pub mod renderer;
 #[cfg(feature = "render")]
 pub mod pipeline;
 
@@ -24,6 +24,6 @@ pub use country_mesh::*;
 #[cfg(feature = "render")]
 pub use gpu_types::*;
 #[cfg(feature = "render")]
-pub use map_renderer::*;
+pub use renderer::*;
 #[cfg(feature = "render")]
 pub use pipeline::*;
