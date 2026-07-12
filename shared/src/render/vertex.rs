@@ -1,3 +1,4 @@
+use std::iter;
 use crate::artifact::geometry::{CountryFeature, GeometryLayer, Polygon};
 use crate::error::AppError;
 use crate::map::projection::{self, ProjectedPoint};
@@ -64,8 +65,9 @@ fn append_polygon(
 }
 
 fn collect_rings(polygon: &Polygon) -> Vec<&[(f64, f64)]> {
-    std::iter::once(open_ring(&polygon.exterior))
-        .chain(polygon.interiors.iter().map(|interior_ring| open_ring(interior_ring)))
+    iter::once(open_ring(&polygon.exterior))
+        .chain(polygon.interiors.iter()
+            .map(|interior_ring| open_ring(interior_ring)))
         .collect()
 }
 
