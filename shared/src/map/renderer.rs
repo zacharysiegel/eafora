@@ -38,7 +38,7 @@ pub struct Renderer {
     bundle_receiver: watch::Receiver<Arc<Bundle>>,
     country_geometry: CountryGeometry,
     cached_fill_colors: Option<CachedFillColors>,
-    attached: Option<AttachedSurface>,
+    attached: Option<AttachedState>,
     _not_send: PhantomData<*const ()>,
 }
 
@@ -83,7 +83,7 @@ struct CachedFillColors {
 }
 
 /// The surface-dependent state, built together at attach and dropped together at detach.
-struct AttachedSurface {
+struct AttachedState {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
     viewport_buffer: Buffer,
@@ -150,7 +150,7 @@ impl Renderer {
             entries: &[BindGroupEntry { binding: 0, resource: viewport_buffer.as_entire_binding() }],
         });
 
-        self.attached = Some(AttachedSurface { surface, pipelines, viewport_buffer, viewport_bind_group });
+        self.attached = Some(AttachedState { surface, pipelines, viewport_buffer, viewport_bind_group });
 
         Ok(())
     }
@@ -160,7 +160,7 @@ impl Renderer {
     }
 
     pub fn resize_surface(&mut self, width: u32, height: u32) -> Result<(), AppError> {
-        let attached: &mut AttachedSurface =
+        let attached: &mut AttachedState =
             self.attached.as_mut().expect("resize_surface: attach_surface must be called first");
         attached.surface.resize(&self.device, width, height);
 
@@ -171,7 +171,7 @@ impl Renderer {
         let bundle: Arc<Bundle> = self.bundle_receiver.borrow_and_update().clone();
         self.refresh_fill_colors(&bundle, &frame_state)?;
 
-        let attached: &AttachedSurface =
+        let attached: &AttachedState =
             self.attached.as_ref().expect("draw_frame: attach_surface must be called first");
         let fill_color_buffer: &Buffer = &self
             .cached_fill_colors
