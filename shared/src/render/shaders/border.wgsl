@@ -11,12 +11,10 @@ struct ViewportUniform {
 var<uniform> viewport: ViewportUniform;
 
 fn project_to_clip(position: vec2<f32>) -> vec4<f32> {
-    let projected_min: vec2<f32> = viewport.projected_min;
-    let projected_max: vec2<f32> = viewport.projected_max;
     let shifted_x: f32 = position.x + f32(viewport.longitude_wrap_turns) * 360.0;
-    let span: vec2<f32> = projected_max - projected_min;
-    let normalized_x: f32 = (shifted_x - projected_min.x) / span.x;
-    let normalized_y: f32 = (position.y - projected_min.y) / span.y;
+    let span: vec2<f32> = viewport.projected_max - viewport.projected_min;
+    let normalized_x: f32 = (shifted_x - viewport.projected_min.x) / span.x;
+    let normalized_y: f32 = (position.y - viewport.projected_min.y) / span.y;
 
     return vec4<f32>(normalized_x * 2.0 - 1.0, normalized_y * 2.0 - 1.0, 0.0, 1.0);
 }
