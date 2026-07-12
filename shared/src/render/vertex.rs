@@ -61,6 +61,15 @@ fn append_polygon(
             hole_indices.push(projected_coordinates.len() / 2);
         }
 
+        // Antimeridian-crossing rings are not handled here. A ring whose source vertices span the
+        // +180/-180 seam (e.g. Russia's Chukotka, Fiji, Kiribati) projects to x-values on both far
+        // ends of the range, and earcut then triangulates the polygon across the entire ~358 degree
+        // span instead of the thin sliver hugging the seam, smearing the country across the map. This
+        // only matters if the geometry source stores such features as a single unsplit ring; if the
+        // source already splits them per hemisphere, the naive projection below is correct. If it
+        // does manifest, the fix is to clip each crossing ring against the antimeridian: insert new
+        // vertices where edges cross +/-180, split the ring into two rings (one per side of the
+        // line), and triangulate each independently.
         for &(lon, lat) in *ring {
             let projected: ProjectedPoint = projection::project(lat, lon);
             projected_coordinates.push(projected.x);
