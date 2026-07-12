@@ -47,8 +47,10 @@ impl RenderPipelines {
     }
 }
 
-/// Pops the OOM/Internal/Validation scopes innermost-first (the reverse of the push order the scope
-/// stack requires) and returns the first error any of them captured.
+/// Pops all three OOM/Internal/Validation scopes innermost-first (the reverse of the push order the
+/// scope stack requires) and returns the first error captured. It deliberately drains every scope
+/// rather than short-circuiting on the first error: leaving a scope un-popped unbalances the device's
+/// error-scope stack.
 async fn pop_first_error(error_scopes: [ErrorScopeGuard; 3]) -> Option<wgpu::Error> {
     let mut first_error: Option<wgpu::Error> = None;
 
