@@ -37,13 +37,15 @@ pub fn region_at_point(
 }
 
 fn screen_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, screen_point: ScreenPoint) -> GeoPoint {
-    let horizontal_fraction: f64 = screen_point.x / surface_dimensions.width as f64;
-    let vertical_fraction: f64 = screen_point.y / surface_dimensions.height as f64;
+    let normalized_x: f64 = screen_point.x / surface_dimensions.width as f64;
+    let normalized_y: f64 = screen_point.y / surface_dimensions.height as f64;
 
-    // The viewport is already projected, so map the screen fraction straight into it. Screen y grows
-    // downward, so the top of the surface is the viewport's max projected y.
-    let projected_x: f64 = viewport.min.x + horizontal_fraction * (viewport.max.x - viewport.min.x);
-    let projected_y: f64 = viewport.max.y - vertical_fraction * (viewport.max.y - viewport.min.y);
+    // normalized_x and normalized_y place the cursor within the surface on [0, 1]: 0 at the left/top
+    // edge, 1 at the right/bottom. The viewport is already projected, so interpolate those positions
+    // directly across its projected bounds. Screen y grows downward, so normalized_y 0 maps to the
+    // viewport's max projected y (the top of the view), not its min.
+    let projected_x: f64 = viewport.min.x + normalized_x * (viewport.max.x - viewport.min.x);
+    let projected_y: f64 = viewport.max.y - normalized_y * (viewport.max.y - viewport.min.y);
 
     projection::unproject(projected_x, projected_y)
 }
