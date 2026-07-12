@@ -42,8 +42,8 @@ impl CountryMesh {
         let projected_coordinates: Vec<f64> = project_points(&geographic_points);
         let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, base)?;
 
-        self.fill_indices.extend(fill_triangle_indices);
         self.vertices.extend(to_projected_vertices(&projected_coordinates));
+        self.fill_indices.extend(fill_triangle_indices);
         append_border_edges(&rings, base, &mut self.border_indices);
 
         Ok(())
