@@ -8,12 +8,15 @@ use wgpu::{
 
 use crate::render::gpu_types::{FillVertex, ProjectedVertex};
 
-/// The compiled pipelines the renderer draws through: `border` outlines each country as line
-/// segments, `fill` paints the choropleth triangles. Built against a known surface format, so they
-/// are (re)created at attach time when that format is available.
+/// The compiled pipelines the renderer draws through, built against a known surface format and so
+/// (re)created at attach time once that format is available.
 pub struct RenderPipelines {
+    /// Outlines each country as line segments.
     pub border: RenderPipeline,
+    /// Paints the choropleth triangles.
     pub fill: RenderPipeline,
+    /// The layout of the viewport uniform binding, retained so the renderer can build the matching
+    /// bind group once the viewport buffer exists.
     pub viewport_bind_group_layout: BindGroupLayout,
 }
 
