@@ -44,7 +44,7 @@ impl CountryMesh {
 
         self.vertices.extend(to_projected_vertices(&projected_coordinates));
         self.fill_indices.extend(fill_triangle_indices);
-        append_border_edges(&rings, polygon_vertex_offset, &mut self.border_indices);
+        self.border_indices.extend(ring_edge_indices(&rings, polygon_vertex_offset));
 
         Ok(())
     }
@@ -123,17 +123,21 @@ fn to_projected_vertices(projected_coordinates: &[f64]) -> Vec<ProjectedVertex> 
         .collect()
 }
 
-fn append_border_edges(rings: &[&[(f64, f64)]], polygon_vertex_offset: u32, border_indices: &mut Vec<u32>) {
+fn ring_edge_indices(rings: &[&[(f64, f64)]], polygon_vertex_offset: u32) -> Vec<u32> {
+    let mut edge_indices: Vec<u32> = Vec::new();
     let mut ring_start: u32 = polygon_vertex_offset;
+
     for ring in rings {
         let ring_length: u32 = ring.len() as u32;
         for offset in 0..ring_length {
-            border_indices.push(ring_start + offset);
-            border_indices.push(ring_start + (offset + 1) % ring_length);
+            edge_indices.push(ring_start + offset);
+            edge_indices.push(ring_start + (offset + 1) % ring_length);
         }
 
         ring_start += ring_length;
     }
+
+    edge_indices
 }
 
 /// FlatGeobuf/geo-types rings repeat the first vertex as the last to close the loop; earcut and the
