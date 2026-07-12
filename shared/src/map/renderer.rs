@@ -42,8 +42,7 @@ pub struct Renderer {
     _not_send: PhantomData<*const ()>,
 }
 
-/// The country polygons uploaded to the GPU once: one shared position buffer, the fill triangle
-/// indices, the border line indices, and the per-country vertex ranges the choropleth colors each.
+/// Uploaded to the GPU once at construction and reused every frame; only the fill colors change.
 struct CountryGeometry {
     positions: Buffer,
     fill_indices: Buffer,
@@ -78,8 +77,7 @@ impl CachedFillColors {
     }
 }
 
-/// The surface-dependent state, built together at attach and dropped together at detach: the
-/// surface, the pipelines (compiled against its format), and the viewport uniform + bind group.
+/// The surface-dependent state, built together at attach and dropped together at detach.
 struct AttachedSurface {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
