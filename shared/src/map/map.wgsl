@@ -45,7 +45,7 @@ struct FillVertexOutput {
 };
 
 @vertex
-fn fill_vs_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> FillVertexOutput {
+fn fill_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> FillVertexOutput {
     var output: FillVertexOutput;
     output.clip_position = project_to_clip(input.position, instance_index);
     output.color = input.color;
@@ -53,18 +53,18 @@ fn fill_vs_main(input: FillVertexInput, @builtin(instance_index) instance_index:
 }
 
 @fragment
-fn fill_fs_main(input: FillVertexOutput) -> @location(0) vec4<f32> {
+fn fill_fragment_main(input: FillVertexOutput) -> @location(0) vec4<f32> {
     return input.color;
 }
 
 // Border pipeline: the country outlines as line segments, opaque black.
 
 @vertex
-fn border_vs_main(@location(0) position: vec2<f32>, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
+fn border_vertex_main(@location(0) position: vec2<f32>, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
     return project_to_clip(position, instance_index);
 }
 
 @fragment
-fn border_fs_main() -> @location(0) vec4<f32> {
+fn border_fragment_main() -> @location(0) vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
 }

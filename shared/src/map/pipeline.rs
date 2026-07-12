@@ -105,7 +105,7 @@ fn create_border_pipeline(
         layout: Some(pipeline_layout),
         vertex: VertexState {
             module: shader_module,
-            entry_point: Some("border_vs_main"),
+            entry_point: Some("border_vertex_main"),
             compilation_options: PipelineCompilationOptions::default(),
             buffers: &vertex_buffers,
         },
@@ -123,7 +123,7 @@ fn create_border_pipeline(
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,
-            entry_point: Some("border_fs_main"),
+            entry_point: Some("border_fragment_main"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
                 format: surface_format,
@@ -166,7 +166,7 @@ fn create_fill_pipeline(
         layout: Some(pipeline_layout),
         vertex: VertexState {
             module: shader_module,
-            entry_point: Some("fill_vs_main"),
+            entry_point: Some("fill_vertex_main"),
             compilation_options: PipelineCompilationOptions::default(),
             buffers: &vertex_buffers,
         },
@@ -184,7 +184,7 @@ fn create_fill_pipeline(
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,
-            entry_point: Some("fill_fs_main"),
+            entry_point: Some("fill_fragment_main"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
                 format: surface_format,
