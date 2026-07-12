@@ -37,7 +37,7 @@ pub struct Renderer {
     queue: Queue,
     bundle_receiver: watch::Receiver<Arc<Bundle>>,
     country_geometry: CountryGeometry,
-    cached_fill_colors: Option<CachedFillColors>,
+    fill_colors: Option<CachedFillColors>,
     attached: Option<AttachedState>,
     _not_send: PhantomData<*const ()>,
 }
@@ -129,7 +129,7 @@ impl Renderer {
             queue,
             bundle_receiver,
             country_geometry,
-            cached_fill_colors: None,
+            fill_colors: None,
             attached: None,
             _not_send: PhantomData,
         })
@@ -177,7 +177,7 @@ impl Renderer {
         let attached: &AttachedState =
             self.attached.as_ref().expect("draw_frame: attach_surface must be called first");
         let fill_color_buffer: &Buffer = &self
-            .cached_fill_colors
+            .fill_colors
             .as_ref()
             .expect("refresh_fill_colors populates the cache")
             .buffer;
@@ -199,7 +199,11 @@ impl Renderer {
         let viewport_uniform: ViewportUniform = viewport_to_uniform(viewport);
         self.queue.write_buffer(&attached.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
 
-        let instance_count: u32 = wrap_instance_count(viewport);
+        let instance_count: u32 = if is_antimeridian_wrap(viewport) {
+            2
+        } else {
+            1
+        };
 
         let view: TextureView = surface_texture.texture.create_view(&TextureViewDescriptor::default());
         let mut encoder: CommandEncoder =
@@ -251,19 +255,19 @@ impl Renderer {
             bundle: Arc::clone(bundle),
         };
 
-        let is_current: bool = self.cached_fill_colors.as_ref().is_some_and(|cached| cached.key.matches(&key));
+        let is_current: bool = self.fill_colors.as_ref().is_some_and(|cached| cached.key.matches(&key));
         if is_current {
             return Ok(());
         }
 
-        let fill_colors: Vec<FillVertex> = self.compute_fill_colors(bundle, frame_state)?;
+        let fill_vertices: Vec<FillVertex> = self.compute_fill_colors(bundle, frame_state)?;
         let buffer: Buffer = self.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("eafora-fill-colors"),
-            contents: bytemuck::cast_slice(&fill_colors),
+            contents: bytemuck::cast_slice(&fill_vertices),
             usage: BufferUsages::VERTEX,
         });
 
-        self.cached_fill_colors = Some(CachedFillColors { buffer, key });
+        self.fill_colors = Some(CachedFillColors { buffer, key });
 
         Ok(())
     }
@@ -358,17 +362,8 @@ fn viewport_to_uniform(viewport: Viewport) -> ViewportUniform {
     }
 }
 
-/// Two instances when the viewport crosses the +/-180 antimeridian (the natural copy plus the wrapped
-/// copy the shader shifts a full turn), one otherwise. Assumes the viewport is clamped to at most
-/// 360 degrees wide, so it can cross at most one seam.
-fn wrap_instance_count(viewport: Viewport) -> u32 {
-    let crosses_antimeridian: bool = viewport.min.x < -180.0 || viewport.max.x > 180.0;
-
-    if crosses_antimeridian {
-        2
-    } else {
-        1
-    }
+fn is_antimeridian_wrap(viewport: Viewport) -> bool {
+    viewport.min.x < -180.0 || viewport.max.x > 180.0;
 }
 
 fn to_fill_vertex(color: Rgba) -> FillVertex {
