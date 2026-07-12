@@ -196,7 +196,7 @@ impl Renderer {
             }
         };
 
-        let viewport_uniform: ViewportUniform = viewport_to_uniform(viewport);
+        let viewport_uniform: ViewportUniform = viewport.to_gpu();
         self.queue.write_buffer(&attached.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
 
         let instance_count: u32 = if is_antimeridian_wrap(viewport) {
@@ -255,7 +255,8 @@ impl Renderer {
             bundle: Arc::clone(bundle),
         };
 
-        let is_current: bool = self.fill_colors.as_ref().is_some_and(|cached| cached.key.matches(&key));
+        let is_current: bool = self.fill_colors.as_ref()
+            .is_some_and(|cached| cached.key.matches(&key));
         if is_current {
             return Ok(());
         }
@@ -273,7 +274,7 @@ impl Renderer {
     }
 
     fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Result<Vec<FillVertex>, AppError> {
-        let no_data_fill: FillVertex = to_fill_vertex(color::choropleth_fill(None, 0.0, 1.0));
+        let no_data_fill: FillVertex = color::choropleth_fill(None, 0.0, 1.0).to_gpu();
         let mut fill_colors: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.positions.count as usize];
 
         let Some(shard_bytes) = select_shard(bundle, frame_state.active_statistic) else {
@@ -287,7 +288,7 @@ impl Renderer {
 
         for span in &self.country_geometry.spans {
             let value: Option<f64> = shard_values.value(&span.iso3, frame_state.active_period_start);
-            let fill_vertex: FillVertex = to_fill_vertex(color::choropleth_fill(value, statistic_min, statistic_max));
+            let fill_vertex: FillVertex = color::choropleth_fill(value, statistic_min, statistic_max).to_gpu();
             for vertex_index in span.vertex_start..(span.vertex_start + span.vertex_count) {
                 fill_colors[vertex_index as usize] = fill_vertex;
             }
@@ -355,19 +356,23 @@ fn select_shard(bundle: &Bundle, statistic_kind: StatisticKind) -> Option<&Vec<u
         })
 }
 
-fn viewport_to_uniform(viewport: Viewport) -> ViewportUniform {
-    ViewportUniform {
-        projected_min: Vec2 { x: viewport.min.x as f32, y: viewport.min.y as f32 },
-        projected_max: Vec2 { x: viewport.max.x as f32, y: viewport.max.y as f32 },
+impl Viewport {
+    fn to_gpu(&self) -> ViewportUniform {
+        ViewportUniform {
+            projected_min: Vec2 { x: self.min.x as f32, y: self.min.y as f32 },
+            projected_max: Vec2 { x: self.max.x as f32, y: self.max.y as f32 },
+        }
     }
 }
 
 fn is_antimeridian_wrap(viewport: Viewport) -> bool {
-    viewport.min.x < -180.0 || viewport.max.x > 180.0;
+    viewport.min.x < -180.0 || viewport.max.x > 180.0
 }
 
-fn to_fill_vertex(color: Rgba) -> FillVertex {
-    FillVertex { color: Vec4 { x: color.r, y: color.g, z: color.b, w: color.a } }
+impl Rgba {
+    fn to_gpu(&self) -> FillVertex {
+        FillVertex { color: Vec4 { x: self.r, y: self.g, z: self.b, w: self.a } }
+    }
 }
 
 #[cfg(test)]
@@ -378,13 +383,13 @@ mod tests {
     const TOLERANCE: f32 = 1e-6;
 
     #[test]
-    fn viewport_to_uniform_copies_the_projected_bounds() {
+    fn viewport_to_gpu_copies_the_projected_bounds() {
         let viewport: Viewport = Viewport {
             min: ProjectedPoint { x: -10.0, y: -1.5 },
             max: ProjectedPoint { x: 30.0, y: 1.5 },
         };
 
-        let uniform: ViewportUniform = viewport_to_uniform(viewport);
+        let uniform: ViewportUniform = viewport.to_gpu();
 
         assert!((uniform.projected_min.x - (-10.0)).abs() < TOLERANCE);
         assert!((uniform.projected_min.y - (-1.5)).abs() < TOLERANCE);
