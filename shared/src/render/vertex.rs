@@ -5,8 +5,8 @@ use crate::render::gpu_types::{ProjectedVertex, Vec2};
 
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, the fill triangle
 /// indices (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
-/// Built off the GPU thread and owned outright, so it is `Send` and can be produced on a worker or
-/// baked by the producer later without touching the renderer.
+/// It owns its data and holds no GPU handles, so it is `Send`: a worker thread can build it, or the
+/// producer can bake it into the artifact, without involving the renderer.
 #[derive(Debug, Clone)]
 pub struct CountryMesh {
     pub iso3: String,
