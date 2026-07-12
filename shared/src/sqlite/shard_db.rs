@@ -3,7 +3,7 @@
 //!
 //! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
 //! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::ro_memory_vfs`. Each is
-//! a target-gated submodule scoping its own bindings; both re-export the one `load_shard` signature.
+//! a target-gated submodule scoping its own bindings; both re-export the one `read_shard` signature.
 
 use std::collections::HashMap;
 
@@ -52,7 +52,7 @@ mod native {
 
     /// Read every `(region_iso3, period_start, value)` row of a statistic shard into a [`ShardValues`].
     /// The shard's SQLite header is validated before any query per [`crate::sqlite::schema::validate_shard_header`].
-    pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
+    pub fn read_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
         let connection: Connection = deserialize_read_only(bytes)?;
         schema::validate_shard_header(&connection)?;
 
@@ -131,7 +131,7 @@ mod wasm {
     /// Open the shard's bytes through the read-only VFS (native has no such module) and step the one
     /// load-once query via the raw `sqlite3_*` FFI, since `sqlite-wasm-rs` exposes no safe query
     /// wrapper. Same result shape as the native path.
-    pub fn load_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
+    pub fn read_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
         let filename: String = ro_memory_vfs::register_shard(bytes);
         let result: Result<ShardValues, AppError> = open_and_read_shard(&filename);
         ro_memory_vfs::unregister_shard(&filename);
@@ -267,8 +267,8 @@ mod tests {
     }
 
     #[test]
-    fn load_shard_reads_values_and_range() {
-        let shard: ShardValues = load_shard(&sample_shard_bytes()).unwrap();
+    fn read_shard_reads_values_and_range() {
+        let shard: ShardValues = read_shard(&sample_shard_bytes()).unwrap();
 
         assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.6));
         assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()), Some(1.7));
@@ -277,16 +277,16 @@ mod tests {
     }
 
     #[test]
-    fn load_shard_returns_none_for_absent_region_and_period() {
-        let shard: ShardValues = load_shard(&sample_shard_bytes()).unwrap();
+    fn read_shard_returns_none_for_absent_region_and_period() {
+        let shard: ShardValues = read_shard(&sample_shard_bytes()).unwrap();
 
         assert_eq!(shard.value("XKX", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), None);
         assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(1999, 1, 1).unwrap()), None);
     }
 
     #[test]
-    fn load_shard_rejects_non_eafora_bytes() {
-        let result: Result<ShardValues, AppError> = load_shard(b"not a sqlite database");
+    fn read_shard_rejects_non_eafora_bytes() {
+        let result: Result<ShardValues, AppError> = read_shard(b"not a sqlite database");
 
         assert!(result.is_err());
     }
@@ -312,10 +312,10 @@ mod wasm_tests {
     use wasm_bindgen_test::wasm_bindgen_test;
 
     #[wasm_bindgen_test]
-    fn load_shard_reads_committed_sample_through_the_vfs() {
+    fn read_shard_reads_committed_sample_through_the_vfs() {
         let bytes: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/tfr-sample.sqlite"));
 
-        let shard: ShardValues = load_shard(bytes).unwrap();
+        let shard: ShardValues = read_shard(bytes).unwrap();
 
         assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.6));
         assert_eq!(shard.value("DEU", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
