@@ -166,6 +166,8 @@ impl Renderer {
         let viewport_uniform: ViewportUniform = viewport_to_uniform(viewport);
         self.queue.write_buffer(&attached.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
 
+        let instance_count: u32 = wrap_instance_count(viewport);
+
         let fill_color_buffer: Buffer = self.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("eafora-fill-colors"),
             contents: bytemuck::cast_slice(&fill_colors),
@@ -197,12 +199,12 @@ impl Renderer {
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.slice(..));
             render_pass.set_vertex_buffer(1, fill_color_buffer.slice(..));
             render_pass.set_index_buffer(self.country_geometry.fill_indices.slice(..), IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.country_geometry.fill_index_count, 0, 0..1);
+            render_pass.draw_indexed(0..self.country_geometry.fill_index_count, 0, 0..instance_count);
 
             render_pass.set_pipeline(&attached.pipelines.border);
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.slice(..));
             render_pass.set_index_buffer(self.country_geometry.border_indices.slice(..), IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.country_geometry.border_index_count, 0, 0..1);
+            render_pass.draw_indexed(0..self.country_geometry.border_index_count, 0, 0..instance_count);
         }
 
         let command_buffer: CommandBuffer = encoder.finish();
@@ -302,8 +304,19 @@ fn viewport_to_uniform(viewport: Viewport) -> ViewportUniform {
     ViewportUniform {
         projected_min: Vec2 { x: viewport.min.x as f32, y: viewport.min.y as f32 },
         projected_max: Vec2 { x: viewport.max.x as f32, y: viewport.max.y as f32 },
-        longitude_wrap_turns: 0,
-        _padding: [0.0, 0.0, 0.0],
+    }
+}
+
+/// Two instances when the viewport crosses the +/-180 antimeridian (the natural copy plus the wrapped
+/// copy the shader shifts a full turn), one otherwise. Assumes the viewport is clamped to at most
+/// 360 degrees wide, so it can cross at most one seam.
+fn wrap_instance_count(viewport: Viewport) -> u32 {
+    let crosses_antimeridian: bool = viewport.min.x < -180.0 || viewport.max.x > 180.0;
+
+    if crosses_antimeridian {
+        2
+    } else {
+        1
     }
 }
 
@@ -331,6 +344,26 @@ mod tests {
         assert!((uniform.projected_min.y - (-1.5)).abs() < TOLERANCE);
         assert!((uniform.projected_max.x - 30.0).abs() < TOLERANCE);
         assert!((uniform.projected_max.y - 1.5).abs() < TOLERANCE);
-        assert_eq!(uniform.longitude_wrap_turns, 0);
+    }
+
+    #[test]
+    fn wrap_instance_count_is_two_only_when_the_viewport_crosses_the_seam() {
+        let within_one_world: Viewport = Viewport {
+            min: ProjectedPoint { x: -170.0, y: -1.0 },
+            max: ProjectedPoint { x: 170.0, y: 1.0 },
+        };
+        assert_eq!(wrap_instance_count(within_one_world), 1);
+
+        let past_west_edge: Viewport = Viewport {
+            min: ProjectedPoint { x: -190.0, y: -1.0 },
+            max: ProjectedPoint { x: -10.0, y: 1.0 },
+        };
+        assert_eq!(wrap_instance_count(past_west_edge), 2);
+
+        let past_east_edge: Viewport = Viewport {
+            min: ProjectedPoint { x: 10.0, y: -1.0 },
+            max: ProjectedPoint { x: 190.0, y: 1.0 },
+        };
+        assert_eq!(wrap_instance_count(past_east_edge), 2);
     }
 }
