@@ -51,13 +51,30 @@ fn append_polygon(
     border_indices: &mut Vec<u32>,
 ) -> Result<(), AppError> {
     let base: u32 = vertices.len() as u32;
+    let rings: Vec<&[(f64, f64)]> = collect_rings(polygon);
 
-    let rings: Vec<&[(f64, f64)]> = std::iter::once(open_ring(&polygon.exterior))
+    let (projected_coordinates, hole_indices): (Vec<f64>, Vec<usize>) = project_rings(&rings);
+    let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, base)?;
+
+    fill_indices.extend(fill_triangle_indices);
+    vertices.extend(to_projected_vertices(&projected_coordinates));
+    append_border_edges(&rings, base, border_indices);
+
+    Ok(())
+}
+
+fn collect_rings(polygon: &Polygon) -> Vec<&[(f64, f64)]> {
+    std::iter::once(open_ring(&polygon.exterior))
         .chain(polygon.interiors.iter().map(|interior_ring| open_ring(interior_ring)))
-        .collect();
+        .collect()
+}
 
+/// Flattens the rings into the `[x0, y0, x1, y1, ...]` coordinate array earcut expects, and records
+/// where each interior ring (a hole) begins so earcut can bridge them into the exterior.
+fn project_rings(rings: &[&[(f64, f64)]]) -> (Vec<f64>, Vec<usize>) {
     let mut projected_coordinates: Vec<f64> = Vec::new();
     let mut hole_indices: Vec<usize> = Vec::new();
+
     for (ring_index, ring) in rings.iter().enumerate() {
         if ring_index > 0 {
             hole_indices.push(projected_coordinates.len() / 2);
@@ -79,22 +96,25 @@ fn append_polygon(
         }
     }
 
-    let fill_triangle_indices: Vec<usize> = earcutr::earcut(&projected_coordinates, &hole_indices, 2)
+    (projected_coordinates, hole_indices)
+}
+
+/// earcut returns triangle indices local to this polygon's coordinate array; `base` shifts them to
+/// their position in the country's shared vertex buffer.
+fn triangulate_fill(projected_coordinates: &[f64], hole_indices: &[usize], base: u32) -> Result<Vec<u32>, AppError> {
+    let fill_triangle_indices: Vec<usize> = earcutr::earcut(projected_coordinates, hole_indices, 2)
         .map_err(|error| AppError::from(format!("triangulation failed for a country polygon: {error:?}")))?;
 
-    for index in fill_triangle_indices {
-        fill_indices.push(base + index as u32);
-    }
+    Ok(fill_triangle_indices.into_iter().map(|index| base + index as u32).collect())
+}
 
-    for coordinate_pair in projected_coordinates.chunks_exact(2) {
-        vertices.push(ProjectedVertex {
+fn to_projected_vertices(projected_coordinates: &[f64]) -> Vec<ProjectedVertex> {
+    projected_coordinates
+        .chunks_exact(2)
+        .map(|coordinate_pair| ProjectedVertex {
             position: Vec2 { x: coordinate_pair[0] as f32, y: coordinate_pair[1] as f32 },
-        });
-    }
-
-    append_border_edges(&rings, base, border_indices);
-
-    Ok(())
+        })
+        .collect()
 }
 
 fn append_border_edges(rings: &[&[(f64, f64)]], base: u32, border_indices: &mut Vec<u32>) {
