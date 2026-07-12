@@ -1,5 +1,5 @@
-pub mod math;
+pub mod gpu_types;
 pub mod surface;
 
-pub use math::*;
+pub use gpu_types::*;
 pub use surface::*;

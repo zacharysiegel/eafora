@@ -19,7 +19,7 @@ use crate::map::value_types::{FrameState, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
 use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
 use crate::map::pipeline::RenderPipelines;
-use crate::render::math::{Vec2, Vec4};
+use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
 use crate::sqlite::shard_db::{self, ShardValues};
 

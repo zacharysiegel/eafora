@@ -1,7 +1,7 @@
 //! The map's `#[repr(C)]` GPU-buffer structs. Their field order, types, and alignment must match
 //! what the WGSL shaders read, which is why they carry `bytemuck` derives.
 
-use crate::render::math::{Vec2, Vec4};
+use crate::render::gpu_types::{Vec2, Vec4};
 
 /// A Miller-projected 2D position.
 #[repr(C)]

@@ -3,7 +3,7 @@ use crate::artifact::geometry::{CountryFeature, GeometryLayer, Polygon};
 use crate::error::AppError;
 use crate::map::gpu_types::ProjectedVertex;
 use crate::map::projection::{self, ProjectedPoint};
-use crate::render::math::Vec2;
+use crate::render::gpu_types::Vec2;
 
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, the fill triangle
 /// indices (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
