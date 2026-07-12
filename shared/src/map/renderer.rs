@@ -45,11 +45,11 @@ pub struct Renderer {
 /// Uploaded to the GPU once at construction and reused every frame; only the fill colors change.
 struct CountryGeometry {
     positions: Buffer,
+    vertex_count: u32,
     fill_indices: Buffer,
     fill_index_count: u32,
     border_indices: Buffer,
     border_index_count: u32,
-    vertex_count: u32,
     spans: Vec<CountrySpan>,
 }
 
@@ -62,14 +62,14 @@ struct CountrySpan {
 /// The inputs that determine the choropleth colors — the cache key for the color buffer. The bundle
 /// is compared by identity (`Arc::ptr_eq`), since a hot-swap publishes a new `Arc`.
 struct FillColorKey {
-    statistic: StatisticKind,
+    statistic_kind: StatisticKind,
     period_start: NaiveDate,
     bundle: Arc<Bundle>,
 }
 
 impl FillColorKey {
     fn matches(&self, other: &FillColorKey) -> bool {
-        self.statistic == other.statistic
+        self.statistic_kind == other.statistic_kind
             && self.period_start == other.period_start
             && Arc::ptr_eq(&self.bundle, &other.bundle)
     }
@@ -243,7 +243,7 @@ impl Renderer {
     /// cached buffer.
     fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) -> Result<(), AppError> {
         let key: FillColorKey = FillColorKey {
-            statistic: frame_state.active_statistic,
+            statistic_kind: frame_state.active_statistic,
             period_start: frame_state.active_period_start,
             bundle: Arc::clone(bundle),
         };
@@ -328,11 +328,11 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
 
     Ok(CountryGeometry {
         positions: positions_buffer,
+        vertex_count: positions.len() as u32,
         fill_indices: fill_index_buffer,
         fill_index_count: fill_indices.len() as u32,
         border_indices: border_index_buffer,
         border_index_count: border_indices.len() as u32,
-        vertex_count: positions.len() as u32,
         spans,
     })
 }
