@@ -64,6 +64,23 @@ fn collect_rings(polygon: &Polygon) -> Vec<&[(f64, f64)]> {
         .collect()
 }
 
+/// The vertex index at which each interior ring (a hole) begins, which earcut uses to bridge the
+/// holes into the exterior. The first ring is the exterior, so it contributes no entry.
+fn hole_start_indices(rings: &[&[(f64, f64)]]) -> Vec<usize> {
+    let mut hole_indices: Vec<usize> = Vec::new();
+    let mut vertex_offset: usize = 0;
+
+    for (ring_index, ring) in rings.iter().enumerate() {
+        if ring_index > 0 {
+            hole_indices.push(vertex_offset);
+        }
+
+        vertex_offset += ring.len();
+    }
+
+    hole_indices
+}
+
 /// Flattens the rings into the `[x0, y0, x1, y1, ...]` coordinate array earcut expects.
 fn project_rings(rings: &[&[(f64, f64)]]) -> Vec<f64> {
     let mut projected_coordinates: Vec<f64> = Vec::new();
@@ -86,23 +103,6 @@ fn project_rings(rings: &[&[(f64, f64)]]) -> Vec<f64> {
     }
 
     projected_coordinates
-}
-
-/// The vertex index at which each interior ring (a hole) begins, which earcut uses to bridge the
-/// holes into the exterior. The first ring is the exterior, so it contributes no entry.
-fn hole_start_indices(rings: &[&[(f64, f64)]]) -> Vec<usize> {
-    let mut hole_indices: Vec<usize> = Vec::new();
-    let mut vertex_offset: usize = 0;
-
-    for (ring_index, ring) in rings.iter().enumerate() {
-        if ring_index > 0 {
-            hole_indices.push(vertex_offset);
-        }
-
-        vertex_offset += ring.len();
-    }
-
-    hole_indices
 }
 
 /// earcut returns triangle indices local to this polygon's coordinate array; `base` shifts them to
