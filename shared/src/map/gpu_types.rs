@@ -1,24 +1,7 @@
-//! The `#[repr(C)]` structs uploaded verbatim into GPU buffers. Their field order, types, and
-//! alignment must match what the WGSL shaders read, which is why they carry `bytemuck` derives and
-//! fixed-size array fields rather than idiomatic Rust shapes.
+//! The map's `#[repr(C)]` GPU-buffer structs. Their field order, types, and alignment must match
+//! what the WGSL shaders read, which is why they carry `bytemuck` derives.
 
-/// A 2D `f32` vector, matching WGSL's `vec2<f32>` (8 bytes, components at offsets 0 and 4).
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vec2 {
-    pub x: f32,
-    pub y: f32,
-}
-
-/// A 4D `f32` vector, matching WGSL's `vec4<f32>` (16 bytes).
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vec4 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub w: f32,
-}
+use crate::render::math::{Vec2, Vec4};
 
 /// A Miller-projected 2D position.
 #[repr(C)]

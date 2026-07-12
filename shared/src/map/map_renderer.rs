@@ -16,10 +16,11 @@ use crate::canonical::StatisticKind;
 use crate::error::AppError;
 use crate::map::color::{self, Rgba};
 use crate::map::value_types::{FrameState, Viewport};
-use crate::render::gpu_types::{FillVertex, ProjectedVertex, Vec2, Vec4, ViewportUniform};
-use crate::render::pipeline::RenderPipelines;
+use crate::map::country_mesh::{self, CountryMesh};
+use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
+use crate::map::pipeline::RenderPipelines;
+use crate::render::math::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
-use crate::render::vertex::{self, CountryMesh};
 use crate::sqlite::shard_db::{self, ShardValues};
 
 // not for wasm32: the native attach path takes a raw window handle; the web attaches from a canvas.
@@ -240,7 +241,7 @@ impl Renderer {
 }
 
 fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
-    let country_meshes: Vec<CountryMesh> = vertex::build_country_meshes(&bundle.geometry)?;
+    let country_meshes: Vec<CountryMesh> = country_mesh::build_country_meshes(&bundle.geometry)?;
 
     let mut positions: Vec<ProjectedVertex> = Vec::new();
     let mut fill_indices: Vec<u32> = Vec::new();

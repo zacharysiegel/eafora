@@ -7,7 +7,7 @@ use wgpu::{
 };
 
 use crate::error::AppError;
-use crate::render::gpu_types::{FillVertex, ProjectedVertex};
+use crate::map::gpu_types::{FillVertex, ProjectedVertex};
 
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
 /// (re)created at attach time once that format is available.
@@ -64,7 +64,7 @@ fn create_map_shader_module(device: &Device) -> ShaderModule {
     device.create_shader_module(ShaderModuleDescriptor {
         label: Some("eafora-map-shader-module"),
         source: ShaderSource::Wgsl(
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/render/shaders/map.wgsl")).into(),
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/map/shaders/map.wgsl")).into(),
         ),
     })
 }
