@@ -37,8 +37,7 @@ impl CountryMesh {
     }
 }
 
-/// Project and triangulate every country in the layer into owned meshes. There is no wgpu here; the
-/// renderer uploads the meshes into GPU buffers as a separate step.
+/// Project and triangulate every country in the layer into owned meshes.
 pub fn build_country_meshes(geometry: &GeometryLayer) -> Result<Vec<CountryMesh>, AppError> {
     let country_features: Vec<CountryFeature> = geometry.iter_features()?;
 
