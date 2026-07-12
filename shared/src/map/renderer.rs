@@ -42,14 +42,18 @@ pub struct Renderer {
     _not_send: PhantomData<*const ()>,
 }
 
+/// A GPU index buffer paired with the number of indices to draw from it.
+struct IndexBuffer {
+    buffer: Buffer,
+    count: u32,
+}
+
 /// Uploaded to the GPU once at construction and reused every frame; only the fill colors change.
 struct CountryGeometry {
     positions: Buffer,
     vertex_count: u32,
-    fill_indices: Buffer,
-    fill_index_count: u32,
-    border_indices: Buffer,
-    border_index_count: u32,
+    fill: IndexBuffer,
+    border: IndexBuffer,
     spans: Vec<CountrySpan>,
 }
 
@@ -222,13 +226,13 @@ impl Renderer {
             render_pass.set_pipeline(&attached.pipelines.fill);
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.slice(..));
             render_pass.set_vertex_buffer(1, fill_color_buffer.slice(..));
-            render_pass.set_index_buffer(self.country_geometry.fill_indices.slice(..), IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.country_geometry.fill_index_count, 0, 0..instance_count);
+            render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
+            render_pass.draw_indexed(0..self.country_geometry.fill.count, 0, 0..instance_count);
 
             render_pass.set_pipeline(&attached.pipelines.border);
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.slice(..));
-            render_pass.set_index_buffer(self.country_geometry.border_indices.slice(..), IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.country_geometry.border_index_count, 0, 0..instance_count);
+            render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
+            render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
         }
 
         let command_buffer: CommandBuffer = encoder.finish();
@@ -329,10 +333,8 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
     Ok(CountryGeometry {
         positions: positions_buffer,
         vertex_count: positions.len() as u32,
-        fill_indices: fill_index_buffer,
-        fill_index_count: fill_indices.len() as u32,
-        border_indices: border_index_buffer,
-        border_index_count: border_indices.len() as u32,
+        fill: IndexBuffer { buffer: fill_index_buffer, count: fill_indices.len() as u32 },
+        border: IndexBuffer { buffer: border_index_buffer, count: border_indices.len() as u32 },
         spans,
     })
 }
