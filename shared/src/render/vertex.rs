@@ -35,16 +35,16 @@ impl CountryMesh {
     }
 
     fn append_polygon(&mut self, polygon: &Polygon) -> Result<(), AppError> {
-        let base: u32 = self.vertices.len() as u32;
+        let polygon_vertex_offset: u32 = self.vertices.len() as u32;
         let rings: Vec<&[(f64, f64)]> = collect_rings(polygon);
 
         let (geographic_points, hole_indices): (Vec<(f64, f64)>, Vec<usize>) = flatten_rings(&rings);
         let projected_coordinates: Vec<f64> = project_points(&geographic_points);
-        let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, base)?;
+        let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, polygon_vertex_offset)?;
 
         self.vertices.extend(to_projected_vertices(&projected_coordinates));
         self.fill_indices.extend(fill_triangle_indices);
-        append_border_edges(&rings, base, &mut self.border_indices);
+        append_border_edges(&rings, polygon_vertex_offset, &mut self.border_indices);
 
         Ok(())
     }
@@ -103,14 +103,14 @@ fn project_points(geographic_points: &[(f64, f64)]) -> Vec<f64> {
     projected_coordinates
 }
 
-/// earcut returns triangle indices local to this polygon's coordinate array; `base` shifts them to
-/// their position in the country's shared vertex buffer.
-fn triangulate_fill(projected_coordinates: &[f64], hole_indices: &[usize], base: u32) -> Result<Vec<u32>, AppError> {
+/// earcut returns triangle indices local to this polygon's coordinate array; `polygon_vertex_offset`
+/// shifts them to their position in the country's shared vertex buffer.
+fn triangulate_fill(projected_coordinates: &[f64], hole_indices: &[usize], polygon_vertex_offset: u32) -> Result<Vec<u32>, AppError> {
     let fill_triangle_indices: Vec<usize> = earcutr::earcut(projected_coordinates, hole_indices, 2)
         .map_err(|error| AppError::from(format!("triangulation failed for a country polygon: {error:?}")))?;
 
     Ok(fill_triangle_indices.into_iter()
-        .map(|index| base + index as u32)
+        .map(|index| polygon_vertex_offset + index as u32)
         .collect())
 }
 
@@ -123,8 +123,8 @@ fn to_projected_vertices(projected_coordinates: &[f64]) -> Vec<ProjectedVertex> 
         .collect()
 }
 
-fn append_border_edges(rings: &[&[(f64, f64)]], base: u32, border_indices: &mut Vec<u32>) {
-    let mut ring_start: u32 = base;
+fn append_border_edges(rings: &[&[(f64, f64)]], polygon_vertex_offset: u32, border_indices: &mut Vec<u32>) {
+    let mut ring_start: u32 = polygon_vertex_offset;
     for ring in rings {
         let ring_length: u32 = ring.len() as u32;
         for offset in 0..ring_length {
