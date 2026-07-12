@@ -135,10 +135,19 @@ impl Renderer {
         })
     }
 
-    #[cfg(not(target_arch = "wasm32"))] // not for wasm32: the web attaches from a canvas, not a window handle
+    #[cfg(not(target_arch = "wasm32"))] // not for wasm32: takes a raw window handle; the web attaches from a canvas
     pub async fn attach_surface(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
+        self.attached = Some(self.create_attached_state(surface).await?);
+
+        Ok(())
+    }
+
+    // Surface-agnostic, so not target-gated. Only the native attach path calls it today; allow the
+    // dead-code lint on wasm32, where there is no caller yet.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    async fn create_attached_state(&self, surface: WgpuSurface) -> Result<AttachedState, AppError> {
         let pipelines: RenderPipelines = RenderPipelines::create(&self.device, surface.format()).await?;
 
         let viewport_buffer: Buffer = self.device.create_buffer(&BufferDescriptor {
@@ -153,9 +162,7 @@ impl Renderer {
             entries: &[BindGroupEntry { binding: 0, resource: viewport_buffer.as_entire_binding() }],
         });
 
-        self.attached = Some(AttachedState { surface, pipelines, viewport_buffer, viewport_bind_group });
-
-        Ok(())
+        Ok(AttachedState { surface, pipelines, viewport_buffer, viewport_bind_group })
     }
 
     pub fn detach_surface(&mut self) {
@@ -174,8 +181,8 @@ impl Renderer {
         let bundle: Arc<Bundle> = self.bundle_receiver.borrow_and_update().clone();
         self.refresh_fill_colors(&bundle, &frame_state)?;
 
-        let attached: &AttachedState =
-            self.attached.as_ref().expect("draw_frame: attach_surface must be called first");
+        let attached: &AttachedState = self.attached.as_ref()
+            .expect("draw_frame: attach_surface must be called first");
         let fill_color_buffer: &Buffer = &self
             .fill_colors
             .as_ref()
