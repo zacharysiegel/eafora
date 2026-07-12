@@ -40,12 +40,10 @@ fn screen_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, scre
     let horizontal_fraction: f64 = screen_point.x / surface_dimensions.width as f64;
     let vertical_fraction: f64 = screen_point.y / surface_dimensions.height as f64;
 
-    let projected_x: f64 =
-        viewport.longitude_min + horizontal_fraction * (viewport.longitude_max - viewport.longitude_min);
-
-    let projected_y_top: f64 = projection::project(viewport.latitude_max, 0.0).y;
-    let projected_y_bottom: f64 = projection::project(viewport.latitude_min, 0.0).y;
-    let projected_y: f64 = projected_y_top + vertical_fraction * (projected_y_bottom - projected_y_top);
+    // The viewport is already projected, so map the screen fraction straight into it. Screen y grows
+    // downward, so the top of the surface is the viewport's max projected y.
+    let projected_x: f64 = viewport.min.x + horizontal_fraction * (viewport.max.x - viewport.min.x);
+    let projected_y: f64 = viewport.max.y - vertical_fraction * (viewport.max.y - viewport.min.y);
 
     projection::unproject(projected_x, projected_y)
 }
@@ -67,12 +65,11 @@ mod tests {
         parse_geometry_layer(one_feature_fgb_bytes()).unwrap()
     }
 
+    // A viewport over longitude [min, max] and latitude 0..3, in projected space.
     fn latitude_band_viewport(longitude_min: f64, longitude_max: f64) -> Viewport {
         Viewport {
-            longitude_min,
-            longitude_max,
-            latitude_min: 0.0,
-            latitude_max: 3.0,
+            min: projection::project(0.0, longitude_min),
+            max: projection::project(3.0, longitude_max),
         }
     }
 

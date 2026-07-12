@@ -15,7 +15,6 @@ use crate::artifact::{Bundle, StatisticShardKey};
 use crate::canonical::StatisticKind;
 use crate::error::AppError;
 use crate::map::color::{self, Rgba};
-use crate::map::projection;
 use crate::map::value_types::{FrameState, Viewport};
 use crate::render::gpu_types::{FillVertex, ProjectedVertex, Vec2, Vec4, ViewportUniform};
 use crate::render::pipeline::RenderPipelines;
@@ -300,14 +299,9 @@ fn select_shard(bundle: &Bundle, statistic_kind: StatisticKind) -> Option<&Vec<u
 }
 
 fn viewport_to_uniform(viewport: Viewport) -> ViewportUniform {
-    // Longitude is the projected x directly (Miller x = lon); latitude drives the nonlinear y, so the
-    // viewport's latitude bounds are projected before they become clip-space extents.
-    let projected_min_y: f32 = projection::project(viewport.latitude_min, 0.0).y as f32;
-    let projected_max_y: f32 = projection::project(viewport.latitude_max, 0.0).y as f32;
-
     ViewportUniform {
-        projected_min: Vec2 { x: viewport.longitude_min as f32, y: projected_min_y },
-        projected_max: Vec2 { x: viewport.longitude_max as f32, y: projected_max_y },
+        projected_min: Vec2 { x: viewport.min.x as f32, y: viewport.min.y as f32 },
+        projected_max: Vec2 { x: viewport.max.x as f32, y: viewport.max.y as f32 },
         longitude_offset: 0.0,
         _padding: [0.0, 0.0, 0.0],
     }
@@ -320,25 +314,23 @@ fn to_fill_vertex(color: Rgba) -> FillVertex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::map::projection::ProjectedPoint;
 
     const TOLERANCE: f32 = 1e-6;
 
     #[test]
-    fn viewport_to_uniform_projects_the_latitude_bounds() {
+    fn viewport_to_uniform_copies_the_projected_bounds() {
         let viewport: Viewport = Viewport {
-            longitude_min: -10.0,
-            longitude_max: 30.0,
-            latitude_min: 0.0,
-            latitude_max: 3.0,
+            min: ProjectedPoint { x: -10.0, y: -1.5 },
+            max: ProjectedPoint { x: 30.0, y: 1.5 },
         };
 
         let uniform: ViewportUniform = viewport_to_uniform(viewport);
 
-        // Longitude passes through as x; the equator projects to y = 0; the offset defaults to zero.
         assert!((uniform.projected_min.x - (-10.0)).abs() < TOLERANCE);
-        assert!((uniform.projected_min.y - 0.0).abs() < TOLERANCE);
+        assert!((uniform.projected_min.y - (-1.5)).abs() < TOLERANCE);
         assert!((uniform.projected_max.x - 30.0).abs() < TOLERANCE);
-        assert!(uniform.projected_max.y > 0.0);
+        assert!((uniform.projected_max.y - 1.5).abs() < TOLERANCE);
         assert_eq!(uniform.longitude_offset, 0.0);
     }
 }
