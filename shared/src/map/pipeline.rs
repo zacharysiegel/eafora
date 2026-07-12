@@ -1,13 +1,13 @@
 use wgpu::{
     BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferAddress, BufferBindingType,
-    ColorTargetState, ColorWrites, Device, ErrorFilter, ErrorScopeGuard, FragmentState, FrontFace, MultisampleState,
-    PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState,
-    PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderSource,
-    ShaderStages, TextureFormat, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
+    BufferSize, ColorTargetState, ColorWrites, Device, ErrorFilter, ErrorScopeGuard, FragmentState, FrontFace,
+    MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode,
+    PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderModuleDescriptor,
+    ShaderSource, ShaderStages, TextureFormat, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
 };
 
 use crate::error::AppError;
-use crate::map::gpu_types::{FillVertex, ProjectedVertex};
+use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
 
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
 /// (re)created at attach time once that format is available.
@@ -80,7 +80,7 @@ fn create_viewport_bind_group_layout(device: &Device) -> BindGroupLayout {
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: None,
+                min_binding_size: BufferSize::new(std::mem::size_of::<ViewportUniform>() as u64),
             },
             count: None,
         }],
