@@ -66,7 +66,7 @@ fn create_map_shader_module(device: &Device) -> ShaderModule {
     device.create_shader_module(ShaderModuleDescriptor {
         label: Some("eafora-map-shader-module"),
         source: ShaderSource::Wgsl(
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/map/shaders/map.wgsl")).into(),
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/map/map.wgsl")).into(),
         ),
     })
 }
