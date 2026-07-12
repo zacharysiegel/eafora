@@ -3,11 +3,10 @@ use chrono::NaiveDate;
 use crate::canonical::StatisticKind;
 use crate::map::projection::ProjectedPoint;
 
-/// The camera window in Miller-projected space (`x` == longitude, `y` == projected latitude). Stored
-/// projected, not geographic, so pan/zoom arithmetic is uniform on screen: a constant projected
-/// increment moves the view a constant screen distance, which a constant latitude increment would
-/// not (Miller's `y` is nonlinear in latitude). `x` may fall outside ±180 after a horizontal pan
-/// past the antimeridian.
+/// The camera window in Miller-projected space. Stored projected, not geographic, so pan/zoom
+/// arithmetic is uniform on screen: a constant projected increment moves the view a constant screen
+/// distance, which a constant latitude increment would not (Miller's `y` is nonlinear in latitude).
+/// `x` may fall outside ±180 after a horizontal pan past the antimeridian.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
     pub min: ProjectedPoint,

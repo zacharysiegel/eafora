@@ -302,7 +302,7 @@ fn viewport_to_uniform(viewport: Viewport) -> ViewportUniform {
     ViewportUniform {
         projected_min: Vec2 { x: viewport.min.x as f32, y: viewport.min.y as f32 },
         projected_max: Vec2 { x: viewport.max.x as f32, y: viewport.max.y as f32 },
-        longitude_offset: 0.0,
+        longitude_wrap_turns: 0,
         _padding: [0.0, 0.0, 0.0],
     }
 }
@@ -331,6 +331,6 @@ mod tests {
         assert!((uniform.projected_min.y - (-1.5)).abs() < TOLERANCE);
         assert!((uniform.projected_max.x - 30.0).abs() < TOLERANCE);
         assert!((uniform.projected_max.y - 1.5).abs() < TOLERANCE);
-        assert_eq!(uniform.longitude_offset, 0.0);
+        assert_eq!(uniform.longitude_wrap_turns, 0);
     }
 }

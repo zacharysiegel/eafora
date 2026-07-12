@@ -34,15 +34,16 @@ pub struct FillVertex {
     pub color: Vec4,
 }
 
-/// The projected viewport corners plus a horizontal longitude shift. `_padding` brings the size to
-/// 32 bytes (a multiple of 16); the field offsets (0, 8, 16) match the `vec2, vec2, f32` the shaders
-/// declare for this uniform.
+/// The projected viewport corners plus the antimeridian wrap shift, expressed as a signed count of
+/// whole 360-degree turns (the shader multiplies by 360). `_padding` brings the size to 32 bytes (a
+/// multiple of 16); the field offsets (0, 8, 16) match the `vec2, vec2, i32` the shaders declare for
+/// this uniform.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewportUniform {
     pub projected_min: Vec2,
     pub projected_max: Vec2,
-    pub longitude_offset: f32,
+    pub longitude_wrap_turns: i32,
     pub _padding: [f32; 3],
 }
 

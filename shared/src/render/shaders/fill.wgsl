@@ -1,7 +1,10 @@
 struct ViewportUniform {
     projected_min: vec2<f32>,
     projected_max: vec2<f32>,
-    longitude_offset: f32,
+    // A signed count of whole 360-degree turns to shift every vertex horizontally, so a second draw
+    // can render the wrapped copy of seam-crossing geometry when the viewport straddles the +/-180
+    // antimeridian. 0 for the natural draw, +/-1 for a wrapped copy. Only x wraps: latitude does not.
+    longitude_wrap_turns: i32,
 };
 
 @group(0) @binding(0)
@@ -21,10 +24,7 @@ struct VertexOutput {
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
-    // longitude_offset shifts every vertex horizontally by a whole turn (+/-360 in projected x) so a
-    // second draw can render the wrapped copy of seam-crossing geometry when the viewport straddles
-    // the +/-180 antimeridian. It is 0 for the natural draw. Only x wraps: latitude has no wraparound.
-    let shifted_x: f32 = input.position.x + viewport.longitude_offset;
+    let shifted_x: f32 = input.position.x + f32(viewport.longitude_wrap_turns) * 360.0;
     let span: vec2<f32> = viewport.projected_max - viewport.projected_min;
     let normalized_x: f32 = (shifted_x - viewport.projected_min.x) / span.x;
     let normalized_y: f32 = (input.position.y - viewport.projected_min.y) / span.y;
