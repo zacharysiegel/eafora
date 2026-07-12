@@ -39,7 +39,7 @@ impl RenderPipelines {
         let border: RenderPipeline = create_border_pipeline(device, &shader_module, &pipeline_layout, surface_format);
         let fill: RenderPipeline = create_fill_pipeline(device, &shader_module, &pipeline_layout, surface_format);
 
-        if let Some(error) = pop_first_error(error_scopes).await {
+        if let Some(error) = drain_error_scopes(error_scopes).await {
             return Err(AppError::from(format!("building the render pipelines failed: {error}")));
         }
 
@@ -51,7 +51,7 @@ impl RenderPipelines {
 /// scope stack requires) and returns the first error captured. It deliberately drains every scope
 /// rather than short-circuiting on the first error: leaving a scope un-popped unbalances the device's
 /// error-scope stack.
-async fn pop_first_error(error_scopes: [ErrorScopeGuard; 3]) -> Option<wgpu::Error> {
+async fn drain_error_scopes(error_scopes: [ErrorScopeGuard; 3]) -> Option<wgpu::Error> {
     let mut first_error: Option<wgpu::Error> = None;
 
     for error_scope in error_scopes.into_iter().rev() {
