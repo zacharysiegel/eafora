@@ -139,6 +139,14 @@ impl Renderer {
     pub async fn attach_surface(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
+        self.attached = Some(self.create_attached_state(surface).await?);
+
+        Ok(())
+    }
+
+    // not for wasm32 yet: the native window-handle path is its only caller; the deferred canvas attach path will share it.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn create_attached_state(&self, surface: WgpuSurface) -> Result<AttachedState, AppError> {
         let pipelines: RenderPipelines = RenderPipelines::create(&self.device, surface.format()).await?;
 
         let viewport_buffer: Buffer = self.device.create_buffer(&BufferDescriptor {
@@ -153,9 +161,7 @@ impl Renderer {
             entries: &[BindGroupEntry { binding: 0, resource: viewport_buffer.as_entire_binding() }],
         });
 
-        self.attached = Some(AttachedState { surface, pipelines, viewport_buffer, viewport_bind_group });
-
-        Ok(())
+        Ok(AttachedState { surface, pipelines, viewport_buffer, viewport_bind_group })
     }
 
     pub fn detach_surface(&mut self) {
