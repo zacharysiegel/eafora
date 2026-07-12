@@ -142,6 +142,10 @@ fn create_fill_pipeline(
     pipeline_layout: &PipelineLayout,
     surface_format: TextureFormat,
 ) -> RenderPipeline {
+    // Position and color are separate vertex buffers, not interleaved: positions are static (uploaded
+    // once), while colors are rebuilt when the active statistic or period changes. Keeping them apart
+    // lets the color buffer be replaced without re-uploading geometry, and lets the border pipeline
+    // reuse the position buffer alone.
     let position_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
     let color_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x4];
     let vertex_buffers: [Option<VertexBufferLayout>; 2] = [
