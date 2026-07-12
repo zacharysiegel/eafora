@@ -19,21 +19,33 @@ pub struct CountryMesh {
 
 impl CountryMesh {
     fn from_feature(feature: &CountryFeature) -> Result<CountryMesh, AppError> {
-        let mut vertices: Vec<ProjectedVertex> = Vec::new();
-        let mut fill_indices: Vec<u32> = Vec::new();
-        let mut border_indices: Vec<u32> = Vec::new();
-
-        for polygon in &feature.polygons {
-            append_polygon(polygon, &mut vertices, &mut fill_indices, &mut border_indices)?;
-        }
-
-        Ok(CountryMesh {
+        let mut mesh: CountryMesh = CountryMesh {
             iso3: feature.iso3.clone(),
             region_code: feature.region_code.clone(),
-            vertices,
-            fill_indices,
-            border_indices,
-        })
+            vertices: Vec::new(),
+            fill_indices: Vec::new(),
+            border_indices: Vec::new(),
+        };
+
+        for polygon in &feature.polygons {
+            mesh.append_polygon(polygon)?;
+        }
+
+        Ok(mesh)
+    }
+
+    fn append_polygon(&mut self, polygon: &Polygon) -> Result<(), AppError> {
+        let base: u32 = self.vertices.len() as u32;
+        let rings: Vec<&[(f64, f64)]> = collect_rings(polygon);
+
+        let (projected_coordinates, hole_indices): (Vec<f64>, Vec<usize>) = project_rings(&rings);
+        let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, base)?;
+
+        self.fill_indices.extend(fill_triangle_indices);
+        self.vertices.extend(to_projected_vertices(&projected_coordinates));
+        append_border_edges(&rings, base, &mut self.border_indices);
+
+        Ok(())
     }
 }
 
@@ -42,25 +54,6 @@ pub fn build_country_meshes(geometry: &GeometryLayer) -> Result<Vec<CountryMesh>
     let country_features: Vec<CountryFeature> = geometry.iter_features()?;
 
     country_features.iter().map(CountryMesh::from_feature).collect()
-}
-
-fn append_polygon(
-    polygon: &Polygon,
-    vertices: &mut Vec<ProjectedVertex>,
-    fill_indices: &mut Vec<u32>,
-    border_indices: &mut Vec<u32>,
-) -> Result<(), AppError> {
-    let base: u32 = vertices.len() as u32;
-    let rings: Vec<&[(f64, f64)]> = collect_rings(polygon);
-
-    let (projected_coordinates, hole_indices): (Vec<f64>, Vec<usize>) = project_rings(&rings);
-    let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, base)?;
-
-    fill_indices.extend(fill_triangle_indices);
-    vertices.extend(to_projected_vertices(&projected_coordinates));
-    append_border_edges(&rings, base, border_indices);
-
-    Ok(())
 }
 
 fn collect_rings(polygon: &Polygon) -> Vec<&[(f64, f64)]> {
