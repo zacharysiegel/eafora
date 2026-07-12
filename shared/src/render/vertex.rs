@@ -16,30 +16,32 @@ pub struct CountryMesh {
     pub border_indices: Vec<u32>,
 }
 
+impl CountryMesh {
+    fn from_feature(feature: &CountryFeature) -> Result<CountryMesh, AppError> {
+        let mut vertices: Vec<ProjectedVertex> = Vec::new();
+        let mut fill_indices: Vec<u32> = Vec::new();
+        let mut border_indices: Vec<u32> = Vec::new();
+
+        for polygon in &feature.polygons {
+            append_polygon(polygon, &mut vertices, &mut fill_indices, &mut border_indices)?;
+        }
+
+        Ok(CountryMesh {
+            iso3: feature.iso3.clone(),
+            region_code: feature.region_code.clone(),
+            vertices,
+            fill_indices,
+            border_indices,
+        })
+    }
+}
+
 /// Project and triangulate every country in the layer. Pure and `Send`-returning: the only
 /// GPU-thread-bound step is uploading the result into buffers, which the renderer does separately.
 pub fn build_country_meshes(geometry: &GeometryLayer) -> Result<Vec<CountryMesh>, AppError> {
     let country_features: Vec<CountryFeature> = geometry.iter_features()?;
 
-    country_features.iter().map(build_country_mesh).collect()
-}
-
-fn build_country_mesh(feature: &CountryFeature) -> Result<CountryMesh, AppError> {
-    let mut vertices: Vec<ProjectedVertex> = Vec::new();
-    let mut fill_indices: Vec<u32> = Vec::new();
-    let mut border_indices: Vec<u32> = Vec::new();
-
-    for polygon in &feature.polygons {
-        append_polygon(polygon, &mut vertices, &mut fill_indices, &mut border_indices)?;
-    }
-
-    Ok(CountryMesh {
-        iso3: feature.iso3.clone(),
-        region_code: feature.region_code.clone(),
-        vertices,
-        fill_indices,
-        border_indices,
-    })
+    country_features.iter().map(CountryMesh::from_feature).collect()
 }
 
 fn append_polygon(
