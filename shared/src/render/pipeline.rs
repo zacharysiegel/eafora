@@ -1,11 +1,12 @@
 use wgpu::{
     BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferAddress, BufferBindingType,
-    ColorTargetState, ColorWrites, Device, FragmentState, FrontFace, MultisampleState, PipelineCompilationOptions,
-    PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState, PrimitiveTopology, RenderPipeline,
-    RenderPipelineDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderSource, ShaderStages, TextureFormat,
-    VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
+    ColorTargetState, ColorWrites, Device, ErrorFilter, ErrorScopeGuard, FragmentState, FrontFace, MultisampleState,
+    PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode, PrimitiveState,
+    PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderModuleDescriptor, ShaderSource,
+    ShaderStages, TextureFormat, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
 };
 
+use crate::error::AppError;
 use crate::render::gpu_types::{FillVertex, ProjectedVertex};
 
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
@@ -21,20 +22,24 @@ pub struct RenderPipelines {
 }
 
 impl RenderPipelines {
-    pub fn create(device: &Device, surface_format: TextureFormat) -> RenderPipelines {
+    pub async fn create(device: &Device, surface_format: TextureFormat) -> Result<RenderPipelines, AppError> {
+        let error_scope: ErrorScopeGuard = device.push_error_scope(ErrorFilter::Validation);
+
         let viewport_bind_group_layout: BindGroupLayout = create_viewport_bind_group_layout(device);
         let pipeline_layout: PipelineLayout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("eafora-map-pipeline-layout"),
             bind_group_layouts: &[Some(&viewport_bind_group_layout)],
             immediate_size: 0,
         });
-
         let shader_module: ShaderModule = create_map_shader_module(device);
-
         let border: RenderPipeline = create_border_pipeline(device, &shader_module, &pipeline_layout, surface_format);
         let fill: RenderPipeline = create_fill_pipeline(device, &shader_module, &pipeline_layout, surface_format);
 
-        RenderPipelines { border, fill, viewport_bind_group_layout }
+        if let Some(error) = error_scope.pop().await {
+            return Err(AppError::from(format!("building the render pipelines failed: {error}")));
+        }
+
+        Ok(RenderPipelines { border, fill, viewport_bind_group_layout })
     }
 }
 
@@ -208,6 +213,7 @@ mod tests {
     async fn render_pipelines_compile_against_a_headless_device() {
         let (device, _queue): (Device, Queue) = headless_device().await;
 
-        let _pipelines: RenderPipelines = RenderPipelines::create(&device, TextureFormat::Bgra8UnormSrgb);
+        let _pipelines: RenderPipelines =
+            RenderPipelines::create(&device, TextureFormat::Bgra8UnormSrgb).await.expect("pipelines build");
     }
 }

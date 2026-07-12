@@ -108,10 +108,10 @@ impl Renderer {
     }
 
     #[cfg(not(target_arch = "wasm32"))] // not for wasm32: the web attaches from a canvas, not a window handle
-    pub fn attach_surface(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
+    pub async fn attach_surface(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
-        let pipelines: RenderPipelines = RenderPipelines::create(&self.device, surface.format());
+        let pipelines: RenderPipelines = RenderPipelines::create(&self.device, surface.format()).await?;
 
         let viewport_buffer: Buffer = self.device.create_buffer(&BufferDescriptor {
             label: Some("eafora-viewport-uniform"),
