@@ -38,7 +38,8 @@ impl CountryMesh {
         let base: u32 = self.vertices.len() as u32;
         let rings: Vec<&[(f64, f64)]> = collect_rings(polygon);
 
-        let (projected_coordinates, hole_indices): (Vec<f64>, Vec<usize>) = project_rings(&rings);
+        let projected_coordinates: Vec<f64> = project_rings(&rings);
+        let hole_indices: Vec<usize> = hole_start_indices(&rings);
         let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, base)?;
 
         self.fill_indices.extend(fill_triangle_indices);
@@ -63,17 +64,11 @@ fn collect_rings(polygon: &Polygon) -> Vec<&[(f64, f64)]> {
         .collect()
 }
 
-/// Flattens the rings into the `[x0, y0, x1, y1, ...]` coordinate array earcut expects, and records
-/// where each interior ring (a hole) begins so earcut can bridge them into the exterior.
-fn project_rings(rings: &[&[(f64, f64)]]) -> (Vec<f64>, Vec<usize>) {
+/// Flattens the rings into the `[x0, y0, x1, y1, ...]` coordinate array earcut expects.
+fn project_rings(rings: &[&[(f64, f64)]]) -> Vec<f64> {
     let mut projected_coordinates: Vec<f64> = Vec::new();
-    let mut hole_indices: Vec<usize> = Vec::new();
 
-    for (ring_index, ring) in rings.iter().enumerate() {
-        if ring_index > 0 {
-            hole_indices.push(projected_coordinates.len() / 2);
-        }
-
+    for ring in rings {
         // Antimeridian-crossing rings are not handled here. A ring whose source vertices span the
         // +180/-180 seam (e.g. Russia's Chukotka, Fiji, Kiribati) projects to x-values on both far
         // ends of the range, and earcut then triangulates the polygon across the entire ~358 degree
@@ -90,7 +85,24 @@ fn project_rings(rings: &[&[(f64, f64)]]) -> (Vec<f64>, Vec<usize>) {
         }
     }
 
-    (projected_coordinates, hole_indices)
+    projected_coordinates
+}
+
+/// The vertex index at which each interior ring (a hole) begins, which earcut uses to bridge the
+/// holes into the exterior. The first ring is the exterior, so it contributes no entry.
+fn hole_start_indices(rings: &[&[(f64, f64)]]) -> Vec<usize> {
+    let mut hole_indices: Vec<usize> = Vec::new();
+    let mut vertex_offset: usize = 0;
+
+    for (ring_index, ring) in rings.iter().enumerate() {
+        if ring_index > 0 {
+            hole_indices.push(vertex_offset);
+        }
+
+        vertex_offset += ring.len();
+    }
+
+    hole_indices
 }
 
 /// earcut returns triangle indices local to this polygon's coordinate array; `base` shifts them to
