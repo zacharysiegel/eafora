@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use tokio::sync::watch;
+use chrono::NaiveDate;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
     Adapter, BindGroup, BindGroupDescriptor, BindGroupEntry, Buffer, BufferAddress, BufferDescriptor, BufferUsages,
@@ -36,6 +37,7 @@ pub struct Renderer {
     queue: Queue,
     bundle_receiver: watch::Receiver<Arc<Bundle>>,
     country_geometry: CountryGeometry,
+    cached_fill_colors: Option<CachedFillColors>,
     attached: Option<AttachedSurface>,
     _not_send: PhantomData<*const ()>,
 }
@@ -56,6 +58,24 @@ struct CountrySpan {
     iso3: String,
     vertex_start: u32,
     vertex_count: u32,
+}
+
+/// The per-country choropleth colors uploaded to the GPU, held with the inputs that determine them.
+/// Rebuilt only when the active statistic, period, or bundle changes; a viewport pan/zoom or a hover
+/// reuses the same buffer.
+struct CachedFillColors {
+    buffer: Buffer,
+    statistic: StatisticKind,
+    period_start: NaiveDate,
+    bundle: Arc<Bundle>,
+}
+
+impl CachedFillColors {
+    fn matches(&self, statistic: StatisticKind, period_start: NaiveDate, bundle: &Arc<Bundle>) -> bool {
+        self.statistic == statistic
+            && self.period_start == period_start
+            && Arc::ptr_eq(&self.bundle, bundle)
+    }
 }
 
 /// The surface-dependent state, built together at attach and dropped together at detach: the
@@ -103,6 +123,7 @@ impl Renderer {
             queue,
             bundle_receiver,
             country_geometry,
+            cached_fill_colors: None,
             attached: None,
             _not_send: PhantomData,
         })
@@ -145,10 +166,15 @@ impl Renderer {
 
     pub fn draw_frame(&mut self, viewport: Viewport, frame_state: FrameState) -> Result<(), AppError> {
         let bundle: Arc<Bundle> = self.bundle_receiver.borrow_and_update().clone();
-        let fill_colors: Vec<FillVertex> = self.compute_fill_colors(&bundle, &frame_state)?;
+        self.refresh_fill_colors(&bundle, &frame_state)?;
 
         let attached: &AttachedSurface =
             self.attached.as_ref().expect("draw_frame: attach_surface must be called first");
+        let fill_color_buffer: &Buffer = &self
+            .cached_fill_colors
+            .as_ref()
+            .expect("refresh_fill_colors populates the cache")
+            .buffer;
 
         let surface_texture: SurfaceTexture = match attached.surface.inner().get_current_texture() {
             CurrentSurfaceTexture::Success(texture) | CurrentSurfaceTexture::Suboptimal(texture) => texture,
@@ -168,12 +194,6 @@ impl Renderer {
         self.queue.write_buffer(&attached.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
 
         let instance_count: u32 = wrap_instance_count(viewport);
-
-        let fill_color_buffer: Buffer = self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("eafora-fill-colors"),
-            contents: bytemuck::cast_slice(&fill_colors),
-            usage: BufferUsages::VERTEX,
-        });
 
         let view: TextureView = surface_texture.texture.create_view(&TextureViewDescriptor::default());
         let mut encoder: CommandEncoder =
@@ -211,6 +231,35 @@ impl Renderer {
         let command_buffer: CommandBuffer = encoder.finish();
         self.queue.submit([command_buffer]);
         self.queue.present(surface_texture);
+
+        Ok(())
+    }
+
+    /// Rebuilds the fill-color buffer only when its inputs (active statistic, period, or the bundle)
+    /// have changed since the last frame. A pan, zoom, or hover leaves them untouched and reuses the
+    /// cached buffer.
+    fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) -> Result<(), AppError> {
+        let is_current: bool = self.cached_fill_colors.as_ref().is_some_and(|cached| {
+            cached.matches(frame_state.active_statistic, frame_state.active_period_start, bundle)
+        });
+
+        if is_current {
+            return Ok(());
+        }
+
+        let fill_colors: Vec<FillVertex> = self.compute_fill_colors(bundle, frame_state)?;
+        let buffer: Buffer = self.device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("eafora-fill-colors"),
+            contents: bytemuck::cast_slice(&fill_colors),
+            usage: BufferUsages::VERTEX,
+        });
+
+        self.cached_fill_colors = Some(CachedFillColors {
+            buffer,
+            statistic: frame_state.active_statistic,
+            period_start: frame_state.active_period_start,
+            bundle: Arc::clone(bundle),
+        });
 
         Ok(())
     }
