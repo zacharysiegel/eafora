@@ -29,16 +29,16 @@ impl RenderPipelines {
             immediate_size: 0,
         });
 
-        let shader: ShaderModule = create_map_shader(device);
+        let shader_module: ShaderModule = create_map_shader_module(device);
 
-        let border: RenderPipeline = create_border_pipeline(device, &shader, &pipeline_layout, surface_format);
-        let fill: RenderPipeline = create_fill_pipeline(device, &shader, &pipeline_layout, surface_format);
+        let border: RenderPipeline = create_border_pipeline(device, &shader_module, &pipeline_layout, surface_format);
+        let fill: RenderPipeline = create_fill_pipeline(device, &shader_module, &pipeline_layout, surface_format);
 
         RenderPipelines { border, fill, viewport_bind_group_layout }
     }
 }
 
-fn create_map_shader(device: &Device) -> ShaderModule {
+fn create_map_shader_module(device: &Device) -> ShaderModule {
     device.create_shader_module(ShaderModuleDescriptor {
         label: Some("eafora-map-shader"),
         source: ShaderSource::Wgsl(
@@ -65,7 +65,7 @@ fn create_viewport_bind_group_layout(device: &Device) -> BindGroupLayout {
 
 fn create_border_pipeline(
     device: &Device,
-    shader: &ShaderModule,
+    shader_module: &ShaderModule,
     pipeline_layout: &PipelineLayout,
     surface_format: TextureFormat,
 ) -> RenderPipeline {
@@ -80,7 +80,7 @@ fn create_border_pipeline(
         label: Some("eafora-border-pipeline"),
         layout: Some(pipeline_layout),
         vertex: VertexState {
-            module: shader,
+            module: shader_module,
             entry_point: Some("border_vs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             buffers: &vertex_buffers,
@@ -97,7 +97,7 @@ fn create_border_pipeline(
         depth_stencil: None,
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
-            module: shader,
+            module: shader_module,
             entry_point: Some("border_fs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
@@ -113,7 +113,7 @@ fn create_border_pipeline(
 
 fn create_fill_pipeline(
     device: &Device,
-    shader: &ShaderModule,
+    shader_module: &ShaderModule,
     pipeline_layout: &PipelineLayout,
     surface_format: TextureFormat,
 ) -> RenderPipeline {
@@ -136,7 +136,7 @@ fn create_fill_pipeline(
         label: Some("eafora-fill-pipeline"),
         layout: Some(pipeline_layout),
         vertex: VertexState {
-            module: shader,
+            module: shader_module,
             entry_point: Some("fill_vs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             buffers: &vertex_buffers,
@@ -153,7 +153,7 @@ fn create_fill_pipeline(
         depth_stencil: None,
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
-            module: shader,
+            module: shader_module,
             entry_point: Some("fill_fs_main"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
