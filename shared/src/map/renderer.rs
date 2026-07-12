@@ -44,15 +44,14 @@ pub struct Renderer {
 
 /// Uploaded to the GPU once at construction and never rebuilt.
 struct CountryGeometry {
-    positions: Buffer,
-    vertex_count: u32,
-    fill: IndexBuffer,
-    border: IndexBuffer,
+    positions: CountedBuffer,
+    fill: CountedBuffer,
+    border: CountedBuffer,
     spans: Vec<CountrySpan>,
 }
 
-/// A GPU index buffer paired with the number of indices to draw from it.
-struct IndexBuffer {
+/// A GPU buffer paired with the number of elements it holds.
+struct CountedBuffer {
     buffer: Buffer,
     count: u32,
 }
@@ -224,13 +223,13 @@ impl Renderer {
             render_pass.set_bind_group(0, &attached.viewport_bind_group, &[]);
 
             render_pass.set_pipeline(&attached.pipelines.fill);
-            render_pass.set_vertex_buffer(0, self.country_geometry.positions.slice(..));
+            render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
             render_pass.set_vertex_buffer(1, fill_color_buffer.slice(..));
             render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
             render_pass.draw_indexed(0..self.country_geometry.fill.count, 0, 0..instance_count);
 
             render_pass.set_pipeline(&attached.pipelines.border);
-            render_pass.set_vertex_buffer(0, self.country_geometry.positions.slice(..));
+            render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
             render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
             render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
         }
@@ -271,7 +270,7 @@ impl Renderer {
 
     fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Result<Vec<FillVertex>, AppError> {
         let no_data_fill: FillVertex = to_fill_vertex(color::choropleth_fill(None, 0.0, 1.0));
-        let mut fill_colors: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.vertex_count as usize];
+        let mut fill_colors: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.positions.count as usize];
 
         let Some(shard_bytes) = select_shard(bundle, frame_state.active_statistic) else {
             return Ok(fill_colors);
@@ -331,10 +330,9 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
     });
 
     Ok(CountryGeometry {
-        positions: positions_buffer,
-        vertex_count: positions.len() as u32,
-        fill: IndexBuffer { buffer: fill_index_buffer, count: fill_indices.len() as u32 },
-        border: IndexBuffer { buffer: border_index_buffer, count: border_indices.len() as u32 },
+        positions: CountedBuffer { buffer: positions_buffer, count: positions.len() as u32 },
+        fill: CountedBuffer { buffer: fill_index_buffer, count: fill_indices.len() as u32 },
+        border: CountedBuffer { buffer: border_index_buffer, count: border_indices.len() as u32 },
         spans,
     })
 }
