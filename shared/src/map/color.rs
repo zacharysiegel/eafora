@@ -1,3 +1,8 @@
+#[cfg(feature = "render")]
+use crate::map::gpu_types::FillVertex;
+#[cfg(feature = "render")]
+use crate::render::gpu_types::Vec4;
+
 /// An sRGB color; each component is in `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rgba {
@@ -15,6 +20,11 @@ impl Rgba {
             b: lerp(self.b, to.b, t),
             a: lerp(self.a, to.a, t),
         }
+    }
+
+    #[cfg(feature = "render")]
+    pub(crate) fn to_gpu(&self) -> FillVertex {
+        FillVertex { color: Vec4 { x: self.r, y: self.g, z: self.b, w: self.a } }
     }
 }
 

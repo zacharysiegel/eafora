@@ -15,12 +15,11 @@ use wgpu::{
 use crate::artifact::{Bundle, StatisticShardKey};
 use crate::canonical::StatisticKind;
 use crate::error::AppError;
-use crate::map::color::{self, Rgba};
+use crate::map::color;
 use crate::map::value_types::{FrameState, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
 use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
 use crate::map::pipeline::RenderPipelines;
-use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
 use crate::sqlite::shard_db::{self, ShardValues};
 
@@ -356,23 +355,8 @@ fn select_shard(bundle: &Bundle, statistic_kind: StatisticKind) -> Option<&Vec<u
         })
 }
 
-impl Viewport {
-    fn to_gpu(&self) -> ViewportUniform {
-        ViewportUniform {
-            projected_min: Vec2 { x: self.min.x as f32, y: self.min.y as f32 },
-            projected_max: Vec2 { x: self.max.x as f32, y: self.max.y as f32 },
-        }
-    }
-}
-
 fn is_antimeridian_wrap(viewport: Viewport) -> bool {
     viewport.min.x < -180.0 || viewport.max.x > 180.0
-}
-
-impl Rgba {
-    fn to_gpu(&self) -> FillVertex {
-        FillVertex { color: Vec4 { x: self.r, y: self.g, z: self.b, w: self.a } }
-    }
 }
 
 #[cfg(test)]
