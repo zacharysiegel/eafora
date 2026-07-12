@@ -23,7 +23,11 @@ pub struct RenderPipelines {
 
 impl RenderPipelines {
     pub async fn create(device: &Device, surface_format: TextureFormat) -> Result<RenderPipelines, AppError> {
-        let error_scope: ErrorScopeGuard = device.push_error_scope(ErrorFilter::Validation);
+        let error_scopes: [ErrorScopeGuard; 3] = [
+            device.push_error_scope(ErrorFilter::OutOfMemory),
+            device.push_error_scope(ErrorFilter::Internal),
+            device.push_error_scope(ErrorFilter::Validation),
+        ];
 
         let viewport_bind_group_layout: BindGroupLayout = create_viewport_bind_group_layout(device);
         let pipeline_layout: PipelineLayout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -35,12 +39,25 @@ impl RenderPipelines {
         let border: RenderPipeline = create_border_pipeline(device, &shader_module, &pipeline_layout, surface_format);
         let fill: RenderPipeline = create_fill_pipeline(device, &shader_module, &pipeline_layout, surface_format);
 
-        if let Some(error) = error_scope.pop().await {
+        if let Some(error) = pop_first_error(error_scopes).await {
             return Err(AppError::from(format!("building the render pipelines failed: {error}")));
         }
 
         Ok(RenderPipelines { border, fill, viewport_bind_group_layout })
     }
+}
+
+/// Pops the OOM/Internal/Validation scopes innermost-first (the reverse of the push order the scope
+/// stack requires) and returns the first error any of them captured.
+async fn pop_first_error(error_scopes: [ErrorScopeGuard; 3]) -> Option<wgpu::Error> {
+    let mut first_error: Option<wgpu::Error> = None;
+
+    for error_scope in error_scopes.into_iter().rev() {
+        let error: Option<wgpu::Error> = error_scope.pop().await;
+        first_error = first_error.or(error);
+    }
+
+    first_error
 }
 
 fn create_map_shader_module(device: &Device) -> ShaderModule {
