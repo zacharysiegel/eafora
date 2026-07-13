@@ -285,8 +285,9 @@ impl Renderer {
         render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
 
-        // Dropping the pass records the end-of-pass command and releases its mutable borrow of the
-        // encoder, both of which must happen before encoder.finish().
+        // wgpu has no RenderPass::end(); a pass ends only when dropped. Dropping records the end-of-pass
+        // (via the backend pass's own Drop) and releases the pass's mutable borrow of the encoder; both
+        // are required before encoder.finish().
         drop(render_pass);
 
         encoder.finish()
