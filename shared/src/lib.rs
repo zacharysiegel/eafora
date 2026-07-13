@@ -11,14 +11,6 @@ pub mod render;
 pub mod revision;
 pub mod sqlite;
 
-pub use artifact::*;
-pub use canonical::*;
-pub use filesystem::*;
-pub use license::*;
-pub use map::*;
-pub use revision::*;
-pub use sqlite::*;
-
 pub use error::AppError;
 
 // wasm32 only: configures wasm-bindgen-test to run #[wasm_bindgen_test] cases in a headless browser.

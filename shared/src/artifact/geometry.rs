@@ -5,7 +5,7 @@ use flatgeobuf::{FallibleStreamingIterator, FeatureProperties, FgbFeature, FgbRe
 use geozero::ToGeo;
 
 use crate::error::AppError;
-use crate::GeoPoint;
+use crate::map::projection::GeoPoint;
 
 /// Natural Earth scale denominator (1:50m). The single source for the scale token
 /// shared by the layer name and the filename stem; a bump to 1:10m geometry changes
