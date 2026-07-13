@@ -38,10 +38,7 @@ pub struct Renderer {
     bundle_receiver: watch::Receiver<Arc<Bundle>>,
     country_geometry: CountryGeometry,
     viewport_binding: ViewportBinding,
-    fill_color_buffer: Buffer,
-    // The key describing what is currently written into `fill_color_buffer`; the buffer is rewritten
-    // in place only when a new key differs from it.
-    last_fill_key: Option<FillColorKey>,
+    fill_colors: FillColors,
     attached: Option<AttachedState>,
     _not_send: PhantomData<*const ()>,
 }
@@ -80,6 +77,13 @@ impl FillColorKey {
             && self.period_start == other.period_start
             && Arc::ptr_eq(&self.bundle, &other.bundle)
     }
+}
+
+/// The choropleth color buffer paired with the key describing what is currently written into it. The
+/// buffer is persistent and rewritten in place; the key gates those rewrites (`None` before the first).
+struct FillColors {
+    buffer: Buffer,
+    key: Option<FillColorKey>,
 }
 
 /// The viewport uniform's device-lifetime GPU resources. They are format-independent, so unlike the
@@ -133,6 +137,7 @@ impl Renderer {
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let fill_colors: FillColors = FillColors { buffer: fill_color_buffer, key: None };
 
         Ok(Renderer {
             instance,
@@ -142,8 +147,7 @@ impl Renderer {
             bundle_receiver,
             country_geometry,
             viewport_binding,
-            fill_color_buffer,
-            last_fill_key: None,
+            fill_colors,
             attached: None,
             _not_send: PhantomData,
         })
@@ -215,11 +219,11 @@ impl Renderer {
         match acquired {
             CurrentSurfaceTexture::Success(texture) => Ok(Some(texture)),
             CurrentSurfaceTexture::Suboptimal(texture) => {
-                self.reconfigure_surface();
+                self.reconfigure_attached_surface();
                 Ok(Some(texture))
             }
             CurrentSurfaceTexture::Outdated => {
-                self.reconfigure_surface();
+                self.reconfigure_attached_surface();
                 Ok(None)
             }
             CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => Ok(None),
@@ -233,7 +237,7 @@ impl Renderer {
         }
     }
 
-    fn reconfigure_surface(&self) {
+    fn reconfigure_attached_surface(&self) {
         self.attached
             .as_ref()
             .expect("draw_frame: attach_surface must be called first")
@@ -252,36 +256,38 @@ impl Renderer {
             .expect("draw_frame: attach_surface must be called first");
 
         let mut encoder: CommandEncoder =
-            self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-frame-encoder") });
+            self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-map-command-encoder") });
 
-        {
-            let mut render_pass: RenderPass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some("eafora-map-pass"),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: Operations { load: LoadOp::Clear(Color::WHITE), store: StoreOp::Store },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+        let mut render_pass: RenderPass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("eafora-map-pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations { load: LoadOp::Clear(Color::WHITE), store: StoreOp::Store },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
 
-            render_pass.set_bind_group(0, &self.viewport_binding.bind_group, &[]);
+        render_pass.set_bind_group(0, &self.viewport_binding.bind_group, &[]);
 
-            render_pass.set_pipeline(&attached.pipelines.fill);
-            render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.fill_color_buffer.slice(..));
-            render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.country_geometry.fill.count, 0, 0..instance_count);
+        render_pass.set_pipeline(&attached.pipelines.fill);
+        render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
+        render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
+        render_pass.draw_indexed(0..self.country_geometry.fill.count, 0, 0..instance_count);
 
-            render_pass.set_pipeline(&attached.pipelines.border);
-            render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
-            render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
-        }
+        render_pass.set_pipeline(&attached.pipelines.border);
+        render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
+        render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
+        render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
+
+        // Dropping the pass records the end-of-pass command and releases its mutable borrow of the
+        // encoder, both of which must happen before encoder.finish().
+        drop(render_pass);
 
         encoder.finish()
     }
@@ -296,41 +302,41 @@ impl Renderer {
             bundle: Arc::clone(bundle),
         };
 
-        let is_current: bool = self.last_fill_key.as_ref()
+        let is_current: bool = self.fill_colors.key.as_ref()
             .is_some_and(|current| current.matches(&key));
         if is_current {
             return Ok(());
         }
 
         let fill_vertices: Vec<FillVertex> = self.compute_fill_colors(bundle, frame_state)?;
-        self.queue.write_buffer(&self.fill_color_buffer, 0, bytemuck::cast_slice(&fill_vertices));
-        self.last_fill_key = Some(key);
+        self.queue.write_buffer(&self.fill_colors.buffer, 0, bytemuck::cast_slice(&fill_vertices));
+        self.fill_colors.key = Some(key);
 
         Ok(())
     }
 
     fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Result<Vec<FillVertex>, AppError> {
         let no_data_fill: FillVertex = color::choropleth_fill(None, 0.0, 1.0).to_gpu();
-        let mut fill_colors: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.positions.count as usize];
+        let mut fill_vertices: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.positions.count as usize];
 
         let Some(shard_bytes) = select_shard(bundle, frame_state.active_statistic) else {
-            return Ok(fill_colors);
+            return Ok(fill_vertices);
         };
 
         let shard_values: ShardValues = shard_db::read_shard(shard_bytes)?;
         let Some((statistic_min, statistic_max)) = shard_values.range() else {
-            return Ok(fill_colors);
+            return Ok(fill_vertices);
         };
 
         for span in &self.country_geometry.spans {
             let value: Option<f64> = shard_values.value(&span.iso3, frame_state.active_period_start);
             let fill_vertex: FillVertex = color::choropleth_fill(value, statistic_min, statistic_max).to_gpu();
             for vertex_index in span.vertex_start..(span.vertex_start + span.vertex_count) {
-                fill_colors[vertex_index as usize] = fill_vertex;
+                fill_vertices[vertex_index as usize] = fill_vertex;
             }
         }
 
-        Ok(fill_colors)
+        Ok(fill_vertices)
     }
 }
 
