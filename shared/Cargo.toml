@@ -28,8 +28,8 @@ tokio = { workspace = true, optional = true, default-features = false, features 
 # render: pulls the wgpu GPU stack. Off by default so the ingestion producer never links wgpu.
 render = ["dep:wgpu", "dep:raw-window-handle", "dep:bytemuck", "dep:earcutr", "dep:tokio"]
 
-# Not for wasm32: rusqlite bundles a C SQLite that needs libc; `serialize` adds Connection::deserialize.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Not for wasm32: rusqlite bundles a C SQLite that needs libc; `serialize` adds Connection::deserialize.
 rusqlite = { workspace = true, features = ["serialize"] }
 # Not for wasm32: native GPU backends (wasm32 gets webgpu/webgl below).
 wgpu = { workspace = true, optional = true, features = ["metal", "vulkan", "wgsl"] }
