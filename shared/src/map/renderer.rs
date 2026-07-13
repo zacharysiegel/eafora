@@ -153,6 +153,13 @@ impl Renderer {
     pub async fn attach_surface(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
+
+        self.attach(surface).await
+    }
+
+    /// Builds the surface-format pipelines and stores the attached state. Surface-agnostic — shared by
+    /// the native window-handle path and the future canvas path — so it is not target-gated.
+    async fn attach(&mut self, surface: WgpuSurface) -> Result<(), AppError> {
         let pipelines: RenderPipelines =
             RenderPipelines::create(&self.device, surface.format(), &self.viewport_binding.layout).await?;
 
