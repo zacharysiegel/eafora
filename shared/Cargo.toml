@@ -47,6 +47,9 @@ sqlite-wasm-rs = { workspace = true }
 # wasm32 only: WebGPU is the primary browser backend and WebGL2 the downlevel fallback; native gets
 # metal/vulkan above. A backend only exists if its wgpu feature is compiled in.
 wgpu = { workspace = true, optional = true, features = ["webgpu", "webgl", "wgsl"] }
+# wasm32 only: HtmlCanvasElement is the surface target the web renderer attaches to; native attaches
+# from a raw window handle instead. Used only by the render-gated canvas path.
+web-sys = { workspace = true, features = ["HtmlCanvasElement"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

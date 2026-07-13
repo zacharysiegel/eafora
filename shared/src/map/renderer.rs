@@ -5,11 +5,11 @@ use tokio::sync::watch;
 use chrono::NaiveDate;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    Adapter, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress, BufferDescriptor, BufferUsages,
-    Color, CommandBuffer, CommandEncoder, CommandEncoderDescriptor, CurrentSurfaceTexture, Device, DeviceDescriptor,
-    ExperimentalFeatures, Features, IndexFormat, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference,
-    Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture,
-    TextureView, TextureViewDescriptor, Trace,
+    Adapter, BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress,
+    BufferDescriptor, BufferUsages, Color, CommandBuffer, CommandEncoder, CommandEncoderDescriptor, CurrentSurfaceTexture,
+    Device, DeviceDescriptor, ExperimentalFeatures, Features, IndexFormat, Instance, InstanceDescriptor, InstanceFlags, Limits,
+    LoadOp, MemoryBudgetThresholds, MemoryHints, Operations, PowerPreference, Queue, RenderPass, RenderPassColorAttachment,
+    RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture, TextureView, TextureViewDescriptor, Trace,
 };
 
 use crate::artifact::{Bundle, StatisticShardKey};
@@ -27,6 +27,18 @@ use crate::sqlite::shard_db::{self, ShardValues};
 // not for wasm32: the native attach path takes a raw window handle; the web attaches from a canvas.
 #[cfg(not(target_arch = "wasm32"))]
 use crate::map::value_types::WindowHandle;
+
+// not for non-wasm32: the canvas attach path takes an HtmlCanvasElement instead of a raw window handle.
+#[cfg(target_arch = "wasm32")]
+use web_sys::HtmlCanvasElement;
+
+/// Which GPU backends the renderer's wgpu instance may use. `ForceGl` restricts it to WebGL2 for the
+/// web client's `?renderer=webgl2` parity-testing flag; `Default` lets wgpu prefer WebGPU where present.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RendererBackends {
+    Default,
+    ForceGl,
+}
 
 /// The wgpu state machine. `!Send` (the `PhantomData<*const ()>`) because wgpu resources are bound
 /// to the thread that created them: the single WASM thread on web, the Swift main thread on iOS.
@@ -103,8 +115,8 @@ struct AttachedState {
 }
 
 impl Renderer {
-    pub async fn new(bundle_receiver: watch::Receiver<Arc<Bundle>>) -> Result<Renderer, AppError> {
-        let instance: Instance = Instance::default();
+    pub async fn new(bundle_receiver: watch::Receiver<Arc<Bundle>>, backends: RendererBackends) -> Result<Renderer, AppError> {
+        let instance: Instance = create_instance(backends);
 
         let adapter: Adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -161,8 +173,16 @@ impl Renderer {
         self.attach(surface).await
     }
 
+    #[cfg(target_arch = "wasm32")] // not for non-wasm32: attaches from an HtmlCanvasElement, not a raw window handle
+    pub async fn attach_surface_from_canvas(&mut self, canvas: HtmlCanvasElement, width: u32, height: u32) -> Result<(), AppError> {
+        let surface: WgpuSurface =
+            WgpuSurface::from_canvas(&self.instance, &self.adapter, &self.device, canvas, width, height)?;
+
+        self.attach(surface).await
+    }
+
     /// Builds the surface-format pipelines and stores the attached state. Surface-agnostic — shared by
-    /// the native window-handle path and the future canvas path — so it is not target-gated.
+    /// the native window-handle path and the canvas path — so it is not target-gated.
     async fn attach(&mut self, surface: WgpuSurface) -> Result<(), AppError> {
         let pipelines: RenderPipelines =
             RenderPipelines::create(&self.device, surface.format(), &self.viewport_binding.layout).await?;
@@ -338,6 +358,19 @@ impl Renderer {
         }
 
         Ok(fill_vertices)
+    }
+}
+
+fn create_instance(backends: RendererBackends) -> Instance {
+    match backends {
+        RendererBackends::Default => Instance::default(),
+        RendererBackends::ForceGl => Instance::new(InstanceDescriptor {
+            backends: Backends::GL,
+            flags: InstanceFlags::default(),
+            memory_budget_thresholds: MemoryBudgetThresholds::default(),
+            backend_options: BackendOptions::default(),
+            display: None,
+        }),
     }
 }
 

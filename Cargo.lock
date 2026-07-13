@@ -3760,6 +3760,7 @@ dependencies = [
  "tokio",
  "uuid",
  "wasm-bindgen-test",
+ "web-sys",
  "wgpu",
 ]
 
