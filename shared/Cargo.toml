@@ -28,27 +28,20 @@ tokio = { workspace = true, optional = true, default-features = false, features 
 # render: pulls the wgpu GPU stack. Off by default so the ingestion producer never links wgpu.
 render = ["dep:wgpu", "dep:raw-window-handle", "dep:bytemuck", "dep:earcutr", "dep:tokio"]
 
-# Not for wasm32: rusqlite bundles a C SQLite that can't compile to wasm32 (no libc). The
-# `serialize` feature adds Connection::deserialize, used to open a shard's in-memory bytes.
+# Not for wasm32: rusqlite bundles a C SQLite that needs libc; `serialize` adds Connection::deserialize.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rusqlite = { workspace = true, features = ["serialize"] }
-# Not for wasm32: native GPU backends (Metal on Apple, Vulkan on the Linux CI host and Android).
-# wasm32 gets webgpu/webgl below. A backend only exists if its wgpu feature is compiled in.
+# Not for wasm32: native GPU backends (wasm32 gets webgpu/webgl below).
 wgpu = { workspace = true, optional = true, features = ["metal", "vulkan", "wgsl"] }
 
-# wasm32 only: uuid's `js` feature gives getrandom a browser RNG backend so the workspace-wide
-# `v7` feature compiles for wasm32-unknown-unknown. shared uses Uuid only as a field type, but the
-# dependency graph still needs a wasm getrandom backend to build.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# wasm32 only: getrandom needs a browser RNG backend for the workspace uuid `v7` feature to build.
 uuid = { workspace = true, features = ["js"] }
-# wasm32 only: the SQLite build the shard reader's read-only VFS registers against (native uses
-# rusqlite instead). See shared/src/sqlite/ro_memory_vfs.rs for why the VFS exists.
+# wasm32 only: the SQLite the shard reader's read-only VFS registers against (native uses rusqlite).
 sqlite-wasm-rs = { workspace = true }
-# wasm32 only: WebGPU is the primary browser backend and WebGL2 the downlevel fallback; native gets
-# metal/vulkan above. A backend only exists if its wgpu feature is compiled in.
+# wasm32 only: WebGPU + WebGL2 browser backends (native gets metal/vulkan above).
 wgpu = { workspace = true, optional = true, features = ["webgpu", "webgl", "wgsl"] }
-# wasm32 only: HtmlCanvasElement is the surface target the web renderer attaches to; native attaches
-# from a raw window handle instead. Used only by the render-gated canvas path.
+# wasm32 only: HtmlCanvasElement, the web renderer's surface target.
 web-sys = { workspace = true, features = ["HtmlCanvasElement"] }
 
 [dev-dependencies]
