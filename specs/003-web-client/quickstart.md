@@ -1,0 +1,84 @@
+# Quickstart: building and running the web client
+
+Assumes the `003-web-client` stack is checked out and the workspace builds. Commands are single-line
+for copy/paste. Paths are relative to the repo root unless noted.
+
+## Prerequisites (one-time)
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install cargo-leptos --locked --version '^0.3'
+cargo install wasm-opt --locked
+brew install brotli
+```
+
+`wasm-opt` is invoked by cargo-leptos on release builds via `[package.metadata.leptos] wasm-opt-args`;
+`brotli` is invoked by `./scripts/precompress-site.sh`. Both are build-host tools, not workspace deps.
+
+## Populate the embedded bundle
+
+The map cannot render without a bundle. `web/static/embedded_artifacts/` is gitignored and rebuilt
+locally:
+
+```sh
+./scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts/
+```
+
+The script runs `ingestion build --downsampled "$EAFORA_DOWNSAMPLED_DIR/latest"` when that directory
+is missing (defaulting `EAFORA_DOWNSAMPLED_DIR` to `./data/downsampled`), then plain-copies the
+contents with `cp -R`. Until Phase 0b lands `ingestion build --downsampled`, hand-place a stub bundle
+(a `manifest.json`, one `geometry/*.fgb`, and one `data/tfr-base-*.sqlite`) under
+`./web/static/embedded_artifacts/` instead.
+
+## Dev loop
+
+```sh
+cd web && cargo leptos watch
+```
+
+Serves the app with rebuild-on-change at the cargo-leptos dev port. Open the printed URL; the map
+renders against the embedded bundle. Append `?renderer=webgl2` to force the WebGL2 backend for parity
+testing (FR-015).
+
+## Run the browser tests
+
+The three browser-divergent surfaces (OPFS cache, fetch error mapping, canvas bridge) are covered by
+headless Chrome:
+
+```sh
+cd web && wasm-pack test --headless --chrome
+```
+
+Cross-platform logic (manifest parse, SHA-256, license authorization, hit-test, projection) is tested
+once in `shared` with host `cargo test` and is not re-run here.
+
+## Release build, precompress, and measure the budget
+
+```sh
+cd web && cargo leptos build --release
+./scripts/precompress-site.sh
+./scripts/measure-site-budget.sh
+```
+
+`precompress-site.sh` writes `.br` siblings for the compressible asset types under `target/site/`.
+`measure-site-budget.sh` prints the first-paint and second-paint totals against the 2 MB / 3 MB caps
+and appends ` near cap` to any total over approx. 90% of its cap; it always exits 0 (the cap is a
+target, surfaced to reviewers, not a build gate). CI runs it on every PR and posts the output as a
+comment.
+
+## Deploy
+
+```sh
+cd web && wrangler deploy
+```
+
+Pure static asset serving from Cloudflare Workers Assets (`wrangler.toml` has `[assets] directory`,
+no `main`, no Worker). The apex-domain routing to `eafora.org` is configured in the Cloudflare
+dashboard, outside the codebase.
+
+## Common pitfalls
+
+- **Blank canvas, no error**: the bundle is missing or empty — re-run the embedded-bundle sync. `Bundle::open` reads from the cache, so a bundle that never got fetched into OPFS yields nothing to draw.
+- **`shared` won't link the wgpu types**: the web crate must depend on `shared` with `features = ["render"]`; the feature is off by default.
+- **`cache: opfs unsupported` on older Safari**: expected — the loader falls back to in-memory-only mode and the embedded bundle still renders. Verify the exact Safari cutoff against caniuse.com before relying on the fallback.
+- **WebGL2 forced path looks identical to WebGPU**: intended — the renderer is built to the WebGL2 feature set, so `?renderer=webgl2` output matches (FR-005 acceptance scenario 5).
