@@ -16,23 +16,23 @@ pub struct RenderPipelines {
     pub border: RenderPipeline,
     /// Paints the choropleth triangles.
     pub fill: RenderPipeline,
-    /// The layout of the viewport uniform binding, retained so the renderer can build the matching
-    /// bind group once the viewport buffer exists.
-    pub viewport_bind_group_layout: BindGroupLayout,
 }
 
 impl RenderPipelines {
-    pub async fn create(device: &Device, surface_format: TextureFormat) -> Result<RenderPipelines, AppError> {
+    pub async fn create(
+        device: &Device,
+        surface_format: TextureFormat,
+        viewport_bind_group_layout: &BindGroupLayout,
+    ) -> Result<RenderPipelines, AppError> {
         let error_scopes: [ErrorScopeGuard; 3] = [
             device.push_error_scope(ErrorFilter::OutOfMemory),
             device.push_error_scope(ErrorFilter::Internal),
             device.push_error_scope(ErrorFilter::Validation),
         ];
 
-        let viewport_bind_group_layout: BindGroupLayout = create_viewport_bind_group_layout(device);
         let pipeline_layout: PipelineLayout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("eafora-map-pipeline-layout"),
-            bind_group_layouts: &[Some(&viewport_bind_group_layout)],
+            bind_group_layouts: &[Some(viewport_bind_group_layout)],
             immediate_size: 0,
         });
         let shader_module: ShaderModule = create_map_shader_module(device);
@@ -43,7 +43,7 @@ impl RenderPipelines {
             return Err(AppError::from(format!("building the render pipelines failed: {error}")));
         }
 
-        Ok(RenderPipelines { border, fill, viewport_bind_group_layout })
+        Ok(RenderPipelines { border, fill })
     }
 }
 
@@ -71,7 +71,7 @@ fn create_map_shader_module(device: &Device) -> ShaderModule {
     })
 }
 
-fn create_viewport_bind_group_layout(device: &Device) -> BindGroupLayout {
+pub(crate) fn create_viewport_bind_group_layout(device: &Device) -> BindGroupLayout {
     device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("eafora-viewport-bind-group-layout"),
         entries: &[BindGroupLayoutEntry {
@@ -235,8 +235,10 @@ mod tests {
     #[ignore = "needs a GPU adapter; run with `cargo test -p shared --features render -- --ignored`"]
     async fn render_pipelines_compile_against_a_headless_device() {
         let (device, _queue): (Device, Queue) = headless_device().await;
+        let viewport_bind_group_layout: wgpu::BindGroupLayout = super::create_viewport_bind_group_layout(&device);
 
-        let _pipelines: RenderPipelines =
-            RenderPipelines::create(&device, TextureFormat::Bgra8UnormSrgb).await.expect("pipelines build");
+        let _pipelines: RenderPipelines = RenderPipelines::create(&device, TextureFormat::Bgra8UnormSrgb, &viewport_bind_group_layout)
+            .await
+            .expect("pipelines build");
     }
 }

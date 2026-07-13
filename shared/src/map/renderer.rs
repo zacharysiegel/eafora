@@ -5,7 +5,7 @@ use tokio::sync::watch;
 use chrono::NaiveDate;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    Adapter, BindGroup, BindGroupDescriptor, BindGroupEntry, Buffer, BufferAddress, BufferDescriptor, BufferUsages,
+    Adapter, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress, BufferDescriptor, BufferUsages,
     Color, CommandBuffer, CommandEncoder, CommandEncoderDescriptor, CurrentSurfaceTexture, Device, DeviceDescriptor,
     ExperimentalFeatures, Features, IndexFormat, Instance, Limits, LoadOp, MemoryHints, Operations, PowerPreference,
     Queue, RenderPass, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture,
@@ -19,7 +19,7 @@ use crate::map::color::{self, Rgba};
 use crate::map::value_types::{FrameState, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
 use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
-use crate::map::pipeline::RenderPipelines;
+use crate::map::pipeline::{self, RenderPipelines};
 use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
 use crate::sqlite::shard_db::{self, ShardValues};
@@ -37,7 +37,11 @@ pub struct Renderer {
     queue: Queue,
     bundle_receiver: watch::Receiver<Arc<Bundle>>,
     country_geometry: CountryGeometry,
-    fill_colors: Option<CachedFillColors>,
+    viewport_binding: ViewportBinding,
+    fill_color_buffer: Buffer,
+    // The key describing what is currently written into `fill_color_buffer`; the buffer is rewritten
+    // in place only when a new key differs from it.
+    last_fill_key: Option<FillColorKey>,
     attached: Option<AttachedState>,
     _not_send: PhantomData<*const ()>,
 }
@@ -78,19 +82,20 @@ impl FillColorKey {
     }
 }
 
-/// The choropleth color buffer plus the key it was built for. Rebuilt only when the key changes;
-/// a viewport pan/zoom or a hover reuses the same buffer.
-struct CachedFillColors {
+/// The viewport uniform's device-lifetime GPU resources. They are format-independent, so unlike the
+/// pipelines they are created once and outlive any surface; the buffer's contents are rewritten each
+/// frame with the current camera.
+struct ViewportBinding {
     buffer: Buffer,
-    key: FillColorKey,
+    bind_group: BindGroup,
+    layout: BindGroupLayout,
 }
 
-/// The surface-dependent state, built together at attach and dropped together at detach.
+/// The surface and its format-specialized pipelines, built together at attach and dropped together
+/// at detach. The geometry, viewport binding, and color buffer all outlive the surface.
 struct AttachedState {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
-    viewport_buffer: Buffer,
-    viewport_bind_group: BindGroup,
 }
 
 impl Renderer {
@@ -121,6 +126,13 @@ impl Renderer {
 
         let bundle: Arc<Bundle> = bundle_receiver.borrow().clone();
         let country_geometry: CountryGeometry = upload_country_geometry(&device, &bundle)?;
+        let viewport_binding: ViewportBinding = create_viewport_binding(&device);
+        let fill_color_buffer: Buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("eafora-fill-colors"),
+            size: country_geometry.positions.count as BufferAddress * std::mem::size_of::<FillVertex>() as BufferAddress,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         Ok(Renderer {
             instance,
@@ -129,7 +141,9 @@ impl Renderer {
             queue,
             bundle_receiver,
             country_geometry,
-            fill_colors: None,
+            viewport_binding,
+            fill_color_buffer,
+            last_fill_key: None,
             attached: None,
             _not_send: PhantomData,
         })
@@ -139,30 +153,12 @@ impl Renderer {
     pub async fn attach_surface(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
-        self.attached = Some(self.create_attached_state(surface).await?);
+        let pipelines: RenderPipelines =
+            RenderPipelines::create(&self.device, surface.format(), &self.viewport_binding.layout).await?;
+
+        self.attached = Some(AttachedState { surface, pipelines });
 
         Ok(())
-    }
-
-    // Surface-agnostic, so not target-gated. Only the native attach path calls it today; allow the
-    // dead-code lint on wasm32, where there is no caller yet.
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    async fn create_attached_state(&self, surface: WgpuSurface) -> Result<AttachedState, AppError> {
-        let pipelines: RenderPipelines = RenderPipelines::create(&self.device, surface.format()).await?;
-
-        let viewport_buffer: Buffer = self.device.create_buffer(&BufferDescriptor {
-            label: Some("eafora-viewport-uniform"),
-            size: std::mem::size_of::<ViewportUniform>() as BufferAddress,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let viewport_bind_group: BindGroup = self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("eafora-viewport-bind-group"),
-            layout: &pipelines.viewport_bind_group_layout,
-            entries: &[BindGroupEntry { binding: 0, resource: viewport_buffer.as_entire_binding() }],
-        });
-
-        Ok(AttachedState { surface, pipelines, viewport_buffer, viewport_bind_group })
     }
 
     pub fn detach_surface(&mut self) {
@@ -239,21 +235,14 @@ impl Renderer {
     }
 
     fn write_viewport_uniform(&self, viewport: Viewport) {
-        let attached: &AttachedState = self.attached.as_ref()
-            .expect("draw_frame: attach_surface must be called first");
         let viewport_uniform: ViewportUniform = viewport.to_gpu();
 
-        self.queue.write_buffer(&attached.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
+        self.queue.write_buffer(&self.viewport_binding.buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
     }
 
     fn record_map_pass(&self, view: &TextureView, instance_count: u32) -> CommandBuffer {
         let attached: &AttachedState = self.attached.as_ref()
             .expect("draw_frame: attach_surface must be called first");
-        let fill_color_buffer: &Buffer = &self
-            .fill_colors
-            .as_ref()
-            .expect("refresh_fill_colors populates the cache")
-            .buffer;
 
         let mut encoder: CommandEncoder =
             self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-frame-encoder") });
@@ -273,11 +262,11 @@ impl Renderer {
                 multiview_mask: None,
             });
 
-            render_pass.set_bind_group(0, &attached.viewport_bind_group, &[]);
+            render_pass.set_bind_group(0, &self.viewport_binding.bind_group, &[]);
 
             render_pass.set_pipeline(&attached.pipelines.fill);
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
-            render_pass.set_vertex_buffer(1, fill_color_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.fill_color_buffer.slice(..));
             render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
             render_pass.draw_indexed(0..self.country_geometry.fill.count, 0, 0..instance_count);
 
@@ -290,9 +279,9 @@ impl Renderer {
         encoder.finish()
     }
 
-    /// Rebuilds the fill-color buffer only when its inputs (active statistic, period, or the bundle)
-    /// have changed since the last frame. A pan, zoom, or hover leaves them untouched and reuses the
-    /// cached buffer.
+    /// Rewrites the fill-color buffer in place only when its inputs (active statistic, period, or the
+    /// bundle) have changed since the last frame. A pan, zoom, or hover leaves them untouched, so the
+    /// buffer keeps whatever was last uploaded.
     fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) -> Result<(), AppError> {
         let key: FillColorKey = FillColorKey {
             statistic_kind: frame_state.active_statistic,
@@ -300,20 +289,15 @@ impl Renderer {
             bundle: Arc::clone(bundle),
         };
 
-        let is_current: bool = self.fill_colors.as_ref()
-            .is_some_and(|cached| cached.key.matches(&key));
+        let is_current: bool = self.last_fill_key.as_ref()
+            .is_some_and(|current| current.matches(&key));
         if is_current {
             return Ok(());
         }
 
         let fill_vertices: Vec<FillVertex> = self.compute_fill_colors(bundle, frame_state)?;
-        let buffer: Buffer = self.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("eafora-fill-colors"),
-            contents: bytemuck::cast_slice(&fill_vertices),
-            usage: BufferUsages::VERTEX,
-        });
-
-        self.fill_colors = Some(CachedFillColors { buffer, key });
+        self.queue.write_buffer(&self.fill_color_buffer, 0, bytemuck::cast_slice(&fill_vertices));
+        self.last_fill_key = Some(key);
 
         Ok(())
     }
@@ -341,6 +325,23 @@ impl Renderer {
 
         Ok(fill_colors)
     }
+}
+
+fn create_viewport_binding(device: &Device) -> ViewportBinding {
+    let layout: BindGroupLayout = pipeline::create_viewport_bind_group_layout(device);
+    let buffer: Buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("eafora-viewport-uniform"),
+        size: std::mem::size_of::<ViewportUniform>() as BufferAddress,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let bind_group: BindGroup = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("eafora-viewport-bind-group"),
+        layout: &layout,
+        entries: &[BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
+    });
+
+    ViewportBinding { buffer, bind_group, layout }
 }
 
 fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
