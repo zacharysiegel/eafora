@@ -29,25 +29,25 @@ tokio = { workspace = true, optional = true, default-features = false, features 
 render = ["dep:wgpu", "dep:raw-window-handle", "dep:bytemuck", "dep:earcutr", "dep:tokio"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-# Not for wasm32: rusqlite bundles a C SQLite that needs libc; `serialize` adds Connection::deserialize.
+# rusqlite bundles a C SQLite that needs libc; `serialize` adds Connection::deserialize.
 rusqlite = { workspace = true, features = ["serialize"] }
-# Not for wasm32: native GPU backends (wasm32 gets webgpu/webgl below).
+# native GPU backends (wasm32 gets webgpu/webgl below).
 wgpu = { workspace = true, optional = true, features = ["metal", "vulkan", "wgsl"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-# wasm32 only: getrandom needs a browser RNG backend for the workspace uuid `v7` feature to build.
+# getrandom needs a browser RNG backend for the workspace uuid `v7` feature to build.
 uuid = { workspace = true, features = ["js"] }
-# wasm32 only: the SQLite the shard reader's read-only VFS registers against (native uses rusqlite).
+# the SQLite the shard reader's read-only VFS registers against (native uses rusqlite).
 sqlite-wasm-rs = { workspace = true }
-# wasm32 only: WebGPU + WebGL2 browser backends (native gets metal/vulkan above).
+# WebGPU + WebGL2 browser backends (native gets metal/vulkan above).
 wgpu = { workspace = true, optional = true, features = ["webgpu", "webgl", "wgsl"] }
-# wasm32 only: HtmlCanvasElement, the web renderer's surface target.
+# HtmlCanvasElement, the web renderer's surface target.
 web-sys = { workspace = true, features = ["HtmlCanvasElement"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 tokio = { workspace = true, default-features = false, features = ["sync", "macros", "rt"] }
 
-# wasm32 only: test harness for `cargo test --target wasm32-unknown-unknown`.
+# test harness for `cargo test --target wasm32-unknown-unknown`.
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }

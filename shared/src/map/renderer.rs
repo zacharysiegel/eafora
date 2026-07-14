@@ -24,11 +24,11 @@ use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
 use crate::sqlite::shard_db::{self, ShardValues};
 
-// not for wasm32: the native attach path takes a raw window handle; the web attaches from a canvas.
+// the native attach path takes a raw window handle; the web attaches from a canvas.
 #[cfg(not(target_arch = "wasm32"))]
 use crate::map::value_types::WindowHandle;
 
-// not for non-wasm32: the canvas attach path takes an HtmlCanvasElement instead of a raw window handle.
+// the canvas attach path takes an HtmlCanvasElement instead of a raw window handle.
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
 
@@ -165,7 +165,7 @@ impl Renderer {
         })
     }
 
-    #[cfg(not(target_arch = "wasm32"))] // not for wasm32: takes a raw window handle; the web attaches from a canvas
+    #[cfg(not(target_arch = "wasm32"))] // takes a raw window handle; the web attaches from a canvas
     pub async fn attach_surface_from_window_handle(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
@@ -173,7 +173,7 @@ impl Renderer {
         self.attach(surface).await
     }
 
-    #[cfg(target_arch = "wasm32")] // not for non-wasm32: attaches from an HtmlCanvasElement, not a raw window handle
+    #[cfg(target_arch = "wasm32")] // attaches from an HtmlCanvasElement, not a raw window handle
     pub async fn attach_surface_from_canvas(&mut self, canvas: HtmlCanvasElement, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_canvas(&self.instance, &self.adapter, &self.device, canvas, width, height)?;

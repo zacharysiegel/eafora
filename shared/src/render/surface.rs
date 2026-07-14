@@ -48,7 +48,7 @@ fn build_surface_config(surface: &Surface<'static>, adapter: &Adapter, width: u3
     }
 }
 
-// not for wasm32: raw-window-handle targets native window systems; the web attaches from a canvas.
+// raw-window-handle targets native window systems
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use core::ffi::c_void;
@@ -116,8 +116,7 @@ mod native {
     }
 }
 
-// not for non-wasm32: the web builds its surface from an HtmlCanvasElement via the safe canvas target,
-// where the native targets use a raw window handle behind an unsafe call.
+// the web builds its surface from an HtmlCanvasElement via the safe canvas target
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use wgpu::{Adapter, Device, Instance, Surface, SurfaceConfiguration, SurfaceTarget};
