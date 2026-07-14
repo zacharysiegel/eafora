@@ -14,6 +14,24 @@ leptos_router = { workspace = true }
 leptos_i18n = { workspace = true }
 log = { workspace = true }
 wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-futures = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true, features = [
+    "Window",
+    "Navigator",
+    "StorageManager",
+    "StorageEstimate",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemWritableFileStream",
+    "WritableStream",
+    "File",
+    "Blob",
+    "FileSystemGetDirectoryOptions",
+    "FileSystemGetFileOptions",
+    "FileSystemRemoveOptions",
+    "DomException",
+] }
 console_log = { workspace = true, optional = true }
 console_error_panic_hook = { workspace = true, optional = true }
 leptos_axum = { workspace = true, optional = true }
@@ -23,11 +41,18 @@ tokio = { workspace = true, optional = true, features = ["rt", "rt-multi-thread"
 [build-dependencies]
 leptos_i18n_build = { workspace = true }
 
+# wasm32 only: the headless-browser harness for the OPFS cache's #[wasm_bindgen_test] cases.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+
 [features]
 hydrate = [
     "leptos/hydrate",
     "leptos_i18n/hydrate",
     "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:js-sys",
+    "dep:web-sys",
     "dep:console_log",
     "dep:console_error_panic_hook",
 ]

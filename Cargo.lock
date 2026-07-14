@@ -7034,6 +7034,7 @@ dependencies = [
  "axum",
  "console_error_panic_hook",
  "console_log",
+ "js-sys",
  "leptos",
  "leptos_axum",
  "leptos_i18n",
@@ -7043,6 +7044,9 @@ dependencies = [
  "shared",
  "tokio",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
 ]
 
 [[package]]
