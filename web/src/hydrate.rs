@@ -1,6 +1,6 @@
 use crate::app::App;
 
-// The wasm entry point cargo-leptos's generated JS calls to start the client-side app: it attaches
+// The wasm entry point cargo-leptos' generated JS calls to start the client-side app: it attaches
 // to the server-rendered DOM and takes over. Exported as `hydrate` (the name cargo-leptos expects).
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn hydrate() {
