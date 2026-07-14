@@ -41,7 +41,7 @@ tokio = { workspace = true, optional = true, features = ["rt", "rt-multi-thread"
 [build-dependencies]
 leptos_i18n_build = { workspace = true }
 
-# wasm32 only: the headless-browser harness for the OPFS cache's #[wasm_bindgen_test] cases.
+# The headless-browser harness for the OPFS cache's #[wasm_bindgen_test] cases; the native ssr build has no browser tests.
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }
 
