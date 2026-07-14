@@ -26,14 +26,14 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 
 #[component]
 pub fn App() -> impl IntoView {
-    // English-only v1: no request-based locale detection. A header getter that returns None keeps the
-    // SSR locale at the default (`en`) and avoids leptos_i18n's Accept-Language warning, without the
-    // axum/actix detection path (whose async locale resolution panics under SSR in leptos_i18n 0.6.2).
+    // v1 is single-locale (`en`): nothing to detect or persist. `enable_cookie=false` skips the cookie
+    // read (the `cookie` feature stays available for future client-side persistence); the header getter
+    // returns None because a statically-generated site has no per-request render to read Accept-Language.
     let ssr_lang_header_getter: UseLocalesOptions =
         UseLocalesOptions::default().ssr_lang_header_getter(|| None::<String>);
 
     view! {
-        <I18nContextProvider ssr_lang_header_getter=ssr_lang_header_getter>
+        <I18nContextProvider enable_cookie=false ssr_lang_header_getter=ssr_lang_header_getter>
             <Router>
                 <Routes fallback=|| "Page not found.".into_view()>
                     <Route path=StaticSegment("") view=MapView />

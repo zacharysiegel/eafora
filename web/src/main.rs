@@ -1,6 +1,5 @@
 // The SSR-build binary cargo-leptos compiles with the `ssr` feature and runs as the dev server
-// (`cargo leptos watch`). Production is served as static assets from Cloudflare Workers Assets; the
-// static-export step that pre-renders the routes for that deploy is wired in the deploy phase.
+// (`cargo leptos watch`). Production is served as static assets
 #[cfg(feature = "ssr")]
 #[tokio::main]
 async fn main() {
