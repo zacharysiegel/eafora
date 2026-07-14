@@ -11,7 +11,7 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
 1. **`003-web-client`** — the browser client (WASM + Leptos shell + map view + OPFS cache + perf-budget). Planning artifacts merged; delivered in phases, full breakdown in `specs/003-web-client/plan.md` §Phasing for PRs. **In progress.**
    - Phase 0a (`shared` wasm32 canvas attach + `RendererBackends`) — landed.
    - Phase A (`web/` crate: cargo-leptos config + Leptos shell + `leptos_i18n` + Sass tokens) — landed.
-   - **Phase B (`OpfsArtifactCache` implementing `shared::artifact::ArtifactCache`, headless-Chrome tested) — in progress on `web-opfs-cache`.**
+   - Phase B (`OpfsArtifactCache` implementing `shared::artifact::ArtifactCache`, headless-Chrome tested) — landed.
    - Phase C (canvas→wgpu surface + `MapView` first paint against the embedded bundle) — pending; needs Phase 0a + a bundle.
    - Phase D (browser fetch + discovery + speculative fetch + bundle hot-swap) — pending.
    - Phase E (perf-budget script + precompress + `wrangler` deploy config) — pending.
