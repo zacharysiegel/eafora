@@ -286,3 +286,22 @@ cross-crate prerequisites — the wasm32 canvas attach in `shared` and `ingestio
 into their own PRs, and lays out the web feature as a linear stack (workspace/shell → OPFS cache →
 first paint → live fetch/hot-swap → perf-budget/deploy). Affected crates: `web` (new), `shared`,
 `ingestion`; plus `docs/design/stub-desktop.html` (accent palette corrected to the canonical `#d50000`/`#0050ff`).
+
+## Post-implementation notes — Phase A (2026-07-13)
+
+Delivered on branch `web-scaffold` (stacked on `master`, since the `003-web-client` planning artifacts
+were merged into `master` rather than kept on an open branch). Deviations from the plan/spec, all
+validated against the pinned crates:
+
+- **FR-007 (`index.html`) → a `shell()` fn.** leptos 0.8 ssr+hydrate renders the HTML shell from
+  `web/src/app.rs::shell(options)` (with `HydrationScripts`), not a static `index.html`.
+- **SSR binary uses `leptos_axum` as a running dev server** (`cargo leptos watch`), owner-approved
+  2026-07-13, rather than the "no serve / SSG-only" sketch in `client-web.md`. Production still ships
+  static assets; the static-export step is deferred to Phase E. New deps: `leptos_axum` + `axum`
+  (build/dev-time only).
+- **`leptos_meta` dropped** for the minimal shell; add it if `<title>`/`<meta>` management is needed.
+- **`gloo-net` pins to `0.6.*`** (the resolved version), not `0.5.*`; its wiring is deferred to Phase D.
+- **Deferred deps** (`web-sys`, `js-sys`, `gloo-net`, `wasm-bindgen-futures`) are added when Phases
+  B/C/D consume them, rather than all up front.
+- Validated: the crate compiles under both `hydrate` (wasm32) and `ssr`, and `cargo leptos build`
+  produces `target/site/` (WASM + JS + bundled CSS + static assets) end to end.
