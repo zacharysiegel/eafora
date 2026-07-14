@@ -5,10 +5,10 @@ use tokio::sync::watch;
 use chrono::NaiveDate;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    Adapter, BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress,
+    Adapter, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress,
     BufferDescriptor, BufferUsages, Color, CommandBuffer, CommandEncoder, CommandEncoderDescriptor, CurrentSurfaceTexture,
-    Device, DeviceDescriptor, ExperimentalFeatures, Features, IndexFormat, Instance, InstanceDescriptor, InstanceFlags, Limits,
-    LoadOp, MemoryBudgetThresholds, MemoryHints, Operations, PowerPreference, Queue, RenderPass, RenderPassColorAttachment,
+    Device, DeviceDescriptor, ExperimentalFeatures, Features, IndexFormat, Instance, InstanceDescriptor, Limits,
+    LoadOp, MemoryHints, Operations, PowerPreference, Queue, RenderPass, RenderPassColorAttachment,
     RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture, TextureView, TextureViewDescriptor, Trace,
 };
 
@@ -32,10 +32,10 @@ use crate::map::value_types::WindowHandle;
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
 
-/// Which GPU backends the renderer's wgpu instance may use. `ForceGl` restricts it to WebGL2 for the
+/// Which GPU backend the renderer's wgpu instance may use. `ForceGl` restricts it to WebGL2 for the
 /// web client's `?renderer=webgl2` parity-testing flag; `Default` lets wgpu prefer WebGPU where present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RendererBackends {
+pub enum RendererBackend {
     Default,
     ForceGl,
 }
@@ -115,8 +115,8 @@ struct AttachedState {
 }
 
 impl Renderer {
-    pub async fn new(bundle_receiver: watch::Receiver<Arc<Bundle>>, backends: RendererBackends) -> Result<Renderer, AppError> {
-        let instance: Instance = create_instance(backends);
+    pub async fn new(bundle_receiver: watch::Receiver<Arc<Bundle>>, backend: RendererBackend) -> Result<Renderer, AppError> {
+        let instance: Instance = create_instance(backend);
 
         let adapter: Adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -166,7 +166,7 @@ impl Renderer {
     }
 
     #[cfg(not(target_arch = "wasm32"))] // not for wasm32: takes a raw window handle; the web attaches from a canvas
-    pub async fn attach_surface(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
+    pub async fn attach_surface_from_window_handle(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
 
@@ -198,7 +198,7 @@ impl Renderer {
 
     pub fn resize_surface(&mut self, width: u32, height: u32) -> Result<(), AppError> {
         let attached: &mut AttachedState = self.attached.as_mut()
-                .expect("resize_surface: attach_surface must be called first");
+                .expect("resize_surface: a surface must be attached first");
         attached.surface.resize(&self.device, width, height);
 
         Ok(())
@@ -226,12 +226,12 @@ impl Renderer {
 
     /// Maps each wgpu surface state to a frame action: `Some(texture)` to render, `None` to skip this
     /// frame, `Err` to abort. A lost surface detaches and errors because recreating it needs the
-    /// window handle the renderer doesn't retain; only the shell can, by calling `attach_surface`.
+    /// window handle the renderer doesn't retain; only the shell can, by re-attaching the surface.
     fn acquire_surface_texture(&mut self) -> Result<Option<SurfaceTexture>, AppError> {
         let acquired: CurrentSurfaceTexture = self
             .attached
             .as_ref()
-            .expect("draw_frame: attach_surface must be called first")
+            .expect("draw_frame: a surface must be attached first")
             .surface
             .inner()
             .get_current_texture();
@@ -260,7 +260,7 @@ impl Renderer {
     fn reconfigure_attached_surface(&self) {
         self.attached
             .as_ref()
-            .expect("draw_frame: attach_surface must be called first")
+            .expect("draw_frame: a surface must be attached first")
             .surface
             .reconfigure(&self.device);
     }
@@ -273,7 +273,7 @@ impl Renderer {
 
     fn record_map_pass(&self, view: &TextureView, instance_count: u32) -> CommandBuffer {
         let attached: &AttachedState = self.attached.as_ref()
-            .expect("draw_frame: attach_surface must be called first");
+            .expect("draw_frame: a surface must be attached first");
 
         let mut encoder: CommandEncoder =
             self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-map-command-encoder") });
@@ -361,16 +361,14 @@ impl Renderer {
     }
 }
 
-fn create_instance(backends: RendererBackends) -> Instance {
-    match backends {
-        RendererBackends::Default => Instance::default(),
-        RendererBackends::ForceGl => Instance::new(InstanceDescriptor {
-            backends: Backends::GL,
-            flags: InstanceFlags::default(),
-            memory_budget_thresholds: MemoryBudgetThresholds::default(),
-            backend_options: BackendOptions::default(),
-            display: None,
-        }),
+fn create_instance(backend: RendererBackend) -> Instance {
+    match backend {
+        RendererBackend::Default => Instance::default(),
+        RendererBackend::ForceGl => {
+            let mut descriptor: InstanceDescriptor = InstanceDescriptor::new_without_display_handle();
+            descriptor.backends = Backends::GL;
+            Instance::new(descriptor)
+        }
     }
 }
 
