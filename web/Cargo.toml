@@ -34,7 +34,7 @@ hydrate = [
 ssr = [
     "leptos/ssr",
     "leptos_router/ssr",
-    "leptos_i18n/ssr",
+    "leptos_i18n/axum",
     "dep:leptos_axum",
     "dep:axum",
     "dep:tokio",
