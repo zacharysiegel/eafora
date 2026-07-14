@@ -1,0 +1,21 @@
+body {
+    font-family: var(--font-sans);
+    font-size: var(--type-size-body);
+    line-height: var(--type-line-height-body);
+    color: var(--color-ink);
+    background: var(--color-paper);
+}
+
+a {
+    color: var(--color-accent-link);
+    text-decoration: none;
+}
+
+// Applied to every element rendering a number so columns stay aligned (per docs/design/README.md).
+.numeric {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+    font-size: var(--type-size-data);
+    line-height: var(--type-line-height-data);
+}
