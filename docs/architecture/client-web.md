@@ -50,14 +50,16 @@ eafora/
 │   │   ├── favicon.ico
 │   │   └── robots.txt
 │   └── src/
-│       ├── lib.rs              # crate root; declares submodules; both SSR and client-side builds compile this; the client-side build also defines `#[wasm_bindgen(start)] fn hydrate()` that mounts the App on `<div id="leptos">`
+│       ├── lib.rs              # crate root; declares `app` + the cfg-gated `client` module; both SSR and client-side builds compile this
 │       ├── main.rs             # SSR-build entrypoint: calls static_routes.generate() and exits
 │       ├── error.rs            # `cache: ...` and `fetch: ...` AppError prefixes documented here
 │       ├── app.rs              # root App component + <Routes> tree; both the SSR build and the client-side build compile this
 │       ├── about.rs            # SSG'd About page (per design.md §Naming and the About page)
-│       ├── cache.rs            # OpfsArtifactCache; implements core's cache contract
-│       ├── fetch.rs            # browser fetch() adapter; fetch_manifest, fetch_artifact_file
-│       ├── canvas_surface.rs   # <canvas> → wgpu::Surface bridge
+│       ├── client/             # browser-only runtime glue; compiled only under the `hydrate` feature (gated once, in lib.rs)
+│       │   ├── hydrate.rs      # exported `hydrate` fn (the wasm entry point) that mounts the App on `<div id="leptos">`
+│       │   ├── cache.rs        # OpfsArtifactCache; implements core's cache contract
+│       │   ├── fetch.rs        # browser fetch() adapter; fetch_manifest, fetch_artifact_file
+│       │   └── canvas_surface.rs # <canvas> → wgpu::Surface bridge
 │       ├── map/                # the primary surface (client-side map view)
 │       │   ├── map.rs          # MapView component
 │       │   ├── canvas.rs       # <canvas>-bearing component; bridges to canvas_surface
@@ -68,11 +70,11 @@ eafora/
 │           └── history.rs      # history chart (per design.md mobile frame 03)
 ```
 
-Per-feature module layout: directory only when a feature has 2+ files (`map/`, `region/`); single-file modules sit flat under `src/`. `mod.rs` files in the feature directories hold only `pub mod ...; pub use ...::*;` declarations; primary content lives in named files.
+Per-feature module layout: directory only when a feature has 2+ files (`map/`, `region/`); single-file feature modules sit flat under `src/`. `client/` is the exception to the by-feature rule: it groups the browser-only runtime modules (OPFS cache, fetch, the wgpu-canvas bridge, the wasm entry point) so their `#[cfg(feature = "hydrate")]` gate lives once on the parent (`mod client;` in `lib.rs`) instead of being repeated on every module. Each module-root file (`client.rs`, and any `map/`/`region/` root) holds only `pub mod ...; pub use ...::*;` declarations; primary content lives in named files.
 
 The crate has no `<feature>_db.rs` (no Postgres in the client) and no `<feature>_api.rs` (the web client doesn't host HTTP routes; the `<feature>_client.rs` slot is reserved for v3+ if a live correction-submission API lands).
 
-The web crate's relationship to the browser is direct: each feature module calls `web-sys` / `gloo` APIs from the place that needs them. `cache.rs` calls `web_sys::FileSystemDirectoryHandle` (no gloo wrapper for OPFS yet); `fetch.rs` uses `gloo_net::http::Request` (a thin ergonomic wrapper over `web-sys`'s raw fetch surface); `canvas_surface.rs` works with the `web_sys::HtmlCanvasElement` type. The only `wasm_bindgen` annotation in the whole crate is `#[wasm_bindgen(start)]` on the `hydrate` function in `lib.rs`, which is how the browser knows where to begin executing the WASM module (mount Leptos on `<div id="leptos">`). The web crate's relationship to `core/` is also direct: a normal Cargo dependency, called as Rust functions, no FFI involved (both compile into the same WASM module).
+The web crate's relationship to the browser is direct: each feature module calls `web-sys` / `gloo` APIs from the place that needs them. `cache.rs` calls `web_sys::FileSystemDirectoryHandle` (no gloo wrapper for OPFS yet); `fetch.rs` uses `gloo_net::http::Request` (a thin ergonomic wrapper over `web-sys`'s raw fetch surface); `canvas_surface.rs` works with the `web_sys::HtmlCanvasElement` type. The only `wasm_bindgen` annotation in the whole crate is on the exported `hydrate` function in `client/hydrate.rs`, which is how the browser knows where to begin executing the WASM module (mount Leptos on `<div id="leptos">`). The web crate's relationship to `core/` is also direct: a normal Cargo dependency, called as Rust functions, no FFI involved (both compile into the same WASM module).
 
 One crate, two compile modes via cargo-leptos's `bin-features = ["ssr"]` and `lib-features = ["hydrate"]` (see §Build toolchain). The SSR build is invoked once at build time to write static HTML; the client-side build produces the browser-side WASM that takes over on `/`.
 
