@@ -8,7 +8,7 @@ This document covers everything between **the consumer-side contract `client.md`
 
 - The `web/` Cargo workspace member: its layout, its dependencies, its relationship to `core/`.
 - The build toolchain: `cargo-leptos`, `wasm-bindgen`, `wasm-opt`, the static-asset embedded bundle copy step, and the perf-budget warning that backstops `client.md`'s 2 MB / 3 MB targets.
-- The Leptos shell: routing (client-side map view + SSG region-detail pages via Leptos's `SsrMode::Static`), the component layout, the wasm-bindgen surface boundaries, the CSS architecture (plain CSS aligned with `docs/design/README.md`).
+- The Leptos shell: routing (client-side map view + SSG region-detail pages via Leptos's `SsrMode::Static`), the component layout, the wasm-bindgen surface boundaries, the CSS architecture (Sass partials, hand-written to match `docs/design/README.md`).
 - The browser-platform glue: the `fetch()`-backed artifact loader, the OPFS-backed cache adapter that satisfies `core::artifact`'s cache contract, the canvas-to-wgpu-surface bridge, the WebGPU/WebGL2 fallback policy.
 - The deploy target: Cloudflare Workers Assets, headers, and the manifest-vs-immutable cache disposition that mirrors the producer-side R2 settings.
 - Testing strategy for the web-only TDD-required surfaces.
@@ -26,7 +26,7 @@ From the constitution, `docs/architecture/overview.md`, `docs/architecture/clien
 - Cache: OPFS for the live artifact cache. (Overview §Web client; Client §Fetch / cache / load pipeline)
 - Embedded bundle on web: shipped as a static asset alongside the wasm on Cloudflare Workers Assets, fetched on first visit, HTTP-cached for return visits. (Client §Embedded downsampled artifact)
 - Perf budget: 2 MB total compressed at first paint (wasm + static-asset embedded bundle + page shell), 3 MB total compressed at second paint (after the live CDN bundle resolves). A target, not a contract; exceeding it produces a CI warning, not a build failure. (Client §Web first-paint perf budget)
-- CSS: plain CSS only; **Tailwind and utility-class libraries are explicitly ruled out**. (Project memory; design `README.md`)
+- CSS: hand-written CSS organized as Sass partials (Sass used only for splitting/bundling, not scripting); **Tailwind and utility-class libraries are explicitly ruled out**. (Project memory; design `README.md`)
 - Visual identity: sharp, white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, no animations through v1. (`docs/design/README.md`)
 - Hot-swap protocol: renderer subscribes to a `tokio::sync::watch::Receiver<Arc<Bundle>>` published by the loader. (Client §Bundle hot-swap)
 - No live API through v2: every datum the user sees came from a versioned CDN artifact. (Constitution VI)
@@ -41,7 +41,7 @@ eafora/
 ├── core/                       # the shared Rust core (consumer surface)
 ├── web/                        # this document's subject
 │   ├── Cargo.toml              # depends on core, leptos, wasm-bindgen, web-sys, js-sys, gloo, ...; cargo-leptos config under [package.metadata.leptos]
-│   ├── style/                  # plain CSS files (organized per §CSS architecture)
+│   ├── style/                  # Sass partials (organized per §CSS architecture)
 │   ├── static/                 # static assets served verbatim
 │   │   ├── embedded_artifacts/ # downsampled bundle copied here by the build script
 │   │   │   ├── manifest.json
@@ -95,7 +95,7 @@ Reference shape of `[package.metadata.leptos]` in `web/Cargo.toml`:
 output-name      = "eafora"
 site-root        = "target/site"
 site-pkg-dir     = "pkg"
-style-file       = "style/main.css"
+style-file       = "style/main.scss"
 assets-dir       = "static"
 site-addr        = "127.0.0.1:3000"
 reload-port      = 3001
@@ -107,7 +107,7 @@ lib-default-features = false
 lib-profile-release  = "wasm-release"
 ```
 
-The `style-file` entry points at one entrypoint; that file `@import`s the rest under `style/` (see §CSS architecture). The `assets-dir` is verbatim-copied to `target/site/`, which is what gets uploaded to Cloudflare Workers Assets.
+The `style-file` entry points at one entrypoint; that file `@use`s the partials under `style/` (see §CSS architecture). The `assets-dir` is verbatim-copied to `target/site/`, which is what gets uploaded to Cloudflare Workers Assets.
 
 The SSR build is what writes the static HTML for `/region/<region.code>` and `/about` (see §Routing and SSG). The client-side build is the browser-side WASM that takes over on `/` (the map view) and on any region page if v2+ ever adds client-side interactivity to those pages.
 
@@ -381,31 +381,33 @@ The eviction policy specified by `client.md` §Cache eviction (keep current vers
 
 ## CSS architecture
 
-Plain CSS only. The file layout under `web/style/`:
+Hand-written CSS organized as Sass partials (no utility-class framework; Sass is used only to split and bundle the files, not for its scripting features). The file layout under `web/style/`:
 
 ```
 web/style/
-├── main.css                    # entrypoint; @imports the rest
-├── tokens.css                  # design tokens as CSS custom properties (colors, spacing, type scale)
-├── reset.css                   # minimal CSS reset (box-sizing, margin/padding zero, etc.)
-├── typography.css              # font-family, font-variant-numeric (tabular-nums), line-heights
-├── layout.css                  # global layout primitives (page shell, panel container)
-├── map.css                     # MapView + canvas + legend + controls
-├── region.css                  # RegionDetail + history chart
-├── about.css                   # About page
+├── main.scss                   # entrypoint; @use's the partials in dependency order
+├── _tokens.scss                # design tokens as CSS custom properties (colors, spacing, type scale)
+├── _reset.scss                 # minimal CSS reset (box-sizing, margin/padding zero, etc.)
+├── _typography.scss            # font-family, font-variant-numeric (tabular-nums), line-heights
+├── _layout.scss                # global layout primitives (page shell, panel container)
+├── _map.scss                   # MapView + canvas + legend + controls
+├── _region.scss                # RegionDetail + history chart
+├── _about.scss                 # About page
 └── components/
-    ├── panel.css               # the canonical "sheet" panel pattern (per design.md)
-    ├── button.css              # minimal text-and-border button styles
+    ├── _panel.scss             # the canonical "sheet" panel pattern (per design.md)
+    ├── _button.scss            # minimal text-and-border button styles
     └── ...
 ```
 
-The `main.css` entrypoint `@imports` every other file in dependency order (tokens → reset → typography → layout → page-specific styles). cargo-leptos bundles them into `target/site/style/main.css` at build time.
+The `main.scss` entrypoint `@use`s every partial in dependency order (tokens → reset → typography → layout → page-specific styles); each partial is otherwise plain CSS. cargo-leptos compiles `main.scss` with its built-in Sass step (dart-sass, auto-downloaded the same way it fetches wasm-bindgen) into a single bundled, minified `target/site/pkg/eafora.css`.
+
+Sass rather than plain CSS with `@import`, because cargo-leptos does NOT bundle plain-CSS `@import`: its CSS step only parses and minifies the single `style-file` via Lightning CSS (no bundler), so plain `@import`s survive into the output and the browser then tries to fetch each imported file at runtime (they 404). Its Sass step, by contrast, resolves `@use`/`@import` into one stylesheet before minifying. Do not switch back to plain `.css` partials with `@import` expecting them to bundle.
 
 ### Design tokens
 
-`web/style/tokens.css` is the single source of truth for color, spacing, type scale, and border weight. Every other CSS file references the tokens via `var(--token-name)`; raw color values (`#ff0000`, etc.) appear nowhere else. The tokens themselves derive directly from `docs/design/README.md`:
+`web/style/_tokens.scss` is the single source of truth for color, spacing, type scale, and border weight. Every other partial references the tokens via `var(--token-name)`; raw color values (`#ff0000`, etc.) appear nowhere else. The tokens themselves derive directly from `docs/design/README.md`:
 
-```css
+```scss
 :root {
     --color-paper:           #ffffff;
     --color-ink:             #000000;
@@ -415,7 +417,7 @@ The `main.css` entrypoint `@imports` every other file in dependency order (token
 
     --space-xs:              0.25rem;  /* approx. 4px at default root font size */
     --space-sm:              0.5rem;   /* approx. 8px */
-    --space-md:              1rem;     /* approx. 16px — the default body unit */
+    --space-md:              1rem;     /* approx. 16px, the default body unit */
     --space-lg:              2rem;     /* approx. 32px */
 
     --font-sans:             "Inter", system-ui, -apple-system, sans-serif;
@@ -446,7 +448,7 @@ The reference HTML stubs at `docs/design/stub-desktop.html` and `docs/design/stu
 
 ### Tabular figures
 
-Every numeric display in the UI sets `font-variant-numeric: tabular-nums` so columns align (per design.md §Typography). This is enforced by a CSS class `.numeric` applied to every element rendering a number (`<span class="numeric">{value}</span>`); the class is defined in `web/style/typography.css`.
+Every numeric display in the UI sets `font-variant-numeric: tabular-nums` so columns align (per design.md §Typography). This is enforced by a CSS class `.numeric` applied to every element rendering a number (`<span class="numeric">{value}</span>`); the class is defined in `web/style/_typography.scss`.
 
 ### Responsive design
 
