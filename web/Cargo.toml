@@ -16,6 +16,9 @@ log = { workspace = true }
 wasm-bindgen = { workspace = true, optional = true }
 console_log = { workspace = true, optional = true }
 console_error_panic_hook = { workspace = true, optional = true }
+leptos_axum = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["rt", "rt-multi-thread", "net", "macros"] }
 
 [build-dependencies]
 leptos_i18n_build = { workspace = true }
@@ -32,6 +35,9 @@ ssr = [
     "leptos/ssr",
     "leptos_router/ssr",
     "leptos_i18n/ssr",
+    "dep:leptos_axum",
+    "dep:axum",
+    "dep:tokio",
 ]
 
 [package.metadata.leptos]
