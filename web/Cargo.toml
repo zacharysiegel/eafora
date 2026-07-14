@@ -1,0 +1,50 @@
+[package]
+name = "web"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+shared = { workspace = true, features = ["render"] }
+leptos = { workspace = true }
+leptos_router = { workspace = true }
+leptos_i18n = { workspace = true }
+log = { workspace = true }
+wasm-bindgen = { workspace = true, optional = true }
+console_log = { workspace = true, optional = true }
+console_error_panic_hook = { workspace = true, optional = true }
+
+[build-dependencies]
+leptos_i18n_build = { workspace = true }
+
+[features]
+hydrate = [
+    "leptos/hydrate",
+    "leptos_i18n/hydrate",
+    "dep:wasm-bindgen",
+    "dep:console_log",
+    "dep:console_error_panic_hook",
+]
+ssr = [
+    "leptos/ssr",
+    "leptos_router/ssr",
+    "leptos_i18n/ssr",
+]
+
+[package.metadata.leptos]
+output-name = "eafora"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+style-file = "style/main.css"
+assets-dir = "static"
+site-addr = "127.0.0.1:3000"
+reload-port = 3001
+browserquery = "defaults"
+bin-features = ["ssr"]
+lib-features = ["hydrate"]
+bin-default-features = false
+lib-default-features = false
+lib-profile-release = "wasm-release"

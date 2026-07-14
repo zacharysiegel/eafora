@@ -1,0 +1,27 @@
+:root {
+    --color-paper:           #ffffff;
+    --color-ink:             #000000;
+    --color-accent-active:   #d50000;  /* red */
+    --color-accent-link:     #0050ff;  /* blue */
+    --color-rule:            #d4d4d4;  /* 1px-rule grey */
+
+    --space-xs:              0.25rem;  /* approx. 4px at default root font size */
+    --space-sm:              0.5rem;   /* approx. 8px */
+    --space-md:              1rem;     /* approx. 16px, the default body unit */
+    --space-lg:              2rem;     /* approx. 32px */
+
+    --font-sans:             "Inter", system-ui, -apple-system, sans-serif;
+    --font-mono:             "IBM Plex Mono", ui-monospace, monospace;
+
+    --type-size-body:        0.875rem; /* approx. 14px */
+    --type-size-data:        0.8125rem;/* approx. 13px */
+    --type-line-height-body: 1.5;      /* unitless multiplier of the inheritor's font-size */
+    --type-line-height-data: 1.15;
+
+    --border-ink:            1px solid var(--color-ink);
+    --border-active:         1px solid var(--color-accent-active);
+    --border-rule:           1px solid var(--color-rule);
+
+    --radius-default:        0;
+    --radius-input:          1px;
+}

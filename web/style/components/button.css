@@ -1,0 +1,14 @@
+.button {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    border: var(--border-ink);
+    border-radius: var(--radius-input);
+    padding: var(--space-xs) var(--space-sm);
+    cursor: pointer;
+}
+
+.button[aria-pressed="true"],
+.button.is-active {
+    border-color: var(--color-accent-active);
+    color: var(--color-accent-active);
+}
