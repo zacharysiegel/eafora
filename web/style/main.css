@@ -1,6 +1,112 @@
-@import "tokens.css";
-@import "reset.css";
-@import "typography.css";
-@import "layout.css";
-@import "components/panel.css";
-@import "components/button.css";
+/* Design tokens: the single source of truth for color, spacing, type scale, and border weight.
+   Every rule below references these via var(--token-name); raw color values appear nowhere else. */
+:root {
+    --color-paper:           #ffffff;
+    --color-ink:             #000000;
+    --color-accent-active:   #d50000;  /* red */
+    --color-accent-link:     #0050ff;  /* blue */
+    --color-rule:            #d4d4d4;  /* 1px-rule grey */
+
+    --space-xs:              0.25rem;  /* approx. 4px at default root font size */
+    --space-sm:              0.5rem;   /* approx. 8px */
+    --space-md:              1rem;     /* approx. 16px, the default body unit */
+    --space-lg:              2rem;     /* approx. 32px */
+
+    --font-sans:             "Inter", system-ui, -apple-system, sans-serif;
+    --font-mono:             "IBM Plex Mono", ui-monospace, monospace;
+
+    --type-size-body:        0.875rem; /* approx. 14px */
+    --type-size-data:        0.8125rem;/* approx. 13px */
+    --type-line-height-body: 1.5;      /* unitless multiplier of the inheritor's font-size */
+    --type-line-height-data: 1.15;
+
+    --border-ink:            1px solid var(--color-ink);
+    --border-active:         1px solid var(--color-accent-active);
+    --border-rule:           1px solid var(--color-rule);
+
+    --radius-default:        0;
+    --radius-input:          1px;
+}
+
+/* Reset */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    height: 100%;
+}
+
+button,
+input,
+select {
+    font: inherit;
+    color: inherit;
+}
+
+img,
+canvas,
+svg {
+    display: block;
+    max-width: 100%;
+}
+
+/* Typography */
+body {
+    font-family: var(--font-sans);
+    font-size: var(--type-size-body);
+    line-height: var(--type-line-height-body);
+    color: var(--color-ink);
+    background: var(--color-paper);
+}
+
+a {
+    color: var(--color-accent-link);
+    text-decoration: none;
+}
+
+/* Applied to every element rendering a number so columns stay aligned (per docs/design/README.md). */
+.numeric {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+    font-size: var(--type-size-data);
+    line-height: var(--type-line-height-data);
+}
+
+/* Layout */
+#leptos {
+    min-height: 100%;
+}
+
+/* Component: panel (the canonical "sheet" per docs/design/README.md) */
+.panel {
+    background: var(--color-paper);
+    border: var(--border-ink);
+    border-radius: var(--radius-default);
+    padding: var(--space-md);
+}
+
+/* Component: button */
+.button {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    border: var(--border-ink);
+    border-radius: var(--radius-input);
+    padding: var(--space-xs) var(--space-sm);
+    cursor: pointer;
+}
+
+.button[aria-pressed="true"],
+.button.is-active {
+    border-color: var(--color-accent-active);
+    color: var(--color-accent-active);
+}
