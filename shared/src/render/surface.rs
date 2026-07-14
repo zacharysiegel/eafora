@@ -32,8 +32,6 @@ impl WgpuSurface {
     }
 }
 
-/// The render-attachment surface configuration derived from the adapter's capabilities. Shared by the
-/// native window-handle path and the wasm32 canvas path so both surfaces are configured identically.
 fn build_surface_config(surface: &Surface<'static>, adapter: &Adapter, width: u32, height: u32) -> SurfaceConfiguration {
     let capabilities: SurfaceCapabilities = surface.get_capabilities(adapter);
 
