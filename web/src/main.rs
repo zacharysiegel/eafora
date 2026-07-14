@@ -9,14 +9,15 @@ async fn main() {
     use axum::Router;
     use leptos::logging::log;
     use leptos::prelude::*;
-    use leptos_axum::{generate_route_list, LeptosRoutes};
+    use leptos_axum::LeptosRoutes;
 
     use web::app::{shell, App};
 
-    let configuration = get_configuration(None).unwrap();
+    let configuration = get_configuration(None)
+        .unwrap();
     let leptos_options: LeptosOptions = configuration.leptos_options;
     let address: SocketAddr = leptos_options.site_addr;
-    let route_listings = generate_route_list(App);
+    let route_listings = leptos_axum::generate_route_list(App);
 
     let router: Router = Router::new()
         .leptos_routes(&leptos_options, route_listings, {
