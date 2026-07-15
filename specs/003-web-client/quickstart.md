@@ -80,5 +80,5 @@ dashboard, outside the codebase.
 
 - **Blank canvas, no error**: the bundle is missing or empty — re-run the embedded-bundle sync. `Bundle::open` reads from the cache, so a bundle that never got fetched into OPFS yields nothing to draw.
 - **`shared` won't link the wgpu types**: the web crate must depend on `shared` with `features = ["render"]`; the feature is off by default.
-- **`cache: opfs unsupported` on older Safari**: expected — the loader falls back to in-memory-only mode and the embedded bundle still renders. Verify the exact Safari cutoff against caniuse.com before relying on the fallback.
+- **`cache: opfs unsupported` on older Safari**: expected on browsers without OPFS: the client hard-fails and renders the unsupported panel instead of the map (no fallback). Verify the exact Safari cutoff against caniuse.com.
 - **WebGL2 forced path looks identical to WebGPU**: intended — the renderer is built to the WebGL2 feature set, so `?renderer=webgl2` output matches (FR-005 acceptance scenario 5).
