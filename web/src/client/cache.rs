@@ -2,12 +2,14 @@ use js_sys::{ArrayBuffer, AsyncIterator, IteratorNext, Promise, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    DomException, File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetDirectoryOptions,
+    File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetDirectoryOptions,
     FileSystemGetFileOptions, FileSystemRemoveOptions, FileSystemWritableFileStream, StorageEstimate,
 };
 
 use shared::AppError;
 use shared::artifact::ArtifactCache;
+
+use crate::client::js_error;
 
 const ARTIFACTS_DIRECTORY: &str = "artifacts";
 const VERSIONS_KEPT: usize = 2;
@@ -143,7 +145,7 @@ async fn opfs_root() -> Result<FileSystemDirectoryHandle, AppError> {
 
     let root_value: JsValue = JsFuture::from(window.navigator().storage().get_directory())
         .await
-        .map_err(|error| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: {}", js_error_message(&error))))?;
+        .map_err(|error| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: {}", js_error::js_error_message(&error))))?;
 
     root_value
         .dyn_into::<FileSystemDirectoryHandle>()
@@ -160,9 +162,9 @@ async fn request_persistence() {
     match window.navigator().storage().persist() {
         Ok(promise) => match JsFuture::from(promise).await {
             Ok(granted) => log::info!("requested persistent storage [granted={:?}]", granted.as_bool()),
-            Err(error) => log::info!("persistent-storage request rejected [error={}]", js_error_message(&error)),
+            Err(error) => log::info!("persistent-storage request rejected [error={}]", js_error::js_error_message(&error)),
         },
-        Err(error) => log::info!("persistent-storage request unavailable [error={}]", js_error_message(&error)),
+        Err(error) => log::info!("persistent-storage request unavailable [error={}]", js_error::js_error_message(&error)),
     }
 }
 
@@ -269,10 +271,10 @@ async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
         .navigator()
         .storage()
         .estimate()
-        .map_err(|error| AppError::from(format!("cache: storage estimate failed: {}", js_error_message(&error))))?;
+        .map_err(|error| AppError::from(format!("cache: storage estimate failed: {}", js_error::js_error_message(&error))))?;
     let estimate_value: JsValue = JsFuture::from(estimate_promise)
         .await
-        .map_err(|error| AppError::from(format!("cache: storage estimate rejected: {}", js_error_message(&error))))?;
+        .map_err(|error| AppError::from(format!("cache: storage estimate rejected: {}", js_error::js_error_message(&error))))?;
     let estimate: StorageEstimate = estimate_value.dyn_into().map_err(cache_type_error)?;
 
     let usage: f64 = estimate.get_usage().unwrap_or(0.0);
@@ -324,38 +326,24 @@ async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<Vec<S
     Ok(key_strings)
 }
 
-fn js_error_message(error: &JsValue) -> String {
-    if let Some(dom_exception) = error.dyn_ref::<DomException>() {
-        return format!("{}: {}", dom_exception.name(), dom_exception.message());
-    }
-
-    error.as_string().unwrap_or_else(|| format!("{error:?}"))
-}
-
 fn cache_error(error: JsValue) -> AppError {
     if is_dom_exception_quota_exceeded(&error) {
-        return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js_error_message(&error)));
+        return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js_error::js_error_message(&error)));
     }
 
-    AppError::from(format!("cache: {}", js_error_message(&error)))
+    AppError::from(format!("cache: {}", js_error::js_error_message(&error)))
 }
 
 fn cache_type_error<T>(_value: T) -> AppError {
     AppError::from("cache: unexpected JS value type".to_string())
 }
 
-fn is_dom_exception_named(error: &JsValue, name: &str) -> bool {
-    error
-        .dyn_ref::<DomException>()
-        .is_some_and(|dom_exception| dom_exception.name() == name)
-}
-
 fn is_dom_exception_not_found(error: &JsValue) -> bool {
-    is_dom_exception_named(error, "NotFoundError")
+    js_error::is_dom_exception_named(error, "NotFoundError")
 }
 
 fn is_dom_exception_quota_exceeded(error: &JsValue) -> bool {
-    is_dom_exception_named(error, "QuotaExceededError")
+    js_error::is_dom_exception_named(error, "QuotaExceededError")
 }
 
 #[cfg(test)]

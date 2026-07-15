@@ -2,3 +2,4 @@
 
 pub mod cache;
 pub mod hydrate;
+pub mod js_error;
