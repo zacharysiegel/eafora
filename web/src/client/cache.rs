@@ -11,20 +11,20 @@ use shared::artifact::ArtifactCache;
 
 const ARTIFACTS_DIRECTORY: &str = "artifacts";
 const VERSIONS_KEPT: usize = 2;
-const QUOTA_SAFETY_MARGIN_BYTES: f64 = 4_194_304.0; // 4 MB headroom left free on every write
+const QUOTA_SAFETY_MARGIN_BYTES: f64 = 1_048_576.0; // 1 MB headroom left free on every write
 const ERROR_PREFIX_OPFS_UNSUPPORTED: &str = "cache: opfs unsupported";
 const ERROR_PREFIX_QUOTA_EXCEEDED: &str = "cache: quota exceeded";
 
-/// The browser implementation of [`ArtifactCache`], backed by the Origin Private File System. A
-/// zero-sized, stateless type: it resolves `navigator.storage.getDirectory()` on every call and caches
-/// no directory handle (holding a `FileSystemDirectoryHandle` across calls is the antipattern the
-/// stateless design avoids). `!Send`, like every OPFS handle it touches.
+/// The browser [`ArtifactCache`], backed by the Origin Private File System. Stateless: re-resolves
+/// `navigator.storage.getDirectory()` and walks from the root on every call, caching no handle, so a
+/// concurrent eviction or another tab can never leave it holding an invalidated one. Its async methods
+/// return `!Send` futures (they hold OPFS handles across `.await`).
 pub struct OpfsArtifactCache;
 
 impl OpfsArtifactCache {
     /// Confirms OPFS is available (older Safari lacks it), ensures the `artifacts/` root exists, and
     /// requests persistent storage. Returns a `cache: opfs unsupported`-prefixed error when OPFS is
-    /// absent so the loader can fall back to the in-memory embedded bundle.
+    /// absent.
     pub async fn create() -> Result<OpfsArtifactCache, AppError> {
         let root: FileSystemDirectoryHandle = opfs_root().await?;
         get_or_create_directory(&root, ARTIFACTS_DIRECTORY).await?;
