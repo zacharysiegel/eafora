@@ -63,9 +63,7 @@ impl ArtifactCache for OpfsArtifactCache {
         check_quota(bytes.len()).await?;
 
         let (parent, file_name): (FileSystemDirectoryHandle, &str) =
-            walk_to_file_parent(&root, version_label, file_relative_path, WalkMode::Create)
-                .await?
-                .expect("WalkMode::Create always resolves a parent");
+            create_artifact_directory(&root, version_label, file_relative_path).await?;
 
         let file_options: FileSystemGetFileOptions = FileSystemGetFileOptions::new();
         file_options.set_create(true);
@@ -93,7 +91,7 @@ impl ArtifactCache for OpfsArtifactCache {
         let root: FileSystemDirectoryHandle = opfs_root().await?;
 
         let Some((parent, file_name)) =
-            walk_to_file_parent(&root, version_label, file_relative_path, WalkMode::ReadOnly).await?
+            find_artifact_directory(&root, version_label, file_relative_path).await?
         else {
             return Ok(None);
         };
@@ -209,55 +207,45 @@ async fn get_file_handle_if_present(
     }
 }
 
-enum WalkMode {
-    Create,
-    ReadOnly,
-}
-
-/// Resolves the directory holding the target file, splitting `file_relative_path` on `/` so nested
-/// paths (`data/tfr-base.sqlite`) map to nested OPFS directories under `artifacts/<version_label>/`.
-/// In `ReadOnly` mode a missing directory short-circuits to `Ok(None)` (cache miss); in `Create` mode
-/// every directory is created. Returns the parent handle and the final path component (the file name).
-async fn walk_to_file_parent<'path>(
+async fn create_artifact_directory<'path>(
     root: &FileSystemDirectoryHandle,
     version_label: &str,
     file_relative_path: &'path str,
-    mode: WalkMode,
-) -> Result<Option<(FileSystemDirectoryHandle, &'path str)>, AppError> {
-    let mut components = file_relative_path.split('/');
-    let file_name: &str = components
-        .next_back()
-        .ok_or_else(|| AppError::from("cache: empty file_relative_path".to_string()))?;
+) -> Result<(FileSystemDirectoryHandle, &'path str), AppError> {
+    let (directory_path, file_name): (&str, &str) =
+        file_relative_path.rsplit_once('/').unwrap_or(("", file_relative_path));
 
-    let mut current: FileSystemDirectoryHandle = match mode {
-        WalkMode::Create => {
-            let artifacts: FileSystemDirectoryHandle = get_or_create_directory(root, ARTIFACTS_DIRECTORY).await?;
-            get_or_create_directory(&artifacts, version_label).await?
-        }
-        WalkMode::ReadOnly => {
-            let Some(artifacts) = get_directory_if_present(root, ARTIFACTS_DIRECTORY).await? else {
-                return Ok(None);
-            };
-            let Some(version) = get_directory_if_present(&artifacts, version_label).await? else {
-                return Ok(None);
-            };
-            version
-        }
-    };
-
-    for component in components {
-        match mode {
-            WalkMode::Create => current = get_or_create_directory(&current, component).await?,
-            WalkMode::ReadOnly => {
-                let Some(next) = get_directory_if_present(&current, component).await? else {
-                    return Ok(None);
-                };
-                current = next;
-            }
-        }
+    let mut directory: FileSystemDirectoryHandle = root.clone();
+    for segment in [ARTIFACTS_DIRECTORY, version_label]
+        .into_iter()
+        .chain(directory_path.split('/').filter(|segment| !segment.is_empty()))
+    {
+        directory = get_or_create_directory(&directory, segment).await?;
     }
 
-    Ok(Some((current, file_name)))
+    Ok((directory, file_name))
+}
+
+async fn find_artifact_directory<'path>(
+    root: &FileSystemDirectoryHandle,
+    version_label: &str,
+    file_relative_path: &'path str,
+) -> Result<Option<(FileSystemDirectoryHandle, &'path str)>, AppError> {
+    let (directory_path, file_name): (&str, &str) =
+        file_relative_path.rsplit_once('/').unwrap_or(("", file_relative_path));
+
+    let mut directory: FileSystemDirectoryHandle = root.clone();
+    for segment in [ARTIFACTS_DIRECTORY, version_label]
+        .into_iter()
+        .chain(directory_path.split('/').filter(|segment| !segment.is_empty()))
+    {
+        let Some(next) = get_directory_if_present(&directory, segment).await? else {
+            return Ok(None);
+        };
+        directory = next;
+    }
+
+    Ok(Some((directory, file_name)))
 }
 
 /// Fails with a `cache: quota exceeded`-prefixed error when writing `incoming_len` bytes would leave
@@ -280,7 +268,7 @@ async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
     let usage: f64 = estimate.get_usage().unwrap_or(0.0);
     let quota: f64 = estimate.get_quota().unwrap_or(f64::INFINITY);
 
-    if !quota_allows(usage, quota, incoming_len as u64) {
+    if !quota_allows(usage, quota, incoming_len) {
         return Err(AppError::from(format!(
             "{ERROR_PREFIX_QUOTA_EXCEEDED}: writing {incoming_len} bytes leaves under the {QUOTA_SAFETY_MARGIN_BYTES} byte margin (usage {usage}, quota {quota})"
         )));
@@ -289,7 +277,7 @@ async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
     Ok(())
 }
 
-fn quota_allows(usage: f64, quota: f64, incoming_len: u64) -> bool {
+fn quota_allows(usage: f64, quota: f64, incoming_len: usize) -> bool {
     quota - usage >= incoming_len as f64 + QUOTA_SAFETY_MARGIN_BYTES
 }
 
