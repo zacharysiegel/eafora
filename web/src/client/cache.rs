@@ -72,17 +72,17 @@ impl ArtifactCache for OpfsArtifactCache {
 
         let writable_value: JsValue = JsFuture::from(file_handle.create_writable())
             .await
-            .map_err(map_quota_or_generic)?;
-        let writable: FileSystemWritableFileStream = writable_value.dyn_into().map_err(dyn_into_error)?;
+            .map_err(cache_error)?;
+        let writable: FileSystemWritableFileStream = writable_value.dyn_into().map_err(cache_type_error)?;
 
-        let write_promise: Promise = writable.write_with_u8_array(bytes).map_err(map_quota_or_generic)?;
+        let write_promise: Promise = writable.write_with_u8_array(bytes).map_err(cache_error)?;
         JsFuture::from(write_promise)
             .await
-            .map_err(map_quota_or_generic)?;
+            .map_err(cache_error)?;
 
         JsFuture::from(writable.close())
             .await
-            .map_err(map_quota_or_generic)?;
+            .map_err(cache_error)?;
 
         Ok(())
     }
@@ -131,7 +131,7 @@ impl ArtifactCache for OpfsArtifactCache {
         match remove_result {
             Ok(_) => Ok(()),
             Err(error) if is_dom_exception_not_found(&error) => Ok(()),
-            Err(error) => Err(map_generic(error)),
+            Err(error) => Err(cache_error(error)),
         }
     }
 }
@@ -143,7 +143,7 @@ async fn opfs_root() -> Result<FileSystemDirectoryHandle, AppError> {
 
     let root_value: JsValue = JsFuture::from(window.navigator().storage().get_directory())
         .await
-        .map_err(|error| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: {}", describe_js_error(&error))))?;
+        .map_err(|error| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: {}", js_error_message(&error))))?;
 
     root_value
         .dyn_into::<FileSystemDirectoryHandle>()
@@ -160,16 +160,16 @@ async fn request_persistence() {
     match window.navigator().storage().persist() {
         Ok(promise) => match JsFuture::from(promise).await {
             Ok(granted) => log::info!("requested persistent storage [granted={:?}]", granted.as_bool()),
-            Err(error) => log::info!("persistent-storage request rejected [error={}]", describe_js_error(&error)),
+            Err(error) => log::info!("persistent-storage request rejected [error={}]", js_error_message(&error)),
         },
-        Err(error) => log::info!("persistent-storage request unavailable [error={}]", describe_js_error(&error)),
+        Err(error) => log::info!("persistent-storage request unavailable [error={}]", js_error_message(&error)),
     }
 }
 
 async fn await_and_cast<T: JsCast>(promise: Promise) -> Result<T, AppError> {
-    let value: JsValue = JsFuture::from(promise).await.map_err(map_generic)?;
+    let value: JsValue = JsFuture::from(promise).await.map_err(cache_error)?;
 
-    value.dyn_into::<T>().map_err(dyn_into_error)
+    value.dyn_into::<T>().map_err(cache_type_error)
 }
 
 async fn get_or_create_directory(
@@ -189,9 +189,9 @@ async fn get_directory_if_present(
     name: &str,
 ) -> Result<Option<FileSystemDirectoryHandle>, AppError> {
     match JsFuture::from(parent.get_directory_handle(name)).await {
-        Ok(value) => Ok(Some(value.dyn_into::<FileSystemDirectoryHandle>().map_err(dyn_into_error)?)),
+        Ok(value) => Ok(Some(value.dyn_into::<FileSystemDirectoryHandle>().map_err(cache_type_error)?)),
         Err(error) if is_dom_exception_not_found(&error) => Ok(None),
-        Err(error) => Err(map_generic(error)),
+        Err(error) => Err(cache_error(error)),
     }
 }
 
@@ -201,9 +201,9 @@ async fn get_file_handle_if_present(
     name: &str,
 ) -> Result<Option<FileSystemFileHandle>, AppError> {
     match JsFuture::from(parent.get_file_handle(name)).await {
-        Ok(value) => Ok(Some(value.dyn_into::<FileSystemFileHandle>().map_err(dyn_into_error)?)),
+        Ok(value) => Ok(Some(value.dyn_into::<FileSystemFileHandle>().map_err(cache_type_error)?)),
         Err(error) if is_dom_exception_not_found(&error) => Ok(None),
-        Err(error) => Err(map_generic(error)),
+        Err(error) => Err(cache_error(error)),
     }
 }
 
@@ -269,11 +269,11 @@ async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
         .navigator()
         .storage()
         .estimate()
-        .map_err(|error| AppError::from(format!("cache: storage estimate failed: {}", describe_js_error(&error))))?;
+        .map_err(|error| AppError::from(format!("cache: storage estimate failed: {}", js_error_message(&error))))?;
     let estimate_value: JsValue = JsFuture::from(estimate_promise)
         .await
-        .map_err(|error| AppError::from(format!("cache: storage estimate rejected: {}", describe_js_error(&error))))?;
-    let estimate: StorageEstimate = estimate_value.dyn_into().map_err(dyn_into_error)?;
+        .map_err(|error| AppError::from(format!("cache: storage estimate rejected: {}", js_error_message(&error))))?;
+    let estimate: StorageEstimate = estimate_value.dyn_into().map_err(cache_type_error)?;
 
     let usage: f64 = estimate.get_usage().unwrap_or(0.0);
     let quota: f64 = estimate.get_quota().unwrap_or(f64::INFINITY);
@@ -292,8 +292,8 @@ fn quota_allows(usage: f64, quota: f64, incoming_len: usize) -> bool {
 }
 
 async fn read_file_bytes(file: &File) -> Result<Vec<u8>, AppError> {
-    let buffer_value: JsValue = JsFuture::from(file.array_buffer()).await.map_err(map_generic)?;
-    let array_buffer: ArrayBuffer = buffer_value.dyn_into().map_err(dyn_into_error)?;
+    let buffer_value: JsValue = JsFuture::from(file.array_buffer()).await.map_err(cache_error)?;
+    let array_buffer: ArrayBuffer = buffer_value.dyn_into().map_err(cache_type_error)?;
 
     Ok(Uint8Array::new(&array_buffer).to_vec())
 }
@@ -306,9 +306,9 @@ async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<Vec<S
 
     let mut key_strings: Vec<String> = Vec::new();
     loop {
-        let next_promise: Promise = iterator.next().map_err(map_generic)?;
-        let next_value: JsValue = JsFuture::from(next_promise).await.map_err(map_generic)?;
-        let iterator_next: IteratorNext = next_value.dyn_into().map_err(dyn_into_error)?;
+        let next_promise: Promise = iterator.next().map_err(cache_error)?;
+        let next_value: JsValue = JsFuture::from(next_promise).await.map_err(cache_error)?;
+        let iterator_next: IteratorNext = next_value.dyn_into().map_err(cache_type_error)?;
 
         if iterator_next.done() {
             break;
@@ -324,7 +324,7 @@ async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<Vec<S
     Ok(key_strings)
 }
 
-fn describe_js_error(error: &JsValue) -> String {
+fn js_error_message(error: &JsValue) -> String {
     if let Some(dom_exception) = error.dyn_ref::<DomException>() {
         return format!("{}: {}", dom_exception.name(), dom_exception.message());
     }
@@ -332,11 +332,15 @@ fn describe_js_error(error: &JsValue) -> String {
     error.as_string().unwrap_or_else(|| format!("{error:?}"))
 }
 
-fn map_generic(error: JsValue) -> AppError {
-    AppError::from(format!("cache: {}", describe_js_error(&error)))
+fn cache_error(error: JsValue) -> AppError {
+    if is_dom_exception_quota_exceeded(&error) {
+        return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js_error_message(&error)));
+    }
+
+    AppError::from(format!("cache: {}", js_error_message(&error)))
 }
 
-fn dyn_into_error<T>(_original: T) -> AppError {
+fn cache_type_error<T>(_value: T) -> AppError {
     AppError::from("cache: unexpected JS value type".to_string())
 }
 
@@ -352,14 +356,6 @@ fn is_dom_exception_not_found(error: &JsValue) -> bool {
 
 fn is_dom_exception_quota_exceeded(error: &JsValue) -> bool {
     is_dom_exception_named(error, "QuotaExceededError")
-}
-
-fn map_quota_or_generic(error: JsValue) -> AppError {
-    if is_dom_exception_quota_exceeded(&error) {
-        return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", describe_js_error(&error)));
-    }
-
-    map_generic(error)
 }
 
 #[cfg(test)]
