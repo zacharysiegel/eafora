@@ -74,17 +74,17 @@ impl ArtifactCache for OpfsArtifactCache {
 
         let writable_value: JsValue = JsFuture::from(file_handle.create_writable())
             .await
-            .map_err(cache_error)?;
+            .map_err(cache_write_error)?;
         let writable: FileSystemWritableFileStream = writable_value.dyn_into().map_err(cache_type_error)?;
 
-        let write_promise: Promise = writable.write_with_u8_array(bytes).map_err(cache_error)?;
+        let write_promise: Promise = writable.write_with_u8_array(bytes).map_err(cache_write_error)?;
         JsFuture::from(write_promise)
             .await
-            .map_err(cache_error)?;
+            .map_err(cache_write_error)?;
 
         JsFuture::from(writable.close())
             .await
-            .map_err(cache_error)?;
+            .map_err(cache_write_error)?;
 
         Ok(())
     }
@@ -280,7 +280,7 @@ async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
     let usage: f64 = estimate.get_usage().unwrap_or(0.0);
     let quota: f64 = estimate.get_quota().unwrap_or(f64::INFINITY);
 
-    if !quota_allows(usage, quota, incoming_len) {
+    if !quota_allows(usage, quota, incoming_len as u64) {
         return Err(AppError::from(format!(
             "{ERROR_PREFIX_QUOTA_EXCEEDED}: writing {incoming_len} bytes leaves under the {QUOTA_SAFETY_MARGIN_BYTES} byte margin (usage {usage}, quota {quota})"
         )));
@@ -289,13 +289,16 @@ async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
     Ok(())
 }
 
-fn quota_allows(usage: f64, quota: f64, incoming_len: usize) -> bool {
+fn quota_allows(usage: f64, quota: f64, incoming_len: u64) -> bool {
     quota - usage >= incoming_len as f64 + QUOTA_SAFETY_MARGIN_BYTES
 }
 
 async fn read_file_bytes(file: &File) -> Result<Vec<u8>, AppError> {
-    let buffer_value: JsValue = JsFuture::from(file.array_buffer()).await.map_err(cache_error)?;
-    let array_buffer: ArrayBuffer = buffer_value.dyn_into().map_err(cache_type_error)?;
+    let buffer_value: JsValue = JsFuture::from(file.array_buffer())
+        .await
+        .map_err(cache_error)?;
+    let array_buffer: ArrayBuffer = buffer_value.dyn_into()
+        .map_err(cache_type_error)?;
 
     Ok(Uint8Array::new(&array_buffer).to_vec())
 }
@@ -327,15 +330,19 @@ async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<Vec<S
 }
 
 fn cache_error(error: JsValue) -> AppError {
+    AppError::from(format!("cache: {}", js_error::js_error_message(&error)))
+}
+
+fn cache_write_error(error: JsValue) -> AppError {
     if is_dom_exception_quota_exceeded(&error) {
         return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js_error::js_error_message(&error)));
     }
 
-    AppError::from(format!("cache: {}", js_error::js_error_message(&error)))
+    cache_error(error)
 }
 
-fn cache_type_error<T>(_value: T) -> AppError {
-    AppError::from("cache: unexpected JS value type".to_string())
+fn cache_type_error(value: JsValue) -> AppError {
+    AppError::from(format!("cache: unexpected JS value type: {value:?}"))
 }
 
 fn is_dom_exception_not_found(error: &JsValue) -> bool {
