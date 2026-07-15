@@ -15,10 +15,10 @@ const QUOTA_SAFETY_MARGIN_BYTES: f64 = 1_048_576.0; // 1 MB headroom left free o
 const ERROR_PREFIX_OPFS_UNSUPPORTED: &str = "cache: opfs unsupported";
 const ERROR_PREFIX_QUOTA_EXCEEDED: &str = "cache: quota exceeded";
 
-/// The browser [`ArtifactCache`], backed by the Origin Private File System. Stateless: re-resolves
-/// `navigator.storage.getDirectory()` and walks from the root on every call, caching no handle, so a
-/// concurrent eviction or another tab can never leave it holding an invalidated one. Its async methods
-/// return `!Send` futures (they hold OPFS handles across `.await`).
+/// The browser implementation of [`ArtifactCache`], backed by the Origin Private File System. A
+/// zero-sized, stateless type: it resolves `navigator.storage.getDirectory()` on every call and caches
+/// no directory handle (holding a `FileSystemDirectoryHandle` across calls is the antipattern the
+/// stateless design avoids). `!Send`, like every OPFS handle it touches.
 pub struct OpfsArtifactCache;
 
 impl OpfsArtifactCache {
@@ -130,7 +130,7 @@ impl ArtifactCache for OpfsArtifactCache {
             JsFuture::from(artifacts.remove_entry_with_options(version_label, &remove_options)).await;
         match remove_result {
             Ok(_) => Ok(()),
-            Err(error) if is_not_found(&error) => Ok(()),
+            Err(error) if is_dom_exception_not_found(&error) => Ok(()),
             Err(error) => Err(map_generic(error)),
         }
     }
@@ -190,7 +190,7 @@ async fn get_directory_if_present(
 ) -> Result<Option<FileSystemDirectoryHandle>, AppError> {
     match JsFuture::from(parent.get_directory_handle(name)).await {
         Ok(value) => Ok(Some(value.dyn_into::<FileSystemDirectoryHandle>().map_err(dyn_into_error)?)),
-        Err(error) if is_not_found(&error) => Ok(None),
+        Err(error) if is_dom_exception_not_found(&error) => Ok(None),
         Err(error) => Err(map_generic(error)),
     }
 }
@@ -202,7 +202,7 @@ async fn get_file_handle_if_present(
 ) -> Result<Option<FileSystemFileHandle>, AppError> {
     match JsFuture::from(parent.get_file_handle(name)).await {
         Ok(value) => Ok(Some(value.dyn_into::<FileSystemFileHandle>().map_err(dyn_into_error)?)),
-        Err(error) if is_not_found(&error) => Ok(None),
+        Err(error) if is_dom_exception_not_found(&error) => Ok(None),
         Err(error) => Err(map_generic(error)),
     }
 }
@@ -346,16 +346,16 @@ fn is_dom_exception_named(error: &JsValue, name: &str) -> bool {
         .is_some_and(|dom_exception| dom_exception.name() == name)
 }
 
-fn is_not_found(error: &JsValue) -> bool {
+fn is_dom_exception_not_found(error: &JsValue) -> bool {
     is_dom_exception_named(error, "NotFoundError")
 }
 
-fn is_quota_exceeded(error: &JsValue) -> bool {
+fn is_dom_exception_quota_exceeded(error: &JsValue) -> bool {
     is_dom_exception_named(error, "QuotaExceededError")
 }
 
 fn map_quota_or_generic(error: JsValue) -> AppError {
-    if is_quota_exceeded(&error) {
+    if is_dom_exception_quota_exceeded(&error) {
         return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", describe_js_error(&error)));
     }
 
