@@ -1,15 +1,15 @@
-use js_sys::{ArrayBuffer, AsyncIterator, IteratorNext, Promise, Uint8Array};
+use js_sys::Promise;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetDirectoryOptions,
-    FileSystemGetFileOptions, FileSystemRemoveOptions, FileSystemWritableFileStream, StorageEstimate,
+    File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetFileOptions, FileSystemRemoveOptions,
+    FileSystemWritableFileStream,
 };
 
 use shared::AppError;
 use shared::artifact::ArtifactCache;
 
-use crate::client::js_error;
+use crate::client::{js, opfs};
 
 const ARTIFACTS_DIRECTORY: &str = "artifacts";
 const VERSIONS_KEPT: usize = 2;
@@ -28,10 +28,12 @@ impl OpfsArtifactCache {
     /// requests persistent storage. Returns a `cache: opfs unsupported`-prefixed error when OPFS is
     /// absent.
     pub async fn create() -> Result<OpfsArtifactCache, AppError> {
-        let root: FileSystemDirectoryHandle = opfs_root().await?;
-        get_or_create_directory(&root, ARTIFACTS_DIRECTORY).await?;
+        let root: FileSystemDirectoryHandle = opfs::root()
+            .await
+            .map_err(|error| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: {error}")))?;
+        opfs::get_or_create_directory(&root, ARTIFACTS_DIRECTORY).await?;
 
-        request_persistence().await;
+        opfs::request_persistence().await;
 
         Ok(OpfsArtifactCache)
     }
@@ -58,7 +60,7 @@ impl OpfsArtifactCache {
 
 impl ArtifactCache for OpfsArtifactCache {
     async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError> {
-        let root: FileSystemDirectoryHandle = opfs_root().await?;
+        let root: FileSystemDirectoryHandle = opfs::root().await?;
 
         check_quota(bytes.len()).await?;
 
@@ -68,12 +70,12 @@ impl ArtifactCache for OpfsArtifactCache {
         let file_options: FileSystemGetFileOptions = FileSystemGetFileOptions::new();
         file_options.set_create(true);
         let file_handle: FileSystemFileHandle =
-            await_and_cast(parent.get_file_handle_with_options(file_name, &file_options)).await?;
+            opfs::await_and_cast(parent.get_file_handle_with_options(file_name, &file_options)).await?;
 
         let writable_value: JsValue = JsFuture::from(file_handle.create_writable())
             .await
             .map_err(cache_write_error)?;
-        let writable: FileSystemWritableFileStream = writable_value.dyn_into().map_err(cache_type_error)?;
+        let writable: FileSystemWritableFileStream = writable_value.dyn_into().map_err(js::type_error)?;
 
         let write_promise: Promise = writable.write_with_u8_array(bytes).map_err(cache_write_error)?;
         JsFuture::from(write_promise)
@@ -88,7 +90,7 @@ impl ArtifactCache for OpfsArtifactCache {
     }
 
     async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError> {
-        let root: FileSystemDirectoryHandle = opfs_root().await?;
+        let root: FileSystemDirectoryHandle = opfs::root().await?;
 
         let Some((parent, file_name)) =
             find_artifact_directory(&root, version_label, file_relative_path).await?
@@ -96,30 +98,30 @@ impl ArtifactCache for OpfsArtifactCache {
             return Ok(None);
         };
 
-        let Some(file_handle) = get_file_handle_if_present(&parent, file_name).await? else {
+        let Some(file_handle) = opfs::get_file_handle_if_present(&parent, file_name).await? else {
             return Ok(None);
         };
 
-        let file: File = await_and_cast(file_handle.get_file()).await?;
-        let bytes: Vec<u8> = read_file_bytes(&file).await?;
+        let file: File = opfs::await_and_cast(file_handle.get_file()).await?;
+        let bytes: Vec<u8> = opfs::read_file_bytes(&file).await?;
 
         Ok(Some(bytes))
     }
 
     async fn list_versions(&self) -> Result<Vec<String>, AppError> {
-        let root: FileSystemDirectoryHandle = opfs_root().await?;
+        let root: FileSystemDirectoryHandle = opfs::root().await?;
 
-        let Some(artifacts) = get_directory_if_present(&root, ARTIFACTS_DIRECTORY).await? else {
+        let Some(artifacts) = opfs::get_directory_if_present(&root, ARTIFACTS_DIRECTORY).await? else {
             return Ok(Vec::new());
         };
 
-        list_directory_keys(&artifacts).await
+        opfs::list_directory_keys(&artifacts).await
     }
 
     async fn delete_version(&self, version_label: &str) -> Result<(), AppError> {
-        let root: FileSystemDirectoryHandle = opfs_root().await?;
+        let root: FileSystemDirectoryHandle = opfs::root().await?;
 
-        let Some(artifacts) = get_directory_if_present(&root, ARTIFACTS_DIRECTORY).await? else {
+        let Some(artifacts) = opfs::get_directory_if_present(&root, ARTIFACTS_DIRECTORY).await? else {
             return Ok(());
         };
 
@@ -130,80 +132,9 @@ impl ArtifactCache for OpfsArtifactCache {
             JsFuture::from(artifacts.remove_entry_with_options(version_label, &remove_options)).await;
         match remove_result {
             Ok(_) => Ok(()),
-            Err(error) if is_dom_exception_not_found(&error) => Ok(()),
-            Err(error) => Err(cache_error(error)),
+            Err(error) if js::is_dom_exception_named(&error, "NotFoundError") => Ok(()),
+            Err(error) => Err(js::error(error)),
         }
-    }
-}
-
-/// The OPFS root handle, or a `cache: opfs unsupported`-prefixed error when the browser lacks OPFS.
-async fn opfs_root() -> Result<FileSystemDirectoryHandle, AppError> {
-    let window: web_sys::Window = web_sys::window()
-        .ok_or_else(|| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: no window")))?;
-
-    let root_value: JsValue = JsFuture::from(window.navigator().storage().get_directory())
-        .await
-        .map_err(|error| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: {}", js_error::js_error_message(&error))))?;
-
-    root_value
-        .dyn_into::<FileSystemDirectoryHandle>()
-        .map_err(|_| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: getDirectory returned a non-handle")))
-}
-
-/// Requests persistent (non-evictable) storage. The result is advisory, so this only logs it and never
-/// blocks cache construction.
-async fn request_persistence() {
-    let Some(window) = web_sys::window() else {
-        return;
-    };
-
-    match window.navigator().storage().persist() {
-        Ok(promise) => match JsFuture::from(promise).await {
-            Ok(granted) => log::info!("requested persistent storage [granted={:?}]", granted.as_bool()),
-            Err(error) => log::info!("persistent-storage request rejected [error={}]", js_error::js_error_message(&error)),
-        },
-        Err(error) => log::info!("persistent-storage request unavailable [error={}]", js_error::js_error_message(&error)),
-    }
-}
-
-async fn await_and_cast<T: JsCast>(promise: Promise) -> Result<T, AppError> {
-    let value: JsValue = JsFuture::from(promise).await.map_err(cache_error)?;
-
-    value.dyn_into::<T>().map_err(cache_type_error)
-}
-
-async fn get_or_create_directory(
-    parent: &FileSystemDirectoryHandle,
-    name: &str,
-) -> Result<FileSystemDirectoryHandle, AppError> {
-    let options: FileSystemGetDirectoryOptions = FileSystemGetDirectoryOptions::new();
-    options.set_create(true);
-
-    await_and_cast(parent.get_directory_handle_with_options(name, &options)).await
-}
-
-/// The child directory, or `None` when it is absent (a `NotFoundError` rejection = cache miss). Any
-/// other rejection is a real failure and propagates.
-async fn get_directory_if_present(
-    parent: &FileSystemDirectoryHandle,
-    name: &str,
-) -> Result<Option<FileSystemDirectoryHandle>, AppError> {
-    match JsFuture::from(parent.get_directory_handle(name)).await {
-        Ok(value) => Ok(Some(value.dyn_into::<FileSystemDirectoryHandle>().map_err(cache_type_error)?)),
-        Err(error) if is_dom_exception_not_found(&error) => Ok(None),
-        Err(error) => Err(cache_error(error)),
-    }
-}
-
-/// The file handle, or `None` on a `NotFoundError` (cache miss); other rejections propagate.
-async fn get_file_handle_if_present(
-    parent: &FileSystemDirectoryHandle,
-    name: &str,
-) -> Result<Option<FileSystemFileHandle>, AppError> {
-    match JsFuture::from(parent.get_file_handle(name)).await {
-        Ok(value) => Ok(Some(value.dyn_into::<FileSystemFileHandle>().map_err(cache_type_error)?)),
-        Err(error) if is_dom_exception_not_found(&error) => Ok(None),
-        Err(error) => Err(cache_error(error)),
     }
 }
 
@@ -220,7 +151,7 @@ async fn create_artifact_directory<'path>(
         .into_iter()
         .chain(directory_path.split('/').filter(|segment| !segment.is_empty()))
     {
-        directory = get_or_create_directory(&directory, segment).await?;
+        directory = opfs::get_or_create_directory(&directory, segment).await?;
     }
 
     Ok((directory, file_name))
@@ -239,7 +170,7 @@ async fn find_artifact_directory<'path>(
         .into_iter()
         .chain(directory_path.split('/').filter(|segment| !segment.is_empty()))
     {
-        let Some(next) = get_directory_if_present(&directory, segment).await? else {
+        let Some(next) = opfs::get_directory_if_present(&directory, segment).await? else {
             return Ok(None);
         };
         directory = next;
@@ -251,19 +182,9 @@ async fn find_artifact_directory<'path>(
 /// Fails with a `cache: quota exceeded`-prefixed error when writing `incoming_len` bytes would leave
 /// less than the safety margin free, so a partial write never lands.
 async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
-    let Some(window) = web_sys::window() else {
+    let Some(estimate) = opfs::estimate().await? else {
         return Ok(());
     };
-
-    let estimate_promise: Promise = window
-        .navigator()
-        .storage()
-        .estimate()
-        .map_err(|error| AppError::from(format!("cache: storage estimate failed: {}", js_error::js_error_message(&error))))?;
-    let estimate_value: JsValue = JsFuture::from(estimate_promise)
-        .await
-        .map_err(|error| AppError::from(format!("cache: storage estimate rejected: {}", js_error::js_error_message(&error))))?;
-    let estimate: StorageEstimate = estimate_value.dyn_into().map_err(cache_type_error)?;
 
     let usage: f64 = estimate.get_usage().unwrap_or(0.0);
     let quota: f64 = estimate.get_quota().unwrap_or(f64::INFINITY);
@@ -281,64 +202,12 @@ fn quota_allows(usage: f64, quota: f64, incoming_len: usize) -> bool {
     quota - usage >= incoming_len as f64 + QUOTA_SAFETY_MARGIN_BYTES
 }
 
-async fn read_file_bytes(file: &File) -> Result<Vec<u8>, AppError> {
-    let buffer_value: JsValue = JsFuture::from(file.array_buffer())
-        .await
-        .map_err(cache_error)?;
-    let array_buffer: ArrayBuffer = buffer_value.dyn_into()
-        .map_err(cache_type_error)?;
-
-    Ok(Uint8Array::new(&array_buffer).to_vec())
-}
-
-/// The immediate entry names of a directory. `FileSystemDirectoryHandle::keys()` returns a JS async
-/// iterator; each `next()` yields a promise resolving to an `{ value, done }` object, so the drive loop
-/// awaits every step.
-async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<Vec<String>, AppError> {
-    let iterator: AsyncIterator = handle.keys();
-
-    let mut key_strings: Vec<String> = Vec::new();
-    loop {
-        let next_promise: Promise = iterator.next().map_err(cache_error)?;
-        let next_value: JsValue = JsFuture::from(next_promise).await.map_err(cache_error)?;
-        let iterator_next: IteratorNext = next_value.dyn_into().map_err(cache_type_error)?;
-
-        if iterator_next.done() {
-            break;
-        }
-
-        let key_string: String = iterator_next
-            .value()
-            .as_string()
-            .ok_or_else(|| AppError::from("cache: directory key is not a string".to_string()))?;
-        key_strings.push(key_string);
-    }
-
-    Ok(key_strings)
-}
-
-fn cache_error(error: JsValue) -> AppError {
-    AppError::from(format!("cache: {}", js_error::js_error_message(&error)))
-}
-
 fn cache_write_error(error: JsValue) -> AppError {
-    if is_dom_exception_quota_exceeded(&error) {
-        return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js_error::js_error_message(&error)));
+    if js::is_dom_exception_named(&error, "QuotaExceededError") {
+        return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js::error_message(&error)));
     }
 
-    cache_error(error)
-}
-
-fn cache_type_error(value: JsValue) -> AppError {
-    AppError::from(format!("cache: unexpected JS value type: {value:?}"))
-}
-
-fn is_dom_exception_not_found(error: &JsValue) -> bool {
-    js_error::is_dom_exception_named(error, "NotFoundError")
-}
-
-fn is_dom_exception_quota_exceeded(error: &JsValue) -> bool {
-    js_error::is_dom_exception_named(error, "QuotaExceededError")
+    js::error(error)
 }
 
 #[cfg(test)]
