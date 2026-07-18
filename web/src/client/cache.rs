@@ -76,19 +76,15 @@ impl ArtifactCache for OpfsArtifactCache {
         let file_handle: FileSystemFileHandle =
             js::await_and_cast(parent.get_file_handle_with_options(file_name, &file_options)).await?;
 
-        let writable_value: JsValue = JsFuture::from(file_handle.create_writable())
-            .await
-            .map_err(cache_write_error)?;
+        let writable_promise: Promise = file_handle.create_writable();
+        let writable_value: JsValue = JsFuture::from(writable_promise).await.map_err(cache_write_error)?;
         let writable: FileSystemWritableFileStream = js::dyn_into(writable_value)?;
 
         let write_promise: Promise = writable.write_with_u8_array(bytes).map_err(cache_write_error)?;
-        JsFuture::from(write_promise)
-            .await
-            .map_err(cache_write_error)?;
+        JsFuture::from(write_promise).await.map_err(cache_write_error)?;
 
-        JsFuture::from(writable.close())
-            .await
-            .map_err(cache_write_error)?;
+        let close_promise: Promise = writable.close();
+        JsFuture::from(close_promise).await.map_err(cache_write_error)?;
 
         Ok(())
     }
@@ -132,10 +128,10 @@ impl ArtifactCache for OpfsArtifactCache {
         let remove_options: FileSystemRemoveOptions = FileSystemRemoveOptions::new();
         remove_options.set_recursive(true);
 
-        let remove_result: Result<JsValue, JsValue> =
-            JsFuture::from(artifacts.remove_entry_with_options(version_label, &remove_options)).await;
+        let remove_promise: Promise = artifacts.remove_entry_with_options(version_label, &remove_options);
+        let remove_result: Result<JsValue, JsValue> = JsFuture::from(remove_promise).await;
         match remove_result {
-            Ok(_) => Ok(()),
+            Ok(_) => Ok(()), // removeEntry promise resolves to undefined
             Err(error) if js::is_dom_exception_named(&error, "NotFoundError") => Ok(()),
             Err(error) => Err(js::error(error)),
         }

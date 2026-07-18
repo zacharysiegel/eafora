@@ -12,9 +12,8 @@ use crate::client::js;
 pub async fn root() -> Result<FileSystemDirectoryHandle, AppError> {
     let window: web_sys::Window = js::get_window()?;
 
-    let root_value: JsValue = JsFuture::from(window.navigator().storage().get_directory())
-        .await
-        .map_err(js::error)?;
+    let directory_promise: Promise = window.navigator().storage().get_directory();
+    let root_value: JsValue = JsFuture::from(directory_promise).await.map_err(js::error)?;
 
     js::dyn_into::<FileSystemDirectoryHandle>(root_value)
 }
@@ -44,7 +43,8 @@ pub async fn get_directory(
     parent: &FileSystemDirectoryHandle,
     name: &str,
 ) -> Result<Option<FileSystemDirectoryHandle>, AppError> {
-    match JsFuture::from(parent.get_directory_handle(name)).await {
+    let directory_promise: Promise = parent.get_directory_handle(name);
+    match JsFuture::from(directory_promise).await {
         Ok(value) => Ok(Some(js::dyn_into::<FileSystemDirectoryHandle>(value)?)),
         Err(error) if js::is_dom_exception_named(&error, "NotFoundError") => Ok(None),
         Err(error) => Err(js::error(error)),
@@ -56,7 +56,8 @@ pub async fn get_file(
     parent: &FileSystemDirectoryHandle,
     name: &str,
 ) -> Result<Option<FileSystemFileHandle>, AppError> {
-    match JsFuture::from(parent.get_file_handle(name)).await {
+    let file_promise: Promise = parent.get_file_handle(name);
+    match JsFuture::from(file_promise).await {
         Ok(value) => Ok(Some(js::dyn_into::<FileSystemFileHandle>(value)?)),
         Err(error) if js::is_dom_exception_named(&error, "NotFoundError") => Ok(None),
         Err(error) => Err(js::error(error)),
@@ -64,7 +65,8 @@ pub async fn get_file(
 }
 
 pub async fn read_file_bytes(file: &File) -> Result<Vec<u8>, AppError> {
-    let buffer_value: JsValue = JsFuture::from(file.array_buffer()).await.map_err(js::error)?;
+    let buffer_promise: Promise = file.array_buffer();
+    let buffer_value: JsValue = JsFuture::from(buffer_promise).await.map_err(js::error)?;
     let array_buffer: ArrayBuffer = js::dyn_into(buffer_value)?;
 
     Ok(Uint8Array::new(&array_buffer).to_vec())
