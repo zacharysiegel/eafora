@@ -1,5 +1,5 @@
 use js_sys::{ArrayBuffer, AsyncIterator, IteratorNext, Promise, Uint8Array};
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetDirectoryOptions, StorageEstimate,
@@ -16,7 +16,7 @@ pub async fn root() -> Result<FileSystemDirectoryHandle, AppError> {
         .await
         .map_err(js::error)?;
 
-    root_value.dyn_into::<FileSystemDirectoryHandle>().map_err(js::type_error)
+    js::dyn_into::<FileSystemDirectoryHandle>(root_value)
 }
 
 /// Requests persistent (non-evictable) storage; `Ok(true)` if granted, `Ok(false)` if denied.
@@ -40,24 +40,24 @@ pub async fn get_or_create_directory(
 }
 
 /// The child directory, or `None` when it is absent (a `NotFoundError`). Other rejections propagate.
-pub async fn get_directory_if_present(
+pub async fn get_directory(
     parent: &FileSystemDirectoryHandle,
     name: &str,
 ) -> Result<Option<FileSystemDirectoryHandle>, AppError> {
     match JsFuture::from(parent.get_directory_handle(name)).await {
-        Ok(value) => Ok(Some(value.dyn_into::<FileSystemDirectoryHandle>().map_err(js::type_error)?)),
+        Ok(value) => Ok(Some(js::dyn_into::<FileSystemDirectoryHandle>(value)?)),
         Err(error) if js::is_dom_exception_named(&error, "NotFoundError") => Ok(None),
         Err(error) => Err(js::error(error)),
     }
 }
 
 /// The file handle, or `None` when it is absent (a `NotFoundError`). Other rejections propagate.
-pub async fn get_file_handle_if_present(
+pub async fn get_file(
     parent: &FileSystemDirectoryHandle,
     name: &str,
 ) -> Result<Option<FileSystemFileHandle>, AppError> {
     match JsFuture::from(parent.get_file_handle(name)).await {
-        Ok(value) => Ok(Some(value.dyn_into::<FileSystemFileHandle>().map_err(js::type_error)?)),
+        Ok(value) => Ok(Some(js::dyn_into::<FileSystemFileHandle>(value)?)),
         Err(error) if js::is_dom_exception_named(&error, "NotFoundError") => Ok(None),
         Err(error) => Err(js::error(error)),
     }
@@ -65,7 +65,7 @@ pub async fn get_file_handle_if_present(
 
 pub async fn read_file_bytes(file: &File) -> Result<Vec<u8>, AppError> {
     let buffer_value: JsValue = JsFuture::from(file.array_buffer()).await.map_err(js::error)?;
-    let array_buffer: ArrayBuffer = buffer_value.dyn_into().map_err(js::type_error)?;
+    let array_buffer: ArrayBuffer = js::dyn_into(buffer_value)?;
 
     Ok(Uint8Array::new(&array_buffer).to_vec())
 }
@@ -79,7 +79,7 @@ pub async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<V
     loop {
         let next_promise: Promise = iterator.next().map_err(js::error)?;
         let next_value: JsValue = JsFuture::from(next_promise).await.map_err(js::error)?;
-        let iterator_next: IteratorNext = next_value.dyn_into().map_err(js::type_error)?;
+        let iterator_next: IteratorNext = js::dyn_into(next_value)?;
 
         if iterator_next.done() {
             break;
@@ -104,5 +104,5 @@ pub async fn estimate() -> Result<Option<StorageEstimate>, AppError> {
     let estimate_promise: Promise = window.navigator().storage().estimate().map_err(js::error)?;
     let estimate_value: JsValue = JsFuture::from(estimate_promise).await.map_err(js::error)?;
 
-    Ok(Some(estimate_value.dyn_into::<StorageEstimate>().map_err(js::type_error)?))
+    Ok(Some(js::dyn_into::<StorageEstimate>(estimate_value)?))
 }

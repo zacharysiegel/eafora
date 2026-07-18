@@ -1,5 +1,5 @@
 use js_sys::Promise;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetFileOptions, FileSystemRemoveOptions,
@@ -79,7 +79,7 @@ impl ArtifactCache for OpfsArtifactCache {
         let writable_value: JsValue = JsFuture::from(file_handle.create_writable())
             .await
             .map_err(cache_write_error)?;
-        let writable: FileSystemWritableFileStream = writable_value.dyn_into().map_err(js::type_error)?;
+        let writable: FileSystemWritableFileStream = js::dyn_into(writable_value)?;
 
         let write_promise: Promise = writable.write_with_u8_array(bytes).map_err(cache_write_error)?;
         JsFuture::from(write_promise)
@@ -102,7 +102,7 @@ impl ArtifactCache for OpfsArtifactCache {
             return Ok(None);
         };
 
-        let Some(file_handle) = opfs::get_file_handle_if_present(&parent, file_name).await? else {
+        let Some(file_handle) = opfs::get_file(&parent, file_name).await? else {
             return Ok(None);
         };
 
@@ -115,7 +115,7 @@ impl ArtifactCache for OpfsArtifactCache {
     async fn list_versions(&self) -> Result<Vec<String>, AppError> {
         let root: FileSystemDirectoryHandle = opfs::root().await?;
 
-        let Some(artifacts) = opfs::get_directory_if_present(&root, ARTIFACTS_DIRECTORY).await? else {
+        let Some(artifacts) = opfs::get_directory(&root, ARTIFACTS_DIRECTORY).await? else {
             return Ok(Vec::new());
         };
 
@@ -125,7 +125,7 @@ impl ArtifactCache for OpfsArtifactCache {
     async fn delete_version(&self, version_label: &str) -> Result<(), AppError> {
         let root: FileSystemDirectoryHandle = opfs::root().await?;
 
-        let Some(artifacts) = opfs::get_directory_if_present(&root, ARTIFACTS_DIRECTORY).await? else {
+        let Some(artifacts) = opfs::get_directory(&root, ARTIFACTS_DIRECTORY).await? else {
             return Ok(());
         };
 
@@ -174,7 +174,7 @@ async fn find_artifact_directory<'path>(
         .into_iter()
         .chain(directory_path.split('/').filter(|segment| !segment.is_empty()))
     {
-        let Some(next) = opfs::get_directory_if_present(&directory, segment).await? else {
+        let Some(next) = opfs::get_directory(&directory, segment).await? else {
             return Ok(None);
         };
         directory = next;

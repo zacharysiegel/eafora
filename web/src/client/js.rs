@@ -12,6 +12,10 @@ pub fn get_window() -> Result<web_sys::Window, AppError> {
 pub async fn await_and_cast<T: JsCast>(promise: Promise) -> Result<T, AppError> {
     let value: JsValue = JsFuture::from(promise).await.map_err(error)?;
 
+    dyn_into(value)
+}
+
+pub fn dyn_into<T: JsCast>(value: JsValue) -> Result<T, AppError> {
     value.dyn_into::<T>().map_err(type_error)
 }
 
