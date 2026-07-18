@@ -19,19 +19,14 @@ pub async fn root() -> Result<FileSystemDirectoryHandle, AppError> {
     root_value.dyn_into::<FileSystemDirectoryHandle>().map_err(js::type_error)
 }
 
-/// Advisory: logs the outcome and never blocks, since persistence is best-effort.
-pub async fn request_persistence() {
-    let Some(window) = web_sys::window() else {
-        return;
-    };
+/// Requests persistent (non-evictable) storage; `Ok(true)` if granted, `Ok(false)` if denied.
+pub async fn request_persistence() -> Result<bool, AppError> {
+    let window: web_sys::Window = web_sys::window().ok_or_else(|| AppError::from("no window".to_string()))?;
 
-    match window.navigator().storage().persist() {
-        Ok(promise) => match JsFuture::from(promise).await {
-            Ok(granted) => log::info!("requested persistent storage [granted={:?}]", granted.as_bool()),
-            Err(error) => log::info!("persistent-storage request rejected [error={}]", js::error_message(&error)),
-        },
-        Err(error) => log::info!("persistent-storage request unavailable [error={}]", js::error_message(&error)),
-    }
+    let persist_promise: Promise = window.navigator().storage().persist().map_err(js::error)?;
+    let granted: JsValue = JsFuture::from(persist_promise).await.map_err(js::error)?;
+
+    Ok(granted.as_bool().unwrap_or(false))
 }
 
 pub async fn await_and_cast<T: JsCast>(promise: Promise) -> Result<T, AppError> {

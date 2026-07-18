@@ -33,7 +33,11 @@ impl OpfsArtifactCache {
             .map_err(|error| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: {error}")))?;
         opfs::get_or_create_directory(&root, ARTIFACTS_DIRECTORY).await?;
 
-        opfs::request_persistence().await;
+        // Persistent storage is advisory; log the outcome but never fail construction if it's denied.
+        match opfs::request_persistence().await {
+            Ok(granted) => log::info!("requested persistent storage [granted={granted}]"),
+            Err(error) => log::info!("persistent-storage request failed [error={error}]"),
+        }
 
         Ok(OpfsArtifactCache)
     }
