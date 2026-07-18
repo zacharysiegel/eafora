@@ -9,8 +9,12 @@ use shared::AppError;
 
 use crate::client::js;
 
+fn get_window() -> Result<web_sys::Window, AppError> {
+    web_sys::window().ok_or_else(|| AppError::from("no window".to_string()))
+}
+
 pub async fn root() -> Result<FileSystemDirectoryHandle, AppError> {
-    let window: web_sys::Window = web_sys::window().ok_or_else(|| AppError::from("no window".to_string()))?;
+    let window: web_sys::Window = get_window()?;
 
     let root_value: JsValue = JsFuture::from(window.navigator().storage().get_directory())
         .await
@@ -21,12 +25,12 @@ pub async fn root() -> Result<FileSystemDirectoryHandle, AppError> {
 
 /// Requests persistent (non-evictable) storage; `Ok(true)` if granted, `Ok(false)` if denied.
 pub async fn request_persistence() -> Result<bool, AppError> {
-    let window: web_sys::Window = web_sys::window().ok_or_else(|| AppError::from("no window".to_string()))?;
+    let window: web_sys::Window = get_window()?;
 
     let persist_promise: Promise = window.navigator().storage().persist().map_err(js::error)?;
     let granted: JsValue = JsFuture::from(persist_promise).await.map_err(js::error)?;
-
-    Ok(granted.as_bool().unwrap_or(false))
+    let granted: bool = granted.as_bool().unwrap_or(false);
+    Ok(granted)
 }
 
 pub async fn await_and_cast<T: JsCast>(promise: Promise) -> Result<T, AppError> {
@@ -103,7 +107,7 @@ pub async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<V
 
 /// The storage estimate, or `None` when there is no window to query.
 pub async fn estimate() -> Result<Option<StorageEstimate>, AppError> {
-    let Some(window) = web_sys::window() else {
+    let Ok(window) = get_window() else {
         return Ok(None);
     };
 
