@@ -19,6 +19,10 @@ pub fn dyn_into<T: JsCast>(value: JsValue) -> Result<T, AppError> {
     value.dyn_into::<T>().map_err(type_error)
 }
 
+pub fn dyn_ref<T: JsCast>(value: &JsValue) -> Result<&T, AppError> {
+    value.dyn_ref::<T>().ok_or_else(|| type_error(value.clone()))
+}
+
 pub fn error_message(error: &JsValue) -> String {
     if let Some(dom_exception) = error.dyn_ref::<DomException>() {
         return format!("{}: {}", dom_exception.name(), dom_exception.message());
