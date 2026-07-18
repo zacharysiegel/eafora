@@ -30,6 +30,20 @@ impl ShardValues {
 
         Some((self.min, self.max))
     }
+
+    /// The earliest and latest `period_start` across all regions, distinct from `range` (the value extent).
+    pub fn period_range(&self) -> Option<(NaiveDate, NaiveDate)> {
+        let mut period_starts = self
+            .by_region
+            .values()
+            .flat_map(|values_by_period| values_by_period.keys().copied());
+
+        let first: NaiveDate = period_starts.next()?;
+
+        Some(period_starts.fold((first, first), |(min, max), period_start| {
+            (min.min(period_start), max.max(period_start))
+        }))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -274,6 +288,10 @@ mod tests {
         assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()), Some(1.7));
         assert_eq!(shard.value("DEU", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
         assert_eq!(shard.range(), Some((1.5, 1.7)));
+        assert_eq!(
+            shard.period_range(),
+            Some((NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(), NaiveDate::from_ymd_opt(2021, 1, 1).unwrap())),
+        );
     }
 
     #[test]
