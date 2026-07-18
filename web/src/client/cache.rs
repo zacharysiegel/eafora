@@ -74,7 +74,7 @@ impl ArtifactCache for OpfsArtifactCache {
         let file_options: FileSystemGetFileOptions = FileSystemGetFileOptions::new();
         file_options.set_create(true);
         let file_handle: FileSystemFileHandle =
-            opfs::await_and_cast(parent.get_file_handle_with_options(file_name, &file_options)).await?;
+            js::await_and_cast(parent.get_file_handle_with_options(file_name, &file_options)).await?;
 
         let writable_value: JsValue = JsFuture::from(file_handle.create_writable())
             .await
@@ -106,7 +106,7 @@ impl ArtifactCache for OpfsArtifactCache {
             return Ok(None);
         };
 
-        let file: File = opfs::await_and_cast(file_handle.get_file()).await?;
+        let file: File = js::await_and_cast(file_handle.get_file()).await?;
         let bytes: Vec<u8> = opfs::read_file_bytes(&file).await?;
 
         Ok(Some(bytes))

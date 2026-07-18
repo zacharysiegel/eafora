@@ -29,12 +29,6 @@ pub async fn request_persistence() -> Result<bool, AppError> {
     Ok(granted)
 }
 
-pub async fn await_and_cast<T: JsCast>(promise: Promise) -> Result<T, AppError> {
-    let value: JsValue = JsFuture::from(promise).await.map_err(js::error)?;
-
-    value.dyn_into::<T>().map_err(js::type_error)
-}
-
 pub async fn get_or_create_directory(
     parent: &FileSystemDirectoryHandle,
     name: &str,
@@ -42,7 +36,7 @@ pub async fn get_or_create_directory(
     let options: FileSystemGetDirectoryOptions = FileSystemGetDirectoryOptions::new();
     options.set_create(true);
 
-    await_and_cast(parent.get_directory_handle_with_options(name, &options)).await
+    js::await_and_cast(parent.get_directory_handle_with_options(name, &options)).await
 }
 
 /// The child directory, or `None` when it is absent (a `NotFoundError`). Other rejections propagate.
