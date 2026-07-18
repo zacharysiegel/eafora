@@ -138,19 +138,28 @@ impl ArtifactCache for OpfsArtifactCache {
     }
 }
 
+fn split_directory_and_file(file_relative_path: &str) -> (&str, &str) {
+    file_relative_path.rsplit_once('/').unwrap_or(("", file_relative_path))
+}
+
+fn artifact_directory_segments<'a>(
+    version_label: &'a str,
+    directory_path: &'a str,
+) -> impl Iterator<Item = &'a str> {
+    [ARTIFACTS_DIRECTORY, version_label]
+        .into_iter()
+        .chain(directory_path.split('/').filter(|segment| !segment.is_empty()))
+}
+
 async fn create_artifact_directory<'path>(
     root: &FileSystemDirectoryHandle,
     version_label: &str,
     file_relative_path: &'path str,
 ) -> Result<(FileSystemDirectoryHandle, &'path str), AppError> {
-    let (directory_path, file_name): (&str, &str) = file_relative_path.rsplit_once('/')
-        .unwrap_or(("", file_relative_path));
+    let (directory_path, file_name): (&str, &str) = split_directory_and_file(file_relative_path);
 
     let mut directory: FileSystemDirectoryHandle = root.clone();
-    for segment in [ARTIFACTS_DIRECTORY, version_label]
-        .into_iter()
-        .chain(directory_path.split('/').filter(|segment| !segment.is_empty()))
-    {
+    for segment in artifact_directory_segments(version_label, directory_path) {
         directory = opfs::get_or_create_directory(&directory, segment).await?;
     }
 
@@ -162,14 +171,10 @@ async fn find_artifact_directory<'path>(
     version_label: &str,
     file_relative_path: &'path str,
 ) -> Result<Option<(FileSystemDirectoryHandle, &'path str)>, AppError> {
-    let (directory_path, file_name): (&str, &str) =
-        file_relative_path.rsplit_once('/').unwrap_or(("", file_relative_path));
+    let (directory_path, file_name): (&str, &str) = split_directory_and_file(file_relative_path);
 
     let mut directory: FileSystemDirectoryHandle = root.clone();
-    for segment in [ARTIFACTS_DIRECTORY, version_label]
-        .into_iter()
-        .chain(directory_path.split('/').filter(|segment| !segment.is_empty()))
-    {
+    for segment in artifact_directory_segments(version_label, directory_path) {
         let Some(next) = opfs::get_directory(&directory, segment).await? else {
             return Ok(None);
         };
@@ -202,9 +207,9 @@ fn quota_allows(usage: f64, quota: f64, incoming_len: usize) -> bool {
     quota - usage >= incoming_len as f64 + QUOTA_SAFETY_MARGIN_BYTES
 }
 
-// Callers classify a quota failure by matching this prefix, not a typed variant: `AppError` is a flat
-// string message, and the JS `QuotaExceededError` is identified only by its DOMException name, so the
-// "quota" signal is stringly typed on both sides and must ride in the message.
+/// Callers classify a quota failure by matching this prefix, not a typed variant: `AppError` is a flat
+/// string message, and the JS `QuotaExceededError` is identified only by its DOMException name, so the
+/// "quota" signal is stringly typed on both sides and must ride in the message.
 fn cache_write_error(error: JsValue) -> AppError {
     if js::is_dom_exception_named(&error, "QuotaExceededError") {
         return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js::error_message(&error)));
