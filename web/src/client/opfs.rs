@@ -95,14 +95,11 @@ pub async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<V
     Ok(key_strings)
 }
 
-/// The storage estimate, or `None` when there is no window to query.
-pub async fn estimate() -> Result<Option<StorageEstimate>, AppError> {
-    let Ok(window) = js::get_window() else {
-        return Ok(None);
-    };
+pub async fn estimate() -> Result<StorageEstimate, AppError> {
+    let window: web_sys::Window = js::get_window()?;
 
     let estimate_promise: Promise = window.navigator().storage().estimate().map_err(js::error)?;
     let estimate_value: JsValue = JsFuture::from(estimate_promise).await.map_err(js::error)?;
 
-    Ok(Some(js::dyn_into::<StorageEstimate>(estimate_value)?))
+    js::dyn_into::<StorageEstimate>(estimate_value)
 }

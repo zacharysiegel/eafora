@@ -3,7 +3,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetFileOptions, FileSystemRemoveOptions,
-    FileSystemWritableFileStream,
+    FileSystemWritableFileStream, StorageEstimate,
 };
 
 use shared::AppError;
@@ -186,9 +186,7 @@ async fn find_artifact_directory<'path>(
 /// Fails with a `cache: quota exceeded`-prefixed error when writing `incoming_len` bytes would leave
 /// less than the safety margin free, so a partial write never lands.
 async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
-    let Some(estimate) = opfs::estimate().await? else {
-        return Ok(());
-    };
+    let estimate: StorageEstimate = opfs::estimate().await?;
 
     let usage: f64 = estimate.get_usage().unwrap_or(0.0);
     let quota: f64 = estimate.get_quota().unwrap_or(f64::INFINITY);
