@@ -39,7 +39,7 @@ pub async fn build_artifacts(
     let statistic_kinds: BTreeSet<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
     let (shards, data_sources): (Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>) =
-        create_statistic_shards(connection, artifact_dir, &source_choices, statistic_kinds, options.downsampled).await?;
+        create_statistic_shards(connection, artifact_dir, &source_choices, statistic_kinds, options).await?;
     let geometry: Hashed<FileReference> = create_geometry(connection, artifact_dir, options).await?;
 
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
@@ -70,7 +70,7 @@ async fn create_statistic_shards(
     artifact_dir: &Path,
     source_choices: &[SourceChoice],
     statistic_kinds: BTreeSet<StatisticKind>,
-    downsampled: bool,
+    options: BuildOptions,
 ) -> Result<(Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>), AppError> {
     let mut shards: Vec<StatisticShard<Hashed<FileReference>>> = Vec::new();
     let mut data_sources: BTreeSet<DataSourceKind> = BTreeSet::new();
@@ -91,7 +91,7 @@ async fn create_statistic_shards(
         }
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, source_choices)?;
-        let resolved: Vec<ResolvedValue> = if downsampled {
+        let resolved: Vec<ResolvedValue> = if options.downsampled {
             keep_latest_period_per_region(resolved)
         } else {
             resolved
