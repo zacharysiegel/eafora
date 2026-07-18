@@ -73,14 +73,16 @@ impl ArtifactCache for OpfsArtifactCache {
 
         let file_options: FileSystemGetFileOptions = FileSystemGetFileOptions::new();
         file_options.set_create(true);
-        let file_handle: FileSystemFileHandle =
-            js::await_and_cast(parent.get_file_handle_with_options(file_name, &file_options)).await?;
+        let file_handle: FileSystemFileHandle = js::await_and_cast(parent.get_file_handle_with_options(file_name, &file_options)).await?;
 
         let writable_promise: Promise = file_handle.create_writable();
-        let writable_value: JsValue = JsFuture::from(writable_promise).await.map_err(cache_write_error)?;
+        let writable_value: JsValue = JsFuture::from(writable_promise)
+            .await
+            .map_err(cache_write_error)?;
         let writable: FileSystemWritableFileStream = js::dyn_into(writable_value)?;
 
-        let write_promise: Promise = writable.write_with_u8_array(bytes).map_err(cache_write_error)?;
+        let write_promise: Promise = writable.write_with_u8_array(bytes)
+            .map_err(cache_write_error)?;
         JsFuture::from(write_promise).await.map_err(cache_write_error)?;
 
         let close_promise: Promise = writable.close();
