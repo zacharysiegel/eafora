@@ -67,7 +67,9 @@ fn build_cli() -> Command {
         )
         .subcommand(
             Command::new("build")
-                .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/"),
+                .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/")
+                .arg(Arg::new("downsampled").long("downsampled").action(ArgAction::SetTrue)
+                    .help("emit a compact bundle with only each region's most-recent value, for embedding in clients")),
         )
         .subcommand(
             Command::new("publish")
@@ -175,9 +177,12 @@ fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
     }
 }
 
-async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
+async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
+    let downsampled: bool = matches.get_flag("downsampled");
+    let options: BuildOptions = BuildOptions { test_offline: false, downsampled };
+
     let pool: PgPool = db::create_pool().await?;
-    let build: BuildReport = run_build(&pool).await?;
+    let build: BuildReport = run_build(&pool, options).await?;
 
     log::info!(
         "build complete; [version_label={} artifact_dir={:?} shards={} geometry={:?} manifest={:?}]",
@@ -190,14 +195,14 @@ async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn run_build(pool: &PgPool) -> Result<BuildReport, AppError> {
+async fn run_build(pool: &PgPool, options: BuildOptions) -> Result<BuildReport, AppError> {
     let parent: PathBuf = PathBuf::from(dotenvy::var("EAFORA_ARTIFACTS_DIR")?);
     let version_label: String = version_label::generate(pool).await?;
     let artifact_dir: PathBuf = parent.join(&version_label);
 
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
     let report: BuildReport =
-        artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, BuildOptions::default()).await?;
+        artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, options).await?;
     transaction.commit().await?;
 
     Ok(report)
@@ -212,7 +217,7 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
     let pool: PgPool = db::create_pool().await?;
 
     let build_report: BuildReport = if build_first {
-        run_build(&pool).await?
+        run_build(&pool, BuildOptions::default()).await?
     } else {
         let artifact_dir: PathBuf = PathBuf::from(
             sub_matches.get_one::<String>("artifact-dir").expect("artifact-dir is required when --build is absent"),

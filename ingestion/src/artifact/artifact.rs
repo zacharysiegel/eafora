@@ -4,6 +4,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use sqlx::PgConnection;
+use uuid::Uuid;
 
 use crate::artifact::artifact_model::{
     Artifacts, BuildReport, CandidateValue, ResolvedValue,
@@ -20,6 +21,7 @@ use shared::filesystem::{FileReference, Hashed};
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {
     pub test_offline: bool,
+    pub downsampled: bool,
 }
 
 pub async fn build_artifacts(
@@ -37,7 +39,7 @@ pub async fn build_artifacts(
     let statistic_kinds: BTreeSet<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
     let (shards, data_sources): (Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>) =
-        create_statistic_shards(connection, artifact_dir, &source_choices, statistic_kinds).await?;
+        create_statistic_shards(connection, artifact_dir, &source_choices, statistic_kinds, options.downsampled).await?;
     let geometry: Hashed<FileReference> = create_geometry(connection, artifact_dir, options).await?;
 
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
@@ -68,6 +70,7 @@ async fn create_statistic_shards(
     artifact_dir: &Path,
     source_choices: &[SourceChoice],
     statistic_kinds: BTreeSet<StatisticKind>,
+    downsampled: bool,
 ) -> Result<(Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>), AppError> {
     let mut shards: Vec<StatisticShard<Hashed<FileReference>>> = Vec::new();
     let mut data_sources: BTreeSet<DataSourceKind> = BTreeSet::new();
@@ -88,6 +91,12 @@ async fn create_statistic_shards(
         }
 
         let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, source_choices)?;
+        let resolved: Vec<ResolvedValue> = if downsampled {
+            keep_latest_period_per_region(resolved)
+        } else {
+            resolved
+        };
+
         let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &artifact_dir.join(manifest::SUBDIR_DATA))?;
         let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!(
@@ -100,6 +109,24 @@ async fn create_statistic_shards(
     }
 
     Ok((shards, data_sources))
+}
+
+/// Reduces a statistic's resolved values to each region's most-recent one, for the embedded bundle's
+/// single-time-slice shape. Run after `resolve_candidates` so the source is already chosen (preserving
+/// one-source-per-series); the `BTreeMap` keeps the output order deterministic.
+fn keep_latest_period_per_region(resolved: Vec<ResolvedValue>) -> Vec<ResolvedValue> {
+    let mut latest_value_by_region: BTreeMap<Uuid, ResolvedValue> = BTreeMap::new();
+    for value in resolved {
+        let is_more_recent: bool = match latest_value_by_region.get(&value.region_id) {
+            Some(existing) => value.period.end > existing.period.end,
+            None => true,
+        };
+        if is_more_recent {
+            latest_value_by_region.insert(value.region_id, value);
+        }
+    }
+
+    latest_value_by_region.into_values().collect()
 }
 
 async fn create_geometry(
@@ -115,4 +142,48 @@ async fn create_geometry(
     log::info!("wrote geometry {:?}", geometry.path);
     let geometry: Hashed<FileReference> = hashing::hash_geometry(geometry)?;
     Ok(geometry)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use shared::canonical::canonical_model::{DataStatus, LicenseShardClass, NaiveDatePeriod};
+
+    fn resolved_value(region_id: Uuid, year: i32, value: f64) -> ResolvedValue {
+        ResolvedValue {
+            region_id,
+            region_iso3: "AAA".to_string(),
+            statistic_kind: StatisticKind::try_from("tfr").unwrap(),
+            period: NaiveDatePeriod {
+                start: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
+                end: NaiveDate::from_ymd_opt(year, 12, 31).unwrap(),
+            },
+            value,
+            data_status: DataStatus::try_from("final").unwrap(),
+            data_source_kind: DataSourceKind::WorldBankWDI,
+            data_source_revision: "rev".to_string(),
+            license_shard_class: LicenseShardClass::try_from("base").unwrap(),
+        }
+    }
+
+    #[test]
+    fn keep_latest_period_per_region_keeps_the_newest_value_per_region() {
+        let region_a: Uuid = Uuid::now_v7();
+        let region_b: Uuid = Uuid::now_v7();
+        let resolved: Vec<ResolvedValue> = vec![
+            resolved_value(region_a, 2020, 1.0),
+            resolved_value(region_a, 2022, 2.0),
+            resolved_value(region_b, 2021, 3.0),
+        ];
+
+        let kept: Vec<ResolvedValue> = keep_latest_period_per_region(resolved);
+
+        assert_eq!(kept.len(), 2);
+        let region_a_kept: &ResolvedValue = kept.iter().find(|value| value.region_id == region_a).unwrap();
+        assert_eq!(region_a_kept.period.start, NaiveDate::from_ymd_opt(2022, 1, 1).unwrap());
+        assert!((region_a_kept.value - 2.0).abs() < f64::EPSILON);
+        let region_b_kept: &ResolvedValue = kept.iter().find(|value| value.region_id == region_b).unwrap();
+        assert_eq!(region_b_kept.period.start, NaiveDate::from_ymd_opt(2021, 1, 1).unwrap());
+    }
 }

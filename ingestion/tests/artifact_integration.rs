@@ -50,7 +50,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     ).await;
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let options: BuildOptions = BuildOptions { test_offline: true };
+    let options: BuildOptions = BuildOptions { test_offline: true, downsampled: false };
     let build: BuildReport =
         artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-05-26-test", options)
             .await
@@ -157,7 +157,67 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     transaction.rollback().await.unwrap();
 }
 
-/// Live HTTP test: downloads the pinned Natural Earth release and confirms
+/// A `--downsampled` build keeps only each region's most-recent period: two USA values across
+/// different years collapse to a single shard row carrying the latest.
+#[tokio::test]
+async fn build_artifacts_downsampled_keeps_only_each_region_latest_period() {
+    let pool: PgPool = test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
+    let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
+    let region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
+    let wb_published: DateTime<Utc> = "2024-12-31T00:00:00Z".parse().unwrap();
+    let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-12-12", wb_published).await;
+
+    insert_statistic_value(
+        &mut transaction,
+        region_id,
+        statistic_id,
+        data_source_id,
+        publication_id,
+        NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
+        1.60,
+    ).await;
+    insert_statistic_value(
+        &mut transaction,
+        region_id,
+        statistic_id,
+        data_source_id,
+        publication_id,
+        NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        1.66,
+    ).await;
+
+    let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let options: BuildOptions = BuildOptions { test_offline: true, downsampled: true };
+    let build: BuildReport =
+        artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-05-26-downsampled", options)
+            .await
+            .expect("downsampled build_artifacts succeeds");
+
+    let tfr_base_shard = &build.artifacts.shards[0];
+    let connection: Connection = Connection::open(&tfr_base_shard.file.path).unwrap();
+
+    let row_count: i64 = connection
+        .query_row("select count(*) from statistic_value", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(row_count, 1);
+
+    let (value, period_end): (f64, String) = connection
+        .query_row(
+            "select value, period_end from statistic_value where region_iso3 = 'USA'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert!((value - 1.66).abs() < f64::EPSILON);
+    assert_eq!(period_end, "2023-01-01");
+
+    transaction.rollback().await.unwrap();
+}
 /// the FGB has the expected layer + features. Gated behind `#[ignore]` so
 /// CI doesn't depend on naciscdn.org availability; run via
 /// `cargo test -p ingestion --test artifact_integration -- --ignored`.
