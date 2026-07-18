@@ -4,8 +4,9 @@ use crate::i18n::*;
 
 /// First-paint lifecycle of the map canvas. `Loading` covers the map until the embedded bundle is
 /// parsed and the surface is attached. `DataUnavailable` replaces it when the bundle can't be fetched
-/// or opened; `Unsupported` when no wgpu backend is available (FR-016). Server-side rendering leaves
-/// it at `Loading` since the renderer only runs client-side.
+/// or opened; `Unsupported` when the browser lacks a hard capability (no OPFS per FR-023, or no wgpu
+/// backend per FR-016). Server-side rendering leaves it at `Loading` since the renderer only runs
+/// client-side.
 #[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // the ssr build never runs the renderer, so it constructs only Loading
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStatus {
@@ -67,7 +68,7 @@ mod driver {
 
     use shared::AppError;
     use shared::artifact::{Bundle, StatisticShardKey};
-    use shared::canonical::{LicenseShardClass, StatisticKind};
+    use shared::canonical::StatisticKind;
     use shared::map::{FrameState, Renderer, RendererBackend, Viewport};
     use shared::map::projection;
     use shared::sqlite::shard_db;
@@ -96,12 +97,14 @@ mod driver {
     const WORLD_MIN_LON: f64 = -180.0;
     const WORLD_MAX_LON: f64 = 180.0;
 
-    /// The two first-paint failure modes the shell distinguishes: the artifact bundle could not be
-    /// fetched or opened, versus no usable wgpu backend (FR-016). `start` matches on this to choose
-    /// the panel; the variants carry the originating error for logging.
+    /// The two first-paint failure modes the shell distinguishes. `DataUnavailable` is a transient or
+    /// data-integrity failure fetching or opening the bundle. `BrowserUnsupported` is a missing hard
+    /// capability: no Origin Private File System (FR-023) or no usable wgpu backend (FR-016), both of
+    /// which share the unsupported panel. `start` matches on this to choose the panel; the variants
+    /// carry the originating error for logging.
     enum StartupError {
         DataUnavailable(AppError),
-        RenderBackendUnavailable(AppError),
+        BrowserUnsupported(AppError),
     }
 
     pub fn start(canvas: HtmlCanvasElement, render_status: RwSignal<RenderStatus>) {
@@ -112,8 +115,8 @@ mod driver {
                     log::error!("map data could not be loaded [error={error}]");
                     RenderStatus::DataUnavailable
                 }
-                Err(StartupError::RenderBackendUnavailable(error)) => {
-                    log::error!("no usable wgpu render backend, showing the unsupported panel [error={error}]");
+                Err(StartupError::BrowserUnsupported(error)) => {
+                    log::error!("browser is missing a required capability, showing the unsupported panel [error={error}]");
                     RenderStatus::Unsupported
                 }
             };
@@ -123,7 +126,7 @@ mod driver {
     }
 
     async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> {
-        let cache: OpfsArtifactCache = OpfsArtifactCache::create().await.map_err(StartupError::DataUnavailable)?;
+        let cache: OpfsArtifactCache = OpfsArtifactCache::create().await.map_err(StartupError::BrowserUnsupported)?;
         let bundle: Bundle = loader::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?;
         if let Err(error) = cache.evict_old_versions().await {
             log::warn!("evicting old cached bundle versions failed [error={error}]");
@@ -135,13 +138,13 @@ mod driver {
 
         let backend: RendererBackend = backend_from_query();
         let mut renderer: Renderer =
-            Renderer::new(bundle_receiver, backend).await.map_err(StartupError::RenderBackendUnavailable)?;
+            Renderer::new(bundle_receiver, backend).await.map_err(StartupError::BrowserUnsupported)?;
 
         let (width, height): (u32, u32) = configure_canvas_backing_store(&canvas);
         renderer
             .attach_surface_from_canvas(canvas.clone(), width, height)
             .await
-            .map_err(StartupError::RenderBackendUnavailable)?;
+            .map_err(StartupError::BrowserUnsupported)?;
 
         RENDERER.with_borrow_mut(|renderer_slot| *renderer_slot = Some(renderer));
         BUNDLE_TX.with_borrow_mut(|sender_slot| *sender_slot = Some(bundle_sender));
@@ -157,7 +160,7 @@ mod driver {
     /// Falls back to the Unix epoch when the default statistic's shard is missing, so the map still
     /// paints geometry with every region reading "no data".
     fn initial_frame_state(bundle: &Bundle) -> FrameState {
-        let active_period_start: NaiveDate = latest_period(bundle, DEFAULT_STATISTIC)
+        let active_period_start: NaiveDate = latest_period_start(bundle, DEFAULT_STATISTIC)
             .unwrap_or_else(|| NaiveDate::from_ymd_opt(1970, 1, 1).expect("the Unix epoch is a valid date"));
 
         FrameState {
@@ -168,12 +171,20 @@ mod driver {
         }
     }
 
-    fn latest_period(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
-        let shard_key: StatisticShardKey = StatisticShardKey {
-            statistic_kind: statistic,
-            license_shard_class: LicenseShardClass::Base,
-        };
-        let shard_bytes: &Vec<u8> = bundle.shard_bytes.get(&shard_key)?;
+    /// The latest `period_start` in the shard the renderer would color from: the first authorized
+    /// license class that ships a shard for the statistic, matching `select_shard`'s policy so the
+    /// seeded period and the colored shard never disagree.
+    fn latest_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
+        let shard_bytes: &Vec<u8> = bundle
+            .distribution_context
+            .authorized_classes()
+            .iter()
+            .find_map(|license_shard_class| {
+                bundle.shard_bytes.get(&StatisticShardKey {
+                    statistic_kind: statistic,
+                    license_shard_class: *license_shard_class,
+                })
+            })?;
         let shard_values: shard_db::ShardValues = shard_db::read_shard(shard_bytes).ok()?;
 
         shard_values.period_range().map(|(_earliest, latest)| latest)
@@ -186,7 +197,12 @@ mod driver {
             .and_then(|window| window.location().search().ok())
             .unwrap_or_default();
 
-        if query.contains("renderer=webgl2") {
+        let forces_webgl2: bool = query
+            .trim_start_matches('?')
+            .split('&')
+            .any(|parameter| parameter == "renderer=webgl2");
+
+        if forces_webgl2 {
             RendererBackend::ForceGl
         } else {
             RendererBackend::Default
@@ -245,11 +261,12 @@ mod driver {
         resize_callback.forget();
     }
 
-    /// FR-013: coalesce redraw requests into one `requestAnimationFrame`. Sets the dirty flag and
-    /// schedules a frame only when none is already pending; there is no idle refresh-rate loop.
+    /// FR-013: coalesce redraw requests into one `requestAnimationFrame`; there is no idle
+    /// refresh-rate loop. The pending flag is committed only once a frame is actually scheduled, so a
+    /// failed schedule stays retryable rather than wedging every later redraw.
     fn request_redraw() {
-        let was_pending: bool = REDRAW_PENDING.with(|pending| pending.replace(true));
-        if was_pending {
+        let already_pending: bool = REDRAW_PENDING.with(|pending| pending.get());
+        if already_pending {
             return;
         }
 
@@ -257,8 +274,11 @@ mod driver {
             let callback: &Closure<dyn FnMut()> =
                 callback_slot.get_or_insert_with(|| Closure::new(draw_pending_frame));
 
-            if let Some(window) = web_sys::window() {
-                let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
+            let Some(window) = web_sys::window() else {
+                return;
+            };
+            if window.request_animation_frame(callback.as_ref().unchecked_ref()).is_ok() {
+                REDRAW_PENDING.with(|pending| pending.set(true));
             }
         });
     }
