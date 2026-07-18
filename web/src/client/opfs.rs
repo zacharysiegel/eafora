@@ -79,13 +79,13 @@ pub async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<V
     loop {
         let next_promise: Promise = iterator.next().map_err(js::error)?;
         let next_value: JsValue = JsFuture::from(next_promise).await.map_err(js::error)?;
-        let iterator_next: IteratorNext = js::dyn_into(next_value)?;
+        let next: IteratorNext = js::dyn_into(next_value)?;
 
-        if iterator_next.done() {
+        if next.done() {
             break;
         }
 
-        let key_string: String = iterator_next
+        let key_string: String = next
             .value()
             .as_string()
             .ok_or_else(|| AppError::from("directory key is not a string".to_string()))?;
