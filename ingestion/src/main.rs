@@ -69,7 +69,7 @@ fn build_cli() -> Command {
             Command::new("build")
                 .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/")
                 .arg(Arg::new("downsampled").long("downsampled").action(ArgAction::SetTrue)
-                    .help("emit a compact bundle with only each region's most-recent value, for embedding in clients")),
+                    .help("emit a compact bundle for embedding in clients: World Bank WDI only, at the United States' most-recent reference year")),
         )
         .subcommand(
             Command::new("publish")

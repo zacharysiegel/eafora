@@ -157,22 +157,28 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     transaction.rollback().await.unwrap();
 }
 
-/// A `--downsampled` build keeps only each region's most-recent period: two USA values across
-/// different years collapse to a single shard row carrying the latest.
+/// A `--downsampled` build keeps only the reference year — the United States' most-recent period.
+/// Regions reporting that year are kept; a region reporting only a later year is still dropped,
+/// since the renderer resolves each region's value by exact period.
 #[tokio::test]
-async fn build_artifacts_downsampled_keeps_only_each_region_latest_period() {
+async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year() {
     let pool: PgPool = test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
     let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
     let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
-    let region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
+    let usa_region_id: Uuid = get_country_region_id(&mut transaction, "USA").await;
+    let fra_region_id: Uuid = get_country_region_id(&mut transaction, "FRA").await;
+    let deu_region_id: Uuid = get_country_region_id(&mut transaction, "DEU").await;
     let wb_published: DateTime<Utc> = "2024-12-31T00:00:00Z".parse().unwrap();
     let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-12-12", wb_published).await;
 
+    // The reference year is the USA's most-recent period (2022). France reports it and is kept;
+    // Germany reports only 2023 (later, but not the reference year) and is dropped, as is the
+    // USA's own 2020 value.
     insert_statistic_value(
         &mut transaction,
-        region_id,
+        usa_region_id,
         statistic_id,
         data_source_id,
         publication_id,
@@ -182,13 +188,33 @@ async fn build_artifacts_downsampled_keeps_only_each_region_latest_period() {
     ).await;
     insert_statistic_value(
         &mut transaction,
-        region_id,
+        usa_region_id,
         statistic_id,
         data_source_id,
         publication_id,
         NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
         NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
         1.66,
+    ).await;
+    insert_statistic_value(
+        &mut transaction,
+        fra_region_id,
+        statistic_id,
+        data_source_id,
+        publication_id,
+        NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        1.79,
+    ).await;
+    insert_statistic_value(
+        &mut transaction,
+        deu_region_id,
+        statistic_id,
+        data_source_id,
+        publication_id,
+        NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+        1.46,
     ).await;
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
@@ -204,17 +230,27 @@ async fn build_artifacts_downsampled_keeps_only_each_region_latest_period() {
     let row_count: i64 = connection
         .query_row("select count(*) from statistic_value", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(row_count, 1);
+    assert_eq!(row_count, 2);
 
-    let (value, period_end): (f64, String) = connection
+    let off_reference_count: i64 = connection
+        .query_row("select count(*) from statistic_value where period_start != '2022-01-01'", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(off_reference_count, 0);
+
+    let deu_count: i64 = connection
+        .query_row("select count(*) from statistic_value where region_iso3 = 'DEU'", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(deu_count, 0);
+
+    let (usa_value, usa_period_end): (f64, String) = connection
         .query_row(
             "select value, period_end from statistic_value where region_iso3 = 'USA'",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .unwrap();
-    assert!((value - 1.66).abs() < f64::EPSILON);
-    assert_eq!(period_end, "2023-01-01");
+    assert!((usa_value - 1.66).abs() < f64::EPSILON);
+    assert_eq!(usa_period_end, "2023-01-01");
 
     transaction.rollback().await.unwrap();
 }

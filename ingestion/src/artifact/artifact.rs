@@ -3,8 +3,8 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
+use chrono::NaiveDate;
 use sqlx::PgConnection;
-use uuid::Uuid;
 
 use crate::artifact::artifact_model::{
     Artifacts, BuildReport, CandidateValue, ResolvedValue,
@@ -12,11 +12,13 @@ use crate::artifact::artifact_model::{
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
 use crate::artifact::{artifact_db, hashing, source_choice, StatisticShard};
 use crate::canonical::canonical_db;
-use shared::canonical::canonical_model::{DataSourceKind, SourceRevision, StatisticKind};
+use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::canonical::canonical_entity::SourceChoice;
 use crate::error::AppError;
 use shared::artifact::manifest;
 use shared::filesystem::{FileReference, Hashed};
+
+const UNITED_STATES_ISO3: &str = "USA";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {
@@ -86,16 +88,18 @@ async fn create_statistic_shards(
             continue;
         }
 
-        for candidate in &candidates {
-            data_sources.insert(candidate.data_source_kind);
+        let resolved: Vec<ResolvedValue> = if options.downsampled {
+            downsample_to_reference_year(candidates, kind)
+        } else {
+            source_choice::resolve_candidates(candidates, source_choices)?
+        };
+        if resolved.is_empty() {
+            continue;
         }
 
-        let resolved: Vec<ResolvedValue> = source_choice::resolve_candidates(candidates, source_choices)?;
-        let resolved: Vec<ResolvedValue> = if options.downsampled {
-            keep_latest_period_per_region(resolved)
-        } else {
-            resolved
-        };
+        for value in &resolved {
+            data_sources.insert(value.data_source_kind);
+        }
 
         let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &artifact_dir.join(manifest::SUBDIR_DATA))?;
         let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
@@ -111,22 +115,41 @@ async fn create_statistic_shards(
     Ok((shards, data_sources))
 }
 
-/// Reduces a statistic's resolved values to each region's most-recent one, for the embedded bundle's
-/// single-time-slice shape. Run after `resolve_candidates` so the source is already chosen (preserving
-/// one-source-per-series); the `BTreeMap` keeps the output order deterministic.
-fn keep_latest_period_per_region(resolved: Vec<ResolvedValue>) -> Vec<ResolvedValue> {
-    let mut latest_value_by_region: BTreeMap<Uuid, ResolvedValue> = BTreeMap::new();
-    for value in resolved {
-        let is_more_recent: bool = match latest_value_by_region.get(&value.region_id) {
-            Some(existing) => value.period.end > existing.period.end,
-            None => true,
-        };
-        if is_more_recent {
-            latest_value_by_region.insert(value.region_id, value);
-        }
-    }
+/// Reduces a statistic to its World Bank WDI values at one reference year (the most-recent period
+/// the United States reports) for the embedded bundle's single time slice. One shared year is
+/// required because the renderer resolves each region's value by exact period; a per-region-latest
+/// slice would leave every region whose latest year differs from the active period with nothing to
+/// draw. Yields nothing when the United States has no World Bank WDI value to anchor the year.
+fn downsample_to_reference_year(
+    candidates: Vec<CandidateValue>,
+    statistic_kind: StatisticKind,
+) -> Vec<ResolvedValue> {
+    let world_bank_wdi_candidates: Vec<CandidateValue> = candidates
+        .into_iter()
+        .filter(|candidate| candidate.data_source_kind == DataSourceKind::WorldBankWDI)
+        .collect();
 
-    latest_value_by_region.into_values().collect()
+    let reference_period_start: Option<NaiveDate> = world_bank_wdi_candidates
+        .iter()
+        .filter(|candidate| candidate.region_iso3 == UNITED_STATES_ISO3)
+        .map(|candidate| candidate.period.start)
+        .max();
+    let Some(reference_period_start) = reference_period_start else {
+        log::warn!(
+            "downsampled build omits statistic {:?}: no World Bank WDI United States value to anchor the reference year",
+            statistic_kind,
+        );
+        return Vec::new();
+    };
+
+    world_bank_wdi_candidates
+        .into_iter()
+        .filter(|candidate| candidate.period.start == reference_period_start)
+        .map(|candidate| {
+            let license_shard_class: LicenseShardClass = LicenseShardClass::from_license_class(candidate.license_class);
+            ResolvedValue::from_candidate(&candidate, license_shard_class)
+        })
+        .collect()
 }
 
 async fn create_geometry(
@@ -147,13 +170,14 @@ async fn create_geometry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::NaiveDate;
-    use shared::canonical::canonical_model::{DataStatus, LicenseShardClass, NaiveDatePeriod};
 
-    fn resolved_value(region_id: Uuid, year: i32, value: f64) -> ResolvedValue {
-        ResolvedValue {
-            region_id,
-            region_iso3: "AAA".to_string(),
+    use uuid::Uuid;
+    use shared::canonical::canonical_model::{DataStatus, LicenseClass, NaiveDatePeriod};
+
+    fn candidate_value(region_iso3: &str, data_source_kind: DataSourceKind, year: i32, value: f64) -> CandidateValue {
+        CandidateValue {
+            region_id: Uuid::now_v7(),
+            region_iso3: region_iso3.to_string(),
             statistic_kind: StatisticKind::try_from("tfr").unwrap(),
             period: NaiveDatePeriod {
                 start: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
@@ -161,29 +185,58 @@ mod tests {
             },
             value,
             data_status: DataStatus::try_from("final").unwrap(),
-            data_source_kind: DataSourceKind::WorldBankWDI,
+            data_source_kind,
             data_source_revision: "rev".to_string(),
-            license_shard_class: LicenseShardClass::try_from("base").unwrap(),
+            license_class: LicenseClass::Attribution,
         }
     }
 
     #[test]
-    fn keep_latest_period_per_region_keeps_the_newest_value_per_region() {
-        let region_a: Uuid = Uuid::now_v7();
-        let region_b: Uuid = Uuid::now_v7();
-        let resolved: Vec<ResolvedValue> = vec![
-            resolved_value(region_a, 2020, 1.0),
-            resolved_value(region_a, 2022, 2.0),
-            resolved_value(region_b, 2021, 3.0),
+    fn downsample_to_reference_year_keeps_every_region_at_the_united_states_latest_period() {
+        let candidates: Vec<CandidateValue> = vec![
+            candidate_value("USA", DataSourceKind::WorldBankWDI, 2021, 1.66),
+            candidate_value("USA", DataSourceKind::WorldBankWDI, 2023, 1.62),
+            candidate_value("DEU", DataSourceKind::WorldBankWDI, 2021, 1.58),
+            candidate_value("DEU", DataSourceKind::WorldBankWDI, 2023, 1.46),
+            candidate_value("FRA", DataSourceKind::WorldBankWDI, 2023, 1.79),
+            candidate_value("BRA", DataSourceKind::WorldBankWDI, 2021, 1.64),
         ];
 
-        let kept: Vec<ResolvedValue> = keep_latest_period_per_region(resolved);
+        let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
 
-        assert_eq!(kept.len(), 2);
-        let region_a_kept: &ResolvedValue = kept.iter().find(|value| value.region_id == region_a).unwrap();
-        assert_eq!(region_a_kept.period.start, NaiveDate::from_ymd_opt(2022, 1, 1).unwrap());
-        assert!((region_a_kept.value - 2.0).abs() < f64::EPSILON);
-        let region_b_kept: &ResolvedValue = kept.iter().find(|value| value.region_id == region_b).unwrap();
-        assert_eq!(region_b_kept.period.start, NaiveDate::from_ymd_opt(2021, 1, 1).unwrap());
+        let reference_period_start: NaiveDate = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
+        assert!(kept.iter().all(|value| value.period.start == reference_period_start));
+        assert!(kept.iter().any(|value| value.region_iso3 == "USA"));
+        assert!(kept.iter().any(|value| value.region_iso3 == "DEU"));
+        assert!(kept.iter().any(|value| value.region_iso3 == "FRA"));
+        assert!(!kept.iter().any(|value| value.region_iso3 == "BRA"));
+        assert_eq!(kept.len(), 3);
+    }
+
+    #[test]
+    fn downsample_to_reference_year_excludes_sources_other_than_world_bank_wdi() {
+        let candidates: Vec<CandidateValue> = vec![
+            candidate_value("USA", DataSourceKind::WorldBankWDI, 2023, 1.62),
+            candidate_value("USA", DataSourceKind::TestAlpha, 2025, 1.50),
+            candidate_value("DEU", DataSourceKind::TestAlpha, 2023, 1.46),
+        ];
+
+        let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
+
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].region_iso3, "USA");
+        assert_eq!(kept[0].data_source_kind, DataSourceKind::WorldBankWDI);
+        assert_eq!(kept[0].period.start, NaiveDate::from_ymd_opt(2023, 1, 1).unwrap());
+    }
+
+    #[test]
+    fn downsample_to_reference_year_yields_nothing_without_united_states_data() {
+        let candidates: Vec<CandidateValue> = vec![
+            candidate_value("DEU", DataSourceKind::WorldBankWDI, 2023, 1.46),
+        ];
+
+        let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
+
+        assert!(kept.is_empty());
     }
 }
