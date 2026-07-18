@@ -140,7 +140,7 @@ shared/Cargo.toml                 # web-sys canvas types under the wasm32 target
 
 # MODIFIED — ingestion, Phase 0b (own PR, off master)
 ingestion/src/main.rs             # + `build --downsampled <dir>` flag
-ingestion/src/artifact/...        # downsampling filter: statistics keep most-recent-year-per-country; geometry unfiltered
+ingestion/src/artifact/...        # downsampling filter: statistics = World Bank WDI at the USA reference year; geometry unfiltered
 
 # MODIFIED — design doc (folds into Phase A)
 docs/design/stub-desktop.html     # accent colors #e60019/#0030d4 -> #d50000/#0050ff (palette A canonical)
@@ -220,7 +220,7 @@ at the same-origin `embedded_artifacts/` directory.
 ### Topic 6: downsampling is the plan — statistics only, geometry full
 
 Confirmed across `docs/architecture/{client,overview,client-web}.md`: the embedded bundle keeps
-geometry at full 1:50m resolution and downsamples statistics to the most-recent year per country
+geometry at full 1:50m resolution and downsamples statistics to a single reference year (World Bank WDI only, the United States' most-recent period)
 (total approx. 1.5–1.7 MB), which is what the 2 MB first-paint cap requires. `ingestion build --downsampled`
 (the producer command) is unwritten; Phase 0b implements it. Until it lands, Phase C renders against a
 hand-built stub bundle under `web/static/embedded_artifacts/` (gitignored).

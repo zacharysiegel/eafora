@@ -70,7 +70,8 @@ unchanged; native callers update the one `Renderer::new` call site to pass `Rend
 
 `ingestion/src/main.rs` — the existing `build` subcommand gains a `--downsampled <output-dir>` flag
 (clap builder API). Contract: emits a bundle whose geometry is the full 1:50m FlatGeobuf (unchanged)
-and whose statistic shards keep only the most-recent-year value per country per statistic, into
+and whose statistic shards are restricted to World Bank WDI at a single reference year — the United
+States' most-recent period, with every region reporting that year — into
 `<output-dir>/latest/`. The manifest schema is identical to the live bundle's; only the shard row
 counts differ. Reuses the existing `build_artifacts` path with a downsampling filter at shard emission.
 Independent of Phase 0a and of the web stack.
