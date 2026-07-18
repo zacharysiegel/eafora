@@ -3,6 +3,10 @@ use web_sys::DomException;
 
 use shared::AppError;
 
+pub fn get_window() -> Result<web_sys::Window, AppError> {
+    web_sys::window().ok_or_else(|| AppError::from("no window".to_string()))
+}
+
 pub fn error_message(error: &JsValue) -> String {
     if let Some(dom_exception) = error.dyn_ref::<DomException>() {
         return format!("{}: {}", dom_exception.name(), dom_exception.message());
