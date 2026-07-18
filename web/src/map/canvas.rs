@@ -3,14 +3,16 @@ use leptos::prelude::*;
 use crate::i18n::*;
 
 /// First-paint lifecycle of the map canvas. `Loading` covers the map until the embedded bundle is
-/// parsed and the surface is attached; `Unsupported` replaces it when no wgpu adapter is available
-/// (FR-016). Server-side rendering leaves it at `Loading` since the renderer only runs client-side.
+/// parsed and the surface is attached. `DataUnavailable` replaces it when the bundle can't be fetched
+/// or opened; `Unsupported` when no wgpu backend is available (FR-016). Server-side rendering leaves
+/// it at `Loading` since the renderer only runs client-side.
 #[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // the ssr build never runs the renderer, so it constructs only Loading
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStatus {
     Loading,
     Ready,
     Unsupported,
+    DataUnavailable,
 }
 
 #[component]
@@ -37,6 +39,10 @@ pub fn MapCanvas() -> impl IntoView {
             .into_any(),
             RenderStatus::Unsupported => view! {
                 <div class="map-overlay panel"><p>{t!(i18n, map.unsupported)}</p></div>
+            }
+            .into_any(),
+            RenderStatus::DataUnavailable => view! {
+                <div class="map-overlay panel"><p>{t!(i18n, map.data_unavailable)}</p></div>
             }
             .into_any(),
         }}
@@ -90,32 +96,52 @@ mod driver {
     const WORLD_MIN_LON: f64 = -180.0;
     const WORLD_MAX_LON: f64 = 180.0;
 
+    /// The two first-paint failure modes the shell distinguishes: the artifact bundle could not be
+    /// fetched or opened, versus no usable wgpu backend (FR-016). `start` matches on this to choose
+    /// the panel; the variants carry the originating error for logging.
+    enum StartupError {
+        DataUnavailable(AppError),
+        RenderBackendUnavailable(AppError),
+    }
+
     pub fn start(canvas: HtmlCanvasElement, render_status: RwSignal<RenderStatus>) {
         leptos::task::spawn_local(async move {
-            match set_up_renderer(canvas).await {
-                Ok(()) => render_status.set(RenderStatus::Ready),
-                Err(error) => {
-                    log::error!("map first paint failed, showing the unsupported panel [error={error}]");
-                    render_status.set(RenderStatus::Unsupported);
+            let status: RenderStatus = match set_up_renderer(canvas).await {
+                Ok(()) => RenderStatus::Ready,
+                Err(StartupError::DataUnavailable(error)) => {
+                    log::error!("map data could not be loaded [error={error}]");
+                    RenderStatus::DataUnavailable
                 }
-            }
+                Err(StartupError::RenderBackendUnavailable(error)) => {
+                    log::error!("no usable wgpu render backend, showing the unsupported panel [error={error}]");
+                    RenderStatus::Unsupported
+                }
+            };
+
+            render_status.set(status);
         });
     }
 
-    async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), AppError> {
-        let cache: OpfsArtifactCache = OpfsArtifactCache::create().await?;
-        let bundle: Bundle = loader::load_embedded_bundle(&cache).await?;
-        cache.evict_old_versions().await?;
+    async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> {
+        let cache: OpfsArtifactCache = OpfsArtifactCache::create().await.map_err(StartupError::DataUnavailable)?;
+        let bundle: Bundle = loader::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?;
+        if let Err(error) = cache.evict_old_versions().await {
+            log::warn!("evicting old cached bundle versions failed [error={error}]");
+        }
 
         let frame_state: FrameState = initial_frame_state(&bundle);
         let (bundle_sender, bundle_receiver): (watch::Sender<Arc<Bundle>>, watch::Receiver<Arc<Bundle>>) =
             watch::channel(Arc::new(bundle));
 
         let backend: RendererBackend = backend_from_query();
-        let mut renderer: Renderer = Renderer::new(bundle_receiver, backend).await?;
+        let mut renderer: Renderer =
+            Renderer::new(bundle_receiver, backend).await.map_err(StartupError::RenderBackendUnavailable)?;
 
         let (width, height): (u32, u32) = configure_canvas_backing_store(&canvas);
-        renderer.attach_surface_from_canvas(canvas.clone(), width, height).await?;
+        renderer
+            .attach_surface_from_canvas(canvas.clone(), width, height)
+            .await
+            .map_err(StartupError::RenderBackendUnavailable)?;
 
         RENDERER.with_borrow_mut(|renderer_slot| *renderer_slot = Some(renderer));
         BUNDLE_TX.with_borrow_mut(|sender_slot| *sender_slot = Some(bundle_sender));

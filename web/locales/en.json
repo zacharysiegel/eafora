@@ -3,6 +3,7 @@
         "loading": "Loading data…"
     },
     "map": {
-        "unsupported": "This browser does not support the graphics features Eafora requires (WebGPU or WebGL2)."
+        "unsupported": "This browser does not support the graphics features Eafora requires (WebGPU or WebGL2).",
+        "data_unavailable": "The map data could not be loaded."
     }
 }
