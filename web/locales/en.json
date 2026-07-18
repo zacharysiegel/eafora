@@ -1,5 +1,8 @@
 {
     "controls": {
         "loading": "Loading data…"
+    },
+    "map": {
+        "unsupported": "This browser does not support the graphics features Eafora requires (WebGPU or WebGL2)."
     }
 }

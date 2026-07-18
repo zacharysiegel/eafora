@@ -5,6 +5,7 @@ use leptos_router::components::{Route, Router, Routes};
 use leptos_router::StaticSegment;
 
 use crate::i18n::*;
+use crate::map::MapView;
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -47,16 +48,5 @@ pub fn App() -> impl IntoView {
                 </Routes>
             </Router>
         </I18nContextProvider>
-    }
-}
-
-#[component]
-fn MapView() -> impl IntoView {
-    let i18n = use_i18n();
-
-    view! {
-        <main id="map-view">
-            <p>{t!(i18n, controls.loading)}</p>
-        </main>
     }
 }
