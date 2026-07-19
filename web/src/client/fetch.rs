@@ -1,24 +1,63 @@
 use js_sys::{ArrayBuffer, Promise, Uint8Array};
-use web_sys::{Response, Window};
+use web_sys::{RequestInit, Window};
 
 use shared::AppError;
 
 use crate::client::js;
 
-/// GETs `url` and returns the response body. A non-2xx status maps to an `AppError` carrying the URL
-/// and status so the loader can surface which fetch failed (FR-041).
-pub async fn fetch_bytes(url: &str) -> Result<Vec<u8>, AppError> {
+pub enum HttpMethod {
+    Get,
+}
+
+impl HttpMethod {
+    fn as_str(&self) -> &'static str {
+        match self {
+            HttpMethod::Get => "GET",
+        }
+    }
+}
+
+pub struct HttpRequest {
+    pub method: HttpMethod,
+    pub url: String,
+}
+
+pub struct Response {
+    pub status: u16,
+    pub bytes: Vec<u8>,
+}
+
+impl Response {
+    pub fn is_success(&self) -> bool {
+        (200..=299).contains(&self.status)
+    }
+}
+
+/// Issues `request` and returns the status and body without judging the status; the caller decides what
+/// a non-2xx means. Errors only on a transport/JS failure.
+pub async fn fetch(request: &HttpRequest) -> Result<Response, AppError> {
     let window: Window = js::get_window()?;
 
-    let fetch_promise: Promise = window.fetch_with_str(url);
-    let response: Response = js::await_and_cast(fetch_promise).await?;
+    let init: RequestInit = RequestInit::new();
+    init.set_method(request.method.as_str());
 
-    if !response.ok() {
-        return Err(AppError::from(format!("fetch: {url} returned HTTP {}", response.status())));
-    }
+    let fetch_promise: Promise = window.fetch_with_str_and_init(&request.url, &init);
+    let response: web_sys::Response = js::await_and_cast(fetch_promise).await?;
 
+    let status: u16 = response.status();
     let buffer_promise: Promise = response.array_buffer().map_err(js::error)?;
     let array_buffer: ArrayBuffer = js::await_and_cast(buffer_promise).await?;
+    let bytes: Vec<u8> = Uint8Array::new(&array_buffer).to_vec();
 
-    Ok(Uint8Array::new(&array_buffer).to_vec())
+    Ok(Response { status, bytes })
+}
+
+pub async fn fetch_bytes(request: &HttpRequest) -> Result<Vec<u8>, AppError> {
+    let response: Response = fetch(request).await?;
+
+    if !response.is_success() {
+        return Err(AppError::from(format!("fetch: {} returned HTTP {}", request.url, response.status)));
+    }
+
+    Ok(response.bytes)
 }
