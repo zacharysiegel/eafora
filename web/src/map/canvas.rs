@@ -17,6 +17,23 @@ pub enum RenderStatus {
     DataUnavailable,
 }
 
+/// The projected-space bounds of the whole world.
+struct WorldBounds {
+    min_lat: f64,
+    max_lat: f64,
+    min_lon: f64,
+    max_lon: f64,
+}
+
+/// `x` is longitude passed through unchanged;
+/// `y` is the Miller value, so ±85° latitude keeps the poles out of the asymptote.
+const WORLD_BOUNDS: WorldBounds = WorldBounds {
+    min_lat: -85.0,
+    max_lat: 85.0,
+    min_lon: -180.0,
+    max_lon: 180.0,
+};
+
 #[component]
 pub fn MapCanvas() -> impl IntoView {
     let canvas_ref: NodeRef<Canvas> = NodeRef::new();
@@ -77,7 +94,7 @@ mod driver {
     use crate::client::cache::OpfsArtifactCache;
     use crate::client::load;
 
-    use super::RenderStatus;
+    use super::{RenderStatus, WORLD_BOUNDS};
 
     thread_local! {
         static RENDERER: RefCell<Option<Renderer>> = const { RefCell::new(None) };
@@ -90,13 +107,6 @@ mod driver {
     /// The statistic shown at first paint per FR (P1). The embedded bundle ships exactly one period,
     /// which the initial `FrameState` anchors to.
     const DEFAULT_STATISTIC: StatisticKind = StatisticKind::Tfr;
-
-    /// The projected-space bounds of the whole world. `x` is longitude passed through unchanged; `y`
-    /// is the Miller value, so ±85° latitude keeps the poles out of the asymptote.
-    const WORLD_MIN_LAT: f64 = -85.0;
-    const WORLD_MAX_LAT: f64 = 85.0;
-    const WORLD_MIN_LON: f64 = -180.0;
-    const WORLD_MAX_LON: f64 = 180.0;
 
     /// The two first-paint failure modes the shell distinguishes. `DataUnavailable` is a transient or
     /// data-integrity failure fetching or opening the bundle. `BrowserUnsupported` is a missing hard
@@ -212,8 +222,8 @@ mod driver {
 
     fn world_viewport() -> Viewport {
         Viewport {
-            min: projection::project(WORLD_MIN_LAT, WORLD_MIN_LON),
-            max: projection::project(WORLD_MAX_LAT, WORLD_MAX_LON),
+            min: projection::project(WORLD_BOUNDS.min_lat, WORLD_BOUNDS.min_lon),
+            max: projection::project(WORLD_BOUNDS.max_lat, WORLD_BOUNDS.max_lon),
         }
     }
 
