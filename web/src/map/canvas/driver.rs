@@ -85,6 +85,7 @@ impl Driver {
             self.redraw_callback.get_or_insert_with(|| Closure::new(draw_pending_frame));
 
         let Some(window) = web_sys::window() else {
+            log::error!("no window available; cannot schedule a redraw");
             return;
         };
         if window.request_animation_frame(callback.as_ref().unchecked_ref()).is_ok() {
