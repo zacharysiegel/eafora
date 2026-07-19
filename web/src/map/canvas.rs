@@ -1,24 +1,25 @@
+use leptos::html::Canvas;
 use leptos::prelude::*;
 
 use crate::i18n::*;
 
-/// First-paint lifecycle of the map canvas. `Loading` covers the map until the embedded bundle is
-/// parsed and the surface is attached. `DataUnavailable` replaces it when the bundle can't be fetched
-/// or opened; `Unsupported` when the browser lacks a hard capability (no OPFS per FR-023, or no wgpu
-/// backend per FR-016). Server-side rendering leaves it at `Loading` since the renderer only runs
-/// client-side.
+/// First-paint lifecycle of the map canvas. Server-side rendering leaves it at `Loading`, since the
+/// renderer only runs client-side.
 #[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // the ssr build never runs the renderer, so it constructs only Loading
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStatus {
+    /// Shown until the embedded bundle is parsed and the surface is attached.
     Loading,
     Ready,
+    /// The browser lacks a hard capability: no OPFS (FR-023) or no usable wgpu backend (FR-016).
     Unsupported,
+    /// The bundle could not be fetched or opened.
     DataUnavailable,
 }
 
 #[component]
 pub fn MapCanvas() -> impl IntoView {
-    let canvas_ref: NodeRef<leptos::html::Canvas> = NodeRef::new();
+    let canvas_ref: NodeRef<Canvas> = NodeRef::new();
     let render_status: RwSignal<RenderStatus> = RwSignal::new(RenderStatus::Loading);
 
     #[cfg(feature = "hydrate")]
@@ -74,7 +75,7 @@ mod driver {
     use shared::sqlite::shard_db;
 
     use crate::client::cache::OpfsArtifactCache;
-    use crate::client::loader;
+    use crate::client::load;
 
     use super::RenderStatus;
 
@@ -127,7 +128,7 @@ mod driver {
 
     async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> {
         let cache: OpfsArtifactCache = OpfsArtifactCache::create().await.map_err(StartupError::BrowserUnsupported)?;
-        let bundle: Bundle = loader::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?;
+        let bundle: Bundle = load::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?;
         if let Err(error) = cache.evict_old_versions().await {
             log::warn!("evicting old cached bundle versions failed [error={error}]");
         }
@@ -265,7 +266,7 @@ mod driver {
     /// refresh-rate loop. The pending flag is committed only once a frame is actually scheduled, so a
     /// failed schedule stays retryable rather than wedging every later redraw.
     fn request_redraw() {
-        let already_pending: bool = REDRAW_PENDING.with(|pending| pending.get());
+        let already_pending: bool = REDRAW_PENDING.get();
         if already_pending {
             return;
         }
@@ -278,13 +279,13 @@ mod driver {
                 return;
             };
             if window.request_animation_frame(callback.as_ref().unchecked_ref()).is_ok() {
-                REDRAW_PENDING.with(|pending| pending.set(true));
+                REDRAW_PENDING.set(true);
             }
         });
     }
 
     fn draw_pending_frame() {
-        REDRAW_PENDING.with(|pending| pending.set(false));
+        REDRAW_PENDING.set(false);
 
         let inputs: Option<(Viewport, FrameState)> = FRAME.with_borrow(|frame_slot| frame_slot.clone());
         let Some((viewport, frame_state)) = inputs else {

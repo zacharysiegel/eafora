@@ -27,6 +27,13 @@ pub struct Manifest {
     pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
 }
 
+impl Manifest {
+    pub fn file_entries(&self) -> impl Iterator<Item = &ManifestEntry> {
+        std::iter::once(&self.geometry)
+            .chain(self.statistics.values().flat_map(|by_license_class| by_license_class.values()))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ManifestEntry {
     pub relative_path: String,

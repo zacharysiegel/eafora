@@ -4,5 +4,5 @@ pub mod cache;
 pub mod fetch;
 pub mod hydrate;
 pub mod js;
-pub mod loader;
+pub mod load;
 pub mod opfs;
