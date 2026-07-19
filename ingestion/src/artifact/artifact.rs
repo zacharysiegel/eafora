@@ -48,7 +48,7 @@ pub async fn build_artifacts(
     options: BuildOptions,
 ) -> Result<CoupledBuildReport, AppError> {
     let started: Instant = Instant::now();
-    log::info!("starting version_label={} version_dir={:?}", version_label, version_dir);
+    log::info!("starting; [version_label={} version_dir={:?}]", version_label, version_dir);
 
     let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
     let statistic_kinds: BTreeSet<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
@@ -76,7 +76,7 @@ pub async fn build_artifacts(
     ).await?;
 
     log::info!(
-        "complete in {:?}; complete manifest sha256={} downsampled manifest sha256={}",
+        "complete in {:?}; [complete_manifest_sha256={} downsampled_manifest_sha256={}]",
         started.elapsed(),
         complete.artifacts.manifest.sha256_hex(),
         downsampled.artifacts.manifest.sha256_hex(),
@@ -211,13 +211,13 @@ fn downsample_to_reference_year(
 
 async fn create_geometry(
     connection: &mut PgConnection,
-    artifact_dir: &Path,
+    variant_dir: &Path,
     options: BuildOptions,
 ) -> Result<Hashed<FileReference>, AppError> {
     let geometry: FileReference = if options.test_offline {
-        flatgeobuf::write_placeholder_geometry(artifact_dir)?
+        flatgeobuf::write_placeholder_geometry(variant_dir)?
     } else {
-        flatgeobuf::write_geometry(&mut *connection, artifact_dir).await?
+        flatgeobuf::write_geometry(&mut *connection, variant_dir).await?
     };
     log::info!("wrote geometry {:?}", geometry.path);
     let geometry: Hashed<FileReference> = hashing::hash_geometry(geometry)?;

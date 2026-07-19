@@ -1,6 +1,6 @@
 //! Integration tests for the artifact builder pipeline against `eafora_test`.
 //! Each test opens its own transaction, exercises `build_artifacts` (or its
-//! components) through it, and rolls back at teardown — Postgres MVCC keeps
+//! components) through it, and rolls back at teardown; Postgres MVCC keeps
 //! parallel runs isolated.
 
 mod helpers;
@@ -265,8 +265,9 @@ async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year
 
     transaction.rollback().await.unwrap();
 }
-/// the FGB has the expected layer + features. Gated behind `#[ignore]` so
-/// CI doesn't depend on naciscdn.org availability; run via
+
+/// Builds geometry from the live Natural Earth release and asserts the FGB has the expected layer
+/// and features. Gated behind `#[ignore]` so CI doesn't depend on naciscdn.org availability; run via
 /// `cargo test -p ingestion --test artifact_integration -- --ignored`.
 #[tokio::test]
 #[ignore]

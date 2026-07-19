@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(unix)] // Path is used only by the Unix-gated latest-pointer helper
+use std::path::Path;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -202,7 +204,7 @@ async fn run_build(pool: &PgPool, options: BuildOptions) -> Result<CoupledBuildR
         artifact::build_artifacts(&mut *transaction, &version_dir, &version_label, options).await?;
     transaction.commit().await?;
 
-    #[cfg(unix)] // the latest pointer is a Unix symlink; the producer runs on macOS/Linux
+    #[cfg(unix)] // the latest pointer is a Unix symlink
     update_latest_pointer(&parent, &version_label)?;
 
     Ok(report)
@@ -212,7 +214,7 @@ async fn run_build(pool: &PgPool, options: BuildOptions) -> Result<CoupledBuildR
 /// embedded-bundle sync script, manual publishes) always resolve the newest build. The target is
 /// relative so the pointer survives relocating the artifacts directory. Called only after the
 /// transaction commits, so `latest` never names a version whose rows failed to persist.
-#[cfg(unix)] // creates a symlink via std::os::unix::fs, which the producer's macOS/Linux hosts support
+#[cfg(unix)] // uses the Unix-only std::os::unix::fs::symlink
 fn update_latest_pointer(parent: &Path, version_label: &str) -> Result<(), AppError> {
     let pointer: PathBuf = parent.join(artifact::LATEST_POINTER);
 

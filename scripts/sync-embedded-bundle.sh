@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sync-embedded-bundle.sh — copy the newest downsampled bundle into a client's static-asset tree.
+# sync-embedded-bundle.sh: copy the newest downsampled bundle into a client's static-asset tree.
 #
 # `ingestion build` writes every version's two bundles to
 # $EAFORA_ARTIFACTS_DIR/<version-label>/{complete,downsampled}/ and repoints
