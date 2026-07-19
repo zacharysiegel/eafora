@@ -130,6 +130,7 @@ async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> 
     let bundle: Bundle = load::load_embedded_bundle(&cache)
         .await
         .map_err(StartupError::DataUnavailable)?;
+
     if let Err(error) = cache.evict_old_versions().await {
         log::warn!("evicting old cached bundle versions failed [error={error}]");
     }
