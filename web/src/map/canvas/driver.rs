@@ -175,7 +175,7 @@ async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> 
 /// Falls back to the Unix epoch when the default statistic's shard is missing, so the map still paints
 /// geometry with every region reading "no data".
 fn initial_frame_state(bundle: &Bundle) -> FrameState {
-    let active_statistic: StatisticKind = default_statistic(bundle);
+    let active_statistic: StatisticKind = StatisticKind::Tfr;
     let active_period_start: NaiveDate = latest_period_start(bundle, active_statistic)
         .unwrap_or_else(|| NaiveDate::from_epoch_days(0).expect("day 0 is the Unix epoch"));
 
@@ -185,18 +185,6 @@ fn initial_frame_state(bundle: &Bundle) -> FrameState {
         selected_region: None,
         hovered_region: None,
     }
-}
-
-/// The statistic to show at first paint: the first one the bundle ships an authorized shard for, so the
-/// client tracks whatever the downsampled bundle contains. Falls back to `Tfr` only for a bundle with no
-/// authorized shards, where nothing colors regardless.
-fn default_statistic(bundle: &Bundle) -> StatisticKind {
-    bundle
-        .shard_bytes
-        .keys()
-        .next()
-        .map(|shard_key| shard_key.statistic_kind)
-        .unwrap_or(StatisticKind::Tfr)
 }
 
 /// The latest `period_start` in the shard the renderer would color from: the first authorized license
