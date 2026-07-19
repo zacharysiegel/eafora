@@ -1,5 +1,5 @@
 use js_sys::{ArrayBuffer, AsyncIterator, IteratorNext, Promise, Uint8Array};
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetDirectoryOptions, StorageEstimate,
@@ -103,5 +103,7 @@ pub async fn estimate() -> Result<StorageEstimate, AppError> {
     let estimate_promise: Promise = window.navigator().storage().estimate().map_err(js::error)?;
     let estimate_value: JsValue = JsFuture::from(estimate_promise).await.map_err(js::error)?;
 
-    js::dyn_into::<StorageEstimate>(estimate_value)
+    // StorageEstimate is a WebIDL dictionary (a plain object with no prototype), so dyn_into's
+    // instanceof check rejects it; a dictionary must be cast unchecked.
+    Ok(estimate_value.unchecked_into::<StorageEstimate>())
 }
