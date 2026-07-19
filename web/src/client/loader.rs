@@ -15,6 +15,7 @@ pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, A
     let manifest_url: String = format!("{EMBEDDED_BASE_URL}/{}", manifest::MANIFEST_FILENAME);
     let manifest_bytes: Vec<u8> = fetch::fetch_bytes(&manifest_url).await?;
     let manifest: Manifest = manifest::parse_manifest(&manifest_bytes)?;
+    log::debug!("embedded manifest parsed [version={} manifest_bytes={}]", manifest.version, manifest_bytes.len());
 
     let version_label: &str = &manifest.version;
     cache.put(version_label, manifest::MANIFEST_FILENAME, &manifest_bytes).await?;
@@ -26,6 +27,7 @@ pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, A
         cache.put(version_label, &entry.relative_path, &file_bytes).await?;
     }
 
+    log::debug!("opening embedded bundle from cache [version={version_label}]");
     Bundle::open(cache, version_label, DistributionContext::Embedded).await
 }
 
