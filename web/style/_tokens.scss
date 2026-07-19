@@ -1,5 +1,4 @@
-// The single source of truth for color, spacing, type scale, and border weight. Every rule elsewhere
-// references these via var(--token-name); raw color values appear nowhere else.
+// Reference these via var(--token-name); raw values appear nowhere else.
 :root {
     --color-paper:           #ffffff;
     --color-ink:             #000000;
