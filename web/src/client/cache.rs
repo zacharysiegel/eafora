@@ -1,9 +1,8 @@
-use js_sys::{Promise, Uint8Array};
+use js_sys::Promise;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
     File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetFileOptions, FileSystemRemoveOptions,
-    FileSystemWritableFileStream, StorageEstimate,
 };
 
 use shared::AppError;
@@ -13,9 +12,7 @@ use crate::client::{js, opfs};
 
 const ARTIFACTS_DIRECTORY: &str = "artifacts";
 const VERSIONS_KEPT: usize = 2;
-const QUOTA_SAFETY_MARGIN_BYTES: f64 = 1_048_576.0; // 1 MB headroom left free on every write
 const ERROR_PREFIX_OPFS_UNSUPPORTED: &str = "cache: opfs unsupported";
-const ERROR_PREFIX_QUOTA_EXCEEDED: &str = "cache: quota exceeded";
 
 /// The browser implementation of [`ArtifactCache`], backed by the Origin Private File System. A
 /// zero-sized, stateless type: it resolves `navigator.storage.getDirectory()` on every call and caches
@@ -66,7 +63,7 @@ impl ArtifactCache for OpfsArtifactCache {
     async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError> {
         let root: FileSystemDirectoryHandle = opfs::root().await?;
 
-        check_quota(bytes.len()).await?;
+        opfs::check_quota(bytes.len()).await?;
 
         let (parent, file_name): (FileSystemDirectoryHandle, &str) =
             create_artifact_directory(&root, version_label, file_relative_path).await?;
@@ -75,23 +72,7 @@ impl ArtifactCache for OpfsArtifactCache {
         file_options.set_create(true);
         let file_handle: FileSystemFileHandle = js::await_and_cast(parent.get_file_handle_with_options(file_name, &file_options)).await?;
 
-        let writable_promise: Promise = file_handle.create_writable();
-        let writable_value: JsValue = JsFuture::from(writable_promise)
-            .await
-            .map_err(cache_write_error)?;
-        let writable: FileSystemWritableFileStream = js::dyn_into(writable_value)?;
-
-        // Copy into a JS-owned Uint8Array before writing. write_with_u8_array passes a view over wasm
-        // linear memory; if memory grows before the async write consumes it, the view detaches and the
-        // file is written truncated or empty (then fails to parse on read-back).
-        let data: Uint8Array = Uint8Array::new_with_length(bytes.len() as u32);
-        data.copy_from(bytes);
-        let write_promise: Promise = writable.write_with_js_u8_array(&data)
-            .map_err(cache_write_error)?;
-        JsFuture::from(write_promise).await.map_err(cache_write_error)?;
-
-        let close_promise: Promise = writable.close();
-        JsFuture::from(close_promise).await.map_err(cache_write_error)?;
+        opfs::write_file(&file_handle, bytes).await?;
 
         Ok(())
     }
@@ -191,40 +172,6 @@ async fn find_artifact_directory<'path>(
     Ok(Some((directory, file_name)))
 }
 
-/// Best-effort pre-check: fails fast with a `cache: quota exceeded`-prefixed error when writing
-/// `incoming_len` bytes would leave less than the safety margin free. It is not the sole guard, so a
-/// missing usage/quota estimate is treated permissively rather than blocking; if this passes but
-/// storage is truly full, the write itself raises `QuotaExceededError`, mapped to the same prefix.
-async fn check_quota(incoming_len: usize) -> Result<(), AppError> {
-    let estimate: StorageEstimate = opfs::estimate().await?;
-
-    let usage: f64 = estimate.get_usage().unwrap_or(0.0);
-    let quota: f64 = estimate.get_quota().unwrap_or(f64::INFINITY);
-
-    if !quota_allows(usage, quota, incoming_len) {
-        return Err(AppError::from(format!(
-            "{ERROR_PREFIX_QUOTA_EXCEEDED}: writing {incoming_len} bytes leaves under the {QUOTA_SAFETY_MARGIN_BYTES} byte margin (usage {usage}, quota {quota})"
-        )));
-    }
-
-    Ok(())
-}
-
-fn quota_allows(usage: f64, quota: f64, incoming_len: usize) -> bool {
-    quota - usage >= incoming_len as f64 + QUOTA_SAFETY_MARGIN_BYTES
-}
-
-/// Callers classify a quota failure by matching this prefix, not a typed variant: `AppError` is a flat
-/// string message, and the JS `QuotaExceededError` is identified only by its DOMException name, so the
-/// "quota" signal is stringly typed on both sides and must ride in the message.
-fn cache_write_error(error: JsValue) -> AppError {
-    if js::is_dom_exception_named(&error, "QuotaExceededError") {
-        return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js::error_message(&error)));
-    }
-
-    js::error(error)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,21 +222,11 @@ mod tests {
         assert_eq!(cache.get("2026-06-22+evict-c", "manifest.json").await.unwrap().as_deref(), Some(b"x".as_slice()));
     }
 
-    // The quota-exceeded and opfs-unsupported runtime branches can't be triggered in headless Chrome
-    // (quota can't be exhausted deterministically; OPFS is always present), so their FR-040 coverage is
-    // the exact error-prefix literals the loader matches on, pinned here, plus the quota arithmetic.
+    // The opfs-unsupported branch can't be triggered in headless Chrome (OPFS is always present), so
+    // its FR-040 coverage is the exact error-prefix literal the load path matches on, pinned here.
 
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn error_prefixes_are_the_loader_contract() {
+    fn opfs_unsupported_prefix_is_the_load_contract() {
         assert_eq!(ERROR_PREFIX_OPFS_UNSUPPORTED, "cache: opfs unsupported");
-        assert_eq!(ERROR_PREFIX_QUOTA_EXCEEDED, "cache: quota exceeded");
-    }
-
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn quota_allows_leaves_the_safety_margin_free() {
-        // Exactly margin + payload free -> allowed; one byte less -> refused.
-        assert!(quota_allows(0.0, QUOTA_SAFETY_MARGIN_BYTES + 100.0, 100));
-        assert!(!quota_allows(0.0, QUOTA_SAFETY_MARGIN_BYTES + 100.0, 101));
-        assert!(!quota_allows(QUOTA_SAFETY_MARGIN_BYTES, QUOTA_SAFETY_MARGIN_BYTES + 50.0, 100));
     }
 }

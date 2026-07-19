@@ -1,4 +1,4 @@
-use js_sys::Promise;
+use js_sys::{Promise, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::DomException;
@@ -7,6 +7,15 @@ use shared::AppError;
 
 pub fn get_window() -> Result<web_sys::Window, AppError> {
     web_sys::window().ok_or_else(|| AppError::from("no window".to_string()))
+}
+
+/// A JS-heap-owned `Uint8Array` copy of `bytes`. Async JS APIs (an OPFS writable, a `fetch` body) may
+/// read their argument after the call returns; a `Uint8Array` view over wasm linear memory can detach
+/// if wasm memory grows in the meantime, so bytes handed to such an API must be owned, not viewed.
+pub fn owned_uint8_array(bytes: &[u8]) -> Uint8Array {
+    let array: Uint8Array = Uint8Array::new_with_length(bytes.len() as u32);
+    array.copy_from(bytes);
+    array
 }
 
 pub async fn await_and_cast<T: JsCast>(promise: Promise) -> Result<T, AppError> {

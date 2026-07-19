@@ -49,7 +49,7 @@ Zero-sized, stateless (FR-018): holds no `FileSystemDirectoryHandle`, no `thread
 - `evict_old_versions(&self) -> Result<(), AppError>` — web-only (NOT a trait function; built on `list_versions` + `delete_version`). Keeps the two most recent version subtrees by `YYYY-MM-DD+<surname>` lexicographic order, deletes the rest (FR-024). Called once at startup.
 - Constructor detects OPFS absence and returns an `AppError` whose message starts with `cache: opfs unsupported` (FR-023).
 - On construction: `navigator.storage.persist()` (logged, non-blocking, FR-020).
-- `put` consults `navigator.storage.estimate()` and fails with `cache: quota exceeded` when `quota - usage < bytes.len() + 4_194_304` (FR-021); any `QuotaExceededError` from `createWritable()`/`write()` maps to the same prefix (FR-022).
+- `put` consults `navigator.storage.estimate()` and fails with `opfs: quota exceeded` when `quota - usage < bytes.len() + 4_194_304` (FR-021); any `QuotaExceededError` from `createWritable()`/`write()` maps to the same prefix (FR-022).
 
 ### `thread_local` state (`web/src/map/canvas.rs`)
 
