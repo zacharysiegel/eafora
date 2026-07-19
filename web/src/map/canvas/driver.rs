@@ -25,12 +25,21 @@ thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
 }
 
-/// The projected-space bounds of the whole world. `x` is longitude passed through unchanged; `y` is the
-/// Miller value, so ±85° latitude keeps the poles out of the asymptote.
-const WORLD_MIN_LAT: f64 = -85.0;
-const WORLD_MAX_LAT: f64 = 85.0;
-const WORLD_MIN_LON: f64 = -180.0;
-const WORLD_MAX_LON: f64 = 180.0;
+struct WorldBounds {
+    min_lat: f64,
+    max_lat: f64,
+    min_lon: f64,
+    max_lon: f64,
+}
+
+/// The whole-world extent in degrees. Latitude is clamped to ±85° to keep the poles out of the Miller
+/// projection's asymptote; longitude spans the full ±180°.
+const WORLD_BOUNDS: WorldBounds = WorldBounds {
+    min_lat: -85.0,
+    max_lat: 85.0,
+    min_lon: -180.0,
+    max_lon: 180.0,
+};
 
 /// The render state the browser callbacks reach through the `DRIVER` thread-local, kept outside the
 /// reactive graph because `Renderer` owns single-thread-bound, `!Send` wgpu resources. Each JS callback
@@ -220,8 +229,8 @@ fn backend_from_query() -> RendererBackend {
 
 fn world_viewport() -> Viewport {
     Viewport {
-        min: projection::project(WORLD_MIN_LAT, WORLD_MIN_LON),
-        max: projection::project(WORLD_MAX_LAT, WORLD_MAX_LON),
+        min: projection::project(WORLD_BOUNDS.min_lat, WORLD_BOUNDS.min_lon),
+        max: projection::project(WORLD_BOUNDS.max_lat, WORLD_BOUNDS.max_lon),
     }
 }
 
