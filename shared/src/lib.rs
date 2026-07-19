@@ -2,6 +2,7 @@ pub mod artifact;
 pub mod canonical;
 pub mod error;
 pub mod filesystem;
+pub mod http;
 pub mod license;
 pub mod map;
 // render: the wgpu GPU stack. Feature-gated so the ingestion producer never links wgpu. Reached via

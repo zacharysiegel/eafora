@@ -2,36 +2,9 @@ use js_sys::{ArrayBuffer, Promise, Uint8Array};
 use web_sys::{RequestInit, Window};
 
 use shared::AppError;
+use shared::http::{HttpRequest, Response};
 
 use crate::client::js;
-
-pub enum HttpMethod {
-    Get,
-}
-
-impl HttpMethod {
-    fn as_str(&self) -> &'static str {
-        match self {
-            HttpMethod::Get => "GET",
-        }
-    }
-}
-
-pub struct HttpRequest {
-    pub method: HttpMethod,
-    pub url: String,
-}
-
-pub struct Response {
-    pub status: u16,
-    pub bytes: Vec<u8>,
-}
-
-impl Response {
-    pub fn is_success(&self) -> bool {
-        (200..=299).contains(&self.status)
-    }
-}
 
 /// Issues `request` and returns the status and body without judging the status; the caller decides what
 /// a non-2xx means. Errors only on a transport/JS failure.

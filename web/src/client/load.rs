@@ -1,10 +1,11 @@
 use shared::AppError;
 use shared::artifact::{ArtifactCache, Bundle, Manifest, manifest};
 use shared::filesystem;
+use shared::http::{HttpMethod, HttpRequest};
 use shared::license::DistributionContext;
 
 use crate::client::cache::OpfsArtifactCache;
-use crate::client::fetch::{self, HttpMethod, HttpRequest};
+use crate::client::fetch;
 
 const EMBEDDED_BASE_URL: &str = "/embedded_artifacts";
 
