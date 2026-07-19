@@ -224,6 +224,15 @@ async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year
         artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-05-26-downsampled", options)
             .await
             .expect("build_artifacts succeeds");
+
+    // The downsampled bundle reuses the complete bundle's geometry: identical content hash, both present.
+    assert_eq!(
+        build.complete.artifacts.geometry.sha256_hex(),
+        build.downsampled.artifacts.geometry.sha256_hex(),
+    );
+    assert!(build.complete.artifacts.geometry.path.exists());
+    assert!(build.downsampled.artifacts.geometry.path.exists());
+
     let build: BuildReport = build.downsampled;
 
     let tfr_base_shard = &build.artifacts.shards[0];
