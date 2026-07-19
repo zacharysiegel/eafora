@@ -90,7 +90,6 @@ impl Driver {
         };
 
         let schedule_result: Result<i32, JsValue> = window.request_animation_frame(callback.as_ref().unchecked_ref());
-
         if schedule_result.is_ok() {
             self.redraw_pending = true;
         }
