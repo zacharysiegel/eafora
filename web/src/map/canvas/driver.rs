@@ -177,7 +177,7 @@ async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> 
 fn initial_frame_state(bundle: &Bundle) -> FrameState {
     let active_statistic: StatisticKind = default_statistic(bundle);
     let active_period_start: NaiveDate = latest_period_start(bundle, active_statistic)
-        .unwrap_or_else(|| NaiveDate::from_ymd_opt(1970, 1, 1).expect("the Unix epoch is a valid date"));
+        .unwrap_or_else(|| NaiveDate::from_epoch_days(0).expect("day 0 is the Unix epoch"));
 
     FrameState {
         active_statistic,
