@@ -6,6 +6,15 @@ use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer};
 use crate::map::projection::{self, GeoPoint};
 use crate::map::{RegionCode, ScreenPoint, SurfaceDimensions, Viewport};
 
+/// A hit-test result: the region under the cursor plus the fields a caller needs (`iso3`, `name_en`),
+/// resolved here so callers do not re-parse the geometry layer to recover them.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegionHit {
+    pub region_code: RegionCode,
+    pub iso3: String,
+    pub name_en: String,
+}
+
 /// The region whose polygon contains `screen_point`, or `None` when the point is off every country
 /// (open ocean) or off the map. `surface_dimensions` is required because `screen_point` is in device
 /// pixels: the point is normalized against the surface extent before it can be mapped through the
@@ -16,7 +25,7 @@ pub fn region_at_point(
     viewport: Viewport,
     surface_dimensions: SurfaceDimensions,
     screen_point: ScreenPoint,
-) -> Option<RegionCode> {
+) -> Option<RegionHit> {
     if surface_dimensions.width == 0 || surface_dimensions.height == 0 {
         return None;
     }
@@ -33,7 +42,11 @@ pub fn region_at_point(
         .iter()
         .find(|candidate_feature| candidate_feature.contains(geo_point))?;
 
-    Some(RegionCode(hit_feature.region_code.clone()))
+    Some(RegionHit {
+        region_code: RegionCode(hit_feature.region_code.clone()),
+        iso3: hit_feature.iso3.clone(),
+        name_en: hit_feature.name_en.clone(),
+    })
 }
 
 fn screen_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, screen_point: ScreenPoint) -> GeoPoint {
@@ -75,16 +88,24 @@ mod tests {
         }
     }
 
+    fn testland_hit() -> RegionHit {
+        RegionHit {
+            region_code: RegionCode("testland".to_string()),
+            iso3: "TST".to_string(),
+            name_en: "Testland".to_string(),
+        }
+    }
+
     #[test]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn region_at_point_returns_the_country_under_the_cursor() {
         let geometry: GeometryLayer = testland_geometry();
         let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
 
-        let result: Option<RegionCode> =
+        let result: Option<RegionHit> =
             region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 110.0, y: 100.0 });
 
-        assert_eq!(result, Some(RegionCode("testland".to_string())));
+        assert_eq!(result, Some(testland_hit()));
     }
 
     #[test]
@@ -92,7 +113,7 @@ mod tests {
         let geometry: GeometryLayer = testland_geometry();
         let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
 
-        let result: Option<RegionCode> =
+        let result: Option<RegionHit> =
             region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 50.0, y: 100.0 });
 
         assert_eq!(result, None);
@@ -103,9 +124,9 @@ mod tests {
         let geometry: GeometryLayer = testland_geometry();
         let viewport: Viewport = latitude_band_viewport(-370.0, -170.0);
 
-        let result: Option<RegionCode> =
+        let result: Option<RegionHit> =
             region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 11.0, y: 100.0 });
 
-        assert_eq!(result, Some(RegionCode("testland".to_string())));
+        assert_eq!(result, Some(testland_hit()));
     }
 }
