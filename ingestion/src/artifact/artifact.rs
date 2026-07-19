@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use chrono::NaiveDate;
 use sqlx::PgConnection;
 
 use crate::artifact::artifact_model::{
-    Artifacts, BuildReport, CandidateValue, ResolvedValue,
+    Artifacts, BuildReport, CandidateValue, CoupledBuildReport, ResolvedValue,
 };
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
 use crate::artifact::{artifact_db, hashing, source_choice, StatisticShard};
@@ -16,47 +16,105 @@ use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, Sour
 use crate::canonical::canonical_entity::SourceChoice;
 use crate::error::AppError;
 use shared::artifact::manifest;
-use shared::filesystem::{FileReference, Hashed};
+use shared::filesystem::{self, FileReference, Hashed};
 
 const UNITED_STATES_ISO3: &str = "USA";
+
+/// The subdirectories of a version directory holding the two bundle variants every build emits.
+/// `complete` carries all periods and sources and publishes to the CDN; `downsampled` is World Bank
+/// WDI at the United States reference year and is embedded into clients.
+pub const SUBDIR_COMPLETE: &str = "complete";
+pub const SUBDIR_DOWNSAMPLED: &str = "downsampled";
+/// The symlink under `EAFORA_ARTIFACTS_DIR` that points at the newest build's version directory.
+pub const LATEST_POINTER: &str = "latest";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {
     pub test_offline: bool,
-    pub downsampled: bool,
+}
+
+/// Selects which resolution a variant's shards use: `Complete` runs the editorial source choice
+/// across every period; `Downsampled` collapses to the reference year via `downsample_to_reference_year`.
+#[derive(Debug, Clone, Copy)]
+enum ShardVariant {
+    Complete,
+    Downsampled,
 }
 
 pub async fn build_artifacts(
     connection: &mut PgConnection,
-    artifact_dir: &Path,
+    version_dir: &Path,
     version_label: &str,
     options: BuildOptions,
-) -> Result<BuildReport, AppError> {
+) -> Result<CoupledBuildReport, AppError> {
     let started: Instant = Instant::now();
-    log::info!("starting version_label={} artifact_dir={:?}", version_label, artifact_dir,);
-
-    fs::create_dir_all(artifact_dir)?;
+    log::info!("starting version_label={} version_dir={:?}", version_label, version_dir);
 
     let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
     let statistic_kinds: BTreeSet<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
+    let complete: BuildReport = build_bundle_variant(
+        connection,
+        &version_dir.join(SUBDIR_COMPLETE),
+        ShardVariant::Complete,
+        &source_choices,
+        statistic_kinds.clone(),
+        version_label,
+        options,
+        None,
+    ).await?;
+
+    let downsampled: BuildReport = build_bundle_variant(
+        connection,
+        &version_dir.join(SUBDIR_DOWNSAMPLED),
+        ShardVariant::Downsampled,
+        &source_choices,
+        statistic_kinds,
+        version_label,
+        options,
+        Some(&complete.artifacts.geometry),
+    ).await?;
+
+    log::info!(
+        "complete in {:?}; complete manifest sha256={} downsampled manifest sha256={}",
+        started.elapsed(),
+        complete.artifacts.manifest.sha256_hex(),
+        downsampled.artifacts.manifest.sha256_hex(),
+    );
+
+    Ok(CoupledBuildReport { complete, downsampled })
+}
+
+/// Builds one bundle variant into `variant_dir` as a self-contained tree (its own manifest, geometry,
+/// and shards). `shared_geometry` lets the second variant reuse the first's already-built 1:50m
+/// FlatGeobuf by copying it in, so the pinned Natural Earth source is fetched once per build.
+async fn build_bundle_variant(
+    connection: &mut PgConnection,
+    variant_dir: &Path,
+    variant: ShardVariant,
+    source_choices: &[SourceChoice],
+    statistic_kinds: BTreeSet<StatisticKind>,
+    version_label: &str,
+    options: BuildOptions,
+    shared_geometry: Option<&Hashed<FileReference>>,
+) -> Result<BuildReport, AppError> {
+    fs::create_dir_all(variant_dir)?;
+
     let (shards, data_sources): (Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>) =
-        create_statistic_shards(connection, artifact_dir, &source_choices, statistic_kinds, options).await?;
-    let geometry: Hashed<FileReference> = create_geometry(connection, artifact_dir, options).await?;
+        create_statistic_shards(connection, variant_dir, source_choices, statistic_kinds, variant).await?;
+
+    let geometry: Hashed<FileReference> = match shared_geometry {
+        Some(existing) => copy_geometry_into(existing, variant_dir)?,
+        None => create_geometry(connection, variant_dir, options).await?,
+    };
 
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
         artifact_db::read_latest_revisions(&mut *connection, &data_sources).await?;
     let manifest: Hashed<FileReference> =
-        manifest_writer::write_manifest(&shards, &geometry, version_label, &data_source_revisions, artifact_dir)?;
-
-    log::info!(
-        "complete in {:?}; manifest sha256={}",
-        started.elapsed(),
-        manifest.sha256_hex(),
-    );
+        manifest_writer::write_manifest(&shards, &geometry, version_label, &data_source_revisions, variant_dir)?;
 
     Ok(BuildReport {
-        artifact_dir: artifact_dir.to_path_buf(),
+        artifact_dir: variant_dir.to_path_buf(),
         version_label: version_label.to_string(),
         artifacts: Artifacts {
             shards,
@@ -69,10 +127,10 @@ pub async fn build_artifacts(
 
 async fn create_statistic_shards(
     connection: &mut PgConnection,
-    artifact_dir: &Path,
+    variant_dir: &Path,
     source_choices: &[SourceChoice],
     statistic_kinds: BTreeSet<StatisticKind>,
-    options: BuildOptions,
+    variant: ShardVariant,
 ) -> Result<(Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>), AppError> {
     let mut shards: Vec<StatisticShard<Hashed<FileReference>>> = Vec::new();
     let mut data_sources: BTreeSet<DataSourceKind> = BTreeSet::new();
@@ -88,10 +146,9 @@ async fn create_statistic_shards(
             continue;
         }
 
-        let resolved: Vec<ResolvedValue> = if options.downsampled {
-            downsample_to_reference_year(candidates, kind)
-        } else {
-            source_choice::resolve_candidates(candidates, source_choices)?
+        let resolved: Vec<ResolvedValue> = match variant {
+            ShardVariant::Complete => source_choice::resolve_candidates(candidates, source_choices)?,
+            ShardVariant::Downsampled => downsample_to_reference_year(candidates, kind),
         };
         if resolved.is_empty() {
             continue;
@@ -101,7 +158,7 @@ async fn create_statistic_shards(
             data_sources.insert(value.data_source_kind);
         }
 
-        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &artifact_dir.join(manifest::SUBDIR_DATA))?;
+        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &variant_dir.join(manifest::SUBDIR_DATA))?;
         let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!(
             "statistic {:?}: {} resolved values across {} shards",
@@ -165,6 +222,24 @@ async fn create_geometry(
     log::info!("wrote geometry {:?}", geometry.path);
     let geometry: Hashed<FileReference> = hashing::hash_geometry(geometry)?;
     Ok(geometry)
+}
+
+/// Copies an already-built, content-addressed geometry file into `variant_dir`'s geometry subdir and
+/// returns a handle to the copy. The bytes are identical, so the sha and byte count carry over without
+/// re-hashing.
+fn copy_geometry_into(geometry: &Hashed<FileReference>, variant_dir: &Path) -> Result<Hashed<FileReference>, AppError> {
+    let geometry_dir: PathBuf = variant_dir.join(manifest::SUBDIR_GEOMETRY);
+    fs::create_dir_all(&geometry_dir)?;
+
+    let filename: &str = filesystem::filename_of(&geometry.path)?;
+    let destination: PathBuf = geometry_dir.join(filename);
+    fs::copy(&geometry.path, &destination)
+        .map_err(|err| AppError::from(format!("copying geometry into {:?} failed: {}", variant_dir, err)))?;
+
+    Ok(Hashed::new_with_sha(
+        FileReference { path: destination, byte_count: geometry.byte_count },
+        geometry.sha256_hex().to_string(),
+    ))
 }
 
 #[cfg(test)]

@@ -134,6 +134,15 @@ pub struct BuildReport {
     pub data_source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
 }
 
+/// The pair of bundles one build emits for a single version: the complete bundle (all periods and
+/// sources, published to the CDN) and the downsampled bundle (World Bank WDI at the United States
+/// reference year, embedded into clients). Each is a self-contained tree under the version directory.
+#[derive(Debug, Clone)]
+pub struct CoupledBuildReport {
+    pub complete: BuildReport,
+    pub downsampled: BuildReport,
+}
+
 #[derive(Debug, Clone)]
 pub struct ArtifactVersion {
     pub id: Uuid,

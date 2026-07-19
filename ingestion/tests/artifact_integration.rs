@@ -15,7 +15,7 @@ use rusqlite::Connection;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use ingestion::artifact::{self, BuildOptions, BuildReport};
+use ingestion::artifact::{self, BuildOptions, BuildReport, CoupledBuildReport};
 use shared::canonical::canonical_model::DataSourceKind;
 use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, write_geometry, PLACEHOLDER_GEOMETRY_BYTES};
 use shared::artifact::geometry;
@@ -50,11 +50,12 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     ).await;
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let options: BuildOptions = BuildOptions { test_offline: true, downsampled: false };
-    let build: BuildReport =
+    let options: BuildOptions = BuildOptions { test_offline: true };
+    let build: CoupledBuildReport =
         artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-05-26-test", options)
             .await
             .expect("build_artifacts succeeds");
+    let build: BuildReport = build.complete;
 
     assert_eq!(build.version_label, "2026-05-26-test");
 
@@ -157,9 +158,9 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     transaction.rollback().await.unwrap();
 }
 
-/// A `--downsampled` build keeps only the reference year — the United States' most-recent period.
-/// Regions reporting that year are kept; a region reporting only a later year is still dropped,
-/// since the renderer resolves each region's value by exact period.
+/// The downsampled variant every build emits keeps only the reference year (the United States'
+/// most-recent period). Regions reporting that year are kept; a region reporting only a later year is
+/// still dropped, since the renderer resolves each region's value by exact period.
 #[tokio::test]
 async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year() {
     let pool: PgPool = test_pool().await;
@@ -218,11 +219,12 @@ async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year
     ).await;
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let options: BuildOptions = BuildOptions { test_offline: true, downsampled: true };
-    let build: BuildReport =
+    let options: BuildOptions = BuildOptions { test_offline: true };
+    let build: CoupledBuildReport =
         artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-05-26-downsampled", options)
             .await
-            .expect("downsampled build_artifacts succeeds");
+            .expect("build_artifacts succeeds");
+    let build: BuildReport = build.downsampled;
 
     let tfr_base_shard = &build.artifacts.shards[0];
     let connection: Connection = Connection::open(&tfr_base_shard.file.path).unwrap();

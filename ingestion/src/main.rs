@@ -1,10 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use ingestion::adapter::AdapterOptions;
-use ingestion::artifact::{self, BuildReport, BuildOptions, PublishReport};
+use ingestion::artifact::{self, BuildReport, BuildOptions, CoupledBuildReport, PublishReport};
 use ingestion::artifact::repository::{
     ArtifactRepositoryKind, CloudflareR2ArtifactRepository, CloudflareR2Config,
     DryArtifactRepository, LocalArtifactRepository,
@@ -67,9 +67,7 @@ fn build_cli() -> Command {
         )
         .subcommand(
             Command::new("build")
-                .about("Build CDN artifacts from the current canonical store; writes to $EAFORA_ARTIFACTS_DIR/<version-label>/")
-                .arg(Arg::new("downsampled").long("downsampled").action(ArgAction::SetTrue)
-                    .help("emit a compact bundle for embedding in clients: World Bank WDI only, at the United States' most-recent reference year")),
+                .about("Build the complete (CDN) and downsampled (embedded) bundles from the current canonical store; writes both to $EAFORA_ARTIFACTS_DIR/<version-label>/{complete,downsampled}/ and updates the latest pointer"),
         )
         .subcommand(
             Command::new("publish")
@@ -177,35 +175,56 @@ fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
     }
 }
 
-async fn dispatch_build(matches: &ArgMatches) -> Result<(), AppError> {
-    let downsampled: bool = matches.get_flag("downsampled");
-    let options: BuildOptions = BuildOptions { test_offline: false, downsampled };
+async fn dispatch_build(_matches: &ArgMatches) -> Result<(), AppError> {
+    let options: BuildOptions = BuildOptions { test_offline: false };
 
     let pool: PgPool = db::create_pool().await?;
-    let build: BuildReport = run_build(&pool, options).await?;
+    let build: CoupledBuildReport = run_build(&pool, options).await?;
 
     log::info!(
-        "build complete; [version_label={} artifact_dir={:?} shards={} geometry={:?} manifest={:?}]",
-        build.version_label,
-        build.artifact_dir,
-        build.artifacts.shards.len(),
-        build.artifacts.geometry.path,
-        build.artifacts.manifest.path,
+        "build complete; [version_label={} complete_dir={:?} complete_shards={} downsampled_dir={:?} downsampled_shards={}]",
+        build.complete.version_label,
+        build.complete.artifact_dir,
+        build.complete.artifacts.shards.len(),
+        build.downsampled.artifact_dir,
+        build.downsampled.artifacts.shards.len(),
     );
     Ok(())
 }
 
-async fn run_build(pool: &PgPool, options: BuildOptions) -> Result<BuildReport, AppError> {
+async fn run_build(pool: &PgPool, options: BuildOptions) -> Result<CoupledBuildReport, AppError> {
     let parent: PathBuf = PathBuf::from(dotenvy::var("EAFORA_ARTIFACTS_DIR")?);
     let version_label: String = version_label::generate(pool).await?;
-    let artifact_dir: PathBuf = parent.join(&version_label);
+    let version_dir: PathBuf = parent.join(&version_label);
 
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
-    let report: BuildReport =
-        artifact::build_artifacts(&mut *transaction, &artifact_dir, &version_label, options).await?;
+    let report: CoupledBuildReport =
+        artifact::build_artifacts(&mut *transaction, &version_dir, &version_label, options).await?;
     transaction.commit().await?;
 
+    #[cfg(unix)] // the latest pointer is a Unix symlink; the producer runs on macOS/Linux
+    update_latest_pointer(&parent, &version_label)?;
+
     Ok(report)
+}
+
+/// Repoints `<EAFORA_ARTIFACTS_DIR>/latest` at the version directory just built, so consumers (the
+/// embedded-bundle sync script, manual publishes) always resolve the newest build. The target is
+/// relative so the pointer survives relocating the artifacts directory. Called only after the
+/// transaction commits, so `latest` never names a version whose rows failed to persist.
+#[cfg(unix)] // creates a symlink via std::os::unix::fs, which the producer's macOS/Linux hosts support
+fn update_latest_pointer(parent: &Path, version_label: &str) -> Result<(), AppError> {
+    let pointer: PathBuf = parent.join(artifact::LATEST_POINTER);
+
+    if pointer.symlink_metadata().is_ok() {
+        std::fs::remove_file(&pointer)
+            .map_err(|err| AppError::from(format!("removing the existing latest pointer {:?} failed: {}", pointer, err)))?;
+    }
+
+    std::os::unix::fs::symlink(version_label, &pointer)
+        .map_err(|err| AppError::from(format!("creating the latest pointer {:?} failed: {}", pointer, err)))?;
+
+    Ok(())
 }
 
 async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
@@ -217,7 +236,7 @@ async fn dispatch_publish(matches: &ArgMatches) -> Result<(), AppError> {
     let pool: PgPool = db::create_pool().await?;
 
     let build_report: BuildReport = if build_first {
-        run_build(&pool, BuildOptions::default()).await?
+        run_build(&pool, BuildOptions::default()).await?.complete
     } else {
         let artifact_dir: PathBuf = PathBuf::from(
             sub_matches.get_one::<String>("artifact-dir").expect("artifact-dir is required when --build is absent"),
