@@ -75,7 +75,7 @@ impl Driver {
 
     /// Coalesce redraw requests into one `requestAnimationFrame`; there is no idle refresh
     /// loop. The pending flag is set only once a frame is actually scheduled, so a failed schedule stays
-    /// retryable rather than wedging every later redraw.
+    /// retryable; otherwise the flag would latch and every later redraw would short-circuit on it.
     fn request_redraw(&mut self) {
         if self.redraw_pending {
             return;
