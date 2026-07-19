@@ -12,7 +12,6 @@ use crate::client::{js, opfs};
 
 const ARTIFACTS_DIRECTORY: &str = "artifacts";
 const VERSIONS_KEPT: usize = 2;
-const ERROR_PREFIX_OPFS_UNSUPPORTED: &str = "cache: opfs unsupported";
 
 /// The browser implementation of [`ArtifactCache`], backed by the Origin Private File System. A
 /// zero-sized, stateless type: it resolves `navigator.storage.getDirectory()` on every call and caches
@@ -27,7 +26,7 @@ impl OpfsArtifactCache {
     pub async fn create() -> Result<OpfsArtifactCache, AppError> {
         let root: FileSystemDirectoryHandle = opfs::root()
             .await
-            .map_err(|error| AppError::from(format!("{ERROR_PREFIX_OPFS_UNSUPPORTED}: {error}")))?;
+            .map_err(|error| AppError::from(format!("cache: opfs unsupported: {error}")))?;
         opfs::get_or_create_directory(&root, ARTIFACTS_DIRECTORY).await?;
 
         // Persistent storage is advisory; log the outcome but never fail construction if it's denied.
@@ -220,13 +219,5 @@ mod tests {
         assert_eq!(cache.get("2026-06-01+evict-a", "manifest.json").await.unwrap(), None);
         assert_eq!(cache.get("2026-06-10+evict-b", "manifest.json").await.unwrap().as_deref(), Some(b"x".as_slice()));
         assert_eq!(cache.get("2026-06-22+evict-c", "manifest.json").await.unwrap().as_deref(), Some(b"x".as_slice()));
-    }
-
-    // The opfs-unsupported branch can't be triggered in headless Chrome (OPFS is always present), so
-    // its coverage is the exact error-prefix literal the load path matches on, pinned here.
-
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn opfs_unsupported_prefix_is_the_load_contract() {
-        assert_eq!(ERROR_PREFIX_OPFS_UNSUPPORTED, "cache: opfs unsupported");
     }
 }

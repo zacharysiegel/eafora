@@ -147,9 +147,8 @@ fn quota_allows(usage: f64, quota: f64, incoming_len: usize) -> bool {
     quota - usage >= incoming_len as f64 + QUOTA_SAFETY_MARGIN_BYTES
 }
 
-/// A `QuotaExceededError` becomes the `opfs: quota exceeded` sentinel a caller can match on; other
-/// rejections pass through. The signal is stringly typed because `AppError` is a flat string and a
-/// `QuotaExceededError` is identified only by its DOMException name.
+/// A `QuotaExceededError` gets a clear `opfs: quota exceeded` prefix for diagnostics; other rejections
+/// pass through as their raw JS message.
 fn write_error(error: JsValue) -> AppError {
     if js::is_dom_exception_named(&error, "QuotaExceededError") {
         return AppError::from(format!("{ERROR_PREFIX_QUOTA_EXCEEDED}: {}", js::error_message(&error)));
@@ -161,11 +160,6 @@ fn write_error(error: JsValue) -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    fn quota_exceeded_prefix_is_the_load_contract() {
-        assert_eq!(ERROR_PREFIX_QUOTA_EXCEEDED, "opfs: quota exceeded");
-    }
 
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn quota_allows_leaves_the_safety_margin_free() {
