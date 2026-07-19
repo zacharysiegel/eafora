@@ -68,13 +68,17 @@ unchanged; native callers update the one `Renderer::new` call site to pass `Rend
 
 ### Phase 0b — `ingestion` (own PR, off `master`)
 
-`ingestion/src/main.rs` — the existing `build` subcommand gains a `--downsampled <output-dir>` flag
-(clap builder API). Contract: emits a bundle whose geometry is the full 1:50m FlatGeobuf (unchanged)
-and whose statistic shards are restricted to World Bank WDI at a single reference year — the United
-States' most-recent period, with every region reporting that year — into
-`<output-dir>/latest/`. The manifest schema is identical to the live bundle's; only the shard row
-counts differ. Reuses the existing `build_artifacts` path with a downsampling filter at shard emission.
-Independent of Phase 0a and of the web stack.
+`ingestion/src/main.rs` — the existing `build` subcommand (no flag) emits BOTH bundles for one version
+in one run. The complete bundle (all periods and sources; publishes to the CDN) lands in
+`$EAFORA_ARTIFACTS_DIR/<version-label>/complete/`, and the downsampled bundle lands in
+`$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`. Each is a self-contained tree: its own
+`manifest.json` + `geometry/` + `data/`. `build` also updates a `$EAFORA_ARTIFACTS_DIR/latest`
+symlink pointing at the newest `<version-label>/`. Contract for the downsampled bundle: its geometry is
+the full 1:50m FlatGeobuf (unchanged) and its statistic shards are restricted to World Bank WDI at a
+single reference year — the United States' most-recent period, with every region reporting that year.
+The manifest schema is identical to the complete bundle's; only the shard row counts differ. Reuses the
+existing `build_artifacts` path with a downsampling filter at shard emission. Independent of Phase 0a
+and of the web stack.
 
 ## `web/src` module surface
 

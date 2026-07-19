@@ -139,14 +139,14 @@ shared/src/map/renderer.rs        # + #[cfg(wasm32)] attach_surface_from_canvas(
 shared/Cargo.toml                 # web-sys canvas types under the wasm32 target deps
 
 # MODIFIED — ingestion, Phase 0b (own PR, off master)
-ingestion/src/main.rs             # + `build --downsampled <dir>` flag
-ingestion/src/artifact/...        # downsampling filter: statistics = World Bank WDI at the USA reference year; geometry unfiltered
+ingestion/src/main.rs             # `ingestion build` (no flag) emits both bundles per version
+ingestion/src/artifact/...        # build orchestration emits complete/ and downsampled/ subtrees under <version-label>/ + a latest pointer; downsampling filter: statistics = World Bank WDI at the USA reference year; geometry unfiltered
 
 # MODIFIED — design doc (folds into Phase A)
 docs/design/stub-desktop.html     # accent colors #e60019/#0030d4 -> #d50000/#0050ff (palette A canonical)
 
 # NEW — build/deploy scripts (Phase E, except sync which pairs with 0b)
-scripts/sync-embedded-bundle.sh   # ingestion build --downsampled + cp -R into web/static/embedded_artifacts/
+scripts/sync-embedded-bundle.sh   # cp -R $EAFORA_ARTIFACTS_DIR/latest/downsampled/* into web/static/embedded_artifacts/
 scripts/precompress-site.sh       # brotli -q 11 --keep over target/site/
 scripts/measure-site-budget.sh    # perf-budget report vs 2 MB / 3 MB caps; always exits 0
 ```
@@ -221,8 +221,8 @@ at the same-origin `embedded_artifacts/` directory.
 
 Confirmed across `docs/architecture/{client,overview,client-web}.md`: the embedded bundle keeps
 geometry at full 1:50m resolution and downsamples statistics to a single reference year (World Bank WDI only, the United States' most-recent period)
-(total approx. 1.5–1.7 MB), which is what the 2 MB first-paint cap requires. `ingestion build --downsampled`
-(the producer command) is unwritten; Phase 0b implements it. Until it lands, Phase C renders against a
+(total approx. 1.5–1.7 MB), which is what the 2 MB first-paint cap requires. `ingestion build`
+emits the downsampled variant as a `downsampled/` subtree of every build (it is implemented). Until it is available, Phase C renders against a
 hand-built stub bundle under `web/static/embedded_artifacts/` (gitignored).
 
 ### Topic 7: dependency decisions — RESOLVED 2026-07-13
@@ -256,8 +256,9 @@ Two independent prerequisite PRs off `master`, then a linear stack for the web f
   `Renderer::attach_surface_from_canvas`, `Renderer::new` backend parameter. Closes the
   `docs/backlog.md` §Client canvas-attach item and clears the wasm32 dead-code warnings. Covers the
   `shared` half of FR-012 and FR-015.
-- **Phase 0b — `ingestion`: `build --downsampled`** (own PR, off `master`). The producer command that
-  emits the downsampled bundle; unblocks FR-004 and the real `sync-embedded-bundle.sh`. Independent of
+- **Phase 0b — `ingestion`: dual-bundle build orchestration** (own PR, off `master`). `ingestion build`
+  emits both the complete and downsampled variants under one `<version-label>/` plus a `latest` pointer;
+  unblocks FR-004 and the real `sync-embedded-bundle.sh`. Independent of
   the web stack; the interim hand-stub covers Phase C in the meantime.
 - **Phase A — workspace + build toolchain + Leptos shell + CSS tokens** (stacks on `003-web-client`).
   FR-001, 002, 003, 007, 008, 009, 010, 010a, 035, 036, 037, 038, 039; plus the stub color correction.
@@ -282,7 +283,7 @@ corrections the built `shared` crate forces on the spec (the crate is `shared` n
 `WgpuSurface` lives in `shared::render` and holds only surface+config; the canvas surface must be
 built inside `shared` from the renderer's own instance; forcing WebGL2 needs a `Renderer::new`
 backend parameter; `Bundle::open` reads from the cache rather than fetching). Splits the two
-cross-crate prerequisites — the wasm32 canvas attach in `shared` and `ingestion build --downsampled` —
+cross-crate prerequisites — the wasm32 canvas attach in `shared` and the `ingestion build` dual-bundle orchestration —
 into their own PRs, and lays out the web feature as a linear stack (workspace/shell → OPFS cache →
 first paint → live fetch/hot-swap → perf-budget/deploy). Affected crates: `web` (new), `shared`,
 `ingestion`; plus `docs/design/stub-desktop.html` (accent palette corrected to the canonical `#d50000`/`#0050ff`).

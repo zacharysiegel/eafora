@@ -78,7 +78,7 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 > **Producer follow-ups (small PRs):**
 > - Stand up the `core/` crate (workspace member) and move the manifest type into `core::artifact::manifest`, with `ingestion::artifact::writer::manifest` importing it. Currently the producer-side struct is local (`ingestion/src/artifact/writer/manifest.rs::ManifestSerializer`) and there is no `core/`. Sequenced before the first client implementation, since the client depends on `core/` existing.
 > - Rename the `data/` subdirectory to `statistics/` for symmetry with `geometry/` and to remove the ambiguity of "data" as a shard subtype name. Touches the `SUBDIR_DATA` constant and its references. Pre-dates the first client implementation, so no migration concern.
-> - Add `ingestion build --downsampled <output-dir>` for generating the native-client embedded bundle directly from the canonical store. Sequenced when native-client work begins.
+> - `ingestion build` emits a `downsampled/` subtree per build (under `$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`) for the native-client embedded bundle, generated directly from the canonical store alongside the complete bundle.
 > - On every successful `ingestion publish`, copy the just-published manifest to the stable key `latest/manifest.json` on the destination (see §Discovery and live bundle resolution).
 > - Publish the discovery document at `https://eafora.org/discovery` (see §Discovery and live bundle resolution for the schema). Initially a committed static file under the web app's `static/` tree; regenerated via a small script when the contract changes.
 
@@ -90,7 +90,7 @@ The embedded bundle on native serves two purposes: first-paint accelerant for fi
 
 #### Embedded bundle (native + web)
 
-Pinned at client build time on every platform. The client's build script pulls the latest output of `ingestion build --downsampled` and copies the result into its own asset directory (see §Embedded downsampled artifact for the per-platform paths). On native the bundle loads synchronously at startup; on web it's fetched at static-asset speed alongside the wasm. Either way the map renders before the live CDN fetch resolves.
+Pinned at client build time on every platform. The client's build script pulls the downsampled subtree of the latest `ingestion build` (`$EAFORA_ARTIFACTS_DIR/latest/downsampled/`) and copies the result into its own asset directory (see §Embedded downsampled artifact for the per-platform paths). On native the bundle loads synchronously at startup; on web it's fetched at static-asset speed alongside the wasm. Either way the map renders before the live CDN fetch resolves.
 
 #### Discovery URL: the one forever-URL
 
@@ -242,7 +242,7 @@ Verified bytes go into the persistent cache and into a fresh `core::artifact::Bu
 
 The cache holds one or more complete artifact versions. The default policy is **keep the current resolved version + the most recent prior version**; older versions are deleted on launch. The prior-version retention exists so a brief publish rollback (rare) doesn't force a full re-fetch.
 
-The embedded bundle on native is not part of the cache — it lives inside the app binary and is never evicted. It is replaced only when the user installs a new app build (whose `ingestion build --downsampled` output captured a newer baseline). On native, the floor of available data is therefore "embedded version OR cached version, whichever is more recent"; on web, it's just "cached version, if any."
+The embedded bundle on native is not part of the cache — it lives inside the app binary and is never evicted. It is replaced only when the user installs a new app build (whose `ingestion build` downsampled subtree captured a newer baseline). On native, the floor of available data is therefore "embedded version OR cached version, whichever is more recent"; on web, it's just "cached version, if any."
 
 Per-platform policy differs in failure modes — see `client-web.md` for OPFS quota / `navigator.storage.persist()` / `estimate()` handling per the saved memory `reference_browser_storage_quotas`; see `client-ios.md` and `client-android.md` for iOS document-directory and Android internal-storage equivalents. The cross-platform contract is just: a `cache.put(version_label, file_relative_path, bytes)` / `cache.get(version_label, file_relative_path) -> Option<Bytes>` interface, implemented per platform and consumed by the same Rust core.
 
@@ -312,7 +312,7 @@ Every client ships with the same downsampled bundle — a small subset of the li
 - **Native** (iOS, Android): bytes baked into the app binary at build time. Available before any network or filesystem activity. Doubles as the offline-capable baseline when no cache and no network are present.
 - **Web**: bytes shipped as a static asset alongside the wasm on Cloudflare Workers Assets. Fetched on first visit (HTTP-cached for return visits) before the live CDN bundle, so the first-ever visitor sees the map render at static-asset speed rather than waiting on a separate live-bundle fetch.
 
-The downsampled bundle is generated by `ingestion build --downsampled`, which reads the canonical store directly (no CDN round trip) and writes a reduced artifact set to a single output directory (alongside the regular `ingestion build` output). It does not touch any per-platform asset directory.
+The downsampled bundle is generated by `ingestion build`, which reads the canonical store directly (no CDN round trip) and writes a reduced artifact set to the `downsampled/` subtree of the build (`$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`, alongside the complete bundle at `.../complete/`). It does not touch any per-platform asset directory.
 
 Downsampling rules applied during shard emission:
 
@@ -323,11 +323,11 @@ Total embedded bundle: approx. 1.5–1.7 MB through v2. Matching the live bundle
 
 Revisit when v2+ subnational geometry lands (would push the geometry portion well past the current 1.5 MB) or when current-year-across-all-statistics stops fitting comfortably in single-digit MB.
 
-Each client's build pipeline pulls the latest downsampled output and copies it into its own asset directory:
+Each client's build pipeline pulls the latest downsampled bundle from `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies it into its own asset directory (via `scripts/sync-embedded-bundle.sh <destination-dir>`, which runs `ingestion build` first if no build exists yet):
 
-- iOS: bundle build script reads from the downsampled output directory and copies into `ios/EaforaApp/Resources/embedded_artifacts/` as part of the Xcode build.
-- Android: Gradle task reads from the downsampled output directory and copies into `android/app/src/main/assets/embedded_artifacts/` as part of the Android build.
-- Web: cargo-leptos build step (or equivalent) reads from the downsampled output directory and copies into `web/static/embedded_artifacts/` so Cloudflare Workers Assets serves it alongside the wasm bundle.
+- iOS: bundle build script reads from `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies into `ios/EaforaApp/Resources/embedded_artifacts/` as part of the Xcode build.
+- Android: Gradle task reads from `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies into `android/app/src/main/assets/embedded_artifacts/` as part of the Android build.
+- Web: cargo-leptos build step (or equivalent) reads from `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies into `web/static/embedded_artifacts/` so Cloudflare Workers Assets serves it alongside the wasm bundle.
 
 The dependency direction is **client build pulls from the producer's output**, never **producer pushes into client trees**. This keeps `ingestion` agnostic to per-platform layout and lets each client decide when (and whether) to refresh its embedded bundle.
 
@@ -418,6 +418,6 @@ Live HTTP against the CDN is **not** part of automated tests; it's a manual smok
 ## Decisions still open
 
 - **wgpu / WebGPU fallback policy.** WebGPU is stable in Chromium and Safari 18.4+; Firefox is on WebGL2 via the wgpu downlevel backend. The capability detection happens inside `wgpu::Instance::request_adapter`, so the client doesn't need its own logic — but the *UI fallback* (do we render a coarser version under WebGL2, or do we render the same version with a perf-warning banner?) is per-platform UX work. Defer to `client-web.md`.
-- **Embedded-bundle build automation (native).** `ingestion build --downsampled` does not exist yet; today's `ingestion build` produces only the full artifact. To be added as a separate small PR on the producer side when native-client work begins. Each native build script then needs to invoke (or fetch the latest output of) the downsampled command and copy the result into its own asset directory.
+- **Embedded-bundle build automation (native).** `ingestion build` now emits the downsampled subtree (`$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`) on every build alongside the complete bundle, and `scripts/sync-embedded-bundle.sh <destination-dir>` copies `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` into a client's asset directory (running `ingestion build` first if no build exists). Each native build script needs to invoke this sync step and copy the result into its own asset directory when native-client work begins.
 - **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are baked into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. **Trigger:** i18n lands (a second locale becomes a real deliverable).
 

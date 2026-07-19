@@ -30,7 +30,7 @@
 
 - [x] Dependencies and assumptions identified
 
-> §Assumptions names: (a) `core/` crate prerequisites (the first `client.md` producer follow-up); (b) `ingestion build --downsampled` prerequisite; (c) `repository.eafora.org` + `latest/manifest.json` are NOT prerequisites — the spec describes the same-origin stub path that lets the feature land before them; (d) pinned Leptos / wgpu / `leptos_i18n` versions and the rule for re-verifying API names if they shift; (e) Safari OPFS cutoff to verify against `caniuse.com`; (f) Cloudflare dashboard configuration sits outside the codebase; (g) `brotli` CLI on the build machine; (h) embedded-bundle staleness story.
+> §Assumptions names: (a) `core/` crate prerequisites (the first `client.md` producer follow-up); (b) `ingestion build` emits the downsampled subtree as a prerequisite; (c) `repository.eafora.org` + `latest/manifest.json` are NOT prerequisites — the spec describes the same-origin stub path that lets the feature land before them; (d) pinned Leptos / wgpu / `leptos_i18n` versions and the rule for re-verifying API names if they shift; (e) Safari OPFS cutoff to verify against `caniuse.com`; (f) Cloudflare dashboard configuration sits outside the codebase; (g) `brotli` CLI on the build machine; (h) embedded-bundle staleness story.
 
 ## Feature Readiness
 

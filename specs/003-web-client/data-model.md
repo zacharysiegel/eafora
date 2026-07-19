@@ -72,4 +72,4 @@ Orchestrates first paint and the background upgrade. Not a persisted entity — 
 ## Static data shapes (verbatim-served)
 
 - `web/static/discovery` — `{ "schema_version": 1, "repository_base_url": "https://repository.eafora.org", "minimum_client_version": "0.1.0", "sunset": null }` (FR-034), parsed by `parse_discovery_document`.
-- `web/static/embedded_artifacts/` (gitignored) — a downsampled bundle: `manifest.json` (schema v1) + `geometry/world-50m-<sha8>.fgb` (full 1:50m) + `data/<statistic>-base-<sha8>.sqlite` (World Bank WDI at the United States' most-recent reference year). Produced by `ingestion build --downsampled` (Phase 0b) or, interim, hand-built.
+- `web/static/embedded_artifacts/` (gitignored) — a downsampled bundle: `manifest.json` (schema v1) + `geometry/world-50m-<sha8>.fgb` (full 1:50m) + `data/<statistic>-base-<sha8>.sqlite` (World Bank WDI at the United States' most-recent reference year). Produced by `ingestion build` (the downsampled/ subtree of each build) or, interim, hand-built.

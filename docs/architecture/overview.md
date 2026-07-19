@@ -108,12 +108,12 @@ eafora/
 ├── android/                # Compose shell + UniFFI consumer
 │   ├── build.gradle.kts
 │   └── app/
-└── data/                   # gitignored. Downsampled artifacts produced by
-                            # `ingestion build --downsampled`. Each native client's
-                            # build script fetches (or regenerates and then fetches)
-                            # the latest output and copies it into its own asset
-                            # directory; ingestion does not touch platform trees.
-                            # for any historical downsampled shape.
+└── data/                   # gitignored. Build artifacts under
+                            # `$EAFORA_ARTIFACTS_DIR/<version-label>/`, each
+                            # holding a `complete/` and a `downsampled/` subtree.
+                            # Native clients read `$EAFORA_ARTIFACTS_DIR/latest/downsampled/`
+                            # via the `latest` pointer; ingestion does not touch
+                            # platform trees.
 ```
 
 Notes on this shape:
@@ -122,7 +122,7 @@ Notes on this shape:
 - `ingestion/` is a separate crate that depends on `core` and adds the actix-web router, sqlx queries, source adapters, and artifact builders. Splitting it from `core` means clients don't pull in actix-web or sqlx into their WASM/UniFFI builds.
 - `ios/` and `android/` are not Cargo crates — they're native projects that consume artifacts produced by `core`. The `core` crate's UniFFI build emits an `xcframework` and an AAR that these projects link against.
 - `web/` is a Cargo workspace member because cargo-leptos drives it. It depends on `core` directly and adds Leptos components, routing, and the wasm-bindgen adapter.
-- The downsampled artifacts (small downsampled FlatGeobuf + SQLite shipped inside each native app build for instant first-launch UX) are produced by `ingestion build --downsampled`, which reads the canonical store directly and applies the downsampling rules (drop sub-national geometry, restrict statistics to World Bank WDI and keep a single reference year — the United States' most-recent period) during shard emission. The output lands in a single producer-owned directory; each native client's build script (Xcode for iOS, Gradle for Android) fetches the latest output and copies it into its own asset tree (`ios/EaforaApp/Resources/embedded_artifacts/`, `android/app/src/main/assets/embedded_artifacts/`). The dependency direction is client-pulls-from-producer, never producer-pushes-into-client. The web build has no equivalent embedded bundle. Reproducibility for any given commit comes from the canonical store at the producer machine, not from `git`.
+- The downsampled artifacts (small downsampled SQLite plus full-geometry FlatGeobuf shipped inside each native app build for instant first-launch UX) are the `downsampled/` subtree of each `$EAFORA_ARTIFACTS_DIR/<version-label>/` build. Every `ingestion build` emits both bundles for one version in a single run — the `complete/` bundle (all periods and sources; publishes to the CDN) and the `downsampled/` bundle — reading the canonical store directly and applying the downsampling rules (drop sub-national geometry, restrict statistics to World Bank WDI and keep a single reference year — the United States' most-recent period, while keeping country geometry at full 1:50m resolution) during shard emission. `ingestion build` also updates a `$EAFORA_ARTIFACTS_DIR/latest` symlink pointing at the newest `<version-label>/`. Each native client's build script (Xcode for iOS, Gradle for Android) reads `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies it into its own asset tree (`ios/EaforaApp/Resources/embedded_artifacts/`, `android/app/src/main/assets/embedded_artifacts/`). The dependency direction is client-pulls-from-producer, never producer-pushes-into-client. The web build has no equivalent embedded bundle. Reproducibility for any given commit comes from the canonical store at the producer machine, not from `git`.
 - Per the constitution's Singularity convention parity (Principle IV), `scripts/dbmate.sh` / `secrets.yaml` mirror Singularity verbatim. `setup.sh` and the Postgres runtime differ: Eafora installs Postgres via Homebrew and manages it via `launchd` rather than Podman Compose — a Principle IV deviation justified by v1's personal-hardware scope (see Constitution v1.3.3 SYNC IMPACT note). Containerization may return for cloud deployment post-v2.
 
 ### Workspace Cargo profile

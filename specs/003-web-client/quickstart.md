@@ -24,11 +24,10 @@ locally:
 ./scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts/
 ```
 
-The script runs `ingestion build --downsampled "$EAFORA_DOWNSAMPLED_DIR/latest"` when that directory
-is missing (defaulting `EAFORA_DOWNSAMPLED_DIR` to `./data/downsampled`), then plain-copies the
-contents with `cp -R`. Until Phase 0b lands `ingestion build --downsampled`, hand-place a stub bundle
-(a `manifest.json`, one `geometry/*.fgb`, and one `data/tfr-base-*.sqlite`) under
-`./web/static/embedded_artifacts/` instead.
+The script runs `ingestion build` when no build exists, then plain-copies
+`$EAFORA_ARTIFACTS_DIR/latest/downsampled/` into the destination with `cp -R`. Until Phase 0b lands
+`ingestion build`, hand-place a stub bundle (a `manifest.json`, one `geometry/*.fgb`, and one
+`data/tfr-base-*.sqlite`) under `./web/static/embedded_artifacts/` instead.
 
 ## Dev loop
 

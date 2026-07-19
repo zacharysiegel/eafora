@@ -120,9 +120,7 @@ fn build_cli() -> Command {
         .subcommand(Command::new("all").about("Run every registered source adapter"))
         .subcommand(
             Command::new("build")
-                .about("Build CDN artifacts from the current canonical store")
-                .arg(Arg::new("output-dir").required(true))
-                .arg(Arg::new("version-label").required(true)),
+                .about("Build CDN artifacts from the current canonical store"),
         )
         .subcommand(Command::new("seed").about("Load checked-in sample responses into the canonical store"))
         .subcommand(
@@ -138,7 +136,7 @@ async fn main() -> Result<(), AppError> {
     match matches.subcommand() {
         Some(("source",    sub_matches)) => dispatch_source(sub_matches).await,
         Some(("all",          _))           => dispatch_all().await,
-        Some(("build",  sub_matches)) => dispatch_build(sub_matches).await,
+        Some(("build",  _))           => dispatch_build().await,
         Some(("seed",     _))           => dispatch_seed().await,
         Some(("publish", sub_matches)) => dispatch_publish(sub_matches).await,
         _                                        => unreachable!("subcommand_required guarantees a match"),
@@ -780,5 +778,5 @@ Deferred-but-not-blocking ingestion work lives in `docs/backlog.md` §Ingestion 
 - First `/speckit-specify` feature spec: `specs/NNN-world-bank-wdi-ingestion/` — implements the WB WDI adapter against this plan's contract.
 - Per-platform client plans (`docs-architecture-client-{web,ios,android}`) — these depend on the manifest + shard format locked here.
 
-Deferred-but-not-blocking ingestion work (secrets mini-plan, downsampled-build command, geometry-decoupling, etc.) lives in `docs/backlog.md` §Ingestion / producer.
+Deferred-but-not-blocking ingestion work (secrets mini-plan, geometry-decoupling, etc.) lives in `docs/backlog.md` §Ingestion / producer.
 

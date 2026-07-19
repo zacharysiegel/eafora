@@ -168,8 +168,8 @@ The script is invoked at the end of every `cargo leptos build --release` and as 
 
 The static-asset embedded bundle is copied into `web/static/embedded_artifacts/` at the start of the build, **pulled** from the producer's downsampled output. The dependency is:
 
-1. The producer (running on the Mac mini through v1; see overview §Ingestion) periodically runs `ingestion build --downsampled <output-dir>` (a follow-up PR on the producer side; see `client.md` §Decisions still open) to regenerate the downsampled bundle.
-2. The web build's first step runs `scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts/`. The script verifies `$EAFORA_DOWNSAMPLED_DIR/latest/` exists (invoking `ingestion build --downsampled` first if not), then plain-copies its contents into the destination with `cp -R`. The producer's output location is configured via `EAFORA_DOWNSAMPLED_DIR` (default `<repo-root>/data/downsampled/`).
+1. The producer (running on the Mac mini through v1; see overview §Ingestion) periodically runs `ingestion build` (no flag; a follow-up PR on the producer side, see `client.md` §Decisions still open), which emits the `downsampled/` subtree alongside `complete/` under `$EAFORA_ARTIFACTS_DIR/<version-label>/` and updates the `$EAFORA_ARTIFACTS_DIR/latest` pointer.
+2. The web build's first step runs `scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts/`. The script copies `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` into the destination with `cp -R` (invoking `ingestion build` first if no build exists). The producer's output location is configured via `EAFORA_ARTIFACTS_DIR`.
 3. `cargo leptos build` then proceeds normally; `web/static/` is verbatim-copied into `target/site/`.
 
 Plain copy (not symlink, not hard link, not `rsync`) on both web and iOS. The bundle is a few MB through v2; the duplication is irrelevant; the simplicity of "one shell-command shape, both platforms, no edge cases around symlink resolution or filesystem-boundary fallback" wins.
