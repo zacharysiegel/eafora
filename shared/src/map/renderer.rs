@@ -16,7 +16,7 @@ use crate::artifact::{Bundle, StatisticShardKey};
 use crate::canonical::StatisticKind;
 use crate::error::AppError;
 use crate::map::color::{self, Rgba};
-use crate::map::value_types::{FrameState, Viewport};
+use crate::map::{FrameState, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
 use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
 use crate::map::pipeline::{self, RenderPipelines};
@@ -26,7 +26,7 @@ use crate::sqlite::shard_db::{self, ShardValues};
 
 // the native attach path takes a raw window handle; the web attaches from a canvas.
 #[cfg(not(target_arch = "wasm32"))]
-use crate::map::value_types::WindowHandle;
+use crate::render::WindowHandle;
 
 // the canvas attach path takes an HtmlCanvasElement instead of a raw window handle.
 #[cfg(target_arch = "wasm32")]

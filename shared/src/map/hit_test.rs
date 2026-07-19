@@ -4,7 +4,7 @@
 
 use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer};
 use crate::map::projection::{self, GeoPoint};
-use crate::map::value_types::{RegionCode, ScreenPoint, SurfaceDimensions, Viewport};
+use crate::map::{RegionCode, ScreenPoint, SurfaceDimensions, Viewport};
 
 /// The region whose polygon contains `screen_point`, or `None` when the point is off every country
 /// (open ocean) or off the map. `surface_dimensions` is required because `screen_point` is in device

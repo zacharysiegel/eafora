@@ -1,7 +1,8 @@
 pub mod color;
+pub mod frame_state;
 pub mod hit_test;
 pub mod projection;
-pub mod value_types;
+pub mod viewport;
 
 // render: the map's wgpu renderer, pipelines, mesh builder, and GPU-buffer types. Feature-gated so
 // the ingestion producer never links wgpu.
@@ -15,9 +16,10 @@ pub mod renderer;
 pub mod pipeline;
 
 pub use color::*;
+pub use frame_state::*;
 pub use hit_test::*;
 pub use projection::*;
-pub use value_types::*;
+pub use viewport::*;
 
 #[cfg(feature = "render")]
 pub use country_mesh::*;

@@ -62,7 +62,7 @@ mod native {
 
     use super::{build_surface_config, WgpuSurface};
     use crate::error::AppError;
-    use crate::map::value_types::WindowHandle;
+    use crate::render::WindowHandle;
 
     impl WgpuSurface {
         pub fn from_window_handle(
