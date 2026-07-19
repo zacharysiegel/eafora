@@ -204,9 +204,9 @@ impl Renderer {
         Ok(())
     }
 
-    pub fn draw_frame(&mut self, viewport: Viewport, frame_state: FrameState) -> Result<(), AppError> {
+    pub fn draw_frame(&mut self, viewport: Viewport, frame_state: &FrameState) -> Result<(), AppError> {
         let bundle: Arc<Bundle> = self.bundle_receiver.borrow_and_update().clone();
-        self.refresh_fill_colors(&bundle, &frame_state)?;
+        self.refresh_fill_colors(&bundle, frame_state)?;
 
         let Some(surface_texture) = self.acquire_surface_texture()? else {
             return Ok(());

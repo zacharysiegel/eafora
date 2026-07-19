@@ -49,7 +49,7 @@ impl Driver {
     fn draw(&mut self) {
         self.redraw_pending = false;
 
-        if let Err(error) = self.renderer.draw_frame(self.viewport, self.frame_state.clone()) {
+        if let Err(error) = self.renderer.draw_frame(self.viewport, &self.frame_state) {
             log::error!("drawing a frame failed [error={error}]");
         }
     }
