@@ -81,7 +81,9 @@ pub async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<V
     loop {
         let next_promise: Promise = iterator.next().map_err(js::error)?;
         let next_value: JsValue = JsFuture::from(next_promise).await.map_err(js::error)?;
-        let next: IteratorNext = js::dyn_into(next_value)?;
+        // IteratorNext is the iterator-result object ({ value, done }); like a dictionary it has no
+        // prototype, so dyn_into's instanceof check rejects it and it must be cast unchecked.
+        let next: IteratorNext = next_value.unchecked_into();
 
         if next.done() {
             break;
