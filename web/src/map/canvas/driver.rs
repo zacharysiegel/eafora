@@ -124,8 +124,12 @@ pub fn start(canvas: HtmlCanvasElement, render_status: RwSignal<RenderStatus>) {
 }
 
 async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> {
-    let cache: OpfsArtifactCache = OpfsArtifactCache::create().await.map_err(StartupError::BrowserUnsupported)?;
-    let bundle: Bundle = load::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?;
+    let cache: OpfsArtifactCache = OpfsArtifactCache::create()
+        .await
+        .map_err(StartupError::BrowserUnsupported)?;
+    let bundle: Bundle = load::load_embedded_bundle(&cache)
+        .await
+        .map_err(StartupError::DataUnavailable)?;
     if let Err(error) = cache.evict_old_versions().await {
         log::warn!("evicting old cached bundle versions failed [error={error}]");
     }
