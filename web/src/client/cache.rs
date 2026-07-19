@@ -1,4 +1,4 @@
-use js_sys::Promise;
+use js_sys::{Promise, Uint8Array};
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
@@ -81,7 +81,12 @@ impl ArtifactCache for OpfsArtifactCache {
             .map_err(cache_write_error)?;
         let writable: FileSystemWritableFileStream = js::dyn_into(writable_value)?;
 
-        let write_promise: Promise = writable.write_with_u8_array(bytes)
+        // Copy into a JS-owned Uint8Array before writing. write_with_u8_array passes a view over wasm
+        // linear memory; if memory grows before the async write consumes it, the view detaches and the
+        // file is written truncated or empty (then fails to parse on read-back).
+        let data: Uint8Array = Uint8Array::new_with_length(bytes.len() as u32);
+        data.copy_from(bytes);
+        let write_promise: Promise = writable.write_with_js_u8_array(&data)
             .map_err(cache_write_error)?;
         JsFuture::from(write_promise).await.map_err(cache_write_error)?;
 

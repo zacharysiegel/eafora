@@ -20,6 +20,13 @@ pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, A
     let version_label: &str = &manifest.version;
     cache.put(version_label, manifest::MANIFEST_FILENAME, &manifest_bytes).await?;
 
+    let readback: Option<Vec<u8>> = cache.get(version_label, manifest::MANIFEST_FILENAME).await?;
+    log::debug!(
+        "manifest cache round-trip [put={} got={:?}]",
+        manifest_bytes.len(),
+        readback.as_deref().map(|readback_bytes| (readback_bytes.len(), String::from_utf8_lossy(&readback_bytes[..readback_bytes.len().min(24)]).into_owned())),
+    );
+
     for entry in manifest_file_entries(&manifest) {
         let file_url: String = format!("{EMBEDDED_BASE_URL}/{}", entry.relative_path);
         let file_bytes: Vec<u8> = fetch::fetch_bytes(&file_url).await?;
