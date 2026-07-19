@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chrono::NaiveDate;
 use tokio::sync::watch;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen::closure::Closure;
 use web_sys::HtmlCanvasElement;
 
@@ -88,7 +88,10 @@ impl Driver {
             log::error!("no window available; cannot schedule a redraw");
             return;
         };
-        if window.request_animation_frame(callback.as_ref().unchecked_ref()).is_ok() {
+
+        let schedule_result: Result<i32, JsValue> = window.request_animation_frame(callback.as_ref().unchecked_ref());
+
+        if schedule_result.is_ok() {
             self.redraw_pending = true;
         }
     }
