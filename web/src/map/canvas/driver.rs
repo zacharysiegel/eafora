@@ -160,12 +160,9 @@ async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> 
         redraw_callback: None,
         resize_callback: Some(install_resize_listener(canvas)),
     };
-    DRIVER.with_borrow_mut(|driver_slot| *driver_slot = Some(driver));
 
     DRIVER.with_borrow_mut(|driver_slot| {
-        if let Some(driver) = driver_slot {
-            driver.request_redraw();
-        }
+        driver_slot.insert(driver).request_redraw();
     });
 
     Ok(())
