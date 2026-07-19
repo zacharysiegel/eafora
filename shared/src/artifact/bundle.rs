@@ -79,6 +79,21 @@ impl Bundle {
             distribution_context,
         })
     }
+
+    /// The shard bytes whose values color the map for `statistic_kind`: the first authorized license
+    /// class that ships a shard for it. Provisional policy shared by the renderer and the selection
+    /// resolver; refining it to the source-choice rules is future work.
+    pub fn shard_for(&self, statistic_kind: StatisticKind) -> Option<&Vec<u8>> {
+        self.distribution_context
+            .authorized_classes()
+            .iter()
+            .find_map(|license_shard_class| {
+                self.shard_bytes.get(&StatisticShardKey {
+                    statistic_kind,
+                    license_shard_class: *license_shard_class,
+                })
+            })
+    }
 }
 
 async fn get_required(cache: &impl ArtifactCache, version_label: &str, relative_path: &str) -> Result<Vec<u8>, AppError> {
@@ -181,6 +196,18 @@ mod tests {
 
         assert_eq!(bundle.shard_bytes.len(), 1);
         assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
+    }
+
+    #[tokio::test]
+    async fn shard_for_returns_the_first_authorized_shard() {
+        let cache: MockArtifactCache = seeded_mock().await;
+
+        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::Embedded).await.unwrap();
+
+        assert_eq!(
+            bundle.shard_for(StatisticKind::Tfr).map(|shard_bytes| shard_bytes.as_slice()),
+            Some(b"tfr-base-shard-bytes".as_slice()),
+        );
     }
 
     #[tokio::test]

@@ -10,7 +10,7 @@ use web_sys::HtmlCanvasElement;
 use leptos::prelude::*;
 
 use shared::AppError;
-use shared::artifact::{Bundle, StatisticShardKey};
+use shared::artifact::Bundle;
 use shared::canonical::StatisticKind;
 use shared::map::{FrameState, Renderer, RendererBackend, Viewport};
 use shared::map::projection;
@@ -188,16 +188,7 @@ fn initial_frame_state(bundle: &Bundle) -> FrameState {
 /// class that ships a shard for the statistic, matching `select_shard`'s policy so the seeded period and
 /// the colored shard never disagree.
 fn latest_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
-    let shard_bytes: &Vec<u8> = bundle
-        .distribution_context
-        .authorized_classes()
-        .iter()
-        .find_map(|license_shard_class| {
-            bundle.shard_bytes.get(&StatisticShardKey {
-                statistic_kind: statistic,
-                license_shard_class: *license_shard_class,
-            })
-        })?;
+    let shard_bytes: &Vec<u8> = bundle.shard_for(statistic)?;
     let shard_values: shard_db::ShardValues = shard_db::read_shard(shard_bytes).ok()?;
 
     shard_values.period_range().map(|(_earliest, latest)| latest)

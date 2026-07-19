@@ -12,7 +12,7 @@ use wgpu::{
     RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture, TextureView, TextureViewDescriptor, Trace,
 };
 
-use crate::artifact::{Bundle, StatisticShardKey};
+use crate::artifact::Bundle;
 use crate::canonical::StatisticKind;
 use crate::error::AppError;
 use crate::map::color::{self, Rgba};
@@ -340,7 +340,7 @@ impl Renderer {
         let no_data_fill: FillVertex = color::choropleth_fill(None, 0.0, 1.0).to_gpu();
         let mut fill_vertices: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.positions.count as usize];
 
-        let Some(shard_bytes) = select_shard(bundle, frame_state.active_statistic) else {
+        let Some(shard_bytes) = bundle.shard_for(frame_state.active_statistic) else {
             return Ok(fill_vertices);
         };
 
@@ -431,20 +431,6 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         border: CountedBuffer { buffer: border_index_buffer, count: border_indices.len() as u32 },
         spans,
     })
-}
-
-/// The shard whose values color the map. Provisional policy: the first authorized license class that
-/// ships a shard for the active statistic. Refining this to the source-choice rules is future work.
-fn select_shard(bundle: &Bundle, statistic_kind: StatisticKind) -> Option<&Vec<u8>> {
-    bundle
-        .distribution_context
-        .authorized_classes()
-        .iter()
-        .find_map(|license_shard_class| {
-            bundle
-                .shard_bytes
-                .get(&StatisticShardKey { statistic_kind, license_shard_class: *license_shard_class })
-        })
 }
 
 impl Viewport {
