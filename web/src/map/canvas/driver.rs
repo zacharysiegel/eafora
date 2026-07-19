@@ -43,6 +43,8 @@ struct Driver {
     frame_state: FrameState,
     redraw_pending: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
+    #[allow(dead_code)] // held to keep the window resize listener's closure alive for the page lifetime
+    resize_callback: Option<Closure<dyn FnMut()>>,
 }
 
 impl Driver {
@@ -137,10 +139,10 @@ async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> 
         frame_state,
         redraw_pending: false,
         redraw_callback: None,
+        resize_callback: Some(install_resize_listener(canvas)),
     };
     DRIVER.with_borrow_mut(|driver_slot| *driver_slot = Some(driver));
 
-    install_resize_listener(canvas);
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
             driver.request_redraw();
@@ -245,7 +247,7 @@ fn scale_to_backing_pixels(css_pixels: i32, device_pixel_ratio: f64) -> u32 {
     (scaled.round() as u32).max(1)
 }
 
-fn install_resize_listener(canvas: HtmlCanvasElement) {
+fn install_resize_listener(canvas: HtmlCanvasElement) -> Closure<dyn FnMut()> {
     let resize_callback: Closure<dyn FnMut()> = Closure::new(move || {
         let (width, height): (u32, u32) = configure_canvas_backing_store(&canvas);
 
@@ -260,7 +262,7 @@ fn install_resize_listener(canvas: HtmlCanvasElement) {
         let _ = window.add_event_listener_with_callback("resize", resize_callback.as_ref().unchecked_ref());
     }
 
-    resize_callback.forget();
+    resize_callback
 }
 
 fn draw_pending_frame() {
