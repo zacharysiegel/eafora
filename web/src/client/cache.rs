@@ -223,7 +223,7 @@ mod tests {
     }
 
     // The opfs-unsupported branch can't be triggered in headless Chrome (OPFS is always present), so
-    // its FR-040 coverage is the exact error-prefix literal the load path matches on, pinned here.
+    // its coverage is the exact error-prefix literal the load path matches on, pinned here.
 
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn opfs_unsupported_prefix_is_the_load_contract() {

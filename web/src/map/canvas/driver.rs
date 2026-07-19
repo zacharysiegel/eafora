@@ -62,7 +62,7 @@ impl Driver {
         self.request_redraw();
     }
 
-    /// FR-013: coalesce redraw requests into one `requestAnimationFrame`; there is no idle refresh
+    /// Coalesce redraw requests into one `requestAnimationFrame`; there is no idle refresh
     /// loop. The pending flag is set only once a frame is actually scheduled, so a failed schedule stays
     /// retryable rather than wedging every later redraw.
     fn request_redraw(&mut self) {
@@ -84,7 +84,7 @@ impl Driver {
 
 /// The two first-paint failure modes the shell distinguishes. `DataUnavailable` is a transient or
 /// data-integrity failure fetching or opening the bundle. `BrowserUnsupported` is a missing hard
-/// capability: no Origin Private File System (FR-023) or no usable wgpu backend (FR-016), both of which
+/// capability: no Origin Private File System or no usable wgpu backend, both of which
 /// share the unsupported panel. Each variant carries the originating error for logging.
 enum StartupError {
     DataUnavailable(AppError),
@@ -197,7 +197,7 @@ fn latest_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<Naiv
     shard_values.period_range().map(|(_earliest, latest)| latest)
 }
 
-/// FR-015: `?renderer=webgl2` forces the WebGL2 backend for developer parity testing. Not a user-facing
+/// `?renderer=webgl2` forces the WebGL2 backend for developer parity testing. Not a user-facing
 /// toggle.
 fn backend_from_query() -> RendererBackend {
     let query: String = web_sys::window()

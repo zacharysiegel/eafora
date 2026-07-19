@@ -11,7 +11,7 @@ pub enum RenderStatus {
     /// Shown until the embedded bundle is parsed and the surface is attached.
     Loading,
     Ready,
-    /// The browser lacks a hard capability: no OPFS (FR-023) or no usable wgpu backend (FR-016).
+    /// The browser lacks a hard capability: no OPFS or no usable wgpu backend.
     Unsupported,
     /// The bundle could not be fetched or opened.
     DataUnavailable,
