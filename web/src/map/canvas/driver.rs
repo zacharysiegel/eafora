@@ -96,12 +96,13 @@ impl Driver {
     }
 }
 
-/// The two first-paint failure modes the shell distinguishes. `DataUnavailable` is a transient or
-/// data-integrity failure fetching or opening the bundle. `BrowserUnsupported` is a missing hard
-/// capability: no Origin Private File System or no usable wgpu backend, both of which
-/// share the unsupported panel. Each variant carries the originating error for logging.
+/// The two first-paint failure modes `start` distinguishes to choose the panel; each carries the
+/// originating error for logging.
 enum StartupError {
+    /// A transient or data-integrity failure fetching or opening the bundle.
     DataUnavailable(AppError),
+    /// A missing hard capability: no Origin Private File System or no usable wgpu backend, both of
+    /// which show the unsupported panel.
     BrowserUnsupported(AppError),
 }
 
@@ -140,8 +141,9 @@ async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> 
         watch::channel(Arc::new(bundle));
 
     let backend: RendererBackend = backend_from_query();
-    let mut renderer: Renderer =
-        Renderer::new(bundle_receiver, backend).await.map_err(StartupError::BrowserUnsupported)?;
+    let mut renderer: Renderer = Renderer::new(bundle_receiver, backend)
+        .await
+        .map_err(StartupError::BrowserUnsupported)?;
 
     let (width, height): (u32, u32) = configure_canvas_backing_store(&canvas);
     renderer
