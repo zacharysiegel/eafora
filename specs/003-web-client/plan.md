@@ -273,6 +273,30 @@ Two independent prerequisite PRs off `master`, then a linear stack for the web f
 - **Phase E — perf-budget + precompress + deploy config** (stacks on A; `sync` needs Phase 0b).
   FR-004, 005, 006, 032, 033, 034, 043. Closes P4.
 
+### Deferred to C2: viewport aspect ratio
+
+Phase C1 renders the whole world stretched to fill the surface: the `Viewport` is fixed to
+`world_viewport()` and mapped edge-to-edge onto the surface with no aspect correction, so a non-square
+canvas distorts the map. This is deferred to C2, where the `Viewport` becomes a camera (center + zoom)
+whose aspect ratio tracks the surface's. On resize, recompute the viewport extent to match the new
+surface aspect (keeping center and zoom) so a wider canvas reveals more world horizontally instead of
+stretching; pan translates the viewport, zoom scales it. Resizing the backing store to the canvas's
+device pixels is correct and independent (render resolution, not framing) and stays as is.
+
+Findings to carry into that work:
+
+- **Natural Miller aspect ratio** (width:height): approx. 1.36:1 across the full ±90° latitude; approx.
+  1.53:1 at the current ±85° clamp.
+- **Unit reconciliation.** `projection::project` returns `x` as longitude in degrees but `y` derived
+  from radians. Compute the aspect with `x` in radians (360° = 2π): width `2π`, height `2·y(clamp)`.
+  Using the raw stored degrees (x-extent 360 vs. y-extent approx. 4.09) yields an approx. 88:1 nonsense
+  ratio.
+- **`WORLD_BOUNDS` ±85° clamp is a Web-Mercator carryover, not a Miller requirement.** Miller's `tan`
+  asymptote sits at ±112.5° latitude (`π/4 + 0.4·φ = π/2`), outside the ±90° domain, so Miller maps the
+  actual poles to a finite `y` (approx. 2.30 at ±90°) — its whole advantage over Mercator. The ±85°
+  clamp buys nothing for asymptote-avoidance; revisit it (full ±90°, or a deliberate aesthetic crop) and
+  correct the clamp's comment, which currently states the false asymptote rationale.
+
 ## Brief PR description
 
 **Web client — plan and design artifacts (`003-web-client`).**
