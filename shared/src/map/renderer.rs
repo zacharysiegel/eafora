@@ -345,7 +345,7 @@ impl Renderer {
         };
 
         let shard_values: ShardValues = shard_db::read_shard(shard_bytes)?;
-        let Some((statistic_min, statistic_max)) = shard_values.range() else {
+        let Some((statistic_min, statistic_max)) = shard_values.value_range() else {
             return Ok(fill_vertices);
         };
 

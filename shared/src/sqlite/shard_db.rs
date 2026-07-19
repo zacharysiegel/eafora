@@ -23,7 +23,7 @@ impl ShardValues {
         self.by_region.get(region_iso3)?.get(&period_start).copied()
     }
 
-    pub fn range(&self) -> Option<(f64, f64)> {
+    pub fn value_range(&self) -> Option<(f64, f64)> {
         if self.by_region.is_empty() {
             return None;
         }
@@ -31,7 +31,6 @@ impl ShardValues {
         Some((self.min, self.max))
     }
 
-    /// The earliest and latest `period_start` across all regions, distinct from `range` (the value extent).
     pub fn period_range(&self) -> Option<(NaiveDate, NaiveDate)> {
         let mut period_starts = self
             .by_region
@@ -287,7 +286,7 @@ mod tests {
         assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.6));
         assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()), Some(1.7));
         assert_eq!(shard.value("DEU", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
-        assert_eq!(shard.range(), Some((1.5, 1.7)));
+        assert_eq!(shard.value_range(), Some((1.5, 1.7)));
         assert_eq!(
             shard.period_range(),
             Some((NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(), NaiveDate::from_ymd_opt(2021, 1, 1).unwrap())),
@@ -337,7 +336,7 @@ mod wasm_tests {
 
         assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.6));
         assert_eq!(shard.value("DEU", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
-        assert_eq!(shard.range(), Some((1.5, 1.7)));
+        assert_eq!(shard.value_range(), Some((1.5, 1.7)));
         assert_eq!(shard.value("XKX", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), None);
     }
 }
