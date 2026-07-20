@@ -141,18 +141,32 @@ impl Driver {
 
         self.frame_state.selected_region = selected_region;
 
-        Some(region_hit.map(|region_hit| self.resolve_selection_view(&region_hit)))
+        let selection_view: Option<SelectionView> =
+            region_hit.map(|region_hit| self.resolve_selection_view(&region_hit));
+
+        match &selection_view {
+            Some(view) => log::info!("region selected [name={} iso3={} value={:?}]", view.name_en, view.iso3, view.value),
+            None => log::info!("region deselected"),
+        }
+
+        Some(selection_view)
     }
 
     fn hover_region_at(&mut self, screen_point: ScreenPoint) {
+        let region_hit: Option<RegionHit> = self.region_at(screen_point);
         let hovered_region: Option<RegionCode> =
-            self.region_at(screen_point).map(|region_hit| region_hit.region_code);
+            region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
 
         if hovered_region == self.frame_state.hovered_region {
             return;
         }
 
         self.frame_state.hovered_region = hovered_region;
+
+        match &region_hit {
+            Some(region_hit) => log::debug!("region hovered [name={} iso3={}]", region_hit.name_en, region_hit.iso3),
+            None => log::debug!("hover left all regions"),
+        }
     }
 
     fn clear_hover(&mut self) {
@@ -161,6 +175,8 @@ impl Driver {
         }
 
         self.frame_state.hovered_region = None;
+
+        log::debug!("pointer left the map");
     }
 }
 
