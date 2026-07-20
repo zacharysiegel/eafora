@@ -6,8 +6,6 @@ use shared::canonical::StatisticKind;
 use crate::i18n::*;
 use crate::map::canvas::SelectionView;
 
-/// The top-left panel showing the selected region's name, the active statistic and period, and the
-/// region's value at that cell. Renders nothing until a region is selected.
 #[component]
 pub fn RegionDetailPanel() -> impl IntoView {
     let selection: RwSignal<Option<SelectionView>> = expect_context();

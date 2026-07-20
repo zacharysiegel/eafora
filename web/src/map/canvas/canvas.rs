@@ -20,8 +20,7 @@ pub enum RenderStatus {
     DataUnavailable,
 }
 
-/// A resolved, display-ready view of the selected region; the driver publishes it so a consumer needs
-/// no bundle access to render the selection.
+/// Published by the driver so a consumer can render the selection without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectionView {
     pub iso3: String,
