@@ -45,9 +45,12 @@ const WORLD_BOUNDS: WorldBounds = WorldBounds {
 /// The render state the browser callbacks reach through the `DRIVER` thread-local, kept outside the
 /// reactive graph because `Renderer` owns single-thread-bound, `!Send` wgpu resources. Each JS callback
 /// borrows `DRIVER` once and drives it through `&mut self`, so no method re-borrows the thread-local.
+// dead_code is struct-wide because several fields are held for lifetime side effects, never read:
+// bundle_sender keeps the bundle watch channel open for later swaps, and the four event-listener
+// callbacks keep their closures alive for the page.
+#[allow(dead_code)]
 struct Driver {
     renderer: Renderer,
-    #[allow(dead_code)] // the send half of the bundle channel, held so the channel stays open for later swaps
     bundle_sender: watch::Sender<Arc<Bundle>>,
     viewport: Viewport,
     surface_dimensions: SurfaceDimensions,
@@ -55,13 +58,9 @@ struct Driver {
     selection_view: WriteSignal<Option<SelectionView>>,
     redraw_pending: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
-    #[allow(dead_code)] // held to keep the window resize listener's closure alive for the page lifetime
     resize_callback: Option<Closure<dyn FnMut()>>,
-    #[allow(dead_code)] // held to keep the canvas click listener's closure alive for the page lifetime
     click_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
-    #[allow(dead_code)] // held to keep the canvas mousemove listener's closure alive for the page lifetime
     mousemove_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
-    #[allow(dead_code)] // held to keep the canvas mouseleave listener's closure alive for the page lifetime
     mouseleave_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
 }
 
