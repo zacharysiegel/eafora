@@ -27,7 +27,7 @@ pub struct ShardValues {
 
 impl ShardValues {
     pub fn value(&self, region_iso3: &str, period_start: NaiveDate) -> Option<f64> {
-        Some(self.by_region.get(region_iso3)?.get(&period_start)?.value)
+        self.cell(region_iso3, period_start).map(|cell| cell.value)
     }
 
     pub fn cell(&self, region_iso3: &str, period_start: NaiveDate) -> Option<&CellValue> {
