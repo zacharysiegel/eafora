@@ -13,7 +13,6 @@ use chrono::NaiveDate;
 pub struct CellValue {
     pub value: f64,
     pub source_code: String,
-    pub source_revision: String,
 }
 
 /// The values of one statistic shard, keyed by country ISO 3166 alpha-3 and period start, with the
@@ -81,12 +80,11 @@ mod native {
         schema::validate_shard_header(&connection)?;
 
         let query: String = format!(
-            "select {}, {}, {}, {}, {} from {}",
+            "select {}, {}, {}, {} from {}",
             schema::COL_REGION_ISO3,
             schema::COL_PERIOD_START,
             schema::COL_VALUE,
             schema::COL_DATA_SOURCE_CODE,
-            schema::COL_DATA_SOURCE_REVISION,
             schema::TABLE_STATISTIC_VALUE,
         );
 
@@ -96,9 +94,8 @@ mod native {
             let period_start: String = row.get(1)?;
             let value: f64 = row.get(2)?;
             let source_code: String = row.get(3)?;
-            let source_revision: String = row.get(4)?;
 
-            Ok((region_iso3, period_start, value, source_code, source_revision))
+            Ok((region_iso3, period_start, value, source_code))
         })?;
 
         let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
@@ -106,11 +103,11 @@ mod native {
         let mut max: f64 = f64::NEG_INFINITY;
 
         for row in row_iter {
-            let (region_iso3, period_start, value, source_code, source_revision): (String, String, f64, String, String) = row?;
+            let (region_iso3, period_start, value, source_code): (String, String, f64, String) = row?;
             let period_start: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                 .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
 
-            let cell: CellValue = CellValue { value, source_code, source_revision };
+            let cell: CellValue = CellValue { value, source_code };
             by_region.entry(region_iso3).or_default().insert(period_start, cell);
             min = min.min(value);
             max = max.max(value);
@@ -200,12 +197,11 @@ mod wasm {
 
     fn read_all_rows(db: *mut sqlite3) -> Result<ShardValues, AppError> {
         let query: CString = CString::new(format!(
-            "select {}, {}, {}, {}, {} from {}",
+            "select {}, {}, {}, {} from {}",
             schema::COL_REGION_ISO3,
             schema::COL_PERIOD_START,
             schema::COL_VALUE,
             schema::COL_DATA_SOURCE_CODE,
-            schema::COL_DATA_SOURCE_REVISION,
             schema::TABLE_STATISTIC_VALUE,
         ))
         .unwrap();
@@ -231,11 +227,10 @@ mod wasm {
                 let period_start: String = ffi_conversions::column_text(statement.handle, 1)?;
                 let value: f64 = unsafe { sqlite_wasm_rs::sqlite3_column_double(statement.handle, 2) };
                 let source_code: String = ffi_conversions::column_text(statement.handle, 3)?;
-                let source_revision: String = ffi_conversions::column_text(statement.handle, 4)?;
                 let period_start: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                     .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
 
-                let cell: CellValue = CellValue { value, source_code, source_revision };
+                let cell: CellValue = CellValue { value, source_code };
                 by_region.entry(region_iso3).or_default().insert(period_start, cell);
                 min = min.min(value);
                 max = max.max(value);
@@ -321,7 +316,6 @@ mod tests {
         let cell: &CellValue = shard.cell("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap();
         assert_eq!(cell.value, 1.6);
         assert_eq!(cell.source_code, "wb_wdi");
-        assert_eq!(cell.source_revision, "2024-12-12");
     }
 
     #[test]
