@@ -13,12 +13,12 @@ pub struct Viewport {
 /// Physical device pixels: the platform shell multiplies the CSS-pixel cursor position by
 /// `devicePixelRatio` so the point shares the device-pixel space of the render surface.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ScreenPoint {
+pub struct SurfacePoint {
     pub x: f64,
     pub y: f64,
 }
 
-/// The attached surface's extent in physical device pixels, the same space as `ScreenPoint`, so a
+/// The attached surface's extent in physical device pixels, the same space as `SurfacePoint`, so a
 /// hit-test normalizes the cursor against it before mapping through the viewport.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SurfaceDimensions {

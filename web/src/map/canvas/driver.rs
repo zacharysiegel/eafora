@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::StatisticKind;
-use shared::map::{FrameState, RegionCode, RegionHit, Renderer, RendererBackend, ScreenPoint, SurfaceDimensions, Viewport};
+use shared::map::{FrameState, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
 use shared::sqlite::shard_db;
@@ -103,10 +103,10 @@ impl Driver {
         }
     }
 
-    fn region_at(&self, screen_point: ScreenPoint) -> Option<RegionHit> {
+    fn region_at(&self, surface_point: SurfacePoint) -> Option<RegionHit> {
         let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
 
-        hit_test::region_at_point(&bundle.geometry, self.viewport, self.surface_dimensions, screen_point)
+        hit_test::region_at_point(&bundle.geometry, self.viewport, self.surface_dimensions, surface_point)
     }
 
     /// The selected region resolved to its display fields and its value at the active statistic and
@@ -125,10 +125,10 @@ impl Driver {
         }
     }
 
-    /// Hit-tests `screen_point` and updates the selected region. Returns the `SelectionView` to publish,
+    /// Hit-tests `surface_point` and updates the selected region. Returns the `SelectionView` to publish,
     /// or `None` when the selection is unchanged so no redundant redraw or publish happens.
-    fn select_region_at(&mut self, screen_point: ScreenPoint) -> Option<Option<SelectionView>> {
-        let region_hit: Option<RegionHit> = self.region_at(screen_point);
+    fn select_region_at(&mut self, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
+        let region_hit: Option<RegionHit> = self.region_at(surface_point);
         let selected_region: Option<RegionCode> =
             region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
 
@@ -149,8 +149,8 @@ impl Driver {
         Some(selection_view)
     }
 
-    fn hover_region_at(&mut self, screen_point: ScreenPoint) {
-        let region_hit: Option<RegionHit> = self.region_at(screen_point);
+    fn hover_region_at(&mut self, surface_point: SurfacePoint) {
+        let region_hit: Option<RegionHit> = self.region_at(surface_point);
         let hovered_region: Option<RegionCode> =
             region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
 
@@ -359,22 +359,22 @@ fn draw_pending_frame() {
     });
 }
 
-fn screen_point_from_event(event: &MouseEvent) -> ScreenPoint {
+fn surface_point_from_event(event: &MouseEvent) -> SurfacePoint {
     let device_pixel_ratio: f64 = web_sys::window()
         .map(|window| window.device_pixel_ratio())
         .unwrap_or(1.0);
 
-    ScreenPoint {
+    SurfacePoint {
         x: event.offset_x() as f64 * device_pixel_ratio,
         y: event.offset_y() as f64 * device_pixel_ratio,
     }
 }
 
-fn select_region_at(screen_point: ScreenPoint) {
+fn select_region_at(surface_point: SurfacePoint) {
     let published: Option<(WriteSignal<Option<SelectionView>>, Option<SelectionView>)> =
         DRIVER.with_borrow_mut(|driver_slot| {
             let driver: &mut Driver = driver_slot.as_mut()?;
-            let new_selection: Option<SelectionView> = driver.select_region_at(screen_point)?;
+            let new_selection: Option<SelectionView> = driver.select_region_at(surface_point)?;
 
             Some((driver.selection_view, new_selection))
         });
@@ -384,10 +384,10 @@ fn select_region_at(screen_point: ScreenPoint) {
     }
 }
 
-fn hover_region_at(screen_point: ScreenPoint) {
+fn hover_region_at(surface_point: SurfacePoint) {
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
-            driver.hover_region_at(screen_point);
+            driver.hover_region_at(surface_point);
         }
     });
 }
@@ -402,7 +402,7 @@ fn clear_hover() {
 
 fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
     let click_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
-        select_region_at(screen_point_from_event(&event));
+        select_region_at(surface_point_from_event(&event));
     });
 
     let _ = canvas.add_event_listener_with_callback("click", click_callback.as_ref().unchecked_ref());
@@ -412,7 +412,7 @@ fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(Mouse
 
 fn install_mousemove_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
     let mousemove_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
-        hover_region_at(screen_point_from_event(&event));
+        hover_region_at(surface_point_from_event(&event));
     });
 
     let _ = canvas.add_event_listener_with_callback("mousemove", mousemove_callback.as_ref().unchecked_ref());

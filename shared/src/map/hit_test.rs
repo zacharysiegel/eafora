@@ -1,10 +1,10 @@
-//! Screen-space point to region lookup: normalize the device-pixel cursor against the surface, map
+//! Surface point to region lookup: normalize the device-pixel cursor against the surface, map
 //! it through the viewport into Miller projected space, inverse-project to a coordinate, then
 //! point-in-polygon against the geometry layer's features.
 
 use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer};
 use crate::map::projection::{self, GeoPoint};
-use crate::map::{RegionCode, ScreenPoint, SurfaceDimensions, Viewport};
+use crate::map::{RegionCode, SurfacePoint, SurfaceDimensions, Viewport};
 
 /// A hit-test result: the region under the cursor plus the fields a caller needs (`iso3`, `name_en`),
 /// resolved here so callers do not re-parse the geometry layer to recover them.
@@ -15,8 +15,8 @@ pub struct RegionHit {
     pub name_en: String,
 }
 
-/// The region whose polygon contains `screen_point`, or `None` when the point is off every country
-/// (open ocean) or off the map. `surface_dimensions` is required because `screen_point` is in device
+/// The region whose polygon contains `surface_point`, or `None` when the point is off every country
+/// (open ocean) or off the map. `surface_dimensions` is required because `surface_point` is in device
 /// pixels: the point is normalized against the surface extent before it can be mapped through the
 /// viewport. A longitude past the ±180 seam (from a pan across the antimeridian) is wrapped back
 /// into range so the cursor resolves to the same country as its on-map copy.
@@ -24,13 +24,13 @@ pub fn region_at_point(
     geometry: &GeometryLayer,
     viewport: Viewport,
     surface_dimensions: SurfaceDimensions,
-    screen_point: ScreenPoint,
+    surface_point: SurfacePoint,
 ) -> Option<RegionHit> {
     if surface_dimensions.width == 0 || surface_dimensions.height == 0 {
         return None;
     }
 
-    let geo_point: GeoPoint = screen_to_geo(viewport, surface_dimensions, screen_point);
+    let geo_point: GeoPoint = surface_to_geo(viewport, surface_dimensions, surface_point);
     let geo_point: GeoPoint = GeoPoint {
         lon: wrap_longitude(geo_point.lon),
         ..geo_point
@@ -49,13 +49,13 @@ pub fn region_at_point(
     })
 }
 
-fn screen_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, screen_point: ScreenPoint) -> GeoPoint {
-    let normalized_x: f64 = screen_point.x / surface_dimensions.width as f64;
-    let normalized_y: f64 = screen_point.y / surface_dimensions.height as f64;
+fn surface_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, surface_point: SurfacePoint) -> GeoPoint {
+    let normalized_x: f64 = surface_point.x / surface_dimensions.width as f64;
+    let normalized_y: f64 = surface_point.y / surface_dimensions.height as f64;
 
     // normalized_x and normalized_y place the cursor within the surface on [0, 1]: 0 at the left/top
     // edge, 1 at the right/bottom. The viewport is already projected, so interpolate those positions
-    // directly across its projected bounds. Screen y grows downward, so normalized_y 0 maps to the
+    // directly across its projected bounds. Surface y grows downward, so normalized_y 0 maps to the
     // viewport's max projected y (the top of the view), not its min.
     let projected_x: f64 = viewport.min.x + normalized_x * (viewport.max.x - viewport.min.x);
     let projected_y: f64 = viewport.max.y - normalized_y * (viewport.max.y - viewport.min.y);
@@ -103,7 +103,7 @@ mod tests {
         let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
 
         let result: Option<RegionHit> =
-            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 110.0, y: 100.0 });
+            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, SurfacePoint { x: 110.0, y: 100.0 });
 
         assert_eq!(result, Some(testland_hit()));
     }
@@ -114,7 +114,7 @@ mod tests {
         let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
 
         let result: Option<RegionHit> =
-            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 50.0, y: 100.0 });
+            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, SurfacePoint { x: 50.0, y: 100.0 });
 
         assert_eq!(result, None);
     }
@@ -125,7 +125,7 @@ mod tests {
         let viewport: Viewport = latitude_band_viewport(-370.0, -170.0);
 
         let result: Option<RegionHit> =
-            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, ScreenPoint { x: 11.0, y: 100.0 });
+            region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, SurfacePoint { x: 11.0, y: 100.0 });
 
         assert_eq!(result, Some(testland_hit()));
     }
