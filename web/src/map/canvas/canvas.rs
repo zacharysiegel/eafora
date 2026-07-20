@@ -17,15 +17,27 @@ pub enum RenderStatus {
     DataUnavailable,
 }
 
+/// A resolved, display-ready view of the selected region; the driver publishes it so a consumer needs
+/// no bundle access to render the selection.
+#[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // the ssr build never runs the driver, so nothing publishes a SelectionView
+#[derive(Debug, Clone, PartialEq)]
+pub struct SelectionView {
+    pub iso3: String,
+    pub name_en: String,
+    pub value: Option<f64>,
+}
+
 #[component]
 pub fn MapCanvas() -> impl IntoView {
     let canvas_ref: NodeRef<Canvas> = NodeRef::new();
     let render_status: RwSignal<RenderStatus> = RwSignal::new(RenderStatus::Loading);
 
     #[cfg(feature = "hydrate")]
+    let selection: RwSignal<Option<SelectionView>> = RwSignal::new(None);
+    #[cfg(feature = "hydrate")]
     Effect::new(move |_| {
         if let Some(canvas) = canvas_ref.get() {
-            super::driver::start(canvas, render_status);
+            super::driver::start(canvas, render_status, selection.write_only());
         }
     });
 

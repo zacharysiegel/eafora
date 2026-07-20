@@ -36,6 +36,7 @@ web-sys = { workspace = true, optional = true, features = [
     "Element",
     "Location",
     "EventTarget",
+    "MouseEvent",
     "RequestInit",
 ] }
 console_log = { workspace = true, optional = true }

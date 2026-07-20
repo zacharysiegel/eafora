@@ -5,21 +5,22 @@ use chrono::NaiveDate;
 use tokio::sync::watch;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen::closure::Closure;
-use web_sys::HtmlCanvasElement;
+use web_sys::{HtmlCanvasElement, MouseEvent};
 
 use leptos::prelude::*;
 
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::StatisticKind;
-use shared::map::{FrameState, Renderer, RendererBackend, Viewport};
+use shared::map::{FrameState, RegionCode, RegionHit, Renderer, RendererBackend, ScreenPoint, SurfaceDimensions, Viewport};
+use shared::map::hit_test;
 use shared::map::projection;
 use shared::sqlite::shard_db;
 
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
 
-use super::RenderStatus;
+use super::{RenderStatus, SelectionView};
 
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
@@ -49,11 +50,19 @@ struct Driver {
     #[allow(dead_code)] // the send half of the bundle channel, held so the channel stays open for later swaps
     bundle_sender: watch::Sender<Arc<Bundle>>,
     viewport: Viewport,
+    surface_dimensions: SurfaceDimensions,
     frame_state: FrameState,
+    selection_view: WriteSignal<Option<SelectionView>>,
     redraw_pending: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
     #[allow(dead_code)] // held to keep the window resize listener's closure alive for the page lifetime
     resize_callback: Option<Closure<dyn FnMut()>>,
+    #[allow(dead_code)] // held to keep the canvas click listener's closure alive for the page lifetime
+    click_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
+    #[allow(dead_code)] // held to keep the canvas mousemove listener's closure alive for the page lifetime
+    mousemove_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
+    #[allow(dead_code)] // held to keep the canvas mouseleave listener's closure alive for the page lifetime
+    mouseleave_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
 }
 
 impl Driver {
@@ -66,6 +75,8 @@ impl Driver {
     }
 
     fn resize(&mut self, width: u32, height: u32) {
+        self.surface_dimensions = SurfaceDimensions { width, height };
+
         if let Err(error) = self.renderer.resize_surface(width, height) {
             log::error!("resizing the render surface failed [error={error}]");
         }
@@ -94,6 +105,69 @@ impl Driver {
             self.redraw_pending = true;
         }
     }
+
+    fn region_at(&self, screen_point: ScreenPoint) -> Option<RegionHit> {
+        let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
+
+        hit_test::region_at_point(&bundle.geometry, self.viewport, self.surface_dimensions, screen_point)
+    }
+
+    /// The selected region resolved to its display fields and its value at the active statistic and
+    /// period, so the consumer that renders `SelectionView` needs no bundle access.
+    fn resolve_selection_view(&self, region_hit: &RegionHit) -> SelectionView {
+        let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
+        let value: Option<f64> = bundle
+            .shard_for(self.frame_state.active_statistic)
+            .and_then(|shard_bytes| shard_db::read_shard(shard_bytes).ok())
+            .and_then(|shard_values| shard_values.value(&region_hit.iso3, self.frame_state.active_period_start));
+
+        SelectionView {
+            iso3: region_hit.iso3.clone(),
+            name_en: region_hit.name_en.clone(),
+            value,
+        }
+    }
+
+    /// Hit-tests `screen_point` and updates the selected region. Returns the `SelectionView` to publish,
+    /// or `None` when the selection is unchanged so no redundant redraw or publish happens.
+    fn select_region_at(&mut self, screen_point: ScreenPoint) -> Option<Option<SelectionView>> {
+        let region_hit: Option<RegionHit> = self.region_at(screen_point);
+        let selected_region: Option<RegionCode> =
+            region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
+
+        if selected_region == self.frame_state.selected_region {
+            return None;
+        }
+
+        self.frame_state.selected_region = selected_region;
+
+        self.request_redraw();
+
+        Some(region_hit.map(|region_hit| self.resolve_selection_view(&region_hit)))
+    }
+
+    fn hover_region_at(&mut self, screen_point: ScreenPoint) {
+        let hovered_region: Option<RegionCode> =
+            self.region_at(screen_point).map(|region_hit| region_hit.region_code);
+
+        if hovered_region == self.frame_state.hovered_region {
+            return;
+        }
+
+        self.frame_state.hovered_region = hovered_region;
+
+        self.request_redraw();
+    }
+
+    fn clear_hover(&mut self) {
+        if self.frame_state.hovered_region.is_none() {
+            return;
+        }
+
+        self.frame_state.hovered_region = None;
+
+        self.request_redraw();
+    }
 }
 
 /// The two first-paint failure modes `start` distinguishes to choose the panel; each carries the
@@ -106,9 +180,13 @@ enum StartupError {
     BrowserUnsupported(AppError),
 }
 
-pub fn start(canvas: HtmlCanvasElement, render_status: RwSignal<RenderStatus>) {
+pub fn start(
+    canvas: HtmlCanvasElement,
+    render_status: RwSignal<RenderStatus>,
+    selection_view: WriteSignal<Option<SelectionView>>,
+) {
     leptos::task::spawn_local(async move {
-        let status: RenderStatus = match set_up_renderer(canvas).await {
+        let status: RenderStatus = match set_up_renderer(canvas, selection_view).await {
             Ok(()) => RenderStatus::Ready,
             Err(StartupError::DataUnavailable(error)) => {
                 log::error!("map data could not be loaded [error={error}]");
@@ -124,7 +202,7 @@ pub fn start(canvas: HtmlCanvasElement, render_status: RwSignal<RenderStatus>) {
     });
 }
 
-async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> {
+async fn set_up_renderer(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>) -> Result<(), StartupError> {
     let cache: OpfsArtifactCache = OpfsArtifactCache::create()
         .await
         .map_err(StartupError::BrowserUnsupported)?;
@@ -155,10 +233,15 @@ async fn set_up_renderer(canvas: HtmlCanvasElement) -> Result<(), StartupError> 
         renderer,
         bundle_sender,
         viewport: world_viewport(),
+        surface_dimensions: SurfaceDimensions { width, height },
         frame_state,
+        selection_view,
         redraw_pending: false,
         redraw_callback: None,
-        resize_callback: Some(install_resize_listener(canvas)),
+        resize_callback: Some(install_resize_listener(&canvas)),
+        click_callback: Some(install_click_listener(&canvas)),
+        mousemove_callback: Some(install_mousemove_listener(&canvas)),
+        mouseleave_callback: Some(install_mouseleave_listener(&canvas)),
     };
 
     DRIVER.with_borrow_mut(|driver_slot| {
@@ -242,7 +325,8 @@ fn scale_to_backing_pixels(css_pixels: i32, device_pixel_ratio: f64) -> u32 {
     (scaled.round() as u32).max(1)
 }
 
-fn install_resize_listener(canvas: HtmlCanvasElement) -> Closure<dyn FnMut()> {
+fn install_resize_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut()> {
+    let canvas: HtmlCanvasElement = canvas.clone();
     let resize_callback: Closure<dyn FnMut()> = Closure::new(move || {
         let (width, height): (u32, u32) = configure_canvas_backing_store(&canvas);
 
@@ -266,4 +350,75 @@ fn draw_pending_frame() {
             driver.draw();
         }
     });
+}
+
+fn screen_point_from_event(event: &MouseEvent) -> ScreenPoint {
+    let device_pixel_ratio: f64 = web_sys::window()
+        .map(|window| window.device_pixel_ratio())
+        .unwrap_or(1.0);
+
+    ScreenPoint {
+        x: event.offset_x() as f64 * device_pixel_ratio,
+        y: event.offset_y() as f64 * device_pixel_ratio,
+    }
+}
+
+fn select_region_at(screen_point: ScreenPoint) {
+    let published: Option<(WriteSignal<Option<SelectionView>>, Option<SelectionView>)> =
+        DRIVER.with_borrow_mut(|driver_slot| {
+            let driver: &mut Driver = driver_slot.as_mut()?;
+            let new_selection: Option<SelectionView> = driver.select_region_at(screen_point)?;
+
+            Some((driver.selection_view, new_selection))
+        });
+
+    if let Some((selection_view, new_selection)) = published {
+        selection_view.set(new_selection);
+    }
+}
+
+fn hover_region_at(screen_point: ScreenPoint) {
+    DRIVER.with_borrow_mut(|driver_slot| {
+        if let Some(driver) = driver_slot {
+            driver.hover_region_at(screen_point);
+        }
+    });
+}
+
+fn clear_hover() {
+    DRIVER.with_borrow_mut(|driver_slot| {
+        if let Some(driver) = driver_slot {
+            driver.clear_hover();
+        }
+    });
+}
+
+fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
+    let click_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
+        select_region_at(screen_point_from_event(&event));
+    });
+
+    let _ = canvas.add_event_listener_with_callback("click", click_callback.as_ref().unchecked_ref());
+
+    click_callback
+}
+
+fn install_mousemove_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
+    let mousemove_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
+        hover_region_at(screen_point_from_event(&event));
+    });
+
+    let _ = canvas.add_event_listener_with_callback("mousemove", mousemove_callback.as_ref().unchecked_ref());
+
+    mousemove_callback
+}
+
+fn install_mouseleave_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
+    let mouseleave_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |_event: MouseEvent| {
+        clear_hover();
+    });
+
+    let _ = canvas.add_event_listener_with_callback("mouseleave", mouseleave_callback.as_ref().unchecked_ref());
+
+    mouseleave_callback
 }
