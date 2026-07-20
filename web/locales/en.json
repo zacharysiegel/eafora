@@ -12,8 +12,6 @@
     },
     "statistic": {
         "tfr": "Total fertility rate",
-        "tfr_unit": "births per woman",
-        "test_alpha": "Test statistic alpha",
-        "test_alpha_unit": "test units"
+        "tfr_unit": "births per woman"
     }
 }

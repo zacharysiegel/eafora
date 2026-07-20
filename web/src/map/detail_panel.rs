@@ -24,7 +24,8 @@ pub fn RegionDetailPanel() -> impl IntoView {
                     <p class="detail-panel-statistic">
                         {match statistic {
                             StatisticKind::Tfr => t!(i18n, statistic.tfr).into_any(),
-                            StatisticKind::TestAlpha => t!(i18n, statistic.test_alpha).into_any(),
+                            // test-only variant; never active in production, so this arm only satisfies match exhaustiveness
+                            StatisticKind::TestAlpha => statistic.code().into_any(),
                         }}
                         " · "
                         {period_start.year().to_string()}
@@ -35,7 +36,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
                             <p class="detail-panel-unit">
                                 {match statistic {
                                     StatisticKind::Tfr => t!(i18n, statistic.tfr_unit).into_any(),
-                                    StatisticKind::TestAlpha => t!(i18n, statistic.test_alpha_unit).into_any(),
+                                    StatisticKind::TestAlpha => ().into_any(),
                                 }}
                             </p>
                         }
