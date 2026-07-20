@@ -84,7 +84,7 @@ fn apply_year(year_text: &str) {
 
 #[cfg(feature = "hydrate")]
 fn forward_statistic(statistic: StatisticKind) {
-    crate::map::canvas::apply_statistic(statistic);
+    crate::map::canvas::driver::apply_statistic(statistic);
 }
 
 #[cfg(not(feature = "hydrate"))] // the ssr build has no driver to forward to
@@ -92,7 +92,7 @@ fn forward_statistic(_statistic: StatisticKind) {}
 
 #[cfg(feature = "hydrate")]
 fn forward_period(period_start: NaiveDate) {
-    crate::map::canvas::apply_period(period_start);
+    crate::map::canvas::driver::apply_period(period_start);
 }
 
 #[cfg(not(feature = "hydrate"))] // the ssr build has no driver to forward to

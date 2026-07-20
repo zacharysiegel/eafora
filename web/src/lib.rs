@@ -1,11 +1,11 @@
 include!(concat!(env!("OUT_DIR"), "/i18n/mod.rs"));
 
 pub mod app;
-mod map;
+pub mod map;
 
 // Browser-only runtime glue; the ssr build compiles none of it.
 #[cfg(feature = "hydrate")]
-mod client;
+pub mod client;
 
 // In wasm32 test builds, run the #[wasm_bindgen_test] cases in a headless browser.
 #[cfg(all(test, target_arch = "wasm32"))]
