@@ -11,7 +11,7 @@ use leptos::prelude::*;
 
 use shared::AppError;
 use shared::artifact::Bundle;
-use shared::canonical::StatisticKind;
+use shared::canonical::{DataSourceKind, StatisticKind};
 use shared::map::{FrameState, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
@@ -121,14 +121,21 @@ impl Driver {
     /// period, so the consumer that renders `SelectionView` needs no bundle access.
     fn resolve_selection_view(&self, region_hit: &RegionHit) -> SelectionView {
         let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
-        let value: Option<f64> = bundle
+        let cell: Option<shard_db::CellValue> = bundle
             .shard_for(self.frame_state.active_statistic)
             .and_then(|shard_bytes| {
                 shard_db::read_shard(shard_bytes)
                     .map_err(|error| log::error!("reading the shard for the selected region failed [statistic={:?} error={error}]", self.frame_state.active_statistic))
                     .ok()
             })
-            .and_then(|shard_values| shard_values.value(&region_hit.iso3, self.frame_state.active_period_start));
+            .and_then(|shard_values| {
+                shard_values
+                    .cell(&region_hit.iso3, self.frame_state.active_period_start)
+                    .cloned()
+            });
+
+        let value: Option<f64> = cell.as_ref().map(|cell| cell.value);
+        let source: Option<DataSourceKind> = cell.as_ref().and_then(|cell| parse_data_source(&cell.source_code));
 
         SelectionView {
             iso3: region_hit.iso3.clone(),
@@ -136,6 +143,7 @@ impl Driver {
             statistic: self.frame_state.active_statistic,
             period_start: self.frame_state.active_period_start,
             value,
+            source,
         }
     }
 
@@ -185,6 +193,14 @@ impl Driver {
     fn clear_hover(&mut self) {
         self.frame_state.hovered_region = None;
     }
+}
+
+/// An unrecognized code is logged and dropped, so an odd cell degrades to no attribution rather than
+/// failing the whole selection.
+fn parse_data_source(source_code: &str) -> Option<DataSourceKind> {
+    DataSourceKind::try_from(source_code)
+        .map_err(|error| log::warn!("shard cell has an unrecognized data source [code={source_code} error={error}]"))
+        .ok()
 }
 
 /// The two first-paint failure modes `start` distinguishes to choose the panel; each carries the

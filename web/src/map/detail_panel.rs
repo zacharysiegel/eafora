@@ -2,7 +2,7 @@ use chrono::Datelike;
 use leptos::prelude::*;
 use leptos_i18n::I18nContext;
 
-use shared::canonical::StatisticKind;
+use shared::canonical::{DataSourceKind, StatisticKind};
 
 use crate::i18n::*;
 use crate::map::canvas::SelectionView;
@@ -14,7 +14,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
 
     move || {
         selection.get().map(|selection_view| {
-            let SelectionView { iso3: _, name_en, statistic, period_start, value } = selection_view;
+            let SelectionView { iso3: _, name_en, statistic, period_start, value, source } = selection_view;
 
             view! {
                 <aside class="panel detail-panel">
@@ -29,6 +29,9 @@ pub fn RegionDetailPanel() -> impl IntoView {
                         Some(value) => view! {
                             <p class="detail-panel-value numeric">{format!("{value:.2}")}</p>
                             <p class="detail-panel-unit">{statistic_unit(i18n, statistic)}</p>
+                            {source.map(|source| view! {
+                                <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
+                            })}
                         }
                         .into_any(),
                         None => view! {
@@ -54,5 +57,14 @@ fn statistic_unit(i18n: I18nContext<Locale>, statistic: StatisticKind) -> AnyVie
     match statistic {
         StatisticKind::Tfr => t!(i18n, statistic.tfr_unit).into_any(),
         StatisticKind::TestAlpha => ().into_any(),
+    }
+}
+
+fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
+    match source {
+        DataSourceKind::WorldBankWDI => t!(i18n, source.wb_wdi).into_any(),
+        // test-only variants; never present in production shards, so these arms only satisfy match exhaustiveness
+        DataSourceKind::TestAlpha => source.code().into_any(),
+        DataSourceKind::TestBeta => source.code().into_any(),
     }
 }

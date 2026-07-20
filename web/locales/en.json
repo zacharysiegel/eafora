@@ -8,10 +8,14 @@
     },
     "detail": {
         "heading": "Selected region",
-        "no_data": "No data for this region."
+        "no_data": "No data for this region.",
+        "source": "Source"
     },
     "statistic": {
         "tfr": "Total fertility rate",
         "tfr_unit": "births per woman"
+    },
+    "source": {
+        "wb_wdi": "World Bank WDI"
     }
 }

@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use leptos::html::Canvas;
 use leptos::prelude::*;
 
-use shared::canonical::StatisticKind;
+use shared::canonical::{DataSourceKind, StatisticKind};
 
 use crate::i18n::*;
 
@@ -28,6 +28,7 @@ pub struct SelectionView {
     pub statistic: StatisticKind,
     pub period_start: NaiveDate,
     pub value: Option<f64>,
+    pub source: Option<DataSourceKind>,
 }
 
 #[component]
