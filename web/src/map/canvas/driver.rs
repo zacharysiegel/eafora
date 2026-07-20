@@ -384,7 +384,9 @@ fn surface_point_from_mouse_event(event: &MouseEvent) -> SurfacePoint {
     }
 }
 
-fn select_region_at(surface_point: SurfacePoint) {
+fn handle_click(event: &MouseEvent) {
+    let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
+
     let published: Option<(WriteSignal<Option<SelectionView>>, Option<SelectionView>)> =
         DRIVER.with_borrow_mut(|driver_slot| {
             let driver: &mut Driver = driver_slot.as_mut()?;
@@ -398,7 +400,9 @@ fn select_region_at(surface_point: SurfacePoint) {
     }
 }
 
-fn hover_region_at(surface_point: SurfacePoint) {
+fn handle_mousemove(event: &MouseEvent) {
+    let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
+
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
             driver.hover_region_at(surface_point);
@@ -406,7 +410,7 @@ fn hover_region_at(surface_point: SurfacePoint) {
     });
 }
 
-fn clear_hover() {
+fn handle_mouseleave() {
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
             driver.clear_hover();
@@ -416,7 +420,7 @@ fn clear_hover() {
 
 fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
     let click_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
-        select_region_at(surface_point_from_mouse_event(&event));
+        handle_click(&event);
     });
 
     let _ = canvas.add_event_listener_with_callback("click", click_callback.as_ref().unchecked_ref());
@@ -426,7 +430,7 @@ fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(Mouse
 
 fn install_mousemove_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
     let mousemove_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
-        hover_region_at(surface_point_from_mouse_event(&event));
+        handle_mousemove(&event);
     });
 
     let _ = canvas.add_event_listener_with_callback("mousemove", mousemove_callback.as_ref().unchecked_ref());
@@ -436,7 +440,7 @@ fn install_mousemove_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(M
 
 fn install_mouseleave_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
     let mouseleave_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |_event: MouseEvent| {
-        clear_hover();
+        handle_mouseleave();
     });
 
     let _ = canvas.add_event_listener_with_callback("mouseleave", mouseleave_callback.as_ref().unchecked_ref());
