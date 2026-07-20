@@ -1,4 +1,4 @@
-//! Load a statistic shard's bytes into an in-memory `(region, period_start) -> value` map with its
+//! Load a statistic shard's bytes into an in-memory `(region, period_start) -> cell` map with its
 //! min/max value range precomputed.
 //!
 //! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
@@ -9,18 +9,29 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
+#[derive(Debug, Clone)]
+pub struct CellValue {
+    pub value: f64,
+    pub source_code: String,
+    pub source_revision: String,
+}
+
 /// The values of one statistic shard, keyed by country ISO 3166 alpha-3 and period start, with the
 /// min/max value range precomputed.
 #[derive(Debug, Clone)]
 pub struct ShardValues {
-    by_region: HashMap<String, HashMap<NaiveDate, f64>>,
+    by_region: HashMap<String, HashMap<NaiveDate, CellValue>>,
     min: f64,
     max: f64,
 }
 
 impl ShardValues {
     pub fn value(&self, region_iso3: &str, period_start: NaiveDate) -> Option<f64> {
-        self.by_region.get(region_iso3)?.get(&period_start).copied()
+        Some(self.by_region.get(region_iso3)?.get(&period_start)?.value)
+    }
+
+    pub fn cell(&self, region_iso3: &str, period_start: NaiveDate) -> Option<&CellValue> {
+        self.by_region.get(region_iso3)?.get(&period_start)
     }
 
     pub fn value_range(&self) -> Option<(f64, f64)> {
@@ -61,7 +72,7 @@ mod native {
     use crate::error::AppError;
     use crate::sqlite::schema;
 
-    use super::ShardValues;
+    use super::{CellValue, ShardValues};
 
     /// Read every `(region_iso3, period_start, value)` row of a statistic shard into a [`ShardValues`].
     /// The shard's SQLite header is validated before any query per [`crate::sqlite::schema::validate_shard_header`].
@@ -70,10 +81,12 @@ mod native {
         schema::validate_shard_header(&connection)?;
 
         let query: String = format!(
-            "select {}, {}, {} from {}",
+            "select {}, {}, {}, {}, {} from {}",
             schema::COL_REGION_ISO3,
             schema::COL_PERIOD_START,
             schema::COL_VALUE,
+            schema::COL_DATA_SOURCE_CODE,
+            schema::COL_DATA_SOURCE_REVISION,
             schema::TABLE_STATISTIC_VALUE,
         );
 
@@ -82,20 +95,23 @@ mod native {
             let region_iso3: String = row.get(0)?;
             let period_start: String = row.get(1)?;
             let value: f64 = row.get(2)?;
+            let source_code: String = row.get(3)?;
+            let source_revision: String = row.get(4)?;
 
-            Ok((region_iso3, period_start, value))
+            Ok((region_iso3, period_start, value, source_code, source_revision))
         })?;
 
-        let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
+        let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
         let mut min: f64 = f64::INFINITY;
         let mut max: f64 = f64::NEG_INFINITY;
 
         for row in row_iter {
-            let (region_iso3, period_start, value): (String, String, f64) = row?;
+            let (region_iso3, period_start, value, source_code, source_revision): (String, String, f64, String, String) = row?;
             let period_start: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                 .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
 
-            by_region.entry(region_iso3).or_default().insert(period_start, value);
+            let cell: CellValue = CellValue { value, source_code, source_revision };
+            by_region.entry(region_iso3).or_default().insert(period_start, cell);
             min = min.min(value);
             max = max.max(value);
         }
@@ -139,7 +155,7 @@ mod wasm {
     use crate::error::AppError;
     use crate::sqlite::{ffi_conversions, ro_memory_vfs, schema};
 
-    use super::ShardValues;
+    use super::{CellValue, ShardValues};
 
     /// Open the shard's bytes through the read-only VFS (native has no such module) and step the one
     /// load-once query via the raw `sqlite3_*` FFI, since `sqlite-wasm-rs` exposes no safe query
@@ -184,10 +200,12 @@ mod wasm {
 
     fn read_all_rows(db: *mut sqlite3) -> Result<ShardValues, AppError> {
         let query: CString = CString::new(format!(
-            "select {}, {}, {} from {}",
+            "select {}, {}, {}, {}, {} from {}",
             schema::COL_REGION_ISO3,
             schema::COL_PERIOD_START,
             schema::COL_VALUE,
+            schema::COL_DATA_SOURCE_CODE,
+            schema::COL_DATA_SOURCE_REVISION,
             schema::TABLE_STATISTIC_VALUE,
         ))
         .unwrap();
@@ -202,7 +220,7 @@ mod wasm {
 
         let statement: Statement = Statement { handle: raw_statement };
 
-        let mut by_region: HashMap<String, HashMap<NaiveDate, f64>> = HashMap::new();
+        let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
         let mut min: f64 = f64::INFINITY;
         let mut max: f64 = f64::NEG_INFINITY;
 
@@ -212,10 +230,13 @@ mod wasm {
                 let region_iso3: String = ffi_conversions::column_text(statement.handle, 0)?;
                 let period_start: String = ffi_conversions::column_text(statement.handle, 1)?;
                 let value: f64 = unsafe { sqlite_wasm_rs::sqlite3_column_double(statement.handle, 2) };
+                let source_code: String = ffi_conversions::column_text(statement.handle, 3)?;
+                let source_revision: String = ffi_conversions::column_text(statement.handle, 4)?;
                 let period_start: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
                     .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
 
-                by_region.entry(region_iso3).or_default().insert(period_start, value);
+                let cell: CellValue = CellValue { value, source_code, source_revision };
+                by_region.entry(region_iso3).or_default().insert(period_start, cell);
                 min = min.min(value);
                 max = max.max(value);
             } else if step_res == sqlite_wasm_rs::SQLITE_DONE {
@@ -294,6 +315,16 @@ mod tests {
     }
 
     #[test]
+    fn read_shard_reads_cell_source() {
+        let shard: ShardValues = read_shard(&sample_shard_bytes()).unwrap();
+
+        let cell: &CellValue = shard.cell("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap();
+        assert_eq!(cell.value, 1.6);
+        assert_eq!(cell.source_code, "wb_wdi");
+        assert_eq!(cell.source_revision, "2024-12-12");
+    }
+
+    #[test]
     fn read_shard_returns_none_for_absent_region_and_period() {
         let shard: ShardValues = read_shard(&sample_shard_bytes()).unwrap();
 
@@ -338,5 +369,6 @@ mod wasm_tests {
         assert_eq!(shard.value("DEU", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
         assert_eq!(shard.value_range(), Some((1.5, 1.7)));
         assert_eq!(shard.value("XKX", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), None);
+        assert_eq!(shard.cell("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap().source_code, "wb_wdi");
     }
 }
