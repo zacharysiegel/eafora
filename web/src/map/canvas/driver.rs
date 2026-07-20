@@ -141,8 +141,6 @@ impl Driver {
 
         self.frame_state.selected_region = selected_region;
 
-        self.request_redraw();
-
         Some(region_hit.map(|region_hit| self.resolve_selection_view(&region_hit)))
     }
 
@@ -155,8 +153,6 @@ impl Driver {
         }
 
         self.frame_state.hovered_region = hovered_region;
-
-        self.request_redraw();
     }
 
     fn clear_hover(&mut self) {
@@ -165,8 +161,6 @@ impl Driver {
         }
 
         self.frame_state.hovered_region = None;
-
-        self.request_redraw();
     }
 }
 
