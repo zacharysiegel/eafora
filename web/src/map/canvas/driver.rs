@@ -177,12 +177,7 @@ impl Driver {
             return;
         };
 
-        self.frame_state.hovered_region = region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
-
-        match &region_hit {
-            Some(region_hit) => log::debug!("region hovered [name={} iso3={}]", region_hit.name_en, region_hit.iso3),
-            None => log::debug!("hover left all regions"),
-        }
+        self.frame_state.hovered_region = region_hit.map(|region_hit| region_hit.region_code);
     }
 
     fn clear_hover(&mut self) {
