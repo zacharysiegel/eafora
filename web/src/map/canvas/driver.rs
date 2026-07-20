@@ -45,9 +45,7 @@ const WORLD_BOUNDS: WorldBounds = WorldBounds {
 /// The render state the browser callbacks reach through the `DRIVER` thread-local, kept outside the
 /// reactive graph because `Renderer` owns single-thread-bound, `!Send` wgpu resources. Each JS callback
 /// borrows `DRIVER` once and drives it through `&mut self`, so no method re-borrows the thread-local.
-// dead_code is struct-wide because several fields are held for lifetime side effects, never read:
-// bundle_sender keeps the bundle watch channel open for later swaps, and the four event-listener
-// callbacks keep their closures alive for the page.
+// several fields are held only for lifetime side effects (open channel, live closures), never read
 #[allow(dead_code)]
 struct Driver {
     renderer: Renderer,
