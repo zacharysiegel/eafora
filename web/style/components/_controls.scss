@@ -80,18 +80,16 @@
     border: var(--border-active);
 }
 
-// grabbing = the pointer is down on the slider; expand and invert to white
+// grabbing = the pointer is down on the slider; expand the thumb
 .controls-scrubber.grabbing::-webkit-slider-thumb {
     width: 18px;
     height: 18px;
     margin-top: 3px;
-    background: var(--color-paper);
 }
 
 .controls-scrubber.grabbing::-moz-range-thumb {
     width: 18px;
     height: 18px;
-    background: var(--color-paper);
 }
 
 .controls-year {
