@@ -1,0 +1,42 @@
+// The top-left region-detail panel per docs/design/README.md.
+.detail-panel {
+    position: absolute;
+    top: var(--space-lg);
+    left: var(--space-lg);
+    width: 20rem; // approx. 320px
+}
+
+.detail-panel-heading {
+    font-size: 0.625rem; // approx. 10px
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-ink-muted);
+    margin-bottom: var(--space-sm);
+}
+
+.detail-panel-region {
+    font-size: 1rem; // approx. 16px
+    font-weight: 600;
+}
+
+.detail-panel-statistic {
+    font-size: var(--type-size-data);
+    color: var(--color-ink-muted);
+    margin-bottom: var(--space-md);
+}
+
+.detail-panel-value {
+    font-size: 2.25rem; // approx. 36px
+    line-height: 1;
+    letter-spacing: -0.01em;
+}
+
+.detail-panel-unit {
+    font-size: 0.6875rem; // approx. 11px
+    color: var(--color-ink-muted);
+    margin-top: var(--space-xs);
+}
+
+.detail-panel-no-data {
+    color: var(--color-ink-muted);
+}

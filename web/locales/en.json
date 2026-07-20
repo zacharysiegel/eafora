@@ -5,5 +5,15 @@
     "map": {
         "unsupported": "This browser is missing features Eafora requires: WebGPU or WebGL2 graphics, and Origin Private File System storage.",
         "data_unavailable": "The map data could not be loaded."
+    },
+    "detail": {
+        "heading": "Selected region",
+        "no_data": "No data for this region."
+    },
+    "statistic": {
+        "tfr": "Total fertility rate",
+        "tfr_unit": "births per woman",
+        "test_alpha": "Test statistic alpha",
+        "test_alpha_unit": "test units"
     }
 }

@@ -44,7 +44,7 @@ console_error_panic_hook = { workspace = true, optional = true }
 leptos_axum = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
-chrono = { workspace = true, optional = true }
+chrono = { workspace = true }
 
 [build-dependencies]
 leptos_i18n_build = { workspace = true }
@@ -63,7 +63,6 @@ hydrate = [
     "dep:web-sys",
     "dep:console_log",
     "dep:console_error_panic_hook",
-    "dep:chrono",
     "tokio/sync",
 ]
 ssr = [

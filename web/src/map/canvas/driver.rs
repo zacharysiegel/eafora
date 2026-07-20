@@ -133,6 +133,8 @@ impl Driver {
         SelectionView {
             iso3: region_hit.iso3.clone(),
             name_en: region_hit.name_en.clone(),
+            statistic: self.frame_state.active_statistic,
+            period_start: self.frame_state.active_period_start,
             value,
         }
     }

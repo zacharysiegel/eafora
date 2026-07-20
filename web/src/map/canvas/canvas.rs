@@ -1,5 +1,8 @@
+use chrono::NaiveDate;
 use leptos::html::Canvas;
 use leptos::prelude::*;
+
+use shared::canonical::StatisticKind;
 
 use crate::i18n::*;
 
@@ -19,11 +22,12 @@ pub enum RenderStatus {
 
 /// A resolved, display-ready view of the selected region; the driver publishes it so a consumer needs
 /// no bundle access to render the selection.
-#[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // the ssr build never runs the driver, so nothing publishes a SelectionView
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectionView {
     pub iso3: String,
     pub name_en: String,
+    pub statistic: StatisticKind,
+    pub period_start: NaiveDate,
     pub value: Option<f64>,
 }
 
@@ -33,10 +37,9 @@ pub fn MapCanvas() -> impl IntoView {
     let render_status: RwSignal<RenderStatus> = RwSignal::new(RenderStatus::Loading);
 
     #[cfg(feature = "hydrate")]
-    let selection: RwSignal<Option<SelectionView>> = RwSignal::new(None);
-    #[cfg(feature = "hydrate")]
     Effect::new(move |_| {
         if let Some(canvas) = canvas_ref.get() {
+            let selection: RwSignal<Option<SelectionView>> = expect_context();
             super::driver::start(canvas, super::driver::DriverSignals {
                 render_status,
                 selection_view: selection.write_only(),
