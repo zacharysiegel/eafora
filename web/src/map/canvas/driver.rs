@@ -135,7 +135,11 @@ impl Driver {
             });
 
         let value: Option<f64> = cell.as_ref().map(|cell| cell.value);
-        let source: Option<DataSourceKind> = cell.as_ref().and_then(|cell| parse_data_source(&cell.source_code));
+        let source: Option<DataSourceKind> = cell.as_ref().and_then(|cell| {
+            DataSourceKind::try_from(cell.source_code.as_str())
+                .map_err(|error| log::warn!("shard cell has an unrecognized data source [code={} error={error}]", cell.source_code))
+                .ok()
+        });
 
         SelectionView {
             iso3: region_hit.iso3.clone(),
@@ -193,14 +197,6 @@ impl Driver {
     fn clear_hover(&mut self) {
         self.frame_state.hovered_region = None;
     }
-}
-
-/// An unrecognized code is logged and dropped, so an odd cell degrades to no attribution rather than
-/// failing the whole selection.
-fn parse_data_source(source_code: &str) -> Option<DataSourceKind> {
-    DataSourceKind::try_from(source_code)
-        .map_err(|error| log::warn!("shard cell has an unrecognized data source [code={source_code} error={error}]"))
-        .ok()
 }
 
 /// The two first-paint failure modes `start` distinguishes to choose the panel; each carries the
