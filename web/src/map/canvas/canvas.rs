@@ -37,7 +37,10 @@ pub fn MapCanvas() -> impl IntoView {
     #[cfg(feature = "hydrate")]
     Effect::new(move |_| {
         if let Some(canvas) = canvas_ref.get() {
-            super::driver::start(canvas, render_status, selection.write_only());
+            super::driver::start(canvas, super::driver::DriverSignals {
+                render_status,
+                selection_view: selection.write_only(),
+            });
         }
     });
 

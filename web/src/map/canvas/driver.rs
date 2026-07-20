@@ -42,6 +42,14 @@ const WORLD_BOUNDS: WorldBounds = WorldBounds {
     max_lon: 180.0,
 };
 
+/// The result of hit-testing a pointer against the regions, compared to the previously known region.
+enum RegionChange {
+    /// The pointer is over the same region as before, or still over none; nothing to update.
+    Unchanged,
+    /// The pointer moved to a different region, or off all regions (`None`).
+    Changed(Option<RegionHit>),
+}
+
 /// The render state the browser callbacks reach through the `DRIVER` thread-local, kept outside the
 /// reactive graph because `Renderer` owns single-thread-bound, `!Send` wgpu resources. Each JS callback
 /// borrows `DRIVER` once and drives it through `&mut self`, so no method re-borrows the thread-local.
@@ -129,20 +137,31 @@ impl Driver {
         }
     }
 
-    /// Hit-tests `surface_point` and updates the selected region. Returns the `SelectionView` to publish,
-    /// or `None` when the selection is unchanged so no redundant redraw or publish happens.
-    fn select_region_at(&mut self, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
+    /// Hit-tests `surface_point` against the regions, reporting a change only when the region under it
+    /// differs from `previous`, so callers skip work on repeat hits over the same region.
+    fn region_change(&self, surface_point: SurfacePoint, previous: &Option<RegionCode>) -> RegionChange {
         let region_hit: Option<RegionHit> = self.region_at(surface_point);
-        let selected_region: Option<RegionCode> =
+        let region_code: Option<RegionCode> =
             region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
 
-        if selected_region == self.frame_state.selected_region {
-            return None;
+        if region_code == *previous {
+            return RegionChange::Unchanged;
         }
 
-        self.frame_state.selected_region = selected_region;
-        let selection_view: Option<SelectionView> =
-            region_hit.map(|region_hit| self.resolve_selection_view(&region_hit));
+        RegionChange::Changed(region_hit)
+    }
+
+    /// Updates the selected region from `surface_point`. Returns the `SelectionView` to publish, or
+    /// `None` when the selection is unchanged so no redundant publish happens.
+    fn select_region_at(&mut self, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
+        let RegionChange::Changed(region_hit) = self.region_change(surface_point, &self.frame_state.selected_region)
+        else {
+            return None;
+        };
+
+        self.frame_state.selected_region = region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
+
+        let selection_view: Option<SelectionView> = region_hit.map(|region_hit| self.resolve_selection_view(&region_hit));
 
         match &selection_view {
             Some(view) => log::info!("region selected [name={} iso3={} value={:?}]", view.name_en, view.iso3, view.value),
@@ -153,15 +172,12 @@ impl Driver {
     }
 
     fn hover_region_at(&mut self, surface_point: SurfacePoint) {
-        let region_hit: Option<RegionHit> = self.region_at(surface_point);
-        let hovered_region: Option<RegionCode> =
-            region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
-
-        if hovered_region == self.frame_state.hovered_region {
+        let RegionChange::Changed(region_hit) = self.region_change(surface_point, &self.frame_state.hovered_region)
+        else {
             return;
-        }
+        };
 
-        self.frame_state.hovered_region = hovered_region;
+        self.frame_state.hovered_region = region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
 
         match &region_hit {
             Some(region_hit) => log::debug!("region hovered [name={} iso3={}]", region_hit.name_en, region_hit.iso3),
@@ -170,13 +186,7 @@ impl Driver {
     }
 
     fn clear_hover(&mut self) {
-        if self.frame_state.hovered_region.is_none() {
-            return;
-        }
-
         self.frame_state.hovered_region = None;
-
-        log::debug!("pointer left the map");
     }
 }
 
@@ -190,13 +200,17 @@ enum StartupError {
     BrowserUnsupported(AppError),
 }
 
-pub fn start(
-    canvas: HtmlCanvasElement,
-    render_status: RwSignal<RenderStatus>,
-    selection_view: WriteSignal<Option<SelectionView>>,
-) {
+/// The reactive signals wiring the map component to the driver.
+pub struct DriverSignals {
+    pub render_status: RwSignal<RenderStatus>,
+    pub selection_view: WriteSignal<Option<SelectionView>>,
+}
+
+pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
+    let DriverSignals { render_status, selection_view } = signals;
+
     leptos::task::spawn_local(async move {
-        let status: RenderStatus = match set_up_renderer(canvas, selection_view).await {
+        let status: RenderStatus = match set_up_driver(canvas, selection_view).await {
             Ok(()) => RenderStatus::Ready,
             Err(StartupError::DataUnavailable(error)) => {
                 log::error!("map data could not be loaded [error={error}]");
@@ -212,7 +226,7 @@ pub fn start(
     });
 }
 
-async fn set_up_renderer(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>) -> Result<(), StartupError> {
+async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>) -> Result<(), StartupError> {
     let cache: OpfsArtifactCache = OpfsArtifactCache::create()
         .await
         .map_err(StartupError::BrowserUnsupported)?;
@@ -364,7 +378,7 @@ fn draw_pending_frame() {
     });
 }
 
-fn surface_point_from_event(event: &MouseEvent) -> SurfacePoint {
+fn surface_point_from_mouse_event(event: &MouseEvent) -> SurfacePoint {
     let device_pixel_ratio: f64 = web_sys::window()
         .map(|window| window.device_pixel_ratio())
         .unwrap_or(1.0);
@@ -407,7 +421,7 @@ fn clear_hover() {
 
 fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
     let click_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
-        select_region_at(surface_point_from_event(&event));
+        select_region_at(surface_point_from_mouse_event(&event));
     });
 
     let _ = canvas.add_event_listener_with_callback("click", click_callback.as_ref().unchecked_ref());
@@ -417,7 +431,7 @@ fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(Mouse
 
 fn install_mousemove_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
     let mousemove_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
-        hover_region_at(surface_point_from_event(&event));
+        hover_region_at(surface_point_from_mouse_event(&event));
     });
 
     let _ = canvas.add_event_listener_with_callback("mousemove", mousemove_callback.as_ref().unchecked_ref());
