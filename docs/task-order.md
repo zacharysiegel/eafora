@@ -13,7 +13,14 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
    - Phase A (`web/` crate: cargo-leptos config + Leptos shell + `leptos_i18n` + Sass tokens) — landed.
    - Phase B (`OpfsArtifactCache` implementing `shared::artifact::ArtifactCache`, headless-Chrome tested) — landed.
    - Phase C1 (first paint: loader + canvas→wgpu + `MapCanvas`) — landed.
-   - Phase C2 (chrome + interactions: legend, controls, detail/source panels, click-select, hover, statistic swap, year scrub) — plan and sub-slices C2.1–C2.6 in `specs/003-web-client/c2-plan.md`. **In progress on the `web-c2-*` stack.**
+   - Phase C2 (chrome + interactions) — plan and sub-slices in `specs/003-web-client/c2-plan.md`. **In progress.**
+     - C2.1 (`RegionHit` hit-test in `shared`) — landed.
+     - C2.2 (selection/hover interaction layer + driver) — landed.
+     - C2.4a (`RegionDetailPanel`: selection lifted to `MapView` via context, `SelectionView` enriched with statistic + period) — **In progress on `web-region-detail-panel`.**
+     - C2.4b (`SourcePanel` + `ProvenanceView`) — pending; split out of C2.4.
+     - C2.3 (DPR hit-test coverage) — pending; likely a host scale-invariance test rather than a headless-Chrome test.
+     - C2.5 (Controls: statistic picker + year scrubber) — pending.
+     - C2.6 (Legend) — pending.
    - Phase C3 (viewport camera/aspect + pan/zoom + the selection/hover renderer pass) — pending; split out of C2 per `c2-plan.md` §Deferred to C3.
    - Phase D (browser fetch + discovery + speculative fetch + bundle hot-swap) — pending.
    - Phase E (perf-budget script + precompress + `wrangler` deploy config) — pending.
