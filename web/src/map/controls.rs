@@ -11,6 +11,7 @@ use crate::map::labels;
 pub fn Controls() -> impl IntoView {
     let view_controls: RwSignal<Option<ViewControls>> = expect_context();
     let i18n = use_i18n();
+    let grabbing: RwSignal<bool> = RwSignal::new(false);
 
     move || {
         view_controls.get().map(|controls| {
@@ -46,25 +47,38 @@ pub fn Controls() -> impl IntoView {
                             <span class="controls-label">{t!(i18n, scrubber.label)}</span>
                             <input
                                 class="controls-scrubber"
+                                class:grabbing=move || grabbing.get()
                                 type="range"
                                 min=earliest.year()
                                 max=latest.year()
                                 value=active_period_start.year()
-                                on:input=move |event| {
-                                    let Ok(year) = event_target_value(&event).parse::<i32>() else {
-                                        return;
-                                    };
-                                    if let Some(period_start) = NaiveDate::from_ymd_opt(year, 1, 1) {
-                                        forward_period(period_start);
-                                    }
-                                }
+                                on:input=move |event| apply_year(&event_target_value(&event))
+                                on:pointerdown=move |_| grabbing.set(true)
+                                on:pointerup=move |_| grabbing.set(false)
+                                on:pointercancel=move |_| grabbing.set(false)
                             />
-                            <span class="controls-scrubber-year numeric">{active_period_start.year().to_string()}</span>
+                            <input
+                                class="controls-year numeric"
+                                type="number"
+                                min=earliest.year()
+                                max=latest.year()
+                                value=active_period_start.year()
+                                on:change=move |event| apply_year(&event_target_value(&event))
+                            />
                         </label>
                     })}
                 </aside>
             }
         })
+    }
+}
+
+fn apply_year(year_text: &str) {
+    let Ok(year) = year_text.parse::<i32>() else {
+        return;
+    };
+    if let Some(period_start) = NaiveDate::from_ymd_opt(year, 1, 1) {
+        forward_period(period_start);
     }
 }
 
