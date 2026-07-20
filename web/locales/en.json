@@ -7,7 +7,6 @@
         "data_unavailable": "The map data could not be loaded."
     },
     "detail": {
-        "heading": "Selected region",
         "no_data": "No data for this region.",
         "source": "Source"
     },

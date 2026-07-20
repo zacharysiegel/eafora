@@ -18,7 +18,6 @@ pub fn RegionDetailPanel() -> impl IntoView {
 
             view! {
                 <aside class="panel detail-panel">
-                    <h2 class="detail-panel-heading">{t!(i18n, detail.heading)}</h2>
                     <p class="detail-panel-region">{name_en}</p>
                     <p class="detail-panel-statistic">
                         {statistic_label(i18n, statistic)}
