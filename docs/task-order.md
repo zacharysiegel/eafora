@@ -16,8 +16,8 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
    - Phase C2 (chrome + interactions) — plan and sub-slices in `specs/003-web-client/c2-plan.md`. **In progress.**
      - C2.1 (`RegionHit` hit-test in `shared`) — landed.
      - C2.2 (selection/hover interaction layer + driver) — landed.
-     - C2.4a (`RegionDetailPanel`: selection lifted to `MapView` via context, `SelectionView` enriched with statistic + period) — **In progress on `web-region-detail-panel`.**
-     - C2.4b (`SourcePanel` + `ProvenanceView`) — pending; split out of C2.4.
+     - C2.4a (`RegionDetailPanel`: selection lifted to `MapView` via context, `SelectionView` enriched with statistic + period) — landed.
+     - C2.4b (per-region source attribution: `shard_db` surfaces each cell's data source, the detail panel shows it) — **In progress on `region-source-attribution`.** A standalone always-visible `SourcePanel` / global `ProvenanceView` is deferred; per-region attribution is the meaningful version, and per-statistic aggregation only matters once multiple sources coexist.
      - C2.3 (DPR hit-test coverage) — pending; likely a host scale-invariance test rather than a headless-Chrome test.
      - C2.5 (Controls: statistic picker + year scrubber) — pending.
      - C2.6 (Legend) — pending.
