@@ -31,6 +31,15 @@ pub struct SelectionView {
     pub source: Option<DataSourceKind>,
 }
 
+/// Published by the driver so the controls render without bundle access.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewControls {
+    pub active_statistic: StatisticKind,
+    pub available_statistics: Vec<StatisticKind>,
+    pub active_period_start: NaiveDate,
+    pub period_range: Option<(NaiveDate, NaiveDate)>,
+}
+
 #[component]
 pub fn MapCanvas() -> impl IntoView {
     let canvas_ref: NodeRef<Canvas> = NodeRef::new();
@@ -40,9 +49,11 @@ pub fn MapCanvas() -> impl IntoView {
     Effect::new(move |_| {
         if let Some(canvas) = canvas_ref.get() {
             let selection: RwSignal<Option<SelectionView>> = expect_context();
+            let view_controls: RwSignal<Option<ViewControls>> = expect_context();
             super::driver::start(canvas, super::driver::DriverSignals {
                 render_status,
                 selection_view: selection.write_only(),
+                view_controls: view_controls.write_only(),
             });
         }
     });

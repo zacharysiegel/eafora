@@ -20,7 +20,7 @@ use shared::sqlite::shard_db;
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
 
-use super::{RenderStatus, SelectionView};
+use super::{RenderStatus, SelectionView, ViewControls};
 
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
@@ -50,6 +50,13 @@ enum RegionChange {
     Changed(Option<RegionHit>),
 }
 
+/// What a statistic or period change republishes: fresh controls, plus the re-resolved selection when a
+/// region is selected.
+struct Publications {
+    view_controls: ViewControls,
+    selection: Option<SelectionView>,
+}
+
 /// The render state the browser callbacks reach through the `DRIVER` thread-local, kept outside the
 /// reactive graph because `Renderer` owns single-thread-bound, `!Send` wgpu resources. Each JS callback
 /// borrows `DRIVER` once and drives it through `&mut self`, so no method re-borrows the thread-local.
@@ -62,6 +69,8 @@ struct Driver {
     surface_dimensions: SurfaceDimensions,
     frame_state: FrameState,
     selection_view: WriteSignal<Option<SelectionView>>,
+    view_controls: WriteSignal<Option<ViewControls>>,
+    selection: Option<SelectionView>,
     redraw_pending: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
     resize_callback: Option<Closure<dyn FnMut()>>,
@@ -117,22 +126,21 @@ impl Driver {
         hit_test::region_at_point(&bundle.geometry, self.viewport, self.surface_dimensions, surface_point)
     }
 
-    /// The selected region resolved to its display fields and its value at the active statistic and
-    /// period, so the consumer that renders `SelectionView` needs no bundle access.
-    fn resolve_selection_view(&self, region_hit: &RegionHit) -> SelectionView {
+    /// Reads the shard the map colors from (the active statistic's first authorized license class),
+    /// logging and dropping a read failure so the caller degrades to "no data" rather than propagating.
+    fn read_active_shard(&self) -> Option<shard_db::ShardValues> {
         let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
-        let cell: Option<shard_db::CellValue> = bundle
-            .shard_for(self.frame_state.active_statistic)
-            .and_then(|shard_bytes| {
-                shard_db::read_shard(shard_bytes)
-                    .map_err(|error| log::error!("reading the shard for the selected region failed [statistic={:?} error={error}]", self.frame_state.active_statistic))
-                    .ok()
-            })
-            .and_then(|shard_values| {
-                shard_values
-                    .cell(&region_hit.iso3, self.frame_state.active_period_start)
-                    .cloned()
-            });
+        let shard_bytes: &Vec<u8> = bundle.shard_for(self.frame_state.active_statistic)?;
+
+        shard_db::read_shard(shard_bytes)
+            .map_err(|error| log::error!("reading the shard for the active statistic failed [statistic={:?} error={error}]", self.frame_state.active_statistic))
+            .ok()
+    }
+
+    fn resolve_selection_view(&self, iso3: &str, name_en: &str) -> SelectionView {
+        let cell: Option<shard_db::CellValue> = self
+            .read_active_shard()
+            .and_then(|shard_values| shard_values.cell(iso3, self.frame_state.active_period_start).cloned());
 
         let value: Option<f64> = cell.as_ref().map(|cell| cell.value);
         let source: Option<DataSourceKind> = cell.as_ref().and_then(|cell| {
@@ -142,8 +150,8 @@ impl Driver {
         });
 
         SelectionView {
-            iso3: region_hit.iso3.clone(),
-            name_en: region_hit.name_en.clone(),
+            iso3: iso3.to_string(),
+            name_en: name_en.to_string(),
             statistic: self.frame_state.active_statistic,
             period_start: self.frame_state.active_period_start,
             value,
@@ -175,7 +183,9 @@ impl Driver {
 
         self.frame_state.selected_region = region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
 
-        let selection_view: Option<SelectionView> = region_hit.map(|region_hit| self.resolve_selection_view(&region_hit));
+        let selection_view: Option<SelectionView> =
+            region_hit.map(|region_hit| self.resolve_selection_view(&region_hit.iso3, &region_hit.name_en));
+        self.selection = selection_view.clone();
 
         match &selection_view {
             Some(view) => log::info!("region selected [name={} iso3={} value={:?}]", view.name_en, view.iso3, view.value),
@@ -197,6 +207,58 @@ impl Driver {
     fn clear_hover(&mut self) {
         self.frame_state.hovered_region = None;
     }
+
+    fn view_controls(&self) -> ViewControls {
+        let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
+        let available_statistics: Vec<StatisticKind> = bundle.manifest.statistics.keys().copied().collect();
+
+        let period_range: Option<(NaiveDate, NaiveDate)> =
+            self.read_active_shard().and_then(|shard_values| shard_values.period_range());
+
+        ViewControls {
+            active_statistic: self.frame_state.active_statistic,
+            available_statistics,
+            active_period_start: self.frame_state.active_period_start,
+            period_range,
+        }
+    }
+
+    fn set_active_statistic(&mut self, statistic: StatisticKind) -> Option<Publications> {
+        if statistic == self.frame_state.active_statistic {
+            return None;
+        }
+
+        self.frame_state.active_statistic = statistic;
+        self.request_redraw();
+
+        Some(self.republish())
+    }
+
+    fn scrub_to_period(&mut self, period_start: NaiveDate) -> Option<Publications> {
+        if period_start == self.frame_state.active_period_start {
+            return None;
+        }
+
+        self.frame_state.active_period_start = period_start;
+        self.request_redraw();
+
+        Some(self.republish())
+    }
+
+    /// Re-resolves the retained selection against the current frame state and bundles it with fresh
+    /// controls, so a statistic or period change refreshes both the detail panel and the controls.
+    fn republish(&mut self) -> Publications {
+        let identity: Option<(String, String)> = self
+            .selection
+            .as_ref()
+            .map(|selection| (selection.iso3.clone(), selection.name_en.clone()));
+        self.selection = identity.map(|(iso3, name_en)| self.resolve_selection_view(&iso3, &name_en));
+
+        Publications {
+            view_controls: self.view_controls(),
+            selection: self.selection.clone(),
+        }
+    }
 }
 
 /// The two first-paint failure modes `start` distinguishes to choose the panel; each carries the
@@ -213,13 +275,14 @@ enum StartupError {
 pub struct DriverSignals {
     pub render_status: RwSignal<RenderStatus>,
     pub selection_view: WriteSignal<Option<SelectionView>>,
+    pub view_controls: WriteSignal<Option<ViewControls>>,
 }
 
 pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
-    let DriverSignals { render_status, selection_view } = signals;
+    let DriverSignals { render_status, selection_view, view_controls } = signals;
 
     leptos::task::spawn_local(async move {
-        let status: RenderStatus = match set_up_driver(canvas, selection_view).await {
+        let status: RenderStatus = match set_up_driver(canvas, selection_view, view_controls).await {
             Ok(()) => RenderStatus::Ready,
             Err(StartupError::DataUnavailable(error)) => {
                 log::error!("map data could not be loaded [error={error}]");
@@ -235,7 +298,7 @@ pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
     });
 }
 
-async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>) -> Result<(), StartupError> {
+async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>, view_controls: WriteSignal<Option<ViewControls>>) -> Result<(), StartupError> {
     let cache: OpfsArtifactCache = OpfsArtifactCache::create()
         .await
         .map_err(StartupError::BrowserUnsupported)?;
@@ -269,6 +332,8 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         surface_dimensions: SurfaceDimensions { width, height },
         frame_state,
         selection_view,
+        view_controls,
+        selection: None,
         redraw_pending: false,
         redraw_callback: None,
         resize_callback: Some(install_resize_listener(&canvas)),
@@ -277,9 +342,13 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         mouseleave_callback: Some(install_mouseleave_listener(&canvas)),
     };
 
-    DRIVER.with_borrow_mut(|driver_slot| {
-        driver_slot.insert(driver).request_redraw();
+    let initial_controls: ViewControls = DRIVER.with_borrow_mut(|driver_slot| {
+        let driver: &mut Driver = driver_slot.insert(driver);
+        driver.request_redraw();
+        driver.view_controls()
     });
+
+    view_controls.set(Some(initial_controls));
 
     Ok(())
 }
@@ -430,6 +499,29 @@ fn handle_mouseleave() {
             driver.clear_hover();
         }
     });
+}
+
+fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<Publications>) {
+    let published: Option<(WriteSignal<Option<ViewControls>>, WriteSignal<Option<SelectionView>>, Publications)> =
+        DRIVER.with_borrow_mut(|driver_slot| {
+            let driver: &mut Driver = driver_slot.as_mut()?;
+            let publications: Publications = mutate(driver)?;
+
+            Some((driver.view_controls, driver.selection_view, publications))
+        });
+
+    if let Some((view_controls, selection_view, publications)) = published {
+        view_controls.set(Some(publications.view_controls));
+        selection_view.set(publications.selection);
+    }
+}
+
+pub fn apply_statistic(statistic: StatisticKind) {
+    publish_mutation(|driver| driver.set_active_statistic(statistic));
+}
+
+pub fn apply_period(period_start: NaiveDate) {
+    publish_mutation(|driver| driver.scrub_to_period(period_start));
 }
 
 fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {

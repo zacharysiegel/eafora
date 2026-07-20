@@ -12,7 +12,11 @@
     },
     "statistic": {
         "tfr": "Total fertility rate",
-        "tfr_unit": "births per woman"
+        "tfr_unit": "births per woman",
+        "picker_label": "Statistic"
+    },
+    "scrubber": {
+        "label": "Year"
     },
     "source": {
         "wb_wdi": "World Bank WDI"

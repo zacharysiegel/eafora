@@ -1,0 +1,39 @@
+// The map controls: statistic picker and year scrubber, per docs/design/README.md.
+.controls {
+    position: absolute;
+    top: var(--space-lg);
+    right: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    width: 12rem;
+}
+
+.controls-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.controls-label {
+    font-size: 0.625rem; // approx. 10px
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-ink-muted);
+}
+
+.controls-picker {
+    font: inherit;
+    border: var(--border-ink);
+    border-radius: var(--radius-input);
+    background: var(--color-paper);
+    padding: var(--space-xs);
+}
+
+.controls-scrubber {
+    width: 100%;
+}
+
+.controls-scrubber-year {
+    font-size: var(--type-size-data);
+}

@@ -2,10 +2,11 @@ use chrono::Datelike;
 use leptos::prelude::*;
 use leptos_i18n::I18nContext;
 
-use shared::canonical::{DataSourceKind, StatisticKind};
+use shared::canonical::DataSourceKind;
 
 use crate::i18n::*;
 use crate::map::canvas::SelectionView;
+use crate::map::labels;
 
 #[component]
 pub fn RegionDetailPanel() -> impl IntoView {
@@ -20,14 +21,14 @@ pub fn RegionDetailPanel() -> impl IntoView {
                 <aside class="panel detail-panel">
                     <p class="detail-panel-region">{name_en}</p>
                     <p class="detail-panel-statistic">
-                        {statistic_label(i18n, statistic)}
+                        {labels::statistic_label(i18n, statistic)}
                         " · "
                         {period_start.year().to_string()}
                     </p>
                     {match value {
                         Some(value) => view! {
                             <p class="detail-panel-value numeric">{format!("{value:.2}")}</p>
-                            <p class="detail-panel-unit">{statistic_unit(i18n, statistic)}</p>
+                            <p class="detail-panel-unit">{labels::statistic_unit(i18n, statistic)}</p>
                             {source.map(|source| view! {
                                 <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
                             })}
@@ -41,21 +42,6 @@ pub fn RegionDetailPanel() -> impl IntoView {
                 </aside>
             }
         })
-    }
-}
-
-fn statistic_label(i18n: I18nContext<Locale>, statistic: StatisticKind) -> AnyView {
-    match statistic {
-        StatisticKind::Tfr => t!(i18n, statistic.tfr).into_any(),
-        // test-only variant; never active in production, so this arm only satisfies match exhaustiveness
-        StatisticKind::TestAlpha => statistic.code().into_any(),
-    }
-}
-
-fn statistic_unit(i18n: I18nContext<Locale>, statistic: StatisticKind) -> AnyView {
-    match statistic {
-        StatisticKind::Tfr => t!(i18n, statistic.tfr_unit).into_any(),
-        StatisticKind::TestAlpha => ().into_any(),
     }
 }
 
