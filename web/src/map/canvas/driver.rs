@@ -115,7 +115,11 @@ impl Driver {
         let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
         let value: Option<f64> = bundle
             .shard_for(self.frame_state.active_statistic)
-            .and_then(|shard_bytes| shard_db::read_shard(shard_bytes).ok())
+            .and_then(|shard_bytes| {
+                shard_db::read_shard(shard_bytes)
+                    .map_err(|error| log::error!("reading the shard for the selected region failed [statistic={:?} error={error}]", self.frame_state.active_statistic))
+                    .ok()
+            })
             .and_then(|shard_values| shard_values.value(&region_hit.iso3, self.frame_state.active_period_start));
 
         SelectionView {
@@ -137,7 +141,6 @@ impl Driver {
         }
 
         self.frame_state.selected_region = selected_region;
-
         let selection_view: Option<SelectionView> =
             region_hit.map(|region_hit| self.resolve_selection_view(&region_hit));
 
@@ -279,7 +282,9 @@ fn initial_frame_state(bundle: &Bundle) -> FrameState {
 /// the colored shard never disagree.
 fn latest_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
     let shard_bytes: &Vec<u8> = bundle.shard_for(statistic)?;
-    let shard_values: shard_db::ShardValues = shard_db::read_shard(shard_bytes).ok()?;
+    let shard_values: shard_db::ShardValues = shard_db::read_shard(shard_bytes)
+        .map_err(|error| log::error!("reading the shard to seed the initial period failed [statistic={statistic:?} error={error}]"))
+        .ok()?;
 
     shard_values.period_range().map(|(_earliest, latest)| latest)
 }
