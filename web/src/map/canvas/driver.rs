@@ -99,8 +99,7 @@ impl Driver {
     }
 
     /// Coalesce redraw requests into one `requestAnimationFrame`; there is no idle refresh
-    /// loop. The pending flag is set only once a frame is actually scheduled, so a failed schedule stays
-    /// retryable; otherwise the flag would latch and every later redraw would short-circuit on it.
+    /// loop.
     fn request_redraw(&mut self) {
         if self.redraw_pending {
             return;
@@ -116,6 +115,8 @@ impl Driver {
 
         let schedule_result: Result<i32, JsValue> = window.request_animation_frame(callback.as_ref().unchecked_ref());
         if schedule_result.is_ok() {
+            // The pending flag is set only once a frame is actually scheduled, so a failed schedule stays
+            // retryable; otherwise the flag would latch and every later redraw would short-circuit on it.
             self.redraw_pending = true;
         }
     }
@@ -342,10 +343,10 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         mouseleave_callback: Some(install_mouseleave_listener(&canvas)),
     };
 
-    let initial_controls: ViewControls = DRIVER.with_borrow_mut(|driver_slot| {
-        let driver: &mut Driver = driver_slot.insert(driver);
-        driver.request_redraw();
-        driver.view_controls()
+    let initial_controls: ViewControls = driver.view_controls();
+
+    DRIVER.with_borrow_mut(|driver_slot| {
+        driver_slot.insert(driver).request_redraw();
     });
 
     view_controls.set(Some(initial_controls));
