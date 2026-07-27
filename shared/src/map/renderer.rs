@@ -382,7 +382,7 @@ fn create_viewport_binding(device: &Device) -> ViewportBinding {
     let layout: BindGroupLayout = pipeline::create_viewport_bind_group_layout(device);
     let buffer: Buffer = device.create_buffer(&BufferDescriptor {
         label: Some("eafora-viewport-uniform"),
-        size: std::mem::size_of::<ViewportUniform>() as BufferAddress,
+        size: size_of::<ViewportUniform>() as BufferAddress,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
