@@ -19,3 +19,12 @@ pub fn statistic_unit(i18n: I18nContext<Locale>, statistic: StatisticKind) -> An
         StatisticKind::TestAlpha => ().into_any(),
     }
 }
+
+/// The caption for the color transfer's inflection on the legend (e.g. "replacement" for TFR at 2.1), or
+/// `None` for a statistic with no meaningful threshold at its inflection.
+pub fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) -> Option<AnyView> {
+    match statistic {
+        StatisticKind::Tfr => Some(t!(i18n, legend.replacement).into_any()),
+        StatisticKind::TestAlpha => None,
+    }
+}

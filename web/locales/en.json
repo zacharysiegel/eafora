@@ -19,10 +19,8 @@
         "label": "Year"
     },
     "legend": {
-        "title": "Legend",
-        "low": "Low",
-        "high": "High",
-        "no_data": "No data"
+        "no_data": "No data",
+        "replacement": "replacement"
     },
     "source": {
         "wb_wdi": "World Bank WDI"

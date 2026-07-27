@@ -230,7 +230,10 @@ impl Driver {
         let value_range: Option<(f64, f64)> = self.read_active_shard()
             .and_then(|shard_values| shard_values.value_range());
 
-        LegendView { value_range }
+        LegendView {
+            statistic: self.frame_state.active_statistic,
+            value_range,
+        }
     }
 
     fn set_active_statistic(&mut self, statistic: StatisticKind) -> Option<RepublishedViews> {
