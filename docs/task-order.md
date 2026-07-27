@@ -21,7 +21,7 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
      - C2.3 (DPR hit-test coverage) — pending; likely a host scale-invariance test rather than a headless-Chrome test.
      - C2.5 (Controls: statistic picker + year scrubber) — landed. Forward-compatible no-ops today (one statistic, one embedded period); meaningful once Phase D loads the multi-year bundle or a second statistic exists.
      - C2.6 (Legend) — landed. Data-driven `LegendView`; the color scale's interpolation is a swappable `ColorScale.interpolator` field.
-     - C2.7 (per-statistic color transfer) — **In progress on `web-map-color-transfer-impl`.** `ColorTransfer::{Linear, PiecewiseCubicArctan}` selected by `transfer_for(StatisticKind)`; TFR uses a C² curve inflecting at replacement (2.1); the legend samples the gradient through the transfer and marks the inflection generically. Design in `specs/003-web-client/color-transfer-design.md`.
+     - C2.7 (per-statistic color transform) — **In progress on `web-map-color-transfer-impl`.** `StatisticColorTransform::{Linear, PiecewiseCubicArctan}` selected by `transform_for(StatisticKind)`; TFR uses a C² curve inflecting at replacement (2.1); the legend samples the gradient through the transform and marks the inflection generically. Design in `specs/003-web-client/color-transform-design.md`.
    - Phase C3 (viewport camera/aspect + pan/zoom + the selection/hover renderer pass) — pending; split out of C2 per `c2-plan.md` §Deferred to C3.
    - Phase D (browser fetch + discovery + speculative fetch + bundle hot-swap) — pending.
    - Phase E (perf-budget script + precompress + `wrangler` deploy config) — pending.
