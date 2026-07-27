@@ -31,18 +31,18 @@ const NO_DATA_FILL: Rgba = Rgba {
     a: 1.0,
 };
 
-pub struct ColorRamp {
+pub struct ColorScale {
     low: Rgba,
     high: Rgba,
     no_data: Rgba,
-    interpolate: fn(Rgba, Rgba, f32) -> Rgba,
+    interpolator: fn(Rgba, Rgba, f32) -> Rgba,
 }
 
-impl ColorRamp {
-    /// The ramp color at normalized position `t` in `[0, 1]` (`low` at 0, `high` at 1). Lets a consumer
-    /// (the legend) sample the exact ramp the choropleth paints.
+impl ColorScale {
+    /// The scale's color at normalized position `t` in `[0, 1]` (`low` at 0, `high` at 1). Lets a consumer
+    /// (the legend) sample the exact scale the choropleth paints.
     pub fn sample(&self, t: f32) -> Rgba {
-        (self.interpolate)(self.low, self.high, t)
+        (self.interpolator)(self.low, self.high, t)
     }
 
     pub fn no_data(&self) -> Rgba {
@@ -67,14 +67,14 @@ impl ColorRamp {
     }
 }
 
-/// The choropleth ramp: accent red at the statistic minimum, white at the maximum (the TFR direction,
-/// where the most-saturated red marks the lowest value), grey for no-data. Point `interpolate` at a
-/// different function to move the ramp off the per-channel sRGB lerp.
-pub const CHOROPLETH_RAMP: ColorRamp = ColorRamp {
+/// The choropleth scale: accent red at the statistic minimum, white at the maximum (the TFR direction,
+/// where the most-saturated red marks the lowest value), grey for no-data. Point `interpolator` at a
+/// different function to move the scale off the per-channel sRGB lerp.
+pub const CHOROPLETH_SCALE: ColorScale = ColorScale {
     low: ACCENT_FILL,
     high: WHITE_FILL,
     no_data: NO_DATA_FILL,
-    interpolate: srgb_lerp,
+    interpolator: srgb_lerp,
 };
 
 fn srgb_lerp(from: Rgba, to: Rgba, t: f32) -> Rgba {
@@ -125,22 +125,22 @@ mod tests {
 
     #[test]
     fn fill_maps_none_to_no_data_gray() {
-        assert_fill_approx(CHOROPLETH_RAMP.fill(None, 1.0, 3.0), NO_DATA_FILL);
+        assert_fill_approx(CHOROPLETH_SCALE.fill(None, 1.0, 3.0), NO_DATA_FILL);
     }
 
     #[test]
     fn fill_maps_minimum_to_accent() {
-        assert_fill_approx(CHOROPLETH_RAMP.fill(Some(1.0), 1.0, 3.0), ACCENT_FILL);
+        assert_fill_approx(CHOROPLETH_SCALE.fill(Some(1.0), 1.0, 3.0), ACCENT_FILL);
     }
 
     #[test]
     fn fill_maps_maximum_to_white() {
-        assert_fill_approx(CHOROPLETH_RAMP.fill(Some(3.0), 1.0, 3.0), WHITE_FILL);
+        assert_fill_approx(CHOROPLETH_SCALE.fill(Some(3.0), 1.0, 3.0), WHITE_FILL);
     }
 
     #[test]
     fn fill_lerps_the_midpoint() {
-        let midpoint_fill: Rgba = CHOROPLETH_RAMP.fill(Some(2.0), 1.0, 3.0);
+        let midpoint_fill: Rgba = CHOROPLETH_SCALE.fill(Some(2.0), 1.0, 3.0);
         let expected: Rgba = Rgba {
             r: (ACCENT_FILL.r + WHITE_FILL.r) / 2.0,
             g: (ACCENT_FILL.g + WHITE_FILL.g) / 2.0,
@@ -152,13 +152,13 @@ mod tests {
 
     #[test]
     fn fill_clamps_out_of_range_values() {
-        assert_fill_approx(CHOROPLETH_RAMP.fill(Some(0.0), 1.0, 3.0), ACCENT_FILL);
-        assert_fill_approx(CHOROPLETH_RAMP.fill(Some(9.0), 1.0, 3.0), WHITE_FILL);
+        assert_fill_approx(CHOROPLETH_SCALE.fill(Some(0.0), 1.0, 3.0), ACCENT_FILL);
+        assert_fill_approx(CHOROPLETH_SCALE.fill(Some(9.0), 1.0, 3.0), WHITE_FILL);
     }
 
     #[test]
     fn sample_maps_endpoints() {
-        assert_fill_approx(CHOROPLETH_RAMP.sample(0.0), ACCENT_FILL);
-        assert_fill_approx(CHOROPLETH_RAMP.sample(1.0), WHITE_FILL);
+        assert_fill_approx(CHOROPLETH_SCALE.sample(0.0), ACCENT_FILL);
+        assert_fill_approx(CHOROPLETH_SCALE.sample(1.0), WHITE_FILL);
     }
 }

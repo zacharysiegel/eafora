@@ -44,13 +44,13 @@ pub fn Legend() -> impl IntoView {
     }
 }
 
-/// The choropleth ramp sampled into a horizontal CSS gradient. Sampled at intervals rather than emitted
-/// as a two-stop gradient so a nonlinear `CHOROPLETH_RAMP.interpolate` still renders faithfully.
+/// The choropleth scale sampled into a horizontal CSS gradient. Sampled at intervals rather than emitted
+/// as a two-stop gradient so a nonlinear `CHOROPLETH_SCALE.interpolator` still renders faithfully.
 fn gradient_css() -> String {
     let stops: String = (0..LEGEND_GRADIENT_STOPS)
         .map(|index| {
             let position: f32 = index as f32 / (LEGEND_GRADIENT_STOPS - 1) as f32;
-            let color: Rgba = color::CHOROPLETH_RAMP.sample(position);
+            let color: Rgba = color::CHOROPLETH_SCALE.sample(position);
 
             format!("{} {:.2}%", css_rgb(color), position * 100.0)
         })
@@ -61,7 +61,7 @@ fn gradient_css() -> String {
 }
 
 fn no_data_swatch_css() -> String {
-    format!("background: {};", css_rgb(color::CHOROPLETH_RAMP.no_data()))
+    format!("background: {};", css_rgb(color::CHOROPLETH_SCALE.no_data()))
 }
 
 fn css_rgb(color: Rgba) -> String {
