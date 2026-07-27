@@ -52,7 +52,7 @@ enum RegionChange {
 
 /// What a statistic or period change republishes: fresh controls, plus the re-resolved selection when a
 /// region is selected.
-struct Publications {
+struct RepublishedViews {
     view_controls: ViewControls,
     selection: Option<SelectionView>,
 }
@@ -223,7 +223,7 @@ impl Driver {
         }
     }
 
-    fn set_active_statistic(&mut self, statistic: StatisticKind) -> Option<Publications> {
+    fn set_active_statistic(&mut self, statistic: StatisticKind) -> Option<RepublishedViews> {
         if statistic == self.frame_state.active_statistic {
             return None;
         }
@@ -234,7 +234,7 @@ impl Driver {
         Some(self.republish())
     }
 
-    fn scrub_to_period(&mut self, period_start: NaiveDate) -> Option<Publications> {
+    fn scrub_to_period(&mut self, period_start: NaiveDate) -> Option<RepublishedViews> {
         if period_start == self.frame_state.active_period_start {
             return None;
         }
@@ -247,14 +247,14 @@ impl Driver {
 
     /// Re-resolves the retained selection against the current frame state and bundles it with fresh
     /// controls, so a statistic or period change refreshes both the detail panel and the controls.
-    fn republish(&mut self) -> Publications {
+    fn republish(&mut self) -> RepublishedViews {
         let identity: Option<(String, String)> = self
             .selection
             .as_ref()
             .map(|selection| (selection.iso3.clone(), selection.name_en.clone()));
         self.selection = identity.map(|(iso3, name_en)| self.resolve_selection_view(&iso3, &name_en));
 
-        Publications {
+        RepublishedViews {
             view_controls: self.view_controls(),
             selection: self.selection.clone(),
         }
@@ -501,18 +501,18 @@ fn handle_mouseleave() {
     });
 }
 
-fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<Publications>) {
-    let published: Option<(WriteSignal<Option<ViewControls>>, WriteSignal<Option<SelectionView>>, Publications)> =
+fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>) {
+    let published: Option<(WriteSignal<Option<ViewControls>>, WriteSignal<Option<SelectionView>>, RepublishedViews)> =
         DRIVER.with_borrow_mut(|driver_slot| {
             let driver: &mut Driver = driver_slot.as_mut()?;
-            let publications: Publications = mutate(driver)?;
+            let views: RepublishedViews = mutate(driver)?;
 
-            Some((driver.view_controls, driver.selection_view, publications))
+            Some((driver.view_controls, driver.selection_view, views))
         });
 
-    if let Some((view_controls, selection_view, publications)) = published {
-        view_controls.set(Some(publications.view_controls));
-        selection_view.set(publications.selection);
+    if let Some((view_controls, selection_view, views)) = published {
+        view_controls.set(Some(views.view_controls));
+        selection_view.set(views.selection);
     }
 }
 
