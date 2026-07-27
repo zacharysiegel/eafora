@@ -94,8 +94,10 @@ Each branches off the previous; the first commit on each is the `>>> branch:` ma
 - **C2.2 — selection/hover mutators + canvas listeners + projection publish.** `SelectionView`, the
   select / hover / clear free functions + methods (borrow-then-set), the three listeners, extended
   `driver::start`. FrameState set + redraw requested; the on-map outline is C3.
-- **C2.3 — headless-Chrome coordinate-space + selection test.** Click at a known offset resolves to the
-  expected region at DPR 1.0 and DPR 2.0.
+- **C2.3 — coordinate-space (DPR) test.** `region_at_point` resolves the same region at DPR 1/2/3,
+  asserted as a host test in `shared` (it normalizes the point against the surface dimensions). Landed
+  as a host scale-invariance test rather than headless-Chrome: the ratio math is target-agnostic, so
+  the browser harness would add cost, not coverage (per the wasm-test convention).
 - **C2.4 — RegionDetailPanel + SourcePanel + SCSS + i18n.** `ProvenanceView` published at startup; the
   two panels; provenance via i18n source names.
 - **C2.5 — Controls (statistic picker + year scrubber) + SCSS + i18n.** `set_active_statistic` /

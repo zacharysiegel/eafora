@@ -109,6 +109,34 @@ mod tests {
     }
 
     #[test]
+    fn region_at_point_is_scale_invariant_across_device_pixel_ratios() {
+        let geometry: GeometryLayer = testland_geometry();
+        let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
+
+        // The driver scales both the canvas backing store and the pointer offset by devicePixelRatio, so
+        // `region_at_point` must resolve the same region at any ratio (it normalizes the point against the
+        // dimensions). A regression dropping that normalization is invisible at DPR 1.0, wrong on Retina.
+        let base_dimensions: SurfaceDimensions = SurfaceDimensions { width: 200, height: 200 };
+        let base_point: SurfacePoint = SurfacePoint { x: 110.0, y: 100.0 };
+
+        for device_pixel_ratio in [1.0_f64, 2.0, 3.0] {
+            let scaled_dimensions: SurfaceDimensions = SurfaceDimensions {
+                width: (base_dimensions.width as f64 * device_pixel_ratio) as u32,
+                height: (base_dimensions.height as f64 * device_pixel_ratio) as u32,
+            };
+            let scaled_point: SurfacePoint = SurfacePoint {
+                x: base_point.x * device_pixel_ratio,
+                y: base_point.y * device_pixel_ratio,
+            };
+
+            let result: Option<RegionHit> =
+                region_at_point(&geometry, viewport, scaled_dimensions, scaled_point);
+
+            assert_eq!(result, Some(testland_hit()), "DPR {device_pixel_ratio}");
+        }
+    }
+
+    #[test]
     fn region_at_point_returns_none_over_open_ocean() {
         let geometry: GeometryLayer = testland_geometry();
         let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
