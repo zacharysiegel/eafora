@@ -25,7 +25,7 @@ pub fn Controls() -> impl IntoView {
                             class="controls-picker"
                             on:change=move |event| {
                                 if let Ok(statistic) = StatisticKind::try_from(event_target_value(&event).as_str()) {
-                                    forward_statistic(statistic);
+                                    dispatch_statistic(statistic);
                                 }
                             }
                         >
@@ -78,22 +78,22 @@ fn apply_year(year_text: &str) {
         return;
     };
     if let Some(period_start) = NaiveDate::from_ymd_opt(year, 1, 1) {
-        forward_period(period_start);
+        dispatch_period(period_start);
     }
 }
 
 #[cfg(feature = "hydrate")]
-fn forward_statistic(statistic: StatisticKind) {
+fn dispatch_statistic(statistic: StatisticKind) {
     crate::map::canvas::driver::apply_statistic(statistic);
 }
 
 #[cfg(not(feature = "hydrate"))] // the ssr build has no driver to forward to
-fn forward_statistic(_statistic: StatisticKind) {}
+fn dispatch_statistic(_statistic: StatisticKind) {}
 
 #[cfg(feature = "hydrate")]
-fn forward_period(period_start: NaiveDate) {
+fn dispatch_period(period_start: NaiveDate) {
     crate::map::canvas::driver::apply_period(period_start);
 }
 
 #[cfg(not(feature = "hydrate"))] // the ssr build has no driver to forward to
-fn forward_period(_period_start: NaiveDate) {}
+fn dispatch_period(_period_start: NaiveDate) {}
