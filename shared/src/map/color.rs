@@ -23,11 +23,11 @@ const WHITE_FILL: Rgba = Rgba {
     a: 1.0,
 };
 
-/// The no-data grey, `#e6e6e6`.
+/// The no-data grey, `#666666`.
 const NO_DATA_FILL: Rgba = Rgba {
-    r: 230.0 / 255.0,
-    g: 230.0 / 255.0,
-    b: 230.0 / 255.0,
+    r: 102.0 / 255.0,
+    g: 102.0 / 255.0,
+    b: 102.0 / 255.0,
     a: 1.0,
 };
 

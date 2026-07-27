@@ -63,7 +63,7 @@ reference work, not browsing a feed.
 ## Map
 
 - Vector political boundaries, thin black strokes (matches the pen-on-paper metaphor exactly).
-- Region fills use a continuous single-hue scale — a white-to-red lerp over the statistic's value range, not discrete buckets. No multi-hue choropleths; the data itself is the only saturated color on the map. For TFR the most-saturated red marks the lowest (below-replacement) value and white the highest; no-data regions render as a distinct light gray.
+- Region fills use a continuous single-hue scale — a white-to-red lerp over the statistic's value range, not discrete buckets. No multi-hue choropleths; the data itself is the only saturated color on the map. For TFR the most-saturated red marks the lowest (below-replacement) value and white the highest; no-data regions render as a distinct mid-dark gray.
 - Selection: 1px red outline, not a fill change.
 - Hover: the hovered region scales up slightly. This is a discrete, instant transform (not an eased animation), so it stays consistent with "Animation". The scale is visual only; hit-testing reads the unscaled source polygon, so a region growing under the cursor never changes which region is hit.
 - Choropleth legend: a small inline (no-border) caption + swatches + mono numerals at the bottom-left of the map. Visible on desktop permanently. On mobile, visible when no region is selected; hidden when a region is selected and the bottom sheet is up. The selected-state mobile sheet is the canonical place for the values themselves; the legend is the orientation cue for the empty state.
