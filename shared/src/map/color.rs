@@ -41,7 +41,7 @@ pub struct ColorScale {
 }
 
 impl ColorScale {
-    /// The scale's color at normalized position `t` in `[0, 1]` (`low` at 0, `high` at 1). A `ColorTransfer`
+    /// The scale's color at normalized position `t` in `[0, 1]` (`low` at 0, `high` at 1). A `StatisticColorTransform`
     /// produces `t` from a raw value; the legend samples this to match what the map paints.
     pub fn sample(&self, t: f32) -> Rgba {
         (self.interpolator)(self.low, self.high, t)
@@ -53,9 +53,8 @@ impl ColorScale {
 }
 
 /// The choropleth color scale: accent red at position 0, white at position 1 (the TFR direction, where
-/// the most-saturated red marks the lowest value), grey for no-data. Point `interpolator` at a different
-/// function to move off the per-channel sRGB lerp; the value → position mapping is a separate, per-statistic
-/// `ColorTransfer`.
+/// the most-saturated red marks the lowest value), grey for no-data.
+/// The value → position mapping is a separate, per-statistic `StatisticColorTransform`.
 pub const CHOROPLETH_SCALE: ColorScale = ColorScale {
     low: ACCENT_FILL,
     high: WHITE_FILL,
@@ -66,7 +65,7 @@ pub const CHOROPLETH_SCALE: ColorScale = ColorScale {
 /// Maps a raw statistic value to a position in `[0, 1]` along a `ColorScale`. The per-statistic knob that
 /// decides how values spread across the palette.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ColorTransfer {
+pub enum StatisticColorTransform {
     /// Linear normalization against the observed data range: `min` → 0, `max` → 1, clamped. Data-relative.
     Linear,
     /// A C² curve keyed to absolute values: a convex cubic on `[0, x0]` meeting a concave arctan tail at the
@@ -76,11 +75,11 @@ pub enum ColorTransfer {
     PiecewiseCubicArctan { x0: f64, y0: f64, toe: f64 },
 }
 
-impl ColorTransfer {
+impl StatisticColorTransform {
     /// The position in `[0, 1]` for `value`. `min`/`max` are used only by `Linear`.
     pub fn position(&self, value: f64, min: f64, max: f64) -> f32 {
         let position: f64 = match self {
-            ColorTransfer::Linear => {
+            StatisticColorTransform::Linear => {
                 let range: f64 = max - min;
                 if range == 0.0 {
                     0.0
@@ -88,7 +87,7 @@ impl ColorTransfer {
                     ((value - min) / range).clamp(0.0, 1.0)
                 }
             }
-            ColorTransfer::PiecewiseCubicArctan { x0, y0, toe } => {
+            StatisticColorTransform::PiecewiseCubicArctan { x0, y0, toe } => {
                 piecewise_cubic_arctan(value, *x0, *y0, *toe)
             }
         };
@@ -100,20 +99,20 @@ impl ColorTransfer {
     /// `None` for `Linear`. The legend marks it generically.
     pub fn inflection(&self) -> Option<f64> {
         match self {
-            ColorTransfer::Linear => None,
-            ColorTransfer::PiecewiseCubicArctan { x0, .. } => Some(*x0),
+            StatisticColorTransform::Linear => None,
+            StatisticColorTransform::PiecewiseCubicArctan { x0, .. } => Some(*x0),
         }
     }
 }
 
-pub fn transfer_for(statistic: StatisticKind) -> ColorTransfer {
+pub fn transform_for(statistic: StatisticKind) -> StatisticColorTransform {
     match statistic {
-        StatisticKind::Tfr => ColorTransfer::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 },
-        StatisticKind::TestAlpha => ColorTransfer::Linear,
+        StatisticKind::Tfr => StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 },
+        StatisticKind::TestAlpha => StatisticColorTransform::Linear,
     }
 }
 
-/// The piecewise transfer at `value`, clamped to `[0, 1]`. Cubic `h` on `[0, x0]` and arctan `g` on
+/// The piecewise transform at `value`, clamped to `[0, 1]`. Cubic `h` on `[0, x0]` and arctan `g` on
 /// `(x0, ∞)` are solved to agree in value, slope, and curvature at `x0` (C²): `h(0)=0`, `h(x0)=y0`,
 /// `h'(x0)=g'(x0)=s`, `h''(x0)=g''(x0)=0`. The inflection slope `s` is derived from the normalized `toe`
 /// so it always lands inside the band that keeps `h` monotonic and convex.
@@ -187,7 +186,7 @@ mod tests {
 
     #[test]
     fn linear_matches_range_normalization() {
-        let linear: ColorTransfer = ColorTransfer::Linear;
+        let linear: StatisticColorTransform = StatisticColorTransform::Linear;
 
         assert!((linear.position(1.0, 1.0, 3.0) - 0.0).abs() < TOLERANCE);
         assert!((linear.position(3.0, 1.0, 3.0) - 1.0).abs() < TOLERANCE);
@@ -196,7 +195,7 @@ mod tests {
 
     #[test]
     fn linear_clamps_out_of_range_and_handles_zero_range() {
-        let linear: ColorTransfer = ColorTransfer::Linear;
+        let linear: StatisticColorTransform = StatisticColorTransform::Linear;
 
         assert!((linear.position(0.0, 1.0, 3.0) - 0.0).abs() < TOLERANCE);
         assert!((linear.position(9.0, 1.0, 3.0) - 1.0).abs() < TOLERANCE);
@@ -281,19 +280,19 @@ mod tests {
 
     #[test]
     fn inflection_is_some_for_piecewise_and_none_for_linear() {
-        assert_eq!(ColorTransfer::Linear.inflection(), None);
+        assert_eq!(StatisticColorTransform::Linear.inflection(), None);
         assert_eq!(
-            ColorTransfer::PiecewiseCubicArctan { x0: TFR_X0, y0: TFR_Y0, toe: TFR_TOE }.inflection(),
+            StatisticColorTransform::PiecewiseCubicArctan { x0: TFR_X0, y0: TFR_Y0, toe: TFR_TOE }.inflection(),
             Some(TFR_X0),
         );
     }
 
     #[test]
-    fn transfer_for_selects_the_piecewise_curve_only_for_tfr() {
+    fn transform_for_selects_the_piecewise_curve_only_for_tfr() {
         assert_eq!(
-            transfer_for(StatisticKind::Tfr),
-            ColorTransfer::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 },
+            transform_for(StatisticKind::Tfr),
+            StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 },
         );
-        assert_eq!(transfer_for(StatisticKind::TestAlpha), ColorTransfer::Linear);
+        assert_eq!(transform_for(StatisticKind::TestAlpha), StatisticColorTransform::Linear);
     }
 }

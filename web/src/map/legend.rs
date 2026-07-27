@@ -2,7 +2,7 @@ use leptos::prelude::*;
 use leptos_i18n::I18nContext;
 
 use shared::canonical::StatisticKind;
-use shared::map::color::{self, ColorTransfer, Rgba};
+use shared::map::color::{self, StatisticColorTransform, Rgba};
 
 use crate::i18n::*;
 use crate::map::canvas::LegendView;
@@ -33,19 +33,19 @@ pub fn Legend() -> impl IntoView {
     }
 }
 
-/// The gradient bar over `[minimum, maximum]`, colored through the statistic's transfer, with min /
-/// inflection / max ticks. The inflection marker and its caption appear only when the transfer has an
+/// The gradient bar over `[minimum, maximum]`, colored through the statistic's transform, with min /
+/// inflection / max ticks. The inflection marker and its caption appear only when the transform has an
 /// inflection that falls inside the range (so `Linear` statistics get a plain min→max bar).
 fn legend_scale(i18n: I18nContext<Locale>, statistic: StatisticKind, minimum: f64, maximum: f64) -> impl IntoView {
-    let transfer: ColorTransfer = color::transfer_for(statistic);
-    let inflection: Option<f64> = transfer
+    let transform: StatisticColorTransform = color::transform_for(statistic);
+    let inflection: Option<f64> = transform
         .inflection()
         .filter(|value| (minimum..=maximum).contains(value));
 
     view! {
         <div class="legend-scale">
             <div class="legend-bar-wrap">
-                <div class="legend-gradient" style=gradient_css(transfer, minimum, maximum)></div>
+                <div class="legend-gradient" style=gradient_css(transform, minimum, maximum)></div>
                 {inflection.map(|value| view! {
                     <div class="legend-inflection" style=left_percent(value, minimum, maximum)></div>
                 })}
@@ -71,14 +71,14 @@ fn legend_scale(i18n: I18nContext<Locale>, statistic: StatisticKind, minimum: f6
 }
 
 /// The choropleth scale across `[minimum, maximum]` as a horizontal CSS gradient, sampled at intervals
-/// (not a two-stop gradient) so a nonlinear transfer renders faithfully. Each stop's color is the scale
-/// sampled at the transfer's position for that value, so the bar matches what the map paints per value.
-fn gradient_css(transfer: ColorTransfer, minimum: f64, maximum: f64) -> String {
+/// (not a two-stop gradient) so a nonlinear transform renders faithfully. Each stop's color is the scale
+/// sampled at the transform's position for that value, so the bar matches what the map paints per value.
+fn gradient_css(transform: StatisticColorTransform, minimum: f64, maximum: f64) -> String {
     let stops: String = (0..LEGEND_GRADIENT_STOPS)
         .map(|index| {
             let fraction: f64 = index as f64 / (LEGEND_GRADIENT_STOPS - 1) as f64;
             let value: f64 = minimum + fraction * (maximum - minimum);
-            let color: Rgba = color::CHOROPLETH_SCALE.sample(transfer.position(value, minimum, maximum));
+            let color: Rgba = color::CHOROPLETH_SCALE.sample(transform.position(value, minimum, maximum));
 
             format!("{} {:.2}%", css_rgb(color), fraction * 100.0)
         })

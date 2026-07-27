@@ -15,7 +15,7 @@ use wgpu::{
 use crate::artifact::Bundle;
 use crate::canonical::StatisticKind;
 use crate::error::AppError;
-use crate::map::color::{self, ColorTransfer, Rgba};
+use crate::map::color::{self, StatisticColorTransform, Rgba};
 use crate::map::{FrameState, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
 use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
@@ -349,12 +349,12 @@ impl Renderer {
             return Ok(fill_vertices);
         };
 
-        let transfer: ColorTransfer = color::transfer_for(frame_state.active_statistic);
+        let transform: StatisticColorTransform = color::transform_for(frame_state.active_statistic);
 
         for span in &self.country_geometry.spans {
             let value: Option<f64> = shard_values.value(&span.iso3, frame_state.active_period_start);
             let fill: Rgba = match value {
-                Some(value) => color::CHOROPLETH_SCALE.sample(transfer.position(value, statistic_min, statistic_max)),
+                Some(value) => color::CHOROPLETH_SCALE.sample(transform.position(value, statistic_min, statistic_max)),
                 None => color::CHOROPLETH_SCALE.no_data(),
             };
             let fill_vertex: FillVertex = fill.to_gpu();

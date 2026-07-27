@@ -20,7 +20,7 @@ pub fn statistic_unit(i18n: I18nContext<Locale>, statistic: StatisticKind) -> An
     }
 }
 
-/// The caption for the color transfer's inflection on the legend (e.g. "replacement" for TFR at 2.1), or
+/// The caption for the color transform's inflection on the legend (e.g. "replacement" for TFR at 2.1), or
 /// `None` for a statistic with no meaningful threshold at its inflection.
 pub fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) -> Option<AnyView> {
     match statistic {
