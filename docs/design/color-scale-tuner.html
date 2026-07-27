@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eafora — TFR color-scale tuner</title>
+<style>
+  body { font-family:"Inter",system-ui,-apple-system,sans-serif; margin:0; background:#fff; color:#111; }
+  #wrap { max-width:1000px; margin:0 auto; padding:20px 28px 60px; }
+  h1 { font-size:18px; font-weight:600; margin:0 0 4px; }
+  p.note { font-size:13px; color:#555; margin:4px 0 18px; }
+  .controls { display:grid; grid-template-columns:170px 1fr 92px; gap:11px 16px; align-items:center; font-size:14px; }
+  .controls label { font-weight:500; }
+  .controls input[type=range] { width:100%; accent-color:#e60019; }
+  .controls input[type=number] { width:82px; font-family:"IBM Plex Mono",monospace; padding:3px 6px; }
+  canvas { display:block; border:1px solid #ddd; }
+  #plot { margin-top:16px; }
+  .bar-label { font-size:11px; color:#555; text-transform:uppercase; letter-spacing:.09em; margin:16px 0 4px; }
+  #info { font-family:"IBM Plex Mono",monospace; font-size:13px; color:#222; margin-top:16px; white-space:pre-wrap; line-height:1.5; }
+  button { font:inherit; margin-top:16px; padding:5px 12px; border:1px solid #111; background:#fff; cursor:pointer; }
+  .lin-row { display:flex; gap:16px; align-items:center; grid-column:1 / -1; font-size:13px; color:#555; }
+  .lin-row input { width:70px; font-family:"IBM Plex Mono",monospace; padding:3px 6px; }
+</style>
+</head>
+<body><div id="wrap">
+<h1>Eafora — TFR color-scale tuner</h1>
+<p class="note">Piecewise cubic (convex toe) → arctan (concave tail), C² at the inflection. Bars show the choropleth coloring across the TFR domain: <b>red = low TFR, white = high</b>. Drag a slider and watch both update.</p>
+
+<div class="controls">
+  <label>x&#8320; — inflection TFR</label><input id="x0_range" type="range" min="0.5" max="4" step="0.05"><input id="x0_num" type="number" min="0.5" max="4" step="0.05">
+  <label>y&#8320; — inflection height</label><input id="y0_range" type="range" min="0.05" max="0.95" step="0.01"><input id="y0_num" type="number" min="0.05" max="0.95" step="0.01">
+  <label>toe — 0 linear … 1 flat</label><input id="toe_range" type="range" min="0" max="1" step="0.01"><input id="toe_num" type="number" min="0" max="1" step="0.01">
+  <label>domain max TFR</label><input id="dmax_range" type="range" min="3" max="8" step="0.1"><input id="dmax_num" type="number" min="3" max="8" step="0.1">
+  <div class="lin-row"><span>linear (today) reference range &nbsp; min</span><input id="lmin" type="number" step="0.1" value="0.87"><span>max</span><input id="lmax" type="number" step="0.1" value="6.9"></div>
+</div>
+
+<canvas id="plot" width="940" height="340"></canvas>
+<div class="bar-label">Map coloring with this curve</div>
+<canvas id="grad" width="940" height="64"></canvas>
+<div class="bar-label">Linear normalization (today), for comparison</div>
+<canvas id="lin" width="940" height="64"></canvas>
+
+<div id="info"></div>
+<button id="reset">Reset to defaults</button>
+</div>
+
+<script>
+const RED=[230,0,25], WHITE=[255,255,255];
+const DEFAULTS={ x0:2.1, y0:0.6, toe:0.3, dmax:6.9 };
+
+function lerpColor(t){ t=Math.min(1,Math.max(0,t));
+  return `rgb(${Math.round(RED[0]+t*(WHITE[0]-RED[0]))},${Math.round(RED[1]+t*(WHITE[1]-RED[1]))},${Math.round(RED[2]+t*(WHITE[2]-RED[2]))})`; }
+
+// piecewise cubic + arctan; s derived from toe so any y0 stays valid & monotonic
+function transfer(x, x0, y0, toe){
+  if(x<=0) return 0;
+  const s=(y0/x0)*(1+toe/2);
+  const A=2*(1-y0)/Math.PI, B=s/A;
+  if(x<=x0){ const a3=(y0-s*x0)/(x0**3), a2=-3*a3*x0, a1=s+3*a3*x0*x0; return a3*x**3+a2*x*x+a1*x; }
+  return A*Math.atan(B*(x-x0))+y0;
+}
+function linearT(x, lmin, lmax){ const r=lmax-lmin; return r<=0?0:Math.min(1,Math.max(0,(x-lmin)/r)); }
+
+function get(id){ return parseFloat(document.getElementById(id+'_range').value); }
+function bind(id, cb){
+  const r=document.getElementById(id+'_range'), n=document.getElementById(id+'_num');
+  r.addEventListener('input',()=>{ n.value=r.value; cb(); });
+  n.addEventListener('input',()=>{ r.value=n.value; cb(); });
+}
+function setVal(id,v){ document.getElementById(id+'_range').value=v; document.getElementById(id+'_num').value=v; }
+
+const plot=document.getElementById('plot'), pg=plot.getContext('2d');
+const grad=document.getElementById('grad'), gg=grad.getContext('2d');
+const lin=document.getElementById('lin'),  lg=lin.getContext('2d');
+
+function drawPlot(x0,y0,toe,dmax){
+  const W=plot.width,H=plot.height,M=40;
+  pg.clearRect(0,0,W,H);
+  const X=x=>M+(x/dmax)*(W-2*M), Y=y=>(H-M)-y*(H-2*M);
+  pg.strokeStyle='#eee'; pg.fillStyle='#666'; pg.font='11px Inter';
+  for(let xi=0;xi<=dmax+1e-9;xi+=0.5){ pg.beginPath();pg.moveTo(X(xi),Y(0));pg.lineTo(X(xi),Y(1));pg.stroke(); if(Math.abs(xi%1)<1e-9) pg.fillText(xi.toFixed(0),X(xi)-3,H-M+14); }
+  for(let yi=0;yi<=1;yi+=0.25){ pg.beginPath();pg.moveTo(X(0),Y(yi));pg.lineTo(X(dmax),Y(yi));pg.stroke(); pg.fillText(yi.toFixed(2),4,Y(yi)+4); }
+  pg.strokeStyle='#111'; pg.lineWidth=1.4; pg.beginPath(); pg.moveTo(X(0),Y(0)); pg.lineTo(X(dmax),Y(0)); pg.moveTo(X(0),Y(0)); pg.lineTo(X(0),Y(1)); pg.stroke();
+  pg.strokeStyle='#bbb'; pg.setLineDash([4,4]); pg.beginPath(); pg.moveTo(X(x0),Y(0)); pg.lineTo(X(x0),Y(1)); pg.stroke(); pg.setLineDash([]);
+  pg.strokeStyle='#e60019'; pg.lineWidth=2.5; pg.beginPath();
+  for(let px=0;px<=(W-2*M);px++){ const x=(px/(W-2*M))*dmax; const y=Math.min(1,Math.max(0,transfer(x,x0,y0,toe))); if(px===0)pg.moveTo(X(x),Y(y)); else pg.lineTo(X(x),Y(y)); }
+  pg.stroke();
+  pg.fillStyle='#111'; pg.beginPath(); pg.arc(X(x0),Y(y0),4.5,0,7); pg.fill();
+}
+
+function drawBar(ctx, cv, valueFn, dmax, x0){
+  const W=cv.width, H=cv.height, barH=40;
+  ctx.clearRect(0,0,W,H);
+  for(let px=0;px<W;px++){ const x=(px/W)*dmax; ctx.fillStyle=lerpColor(valueFn(x)); ctx.fillRect(px,0,1,barH); }
+  ctx.strokeStyle='#111'; ctx.lineWidth=1; ctx.strokeRect(0.5,0.5,W-1,barH-1);
+  ctx.fillStyle='#333'; ctx.font='11px "IBM Plex Mono",monospace'; ctx.strokeStyle='#111';
+  for(let xi=0;xi<=dmax+1e-9;xi+=1){ const px=(xi/dmax)*W; ctx.beginPath(); ctx.moveTo(px,barH); ctx.lineTo(px,barH+5); ctx.stroke(); ctx.fillText(xi.toFixed(0), px-3, H-4); }
+  const rx=(x0/dmax)*W; ctx.strokeStyle='#0050ff'; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(rx,0); ctx.lineTo(rx,barH); ctx.stroke(); ctx.setLineDash([]);
+}
+
+function redraw(){
+  const x0=get('x0'), y0=get('y0'), toe=get('toe'), dmax=get('dmax');
+  const lmin=parseFloat(document.getElementById('lmin').value), lmax=parseFloat(document.getElementById('lmax').value);
+  drawPlot(x0,y0,toe,dmax);
+  drawBar(gg, grad, x=>transfer(x,x0,y0,toe), dmax, x0);
+  drawBar(lg, lin,  x=>linearT(x,lmin,lmax), dmax, x0);
+  const s=(y0/x0)*(1+toe/2), A=2*(1-y0)/Math.PI, B=s/A;
+  const f=x=>transfer(x,x0,y0,toe).toFixed(3);
+  document.getElementById('info').textContent =
+    `derived:  s (inflection slope) = ${s.toFixed(3)}   A = ${A.toFixed(3)}   B = ${B.toFixed(3)}\n`+
+    `f(1.0)=${f(1)}   f(1.5)=${f(1.5)}   f(${x0.toFixed(1)})=${f(x0)}  <- inflection   f(2.5)=${f(2.5)}   f(3.0)=${f(3)}   f(4.0)=${f(4)}   f(${dmax.toFixed(1)})=${f(dmax)}\n`+
+    `blue dashed line = x₀ (2.1 = replacement).`;
+}
+
+['x0','y0','toe','dmax'].forEach(id=>bind(id,redraw));
+document.getElementById('lmin').addEventListener('input',redraw);
+document.getElementById('lmax').addEventListener('input',redraw);
+document.getElementById('reset').addEventListener('click',()=>{ for(const k in DEFAULTS) setVal(k,DEFAULTS[k]); document.getElementById('lmin').value=0.87; document.getElementById('lmax').value=6.9; redraw(); });
+
+for(const k in DEFAULTS) setVal(k,DEFAULTS[k]);
+redraw();
+</script>
+</body>
+</html>
