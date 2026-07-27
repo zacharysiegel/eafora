@@ -337,7 +337,7 @@ impl Renderer {
     }
 
     fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Result<Vec<FillVertex>, AppError> {
-        let no_data_fill: FillVertex = color::choropleth_fill(None, 0.0, 1.0).to_gpu();
+        let no_data_fill: FillVertex = color::CHOROPLETH_RAMP.no_data().to_gpu();
         let mut fill_vertices: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.positions.count as usize];
 
         let Some(shard_bytes) = bundle.shard_for(frame_state.active_statistic) else {
@@ -351,7 +351,7 @@ impl Renderer {
 
         for span in &self.country_geometry.spans {
             let value: Option<f64> = shard_values.value(&span.iso3, frame_state.active_period_start);
-            let fill_vertex: FillVertex = color::choropleth_fill(value, statistic_min, statistic_max).to_gpu();
+            let fill_vertex: FillVertex = color::CHOROPLETH_RAMP.fill(value, statistic_min, statistic_max).to_gpu();
             for vertex_index in span.vertex_start..(span.vertex_start + span.vertex_count) {
                 fill_vertices[vertex_index as usize] = fill_vertex;
             }
