@@ -79,17 +79,8 @@ impl StatisticColorTransform {
     /// The position in `[0, 1]` for `value`. `min`/`max` are used only by `Linear`.
     pub fn position(&self, value: f64, min: f64, max: f64) -> f32 {
         let position: f64 = match self {
-            StatisticColorTransform::Linear => {
-                let range: f64 = max - min;
-                if range == 0.0 {
-                    0.0
-                } else {
-                    ((value - min) / range).clamp(0.0, 1.0)
-                }
-            }
-            StatisticColorTransform::PiecewiseCubicArctan { x0, y0, toe } => {
-                piecewise_cubic_arctan(value, *x0, *y0, *toe)
-            }
+            StatisticColorTransform::Linear => linear_normalization(value, min, max),
+            StatisticColorTransform::PiecewiseCubicArctan { x0, y0, toe } => piecewise_cubic_arctan(value, *x0, *y0, *toe),
         };
 
         position as f32
@@ -110,6 +101,15 @@ pub fn transform_for(statistic: StatisticKind) -> StatisticColorTransform {
         StatisticKind::Tfr => StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 },
         StatisticKind::TestAlpha => StatisticColorTransform::Linear,
     }
+}
+
+fn linear_normalization(value: f64, min: f64, max: f64) -> f64 {
+    let range: f64 = max - min;
+    if range == 0.0 {
+        return 0.0;
+    }
+
+    ((value - min) / range).clamp(0.0, 1.0)
 }
 
 /// The piecewise transform at `value`, clamped to `[0, 1]`. Cubic `h` on `[0, x0]` and arctan `g` on
