@@ -17,7 +17,7 @@ pub fn Legend() -> impl IntoView {
             let LegendView { value_range } = legend_view;
 
             view! {
-                <aside class="panel legend">
+                <aside class="legend">
                     <span class="legend-title">{t!(i18n, legend.title)}</span>
                     {value_range.map(|(minimum, maximum)| view! {
                         <div class="legend-scale">
