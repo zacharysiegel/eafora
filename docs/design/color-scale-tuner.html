@@ -51,7 +51,7 @@ function lerpColor(t){ t=Math.min(1,Math.max(0,t));
   return `rgb(${Math.round(RED[0]+t*(WHITE[0]-RED[0]))},${Math.round(RED[1]+t*(WHITE[1]-RED[1]))},${Math.round(RED[2]+t*(WHITE[2]-RED[2]))})`; }
 
 // piecewise cubic + arctan; s derived from toe so any y0 stays valid & monotonic
-function transfer(x, x0, y0, toe){
+function transform(x, x0, y0, toe){
   if(x<=0) return 0;
   const s=(y0/x0)*(1+toe/2);
   const A=2*(1-y0)/Math.PI, B=s/A;
@@ -82,7 +82,7 @@ function drawPlot(x0,y0,toe,dmax){
   pg.strokeStyle='#111'; pg.lineWidth=1.4; pg.beginPath(); pg.moveTo(X(0),Y(0)); pg.lineTo(X(dmax),Y(0)); pg.moveTo(X(0),Y(0)); pg.lineTo(X(0),Y(1)); pg.stroke();
   pg.strokeStyle='#bbb'; pg.setLineDash([4,4]); pg.beginPath(); pg.moveTo(X(x0),Y(0)); pg.lineTo(X(x0),Y(1)); pg.stroke(); pg.setLineDash([]);
   pg.strokeStyle='#e60019'; pg.lineWidth=2.5; pg.beginPath();
-  for(let px=0;px<=(W-2*M);px++){ const x=(px/(W-2*M))*dmax; const y=Math.min(1,Math.max(0,transfer(x,x0,y0,toe))); if(px===0)pg.moveTo(X(x),Y(y)); else pg.lineTo(X(x),Y(y)); }
+  for(let px=0;px<=(W-2*M);px++){ const x=(px/(W-2*M))*dmax; const y=Math.min(1,Math.max(0,transform(x,x0,y0,toe))); if(px===0)pg.moveTo(X(x),Y(y)); else pg.lineTo(X(x),Y(y)); }
   pg.stroke();
   pg.fillStyle='#111'; pg.beginPath(); pg.arc(X(x0),Y(y0),4.5,0,7); pg.fill();
 }
@@ -101,10 +101,10 @@ function redraw(){
   const x0=get('x0'), y0=get('y0'), toe=get('toe'), dmax=get('dmax');
   const lmin=parseFloat(document.getElementById('lmin').value), lmax=parseFloat(document.getElementById('lmax').value);
   drawPlot(x0,y0,toe,dmax);
-  drawBar(gg, grad, x=>transfer(x,x0,y0,toe), dmax, x0);
+  drawBar(gg, grad, x=>transform(x,x0,y0,toe), dmax, x0);
   drawBar(lg, lin,  x=>linearT(x,lmin,lmax), dmax, x0);
   const s=(y0/x0)*(1+toe/2), A=2*(1-y0)/Math.PI, B=s/A;
-  const f=x=>transfer(x,x0,y0,toe).toFixed(3);
+  const f=x=>transform(x,x0,y0,toe).toFixed(3);
   document.getElementById('info').textContent =
     `derived:  s (inflection slope) = ${s.toFixed(3)}   A = ${A.toFixed(3)}   B = ${B.toFixed(3)}\n`+
     `f(1.0)=${f(1)}   f(1.5)=${f(1.5)}   f(${x0.toFixed(1)})=${f(x0)}  <- inflection   f(2.5)=${f(2.5)}   f(3.0)=${f(3)}   f(4.0)=${f(4)}   f(${dmax.toFixed(1)})=${f(dmax)}\n`+
