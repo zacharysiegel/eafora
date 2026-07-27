@@ -227,8 +227,8 @@ impl Driver {
     }
 
     fn legend_view(&self) -> LegendView {
-        let value_range: Option<(f64, f64)> =
-            self.read_active_shard().and_then(|shard_values| shard_values.value_range());
+        let value_range: Option<(f64, f64)> = self.read_active_shard()
+            .and_then(|shard_values| shard_values.value_range());
 
         LegendView { value_range }
     }
