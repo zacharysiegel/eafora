@@ -54,7 +54,7 @@ coalesces `pointermove` bursts into one frame.
 App
 └─ MapView                     <main id="map-view">           (map/map.rs, edited)
    ├─ MapCanvas                <canvas> + status overlay        (map/canvas/canvas.rs, edited)
-   ├─ Legend                   choropleth ramp, bottom-left      (map/legend.rs, new)
+   ├─ Legend                   choropleth scale, bottom-left     (map/legend.rs, new)
    ├─ Controls                 statistic picker + year scrubber  (map/controls.rs, new)
    ├─ RegionDetailPanel        top-left; name + value + source   (map/detail_panel.rs, new)
    └─ SourcePanel              provenance                        (map/source_panel.rs, new)
@@ -100,7 +100,7 @@ Each branches off the previous; the first commit on each is the `>>> branch:` ma
   two panels; provenance via i18n source names.
 - **C2.5 — Controls (statistic picker + year scrubber) + SCSS + i18n.** `set_active_statistic` /
   `scrub_to_period`; Scenario 3 + 4; instant, no animation (FR-014).
-- **C2.6 — Legend + SCSS + i18n.** Samples `color::choropleth_fill` across the active statistic's
+- **C2.6 — Legend + SCSS + i18n.** Samples `color::CHOROPLETH_SCALE` across the active statistic's
   `value_range()`; no-data swatch.
 
 Panels (C2.4) intentionally precede controls (C2.5) so selection is visible before statistic/year
