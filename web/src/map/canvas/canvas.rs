@@ -40,8 +40,7 @@ pub struct ViewControls {
     pub period_range: Option<(NaiveDate, NaiveDate)>,
 }
 
-/// Published by the driver so the legend renders without bundle access. `statistic` selects the color
-/// transfer; `value_range` is the shard's overall min/max, the axis extent the gradient spans.
+/// Published by the driver so the legend renders without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LegendView {
     pub statistic: StatisticKind,

@@ -140,7 +140,6 @@ fn piecewise_cubic_arctan(value: f64, x0: f64, y0: f64, toe: f64) -> f64 {
     position.clamp(0.0, 1.0)
 }
 
-/// Per-channel linear interpolation in sRGB space.
 fn srgb_lerp(from: Rgba, to: Rgba, t: f32) -> Rgba {
     Rgba {
         r: lerp(from.r, to.r, t),
