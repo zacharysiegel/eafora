@@ -503,17 +503,26 @@ fn handle_mouseleave() {
 }
 
 fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>) {
-    let published: Option<(WriteSignal<Option<ViewControls>>, WriteSignal<Option<SelectionView>>, RepublishedViews)> =
-        DRIVER.with_borrow_mut(|driver_slot| {
-            let driver: &mut Driver = driver_slot.as_mut()?;
-            let views: RepublishedViews = mutate(driver)?;
+    struct PendingPublish {
+        controls_signal: WriteSignal<Option<ViewControls>>,
+        selection_signal: WriteSignal<Option<SelectionView>>,
+        views: RepublishedViews,
+    }
 
-            Some((driver.view_controls, driver.selection_view, views))
-        });
+    let pending: Option<PendingPublish> = DRIVER.with_borrow_mut(|driver_slot| {
+        let driver: &mut Driver = driver_slot.as_mut()?;
+        let views: RepublishedViews = mutate(driver)?;
 
-    if let Some((view_controls, selection_view, views)) = published {
-        view_controls.set(Some(views.view_controls));
-        selection_view.set(views.selection);
+        Some(PendingPublish {
+            controls_signal: driver.view_controls,
+            selection_signal: driver.selection_view,
+            views,
+        })
+    });
+
+    if let Some(pending) = pending {
+        pending.controls_signal.set(Some(pending.views.view_controls));
+        pending.selection_signal.set(pending.views.selection);
     }
 }
 
