@@ -40,6 +40,14 @@ pub struct ViewControls {
     pub period_range: Option<(NaiveDate, NaiveDate)>,
 }
 
+/// Published by the driver so the legend renders the active statistic's value extent without bundle
+/// access. `value_range` is the shard's overall min/max, matching the range the renderer normalizes
+/// fills against.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LegendView {
+    pub value_range: Option<(f64, f64)>,
+}
+
 #[component]
 pub fn MapCanvas() -> impl IntoView {
     let canvas_ref: NodeRef<Canvas> = NodeRef::new();
@@ -50,10 +58,12 @@ pub fn MapCanvas() -> impl IntoView {
         if let Some(canvas) = canvas_ref.get() {
             let selection: RwSignal<Option<SelectionView>> = expect_context();
             let view_controls: RwSignal<Option<ViewControls>> = expect_context();
+            let legend: RwSignal<Option<LegendView>> = expect_context();
             super::driver::start(canvas, super::driver::DriverSignals {
                 render_status,
                 selection_view: selection.write_only(),
                 view_controls: view_controls.write_only(),
+                legend: legend.write_only(),
             });
         }
     });

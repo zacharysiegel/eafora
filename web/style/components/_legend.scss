@@ -1,0 +1,62 @@
+.legend {
+    position: absolute;
+    bottom: var(--space-lg);
+    left: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    width: 14rem;
+}
+
+.legend-title,
+.legend-tick-caption {
+    font-size: 0.625rem; // approx. 10px
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-ink-muted);
+}
+
+.legend-scale {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+}
+
+.legend-gradient {
+    height: 0.5rem; // approx. 8px
+    border: var(--border-ink);
+}
+
+.legend-ticks {
+    display: flex;
+    justify-content: space-between;
+}
+
+.legend-tick {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.legend-tick-end {
+    align-items: flex-end;
+    text-align: right;
+}
+
+.legend-tick-value {
+    font-size: var(--type-size-data);
+}
+
+.legend-no-data {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: 0.6875rem; // approx. 11px
+    color: var(--color-ink-muted);
+}
+
+.legend-swatch {
+    width: 0.75rem; // approx. 12px
+    height: 0.75rem;
+    border: var(--border-ink);
+}

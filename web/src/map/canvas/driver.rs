@@ -20,7 +20,7 @@ use shared::sqlite::shard_db;
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
 
-use super::{RenderStatus, SelectionView, ViewControls};
+use super::{RenderStatus, LegendView, SelectionView, ViewControls};
 
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
@@ -50,10 +50,11 @@ enum RegionChange {
     Changed(Option<RegionHit>),
 }
 
-/// What a statistic or period change republishes: fresh controls, plus the re-resolved selection when a
-/// region is selected.
+/// What a statistic or period change republishes: fresh controls and legend extent, plus the
+/// re-resolved selection when a region is selected.
 struct RepublishedViews {
     view_controls: ViewControls,
+    legend: LegendView,
     selection: Option<SelectionView>,
 }
 
@@ -70,6 +71,7 @@ struct Driver {
     frame_state: FrameState,
     selection_view: WriteSignal<Option<SelectionView>>,
     view_controls: WriteSignal<Option<ViewControls>>,
+    legend: WriteSignal<Option<LegendView>>,
     selection: Option<SelectionView>,
     redraw_pending: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
@@ -224,6 +226,13 @@ impl Driver {
         }
     }
 
+    fn legend_view(&self) -> LegendView {
+        let value_range: Option<(f64, f64)> =
+            self.read_active_shard().and_then(|shard_values| shard_values.value_range());
+
+        LegendView { value_range }
+    }
+
     fn set_active_statistic(&mut self, statistic: StatisticKind) -> Option<RepublishedViews> {
         if statistic == self.frame_state.active_statistic {
             return None;
@@ -257,6 +266,7 @@ impl Driver {
 
         RepublishedViews {
             view_controls: self.view_controls(),
+            legend: self.legend_view(),
             selection: self.selection.clone(),
         }
     }
@@ -277,13 +287,14 @@ pub struct DriverSignals {
     pub render_status: RwSignal<RenderStatus>,
     pub selection_view: WriteSignal<Option<SelectionView>>,
     pub view_controls: WriteSignal<Option<ViewControls>>,
+    pub legend: WriteSignal<Option<LegendView>>,
 }
 
 pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
-    let DriverSignals { render_status, selection_view, view_controls } = signals;
+    let DriverSignals { render_status, selection_view, view_controls, legend } = signals;
 
     leptos::task::spawn_local(async move {
-        let status: RenderStatus = match set_up_driver(canvas, selection_view, view_controls).await {
+        let status: RenderStatus = match set_up_driver(canvas, selection_view, view_controls, legend).await {
             Ok(()) => RenderStatus::Ready,
             Err(StartupError::DataUnavailable(error)) => {
                 log::error!("map data could not be loaded [error={error}]");
@@ -299,7 +310,7 @@ pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
     });
 }
 
-async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>, view_controls: WriteSignal<Option<ViewControls>>) -> Result<(), StartupError> {
+async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>, view_controls: WriteSignal<Option<ViewControls>>, legend: WriteSignal<Option<LegendView>>) -> Result<(), StartupError> {
     let cache: OpfsArtifactCache = OpfsArtifactCache::create()
         .await
         .map_err(StartupError::BrowserUnsupported)?;
@@ -334,6 +345,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         frame_state,
         selection_view,
         view_controls,
+        legend,
         selection: None,
         redraw_pending: false,
         redraw_callback: None,
@@ -344,12 +356,14 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
     };
 
     let initial_controls: ViewControls = driver.view_controls();
+    let initial_legend: LegendView = driver.legend_view();
 
     DRIVER.with_borrow_mut(|driver_slot| {
         driver_slot.insert(driver).request_redraw();
     });
 
     view_controls.set(Some(initial_controls));
+    legend.set(Some(initial_legend));
 
     Ok(())
 }
@@ -506,6 +520,7 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
     struct PendingPublish {
         controls_signal: WriteSignal<Option<ViewControls>>,
         selection_signal: WriteSignal<Option<SelectionView>>,
+        legend_signal: WriteSignal<Option<LegendView>>,
         views: RepublishedViews,
     }
 
@@ -516,6 +531,7 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
         Some(PendingPublish {
             controls_signal: driver.view_controls,
             selection_signal: driver.selection_view,
+            legend_signal: driver.legend,
             views,
         })
     });
@@ -523,6 +539,7 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
     if let Some(pending) = pending {
         pending.controls_signal.set(Some(pending.views.view_controls));
         pending.selection_signal.set(pending.views.selection);
+        pending.legend_signal.set(Some(pending.views.legend));
     }
 }
 
