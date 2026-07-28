@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::{DataSourceKind, StatisticKind};
-use shared::map::{FrameState, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
+use shared::map::{FrameState, GeoPoint, ProjectedPoint, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
 use shared::sqlite::shard_db;
@@ -40,6 +40,13 @@ const WORLD_BOUNDS: WorldBounds = WorldBounds {
     max_lat: 85.0,
     min_lon: -180.0,
     max_lon: 180.0,
+};
+
+/// Washington DC. The home view is centered horizontally on its longitude; the vertical center stays
+/// on the equator so the full latitude range shows.
+const HOME_CENTER: GeoPoint = GeoPoint {
+    lat: 38.9072,
+    lon: -77.0369,
 };
 
 /// The result of hit-testing a pointer against the regions, compared to the previously known region.
@@ -92,6 +99,7 @@ impl Driver {
 
     fn resize(&mut self, width: u32, height: u32) {
         self.surface_dimensions = SurfaceDimensions { width, height };
+        self.viewport = home_viewport(self.surface_dimensions);
 
         if let Err(error) = self.renderer.resize_surface(width, height) {
             log::error!("resizing the render surface failed [error={error}]");
@@ -343,7 +351,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
     let driver: Driver = Driver {
         renderer,
         bundle_sender,
-        viewport: world_viewport(),
+        viewport: home_viewport(SurfaceDimensions { width, height }),
         surface_dimensions: SurfaceDimensions { width, height },
         frame_state,
         selection_view,
@@ -418,11 +426,21 @@ fn backend_from_query() -> RendererBackend {
     }
 }
 
-fn world_viewport() -> Viewport {
-    Viewport {
-        min: projection::project(WORLD_BOUNDS.min_lat, WORLD_BOUNDS.min_lon),
-        max: projection::project(WORLD_BOUNDS.max_lat, WORLD_BOUNDS.max_lon),
-    }
+/// The home view: the whole world fit to the surface aspect, centered horizontally on Washington DC's
+/// longitude. The full latitude range shows (vertical center on the equator); the horizontal wraparound
+/// places DC at the middle with the world continuing across the seam.
+fn home_viewport(surface: SurfaceDimensions) -> Viewport {
+    let world_min: ProjectedPoint = projection::project(WORLD_BOUNDS.min_lat, WORLD_BOUNDS.min_lon);
+    let world_max: ProjectedPoint = projection::project(WORLD_BOUNDS.max_lat, WORLD_BOUNDS.max_lon);
+
+    let center: ProjectedPoint = ProjectedPoint {
+        x: projection::project(HOME_CENTER.lat, HOME_CENTER.lon).x,
+        y: (world_min.y + world_max.y) / 2.0,
+    };
+    let half_width: f64 = (world_max.x - world_min.x) / 2.0;
+    let half_height: f64 = (world_max.y - world_min.y) / 2.0;
+
+    Viewport::fit(center, half_width, half_height, surface)
 }
 
 /// Sizes the canvas's drawing buffer to its displayed size in device pixels so the map renders crisply
