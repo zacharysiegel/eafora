@@ -6,14 +6,17 @@ struct ViewportUniform {
 @group(0) @binding(0)
 var<uniform> viewport: ViewportUniform;
 
-// The horizontal shift, in whole 360-degree turns, applied to the wrapped instance when the viewport
-// straddles the +/-180 antimeridian: -1 if the view has panned off the west edge, +1 off the east
-// edge, 0 when the view fits within one world copy. Derived from the bounds so the shader and the
-// renderer's instance-count decision share one crossing test. Assumes the viewport is never wider
-// than 360 degrees, so at most one seam is crossed.
+const PI: f32 = 3.141592653589793;
+const TWO_PI: f32 = 6.283185307179586;
+
+// The horizontal shift, in whole turns (2π), applied to the wrapped instance when the viewport
+// straddles the ±π antimeridian: -1 if the view has panned off the west edge, +1 off the east edge,
+// 0 when the view fits within one world copy. Derived from the bounds so the shader and the renderer's
+// instance-count decision share one crossing test. Assumes the viewport is never wider than 2π, so at
+// most one seam is crossed.
 fn wrap_direction() -> i32 {
-    if (viewport.projected_min.x < -180.0) { return -1; }
-    if (viewport.projected_max.x > 180.0) { return 1; }
+    if (viewport.projected_min.x < -PI) { return -1; }
+    if (viewport.projected_max.x > PI) { return 1; }
     return 0;
 }
 
@@ -22,7 +25,7 @@ fn wrap_direction() -> i32 {
 // lands across the antimeridian. Instance 0 is never shifted, since 0 * wrap_direction == 0.
 fn project_to_clip(position: vec2<f32>, instance_index: u32) -> vec4<f32> {
     let turns: i32 = i32(instance_index) * wrap_direction();
-    let shifted_x: f32 = position.x + f32(turns) * 360.0;
+    let shifted_x: f32 = position.x + f32(turns) * TWO_PI;
     let span: vec2<f32> = viewport.projected_max - viewport.projected_min;
     let normalized_x: f32 = (shifted_x - viewport.projected_min.x) / span.x;
     let normalized_y: f32 = (position.y - viewport.projected_min.y) / span.y;

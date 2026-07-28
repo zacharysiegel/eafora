@@ -1,6 +1,6 @@
-//! Miller cylindrical projection. Longitude is the x axis, passed through unchanged in degrees and
-//! NOT clamped to ±180 (the renderer's horizontal-wraparound owns the antimeridian seam, not the
-//! projection); latitude drives the cylindrical y.
+//! Miller cylindrical projection. Longitude is the x axis in radians and NOT clamped to ±π (the
+//! renderer's horizontal-wraparound owns the antimeridian seam, not the projection); latitude drives
+//! the cylindrical y. Geographic coordinates are degrees; the projected plane is isotropic radians.
 
 use std::f64::consts::FRAC_PI_4;
 
@@ -20,14 +20,14 @@ pub fn project(lat: f64, lon: f64) -> ProjectedPoint {
     let lat_radians: f64 = lat.to_radians();
     let y: f64 = 1.25 * (FRAC_PI_4 + 0.4 * lat_radians).tan().ln();
 
-    ProjectedPoint { x: lon, y }
+    ProjectedPoint { x: lon.to_radians(), y }
 }
 
 pub fn unproject(x: f64, y: f64) -> GeoPoint {
     let lat_radians: f64 = ((y / 1.25).exp().atan() - FRAC_PI_4) / 0.4;
     let lat: f64 = lat_radians.to_degrees();
 
-    GeoPoint { lat, lon: x }
+    GeoPoint { lat, lon: x.to_degrees() }
 }
 
 #[cfg(test)]
@@ -45,10 +45,10 @@ mod tests {
     }
 
     #[test]
-    fn project_passes_longitude_through_without_clamping() {
+    fn project_converts_longitude_to_radians_without_clamping() {
         let projected: ProjectedPoint = project(0.0, -185.0);
 
-        assert_eq!(projected.x, -185.0);
+        assert!((projected.x - (-185.0_f64).to_radians()).abs() < TOLERANCE);
         assert!(projected.y.abs() < TOLERANCE);
     }
 
