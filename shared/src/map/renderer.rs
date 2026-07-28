@@ -455,7 +455,7 @@ impl Rgba {
 }
 
 fn is_antimeridian_wrap(viewport: Viewport) -> bool {
-    viewport.min.x < -180.0 || viewport.max.x > 180.0
+    viewport.min.x < -std::f64::consts::PI || viewport.max.x > std::f64::consts::PI
 }
 
 #[cfg(test)]
@@ -482,21 +482,23 @@ mod tests {
 
     #[test]
     fn is_antimeridian_wrap_is_true_only_when_the_viewport_crosses_the_seam() {
+        let seam: f64 = std::f64::consts::PI;
+
         let within_one_world: Viewport = Viewport {
-            min: ProjectedPoint { x: -170.0, y: -1.0 },
-            max: ProjectedPoint { x: 170.0, y: 1.0 },
+            min: ProjectedPoint { x: -seam + 0.2, y: -1.0 },
+            max: ProjectedPoint { x: seam - 0.2, y: 1.0 },
         };
         assert!(!is_antimeridian_wrap(within_one_world));
 
         let past_west_edge: Viewport = Viewport {
-            min: ProjectedPoint { x: -190.0, y: -1.0 },
-            max: ProjectedPoint { x: -10.0, y: 1.0 },
+            min: ProjectedPoint { x: -seam - 0.2, y: -1.0 },
+            max: ProjectedPoint { x: -0.2, y: 1.0 },
         };
         assert!(is_antimeridian_wrap(past_west_edge));
 
         let past_east_edge: Viewport = Viewport {
-            min: ProjectedPoint { x: 10.0, y: -1.0 },
-            max: ProjectedPoint { x: 190.0, y: 1.0 },
+            min: ProjectedPoint { x: 0.2, y: -1.0 },
+            max: ProjectedPoint { x: seam + 0.2, y: 1.0 },
         };
         assert!(is_antimeridian_wrap(past_east_edge));
     }

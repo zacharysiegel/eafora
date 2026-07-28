@@ -49,7 +49,9 @@ Result: geographic domain (geometry, `GeoPoint`, `WORLD_BOUNDS`, hit-test's poin
 
 - `projection.rs`: existing round-trip test still holds (it inverts `project`/`unproject`); update the two tests that assert the raw degree `x`. Add a case pinning `project`'s `x` to `lon.to_radians()`.
 - Aspect-fit helper: host tests over square, wide, and tall surface dimensions — the returned viewport has the surface aspect, fully contains the target extent, and is centered on the requested center.
-- The wraparound-constant change is guarded by the existing antimeridian hit-test (`region_at_point_wraps_longitude_past_the_antimeridian`) and the projection round-trip.
+- The renderer's CPU-side crossing test `is_antimeridian_wrap` and the shader's `wrap_direction` are the two halves of one seam test; both move to `±π`, and `is_antimeridian_wrap`'s unit test moves to radian-scale viewports.
+- `country_mesh`'s triangulation test derives the rectangle's projected x-width from `project` rather than a degree literal.
+- Run `cargo test -p shared --features render` (not just the default features) so the renderer and `country_mesh` (render-gated) tests are exercised — the projection unit change ripples into both.
 
 ### Out of scope for C3.1
 

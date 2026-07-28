@@ -210,9 +210,11 @@ mod tests {
             triangulated_area += ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)).abs() / 2.0;
         }
 
-        // The projected rectangle is lon-width 2 by the projected height of lat 0..3; a correct
-        // triangulation covers exactly that area, so a wrong winding or degenerate triangle fails.
-        let rectangle_area: f64 = 2.0 * projection::project(3.0, 0.0).y;
+        // The projected rectangle spans the projected x-width of lon 0..2 by the projected y-height of
+        // lat 0..3; a correct triangulation covers exactly that area, so a wrong winding or degenerate
+        // triangle fails.
+        let projected_width: f64 = projection::project(0.0, 2.0).x - projection::project(0.0, 0.0).x;
+        let rectangle_area: f64 = projected_width * projection::project(3.0, 0.0).y;
         assert!((triangulated_area - rectangle_area).abs() < TOLERANCE);
     }
 
