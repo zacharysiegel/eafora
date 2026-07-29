@@ -427,13 +427,7 @@ fn home_viewport(surface: SurfaceDimensions) -> Viewport {
     let southern_edge: ProjectedPoint = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon);
     let northern_edge: ProjectedPoint = projection::project(HOME_VIEW_MAX_LAT, HOME_CENTER.lon);
 
-    let center: ProjectedPoint = ProjectedPoint {
-        x: southern_edge.x,
-        y: (southern_edge.y + northern_edge.y) / 2.0,
-    };
-    let half_height: f64 = (northern_edge.y - southern_edge.y) / 2.0;
-
-    Viewport::fill_height(center, half_height, surface)
+    Viewport::fill_height(southern_edge.x, southern_edge.y, northern_edge.y, surface)
 }
 
 /// Sizes the canvas's drawing buffer to its displayed size in device pixels so the map renders crisply

@@ -11,18 +11,19 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    /// A viewport with the surface's aspect that fills the surface vertically: `center ± half_height` in
-    /// y (the full requested vertical extent spans the surface height) and `center ± half_height *
-    /// surface_aspect` in x (isotropic, so the projected content is never stretched). The horizontal
-    /// extent is whatever the aspect yields; on a surface narrower than the content the sides fall
-    /// outside the viewport and are reached by panning. Assumes `surface` dimensions are nonzero.
-    pub fn fill_height(center: ProjectedPoint, half_height: f64, surface: SurfaceDimensions) -> Viewport {
-        let surface_aspect: f64 = surface.width as f64 / surface.height as f64;
-        let half_width: f64 = half_height * surface_aspect;
+    /// A viewport with the surface's aspect that fills the surface vertically with the `min_y..max_y`
+    /// extent — that extent spans the surface height exactly — and is horizontally centered on
+    /// `center_x`, widened by the surface aspect (isotropic, never stretched). On a surface narrower
+    /// than the resulting width the horizontal sides fall outside the viewport and are reached by
+    /// panning. Assumes `surface` dimensions are nonzero and `max_y > min_y`.
+    pub fn fill_height(center_x: f64, min_y: f64, max_y: f64, surface: SurfaceDimensions) -> Viewport {
+        let half_height: f64 = (max_y - min_y) / 2.0;
+        let center_y: f64 = (min_y + max_y) / 2.0;
+        let half_width: f64 = half_height * (surface.width as f64 / surface.height as f64);
 
         Viewport {
-            min: ProjectedPoint { x: center.x - half_width, y: center.y - half_height },
-            max: ProjectedPoint { x: center.x + half_width, y: center.y + half_height },
+            min: ProjectedPoint { x: center_x - half_width, y: center_y - half_height },
+            max: ProjectedPoint { x: center_x + half_width, y: center_y + half_height },
         }
     }
 }
@@ -47,24 +48,25 @@ pub struct SurfaceDimensions {
 mod tests {
     use super::*;
 
-    const CENTER: ProjectedPoint = ProjectedPoint { x: 0.5, y: -0.25 };
-    const HALF_HEIGHT: f64 = 1.0;
+    const CENTER_X: f64 = 0.5;
+    const MIN_Y: f64 = -1.25;
+    const MAX_Y: f64 = 0.75; // extent midpoint -0.25, half-height 1.0
     const TOLERANCE: f64 = 1e-12;
 
     fn assert_fill_height_invariants(surface: SurfaceDimensions) {
-        let viewport: Viewport = Viewport::fill_height(CENTER, HALF_HEIGHT, surface);
+        let viewport: Viewport = Viewport::fill_height(CENTER_X, MIN_Y, MAX_Y, surface);
         let half_width: f64 = (viewport.max.x - viewport.min.x) / 2.0;
         let half_height: f64 = (viewport.max.y - viewport.min.y) / 2.0;
-
         let surface_aspect: f64 = surface.width as f64 / surface.height as f64;
-        assert!((half_height - HALF_HEIGHT).abs() < TOLERANCE, "height pinned");
+
+        assert!((viewport.min.y - MIN_Y).abs() < TOLERANCE, "min_y fills the surface bottom");
+        assert!((viewport.max.y - MAX_Y).abs() < TOLERANCE, "max_y fills the surface top");
         assert!((half_width / half_height - surface_aspect).abs() < TOLERANCE, "aspect matches surface");
-        assert!(((viewport.min.x + viewport.max.x) / 2.0 - CENTER.x).abs() < TOLERANCE, "centered x");
-        assert!(((viewport.min.y + viewport.max.y) / 2.0 - CENTER.y).abs() < TOLERANCE, "centered y");
+        assert!(((viewport.min.x + viewport.max.x) / 2.0 - CENTER_X).abs() < TOLERANCE, "centered x");
     }
 
     #[test]
-    fn fill_height_pins_height_and_matches_aspect_on_a_square_surface() {
+    fn fill_height_fills_vertically_and_matches_aspect_on_a_square_surface() {
         assert_fill_height_invariants(SurfaceDimensions { width: 100, height: 100 });
     }
 
@@ -73,8 +75,8 @@ mod tests {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 400, height: 100 };
         assert_fill_height_invariants(surface);
 
-        let viewport: Viewport = Viewport::fill_height(CENTER, HALF_HEIGHT, surface);
-        assert!((viewport.max.x - viewport.min.x) / 2.0 > HALF_HEIGHT, "wider than tall");
+        let viewport: Viewport = Viewport::fill_height(CENTER_X, MIN_Y, MAX_Y, surface);
+        assert!((viewport.max.x - viewport.min.x) / 2.0 > (MAX_Y - MIN_Y) / 2.0, "wider than tall");
     }
 
     #[test]
@@ -82,7 +84,7 @@ mod tests {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 400 };
         assert_fill_height_invariants(surface);
 
-        let viewport: Viewport = Viewport::fill_height(CENTER, HALF_HEIGHT, surface);
-        assert!((viewport.max.x - viewport.min.x) / 2.0 < HALF_HEIGHT, "narrower than tall");
+        let viewport: Viewport = Viewport::fill_height(CENTER_X, MIN_Y, MAX_Y, surface);
+        assert!((viewport.max.x - viewport.min.x) / 2.0 < (MAX_Y - MIN_Y) / 2.0, "narrower than tall");
     }
 }
