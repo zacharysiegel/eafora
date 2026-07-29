@@ -37,18 +37,20 @@ The renderer maps the viewport's projected x-span to the full surface width and 
 
 Result: geographic domain (geometry, `GeoPoint`, `WORLD_BOUNDS`, hit-test's point-in-polygon and `wrap_longitude`) is degrees; projected domain (`project` output, mesh, `Viewport`, shader, and later pan/zoom) is isotropic radians; one conversion at the boundary.
 
-**Aspect-fit viewport.** A pure `shared::map` function produces a `Viewport` whose aspect equals the surface aspect and that contains a target extent, expanding the surplus axis. It is the reusable "frame a region" primitive: C3.1's home view frames the world; C3.4 zoom-to-country frames a country's bounding box with the same function. Signature and exact API are decided in the implementation plan; the behavior is: given surface dimensions, a projected extent to contain, and a horizontal center, return a viewport with `aspect == W/H` that contains the extent.
+**Vertical-fill viewport.** A pure `shared::map` function, `Viewport::fill_height`, produces a `Viewport` whose aspect equals the surface aspect and whose vertical extent is exactly the requested half-height, filling the surface top to bottom; the horizontal extent is that half-height times the surface aspect (isotropic, never stretched). On a surface narrower than the content, the horizontal sides fall outside the viewport and are reached by panning (C3.3); it never leaves paper margins on the filled (vertical) axis.
 
-**Home view.** The home viewport is the smallest surface-aspect viewport that contains the whole world (`WORLD_BOUNDS` projected: ±180° longitude, ±85° latitude), **horizontally centered on Washington DC's longitude** (≈ 77.04° W; the implementation defines a `HOME_CENTER` constant at ≈ 38.91° N, 77.04° W). Horizontal centering falls out of the wraparound: the seam moves to DC's antipode, with DC at the horizontal middle and the world continuing seamlessly across the edges. Vertically the home view stays **world-centered** (the full ±85° latitude range is shown); a whole-world view cannot also be vertically centered on DC's latitude without cropping the southern hemisphere or padding asymmetrically, so DC drives the horizontal center only. The surplus axis from aspect-fit shows the wrap-continued world at the left/right edges when the surface is wider than the map's ~1.55 aspect, or symmetric empty paper top/bottom when it is taller. (This vertical-framing choice is the one point worth a second look on review; it is a constant, easily changed.)
+**Home view.** The home viewport fills the surface vertically with the whole world's latitude (`WORLD_BOUNDS` projected: ±85° latitude), **horizontally centered on Washington DC's longitude** (≈ 77.04° W; the implementation defines a `HOME_CENTER` constant at ≈ 38.91° N, 77.04° W). Longitude runs at the same isotropic scale, so the surface width shows as much of the world as fits; on a surface narrower than the map's ~1.53 aspect the remaining longitude is reached by horizontal pan (C3.3). Horizontal centering on DC falls out of the wraparound: the seam moves to DC's antipode, with DC at the horizontal middle and the world continuing across the edges. Vertically the view is world-centered on the equator. A surface *wider* than ~1.53 would repeat the world horizontally to fill the surplus; that case is not special-cased for C3.1.
 
-**Resize.** On resize the surface aspect changes, so the driver recomputes the viewport with the fit function around the same center and world extent. The driver calls the fit function at startup and in its resize handler.
+**Resize.** On resize the surface aspect changes, so the driver recomputes the viewport with `fill_height` around the same center and latitude extent. The driver calls it at startup and in its resize handler.
 
-**Where it lives.** The fit function is a pure `shared::map` helper (no `web_sys`, host-testable). The driver owns the home-view construction (calls the helper with `WORLD_BOUNDS` + `HOME_CENTER`) at attach and on resize.
+**Where it lives.** The `fill_height` function is a pure `shared::map` helper (no `web_sys`, host-testable). The driver owns the home-view construction (calls the helper with `WORLD_BOUNDS`' latitude extent + `HOME_CENTER`) at attach and on resize.
+
+> **Deviation (post-review).** The design originally fit the whole world into the surface aspect by *containing* it (expanding the surplus axis). Visual review showed that produced horizontal tiling on a surface wider than the map and vertical paper margins on a narrower one. It was replaced with fill-vertically (`Viewport::fill_height`): the full latitude always fills the surface height and longitude pans. The `Viewport::fit` contain helper was removed; a contain-style variant returns with C3.4 when zoom-to-country needs it.
 
 ### Testing
 
 - `projection.rs`: existing round-trip test still holds (it inverts `project`/`unproject`); update the two tests that assert the raw degree `x`. Add a case pinning `project`'s `x` to `lon.to_radians()`.
-- Aspect-fit helper: host tests over square, wide, and tall surface dimensions — the returned viewport has the surface aspect, fully contains the target extent, and is centered on the requested center.
+- `fill_height` helper: host tests over square, wide, and tall surface dimensions — the returned viewport pins the vertical half-extent, has the surface aspect, and is centered on the requested center.
 - The renderer's CPU-side crossing test `is_antimeridian_wrap` and the shader's `wrap_direction` are the two halves of one seam test; both move to `±π`, and `is_antimeridian_wrap`'s unit test moves to radian-scale viewports.
 - `country_mesh`'s triangulation test derives the rectangle's projected x-width from `project` rather than a degree literal.
 - Run `cargo test -p shared --features render` (not just the default features) so the renderer and `country_mesh` (render-gated) tests are exercised — the projection unit change ripples into both.
@@ -59,9 +61,9 @@ Pan/zoom (C3.3), the selection/hover render pass (C3.2), any animation (C3.4). C
 
 ### PR description (draft)
 
-**shared** — Make the projected plane isotropic: `project`/`unproject` carry longitude in radians (geographic coordinates stay degrees), and the WGSL wraparound constants become `±π` / `2π`. Add a pure aspect-fit viewport helper that frames a projected extent into a surface-aspect viewport, expanding the surplus axis.
+**shared** — Make the projected plane isotropic: `project`/`unproject` carry longitude in radians (geographic coordinates stay degrees), and the WGSL wraparound constants become `±π` / `2π`. Add `Viewport::fill_height`, which frames a vertical extent into a surface-aspect viewport that fills the surface vertically.
 
-**web** — The map viewport now fits the canvas aspect without stretching and is recomputed on resize; the home view frames the whole world centered on Washington DC's longitude.
+**web** — The map viewport now fills the canvas vertically with the full latitude and is recomputed on resize; the home view centers horizontally on Washington DC's longitude, with longitude beyond the canvas width reached by panning.
 
 ## C3.2 — selection/hover render pass
 
@@ -73,4 +75,4 @@ Deferred detail; scope fixed: wheel-zoom and drag-pan mutating the `Viewport` in
 
 ## C3.4 — animated zoom-to-country
 
-Deferred detail; scope fixed: the `Camera` state machine per `docs/architecture/overview.md` §Zoom-to-country, advanced by a self-scheduling `requestAnimationFrame` loop, framing the clicked country's bounding box via the C3.1 aspect-fit helper. Updates `006-core-renderer/spec.md` and the design README to move zoom-to-country into v1. Detailed when picked up.
+Deferred detail; scope fixed: the `Camera` state machine per `docs/architecture/overview.md` §Zoom-to-country, advanced by a self-scheduling `requestAnimationFrame` loop, framing the clicked country's bounding box (adding a contain-style fit alongside `fill_height` when it is picked up). Updates `006-core-renderer/spec.md` and the design README to move zoom-to-country into v1. Detailed when picked up.

@@ -426,9 +426,10 @@ fn backend_from_query() -> RendererBackend {
     }
 }
 
-/// The home view: the whole world fit to the surface aspect, centered horizontally on Washington DC's
-/// longitude. The full latitude range shows (vertical center on the equator); the horizontal wraparound
-/// places DC at the middle with the world continuing across the seam.
+/// The home view: the full latitude range fills the surface vertically, centered horizontally on
+/// Washington DC's longitude. Longitude runs at the same isotropic scale, so the surface width shows as
+/// much of the world as fits and the rest is reached by panning; the horizontal wraparound places DC at
+/// the middle with the world continuing across the seam.
 fn home_viewport(surface: SurfaceDimensions) -> Viewport {
     let world_min: ProjectedPoint = projection::project(WORLD_BOUNDS.min_lat, WORLD_BOUNDS.min_lon);
     let world_max: ProjectedPoint = projection::project(WORLD_BOUNDS.max_lat, WORLD_BOUNDS.max_lon);
@@ -437,10 +438,9 @@ fn home_viewport(surface: SurfaceDimensions) -> Viewport {
         x: projection::project(HOME_CENTER.lat, HOME_CENTER.lon).x,
         y: (world_min.y + world_max.y) / 2.0,
     };
-    let half_width: f64 = (world_max.x - world_min.x) / 2.0;
     let half_height: f64 = (world_max.y - world_min.y) / 2.0;
 
-    Viewport::fit(center, half_width, half_height, surface)
+    Viewport::fill_height(center, half_height, surface)
 }
 
 /// Sizes the canvas's drawing buffer to its displayed size in device pixels so the map renders crisply
