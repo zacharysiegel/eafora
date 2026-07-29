@@ -73,6 +73,9 @@ Deferred detail; scope fixed: 2px black selection outline (line width isn't port
 
 Deferred detail; scope fixed: wheel-zoom and drag-pan mutating the `Viewport` in projected space, clamped to world bounds, reusing C2's pointer listeners and the on-demand redraw. Detailed when picked up.
 
+- **Reimplement `Viewport::fill_height` on top of the zoom primitive.** Once a zoom function exists (set the viewport to a scale/zoom level around a center, with clamping), "fill the surface height with `min_y..max_y`" is just "zoom to the level at which that vertical extent spans the surface height, centered on `center_x`." `fill_height` should compute that zoom level and delegate, rather than construct the viewport directly as it does now, so the home view and manual zoom share one construction-and-clamp path.
+- The zoom-out clamp is the home framing (`HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT`): the home view is the maximum zoom-out, so a user can zoom in and pan but not zoom out past the opening view.
+
 ## C3.4 — animated zoom-to-country
 
 Deferred detail; scope fixed: the `Camera` state machine per `docs/architecture/overview.md` §Zoom-to-country, advanced by a self-scheduling `requestAnimationFrame` loop, framing the clicked country's bounding box (adding a contain-style fit alongside `fill_height` when it is picked up). Updates `006-core-renderer/spec.md` and the design README to move zoom-to-country into v1. Detailed when picked up.
