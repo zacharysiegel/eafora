@@ -5,8 +5,13 @@ use crate::map::gpu_types::ProjectedVertex;
 use crate::map::projection::{self, ProjectedPoint};
 use crate::render::gpu_types::Vec2;
 
-/// A country's GPU-ready geometry: projected vertices shared by both pipelines, the fill triangle
-/// indices (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
+/// Below this projected length an edge or a miter is treated as degenerate (a zero-length edge, or a
+/// spike vertex whose two edge normals cancel), and the normal falls back instead of dividing by ~zero.
+const NORMAL_EPSILON: f64 = 1e-12;
+
+/// A country's GPU-ready geometry: projected vertices shared by both pipelines, a per-vertex outward
+/// boundary normal (parallel to `vertices`) for the highlight offset, the fill triangle indices
+/// (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
 /// It owns its data and holds no GPU handles, so it is `Send`: a worker thread can build it, or the
 /// producer can bake it into the artifact, without involving the renderer.
 #[derive(Debug, Clone)]
@@ -14,6 +19,7 @@ pub struct CountryMesh {
     pub iso3: String,
     pub region_code: String,
     pub vertices: Vec<ProjectedVertex>,
+    pub normals: Vec<Vec2>,
     pub fill_indices: Vec<u32>,
     pub border_indices: Vec<u32>,
 }
@@ -24,6 +30,7 @@ impl CountryMesh {
             iso3: feature.iso3.clone(),
             region_code: feature.region_code.clone(),
             vertices: Vec::new(),
+            normals: Vec::new(),
             fill_indices: Vec::new(),
             border_indices: Vec::new(),
         };
@@ -44,6 +51,7 @@ impl CountryMesh {
         let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, polygon_vertex_offset)?;
 
         self.vertices.extend(to_projected_vertices(&projected_coordinates));
+        self.normals.extend(polygon_outward_normals(&rings));
         self.fill_indices.extend(fill_triangle_indices);
         self.border_indices.extend(ring_edge_indices(&rings, polygon_vertex_offset));
 
@@ -151,6 +159,95 @@ fn open_ring(ring: &[(f64, f64)]) -> &[(f64, f64)] {
     }
 }
 
+/// Per-vertex outward boundary normals for a polygon's rings, in the same concatenated order
+/// `flatten_rings` produces vertices (exterior first, then holes). Offsetting a vertex along its normal
+/// inflates the exterior and contracts the holes, so the solid area grows uniformly.
+fn polygon_outward_normals(rings: &[&[(f64, f64)]]) -> Vec<Vec2> {
+    rings
+        .iter()
+        .enumerate()
+        .flat_map(|(ring_index, ring)| {
+            let projected_ring: Vec<(f64, f64)> = ring
+                .iter()
+                .map(|&(lon, lat)| {
+                    let projected: ProjectedPoint = projection::project(lat, lon);
+                    (projected.x, projected.y)
+                })
+                .collect();
+            let is_hole: bool = ring_index > 0;
+
+            outward_normals_for_ring(&projected_ring, is_hole)
+        })
+        .collect()
+}
+
+/// The outward normal at each vertex of a closed ring of projected points (no repeated closing vertex):
+/// the unit miter of the two adjacent edges' normals, oriented away from the solid area. Winding is read
+/// from the signed area, so the ring's stored orientation does not matter; a hole flips inward so the
+/// solid grows into it. The miter is unit length (no `1/cos` scaling), so a sharp corner rounds slightly
+/// rather than shooting a spike.
+fn outward_normals_for_ring(ring: &[(f64, f64)], is_hole: bool) -> Vec<Vec2> {
+    let vertex_count: usize = ring.len();
+    if vertex_count < 3 {
+        return vec![Vec2 { x: 0.0, y: 0.0 }; vertex_count];
+    }
+
+    let winding_sign: f64 = if signed_area(ring) >= 0.0 { 1.0 } else { -1.0 };
+    let direction_sign: f64 = if is_hole { -winding_sign } else { winding_sign };
+
+    (0..vertex_count)
+        .map(|index| {
+            let previous: (f64, f64) = ring[(index + vertex_count - 1) % vertex_count];
+            let current: (f64, f64) = ring[index];
+            let next: (f64, f64) = ring[(index + 1) % vertex_count];
+
+            let incoming: (f64, f64) = edge_outward_normal(previous, current, direction_sign);
+            let outgoing: (f64, f64) = edge_outward_normal(current, next, direction_sign);
+
+            unit_or((incoming.0 + outgoing.0, incoming.1 + outgoing.1), outgoing)
+        })
+        .collect()
+}
+
+/// Shoelace signed area; positive is counterclockwise.
+fn signed_area(ring: &[(f64, f64)]) -> f64 {
+    let vertex_count: usize = ring.len();
+    let mut area: f64 = 0.0;
+    for index in 0..vertex_count {
+        let (x0, y0): (f64, f64) = ring[index];
+        let (x1, y1): (f64, f64) = ring[(index + 1) % vertex_count];
+        area += x0 * y1 - x1 * y0;
+    }
+
+    area / 2.0
+}
+
+/// Unit normal of edge `a -> b`, rotated so `sign` (+1 for a counterclockwise ring, negated for holes)
+/// makes it point away from the solid area; `(0, 0)` for a degenerate zero-length edge.
+fn edge_outward_normal(a: (f64, f64), b: (f64, f64), sign: f64) -> (f64, f64) {
+    let dx: f64 = b.0 - a.0;
+    let dy: f64 = b.1 - a.1;
+    let length: f64 = (dx * dx + dy * dy).sqrt();
+    if length > NORMAL_EPSILON {
+        (dy / length * sign, -dx / length * sign)
+    } else {
+        (0.0, 0.0)
+    }
+}
+
+/// Normalize `v` into a `Vec2`, falling back to `fallback` (already unit, or zero) when `v` is near
+/// zero, which happens at a spike vertex whose two edge normals cancel.
+fn unit_or(v: (f64, f64), fallback: (f64, f64)) -> Vec2 {
+    let length: f64 = (v.0 * v.0 + v.1 * v.1).sqrt();
+    let (x, y): (f64, f64) = if length > NORMAL_EPSILON {
+        (v.0 / length, v.1 / length)
+    } else {
+        fallback
+    };
+
+    Vec2 { x: x as f32, y: y as f32 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,5 +320,63 @@ mod tests {
         let mesh: CountryMesh = testland_mesh();
 
         assert_eq!(mesh.border_indices, vec![0, 1, 1, 2, 2, 3, 3, 0]);
+    }
+
+    #[test]
+    fn outward_normals_for_ring_points_away_from_a_ccw_exterior() {
+        let square: [(f64, f64); 4] = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
+
+        let normals: Vec<Vec2> = outward_normals_for_ring(&square, false);
+
+        let diagonal: f32 = 0.5_f32.sqrt();
+        let expected: [(f32, f32); 4] = [(-diagonal, -diagonal), (diagonal, -diagonal), (diagonal, diagonal), (-diagonal, diagonal)];
+        for (normal, (expected_x, expected_y)) in normals.iter().zip(expected) {
+            assert!((normal.x - expected_x).abs() < 1e-5);
+            assert!((normal.y - expected_y).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn outward_normals_for_ring_is_winding_agnostic() {
+        let clockwise_square: [(f64, f64); 4] = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)];
+
+        let normals: Vec<Vec2> = outward_normals_for_ring(&clockwise_square, false);
+
+        let diagonal: f32 = 0.5_f32.sqrt();
+        assert!((normals[0].x - -diagonal).abs() < 1e-5);
+        assert!((normals[0].y - -diagonal).abs() < 1e-5);
+    }
+
+    #[test]
+    fn outward_normals_for_ring_flips_inward_for_a_hole() {
+        let square: [(f64, f64); 4] = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
+
+        let normals: Vec<Vec2> = outward_normals_for_ring(&square, true);
+
+        let diagonal: f32 = 0.5_f32.sqrt();
+        assert!((normals[0].x - diagonal).abs() < 1e-5);
+        assert!((normals[0].y - diagonal).abs() < 1e-5);
+    }
+
+    #[test]
+    fn from_feature_normal_per_vertex_points_away_from_the_interior() {
+        let mesh: CountryMesh = testland_mesh();
+
+        assert_eq!(mesh.normals.len(), mesh.vertices.len());
+
+        let projected_corners: Vec<ProjectedPoint> = TESTLAND_CORNERS
+            .iter()
+            .map(|&(lon, lat)| projection::project(lat, lon))
+            .collect();
+        let center_x: f64 = projected_corners.iter().map(|corner| corner.x).sum::<f64>() / 4.0;
+        let center_y: f64 = projected_corners.iter().map(|corner| corner.y).sum::<f64>() / 4.0;
+
+        for vertex_index in 0..mesh.vertices.len() {
+            let (x, y): (f64, f64) = vertex_position(&mesh, vertex_index as u32);
+            let normal: &Vec2 = &mesh.normals[vertex_index];
+            let outward_dot: f64 = normal.x as f64 * (x - center_x) + normal.y as f64 * (y - center_y);
+
+            assert!(outward_dot > 0.0);
+        }
     }
 }
