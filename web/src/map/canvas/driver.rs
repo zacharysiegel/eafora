@@ -11,7 +11,6 @@ use leptos::prelude::*;
 
 use shared::AppError;
 use shared::artifact::Bundle;
-use shared::artifact::geometry::BoundingBox;
 use shared::canonical::{DataSourceKind, StatisticKind};
 use shared::map::{FrameState, GeoPoint, ProjectedPoint, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
@@ -28,11 +27,19 @@ thread_local! {
 }
 
 /// Washington DC. The home view is centered horizontally on its longitude; vertically it is centered on
-/// the drawn geometry's midpoint (see `home_viewport`), so DC drives the horizontal center only.
+/// the home-view latitude framing's midpoint (see `HOME_VIEW_MIN_LAT` / `home_viewport`), so DC drives
+/// the horizontal center only.
 const HOME_CENTER: GeoPoint = GeoPoint {
     lat: 38.9072,
     lon: -77.0369,
 };
+
+/// The home view's latitude framing, in degrees: chosen to enclose the drawn continents (Tierra del
+/// Fuego to northern Greenland) with no empty polar ocean. Deliberate design values, not derived from
+/// the geometry, so added polar data reframes the home view only when these are changed on purpose.
+/// Revisit if Antarctica or sub-Antarctic islands are added to the layer.
+const HOME_VIEW_MIN_LAT: f64 = -56.0;
+const HOME_VIEW_MAX_LAT: f64 = 84.0;
 
 /// The result of hit-testing a pointer against the regions, compared to the previously known region.
 enum RegionChange {
@@ -60,7 +67,6 @@ struct Driver {
     bundle_sender: watch::Sender<Arc<Bundle>>,
     viewport: Viewport,
     surface_dimensions: SurfaceDimensions,
-    content_bounds: BoundingBox,
     frame_state: FrameState,
     selection_view: WriteSignal<Option<SelectionView>>,
     view_controls: WriteSignal<Option<ViewControls>>,
@@ -85,7 +91,7 @@ impl Driver {
 
     fn resize(&mut self, width: u32, height: u32) {
         self.surface_dimensions = SurfaceDimensions { width, height };
-        self.viewport = home_viewport(self.content_bounds, self.surface_dimensions);
+        self.viewport = home_viewport(self.surface_dimensions);
 
         if let Err(error) = self.renderer.resize_surface(width, height) {
             log::error!("resizing the render surface failed [error={error}]");
@@ -320,10 +326,6 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
     }
 
     let frame_state: FrameState = initial_frame_state(&bundle);
-    let content_bounds: BoundingBox = bundle
-        .geometry
-        .bounding_box()
-        .map_err(StartupError::DataUnavailable)?;
     let (bundle_sender, bundle_receiver): (watch::Sender<Arc<Bundle>>, watch::Receiver<Arc<Bundle>>) =
         watch::channel(Arc::new(bundle));
 
@@ -341,9 +343,8 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
     let driver: Driver = Driver {
         renderer,
         bundle_sender,
-        viewport: home_viewport(content_bounds, SurfaceDimensions { width, height }),
+        viewport: home_viewport(SurfaceDimensions { width, height }),
         surface_dimensions: SurfaceDimensions { width, height },
-        content_bounds,
         frame_state,
         selection_view,
         view_controls,
@@ -417,20 +418,20 @@ fn backend_from_query() -> RendererBackend {
     }
 }
 
-/// The home view: the drawn geometry's latitude span fills the surface vertically, centered horizontally
-/// on Washington DC's longitude. Longitude runs at the same isotropic scale, so the surface width shows
-/// as much as fits and the rest is reached by panning; the wraparound places DC at the middle with the
-/// world continuing across the seam. Framing the content rather than the ±85° world keeps the empty
-/// ocean below the southernmost land off-screen.
-fn home_viewport(content_bounds: BoundingBox, surface: SurfaceDimensions) -> Viewport {
-    let content_min: ProjectedPoint = projection::project(content_bounds.min_lat, content_bounds.min_lon);
-    let content_max: ProjectedPoint = projection::project(content_bounds.max_lat, content_bounds.max_lon);
+/// The home view: the `HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT` latitude band fills the surface
+/// vertically, centered horizontally on Washington DC's longitude. Longitude runs at the same isotropic
+/// scale, so the surface width shows as much as fits and the rest is reached by panning; the wraparound
+/// places DC at the middle with the world continuing across the seam. Framing a fixed content band
+/// rather than the ±85° world keeps the empty ocean below the southernmost land off-screen.
+fn home_viewport(surface: SurfaceDimensions) -> Viewport {
+    let southern_edge: ProjectedPoint = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon);
+    let northern_edge: ProjectedPoint = projection::project(HOME_VIEW_MAX_LAT, HOME_CENTER.lon);
 
     let center: ProjectedPoint = ProjectedPoint {
-        x: projection::project(HOME_CENTER.lat, HOME_CENTER.lon).x,
-        y: (content_min.y + content_max.y) / 2.0,
+        x: southern_edge.x,
+        y: (southern_edge.y + northern_edge.y) / 2.0,
     };
-    let half_height: f64 = (content_max.y - content_min.y) / 2.0;
+    let half_height: f64 = (northern_edge.y - southern_edge.y) / 2.0;
 
     Viewport::fill_height(center, half_height, surface)
 }

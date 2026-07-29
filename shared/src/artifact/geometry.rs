@@ -220,28 +220,6 @@ impl GeometryLayer {
 
         Ok(country_features)
     }
-
-    /// The bounding box enclosing every feature, reduced from the per-feature boxes. The home view
-    /// frames this rather than the theoretical ±85° world so the empty ocean beyond the outermost land
-    /// (the layer carries no Antarctica) is not shown.
-    pub fn bounding_box(&self) -> Result<BoundingBox, AppError> {
-        let country_features: Vec<CountryFeature> = self.iter_features()?;
-
-        let mut features_iter = country_features.iter();
-        let first_feature: &CountryFeature = features_iter
-            .next()
-            .ok_or_else(|| AppError::from("geometry layer has no features to bound".to_string()))?;
-
-        let mut bounding_box: BoundingBox = first_feature.bbox;
-        for feature in features_iter {
-            bounding_box.min_lon = bounding_box.min_lon.min(feature.bbox.min_lon);
-            bounding_box.min_lat = bounding_box.min_lat.min(feature.bbox.min_lat);
-            bounding_box.max_lon = bounding_box.max_lon.max(feature.bbox.max_lon);
-            bounding_box.max_lat = bounding_box.max_lat.max(feature.bbox.max_lat);
-        }
-
-        Ok(bounding_box)
-    }
 }
 
 /// Parse the geometry bytes eagerly; a parse failure (bad header) surfaces here
@@ -348,15 +326,6 @@ pub(crate) mod tests {
 
         assert_eq!(country_feature_hits.len(), 1);
         assert_eq!(country_feature_hits[0].iso3, "TST");
-    }
-
-    #[test]
-    fn bounding_box_encloses_every_feature() {
-        let geometry_layer: GeometryLayer = parse_geometry_layer(one_feature_fgb_bytes()).unwrap();
-
-        let bounding_box: BoundingBox = geometry_layer.bounding_box().unwrap();
-
-        assert_eq!(bounding_box, BoundingBox { min_lon: 0.0, min_lat: 0.0, max_lon: 2.0, max_lat: 3.0 });
     }
 
     #[test]
