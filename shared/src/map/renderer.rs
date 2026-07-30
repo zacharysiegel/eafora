@@ -299,7 +299,7 @@ impl Renderer {
     }
 
     /// Rewrites the per-country highlight state each frame: the hovered region gets the lift and a thin
-    /// outline, the selected region a bolder outline (no lift — it reads in the detail panel and, later,
+    /// outline, the selected region a bolder outline (no lift; it reads in the detail panel and, later,
     /// drives zoom-to-country). When the same country is both, it lifts and keeps the bolder outline. A
     /// region with no matching country (e.g. a stale hover after a bundle swap) is skipped.
     fn write_country_state(&self, frame_state: &FrameState) {
