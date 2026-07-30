@@ -7,7 +7,7 @@ use wgpu::{
 };
 
 use crate::error::AppError;
-use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
+use crate::map::gpu_types::{CountryState, FillVertex, HighlightVertex, ProjectedVertex, ViewportUniform, COUNTRY_STATE_CAP};
 
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
 /// (re)created at attach time once that format is available.
@@ -16,6 +16,9 @@ pub struct RenderPipelines {
     pub border: RenderPipeline,
     /// Paints the choropleth triangles.
     pub fill: RenderPipeline,
+    /// The selected/hovered country's triangles, inflated and painted black, drawn behind its fill so
+    /// only the extra rim shows as a uniform outline.
+    pub outline: RenderPipeline,
 }
 
 impl RenderPipelines {
@@ -37,13 +40,16 @@ impl RenderPipelines {
         });
         let shader_module: ShaderModule = create_map_shader_module(device);
         let border: RenderPipeline = create_border_pipeline(device, &shader_module, &pipeline_layout, surface_format);
-        let fill: RenderPipeline = create_fill_pipeline(device, &shader_module, &pipeline_layout, surface_format);
+        let fill: RenderPipeline =
+            create_triangle_pipeline(device, &shader_module, &pipeline_layout, surface_format, "eafora-fill-pipeline", "fill_vertex_main", "fill_fragment_main");
+        let outline: RenderPipeline =
+            create_triangle_pipeline(device, &shader_module, &pipeline_layout, surface_format, "eafora-outline-pipeline", "outline_vertex_main", "outline_fragment_main");
 
         if let Some(error) = drain_error_scopes(error_scopes).await {
             return Err(AppError::from(format!("building the render pipelines failed: {error}")));
         }
 
-        Ok(RenderPipelines { border, fill })
+        Ok(RenderPipelines { border, fill, outline })
     }
 }
 
@@ -71,19 +77,31 @@ fn create_map_shader_module(device: &Device) -> ShaderModule {
     })
 }
 
-pub(crate) fn create_viewport_bind_group_layout(device: &Device) -> BindGroupLayout {
+pub(crate) fn create_map_bind_group_layout(device: &Device) -> BindGroupLayout {
     device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-        label: Some("eafora-viewport-bind-group-layout"),
-        entries: &[BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStages::VERTEX,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: BufferSize::new(std::mem::size_of::<ViewportUniform>() as u64),
+        label: Some("eafora-map-bind-group-layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new(std::mem::size_of::<ViewportUniform>() as u64),
+                },
+                count: None,
             },
-            count: None,
-        }],
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::VERTEX,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: BufferSize::new((COUNTRY_STATE_CAP * std::mem::size_of::<CountryState>()) as u64),
+                },
+                count: None,
+            },
+        ],
     })
 }
 
@@ -94,11 +112,19 @@ fn create_border_pipeline(
     surface_format: TextureFormat,
 ) -> RenderPipeline {
     let position_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
-    let vertex_buffers: [Option<VertexBufferLayout>; 1] = [Some(VertexBufferLayout {
-        array_stride: std::mem::size_of::<ProjectedVertex>() as BufferAddress,
-        step_mode: VertexStepMode::Vertex,
-        attributes: &position_attributes,
-    })];
+    let highlight_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
+    let vertex_buffers: [Option<VertexBufferLayout>; 2] = [
+        Some(VertexBufferLayout {
+            array_stride: std::mem::size_of::<ProjectedVertex>() as BufferAddress,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &position_attributes,
+        }),
+        Some(VertexBufferLayout {
+            array_stride: std::mem::size_of::<HighlightVertex>() as BufferAddress,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &highlight_attributes,
+        }),
+    ];
 
     device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("eafora-border-pipeline"),
@@ -136,19 +162,25 @@ fn create_border_pipeline(
     })
 }
 
-fn create_fill_pipeline(
+fn create_triangle_pipeline(
     device: &Device,
     shader_module: &ShaderModule,
     pipeline_layout: &PipelineLayout,
     surface_format: TextureFormat,
+    label: &str,
+    vertex_entry_point: &str,
+    fragment_entry_point: &str,
 ) -> RenderPipeline {
-    // Position and color are separate vertex buffers, not interleaved: positions are static (uploaded
-    // once), while colors are rebuilt when the active statistic or period changes. Keeping them apart
-    // lets the color buffer be replaced without re-uploading geometry, and lets the border pipeline
-    // reuse the position buffer alone.
+    // Position, color, and highlight are separate vertex buffers, not interleaved: positions are static
+    // (uploaded once); colors are rebuilt when the active statistic or period changes; the highlight
+    // buffer (per-vertex boundary normal + country index) is static. Keeping them apart lets the color
+    // buffer be replaced without re-uploading geometry, and lets the border pipeline reuse the position
+    // and highlight buffers without the colors. The fill and outline pipelines share this layout; the
+    // outline reads the color attribute's buffer too but ignores it (its fragment shader is constant).
     let position_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
     let color_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x4];
-    let vertex_buffers: [Option<VertexBufferLayout>; 2] = [
+    let highlight_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
+    let vertex_buffers: [Option<VertexBufferLayout>; 3] = [
         Some(VertexBufferLayout {
             array_stride: std::mem::size_of::<ProjectedVertex>() as BufferAddress,
             step_mode: VertexStepMode::Vertex,
@@ -159,14 +191,19 @@ fn create_fill_pipeline(
             step_mode: VertexStepMode::Vertex,
             attributes: &color_attributes,
         }),
+        Some(VertexBufferLayout {
+            array_stride: std::mem::size_of::<HighlightVertex>() as BufferAddress,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &highlight_attributes,
+        }),
     ];
 
     device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("eafora-fill-pipeline"),
+        label: Some(label),
         layout: Some(pipeline_layout),
         vertex: VertexState {
             module: shader_module,
-            entry_point: Some("fill_vertex_main"),
+            entry_point: Some(vertex_entry_point),
             compilation_options: PipelineCompilationOptions::default(),
             buffers: &vertex_buffers,
         },
@@ -184,7 +221,7 @@ fn create_fill_pipeline(
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,
-            entry_point: Some("fill_fragment_main"),
+            entry_point: Some(fragment_entry_point),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
                 format: surface_format,
@@ -235,7 +272,7 @@ mod tests {
     #[ignore = "needs a GPU adapter; run with `cargo test -p shared --features render -- --ignored`"]
     async fn render_pipelines_compile_against_a_headless_device() {
         let (device, _queue): (Device, Queue) = headless_device().await;
-        let viewport_bind_group_layout: wgpu::BindGroupLayout = super::create_viewport_bind_group_layout(&device);
+        let viewport_bind_group_layout: wgpu::BindGroupLayout = super::create_map_bind_group_layout(&device);
 
         let _pipelines: RenderPipelines = RenderPipelines::create(&device, TextureFormat::Bgra8UnormSrgb, &viewport_bind_group_layout)
             .await

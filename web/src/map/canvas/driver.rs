@@ -185,6 +185,7 @@ impl Driver {
         };
 
         self.frame_state.selected_region = region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
+        self.request_redraw();
 
         let selection_view: Option<SelectionView> =
             region_hit.map(|region_hit| self.resolve_selection_view(&region_hit.iso3, &region_hit.name_en));
@@ -205,10 +206,16 @@ impl Driver {
         };
 
         self.frame_state.hovered_region = region_hit.map(|region_hit| region_hit.region_code);
+        self.request_redraw();
     }
 
     fn clear_hover(&mut self) {
+        if self.frame_state.hovered_region.is_none() {
+            return;
+        }
+
         self.frame_state.hovered_region = None;
+        self.request_redraw();
     }
 
     fn view_controls(&self) -> ViewControls {

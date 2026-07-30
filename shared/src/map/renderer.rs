@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ops::Range;
 use std::sync::Arc;
 
 use tokio::sync::watch;
@@ -16,9 +17,9 @@ use crate::artifact::Bundle;
 use crate::canonical::StatisticKind;
 use crate::error::AppError;
 use crate::map::color::{self, StatisticColorTransform, Rgba};
-use crate::map::{FrameState, Viewport};
+use crate::map::{FrameState, RegionCode, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
-use crate::map::gpu_types::{FillVertex, ProjectedVertex, ViewportUniform};
+use crate::map::gpu_types::{CountryState, FillVertex, HighlightVertex, ProjectedVertex, ViewportUniform, COUNTRY_STATE_CAP};
 use crate::map::pipeline::{self, RenderPipelines};
 use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
@@ -31,6 +32,13 @@ use crate::render::WindowHandle;
 // the canvas attach path takes an HtmlCanvasElement instead of a raw window handle.
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
+
+/// The outward lift, in screen pixels, applied to a hovered country so it reads as raised.
+const HOVER_LIFT_PX: f32 = 4.0;
+
+/// The width, in screen pixels, of the black outline drawn around the hovered country (the inflated
+/// black silhouette's rim beyond the lifted fill).
+const OUTLINE_PX: f32 = 2.0;
 
 /// Which GPU backend the renderer's wgpu instance may use. `ForceGl` restricts it to WebGL2 for the
 /// web client's `?renderer=webgl2` parity-testing flag; `Default` lets wgpu prefer WebGPU where present.
@@ -49,7 +57,7 @@ pub struct Renderer {
     queue: Queue,
     bundle_receiver: watch::Receiver<Arc<Bundle>>,
     country_geometry: CountryGeometry,
-    viewport_binding: ViewportBinding,
+    map_binding: MapBinding,
     fill_colors: FillColors,
     attached: Option<AttachedState>,
     _not_send: PhantomData<*const ()>,
@@ -58,6 +66,7 @@ pub struct Renderer {
 /// Uploaded to the GPU once at construction and never rebuilt.
 struct CountryGeometry {
     positions: CountedBuffer,
+    highlight: Buffer,
     fill: CountedBuffer,
     border: CountedBuffer,
     spans: Vec<CountrySpan>,
@@ -71,8 +80,17 @@ struct CountedBuffer {
 
 struct CountrySpan {
     iso3: String,
+    region_code: String,
     vertex_start: u32,
     vertex_count: u32,
+    fill_index_start: u32,
+    fill_index_count: u32,
+}
+
+impl CountrySpan {
+    fn fill_range(&self) -> Range<u32> {
+        self.fill_index_start..(self.fill_index_start + self.fill_index_count)
+    }
 }
 
 /// The inputs that determine the choropleth colors — the cache key for the color buffer. The bundle
@@ -98,20 +116,23 @@ struct FillColors {
     key: Option<FillColorKey>,
 }
 
-/// The viewport uniform's device-lifetime GPU resources. They are format-independent, so unlike the
-/// pipelines they are created once and outlive any surface; the buffer's contents are rewritten each
-/// frame with the current camera.
-struct ViewportBinding {
-    buffer: Buffer,
+/// The map's device-lifetime uniform GPU resources: the per-frame viewport buffer and the per-country
+/// highlight-state buffer, and the bind group over both. Format-independent, so unlike the pipelines
+/// they are created once and outlive any surface.
+struct MapBinding {
+    viewport_buffer: Buffer,
+    country_state_buffer: Buffer,
     bind_group: BindGroup,
     layout: BindGroupLayout,
 }
 
-/// The surface and its format-specialized pipelines, built together at attach and dropped together
-/// at detach. The geometry, viewport binding, and color buffer all outlive the surface.
+/// The surface, its format-specialized pipelines, and its size in physical pixels (for the screen-space
+/// highlight offset), built together at attach and dropped together at detach. The geometry, map
+/// binding, and color buffer all outlive the surface.
 struct AttachedState {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
+    size: (u32, u32),
 }
 
 impl Renderer {
@@ -142,7 +163,7 @@ impl Renderer {
 
         let bundle: Arc<Bundle> = bundle_receiver.borrow().clone();
         let country_geometry: CountryGeometry = upload_country_geometry(&device, &bundle)?;
-        let viewport_binding: ViewportBinding = create_viewport_binding(&device);
+        let map_binding: MapBinding = create_map_binding(&device);
         let fill_color_buffer: Buffer = device.create_buffer(&BufferDescriptor {
             label: Some("eafora-fill-colors"),
             size: country_geometry.positions.count as BufferAddress * std::mem::size_of::<FillVertex>() as BufferAddress,
@@ -158,7 +179,7 @@ impl Renderer {
             queue,
             bundle_receiver,
             country_geometry,
-            viewport_binding,
+            map_binding,
             fill_colors,
             attached: None,
             _not_send: PhantomData,
@@ -170,7 +191,7 @@ impl Renderer {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
 
-        self.attach(surface).await
+        self.attach(surface, width, height).await
     }
 
     #[cfg(target_arch = "wasm32")] // attaches from an HtmlCanvasElement, not a raw window handle
@@ -178,16 +199,16 @@ impl Renderer {
         let surface: WgpuSurface =
             WgpuSurface::from_canvas(&self.instance, &self.adapter, &self.device, canvas, width, height)?;
 
-        self.attach(surface).await
+        self.attach(surface, width, height).await
     }
 
     /// Builds the surface-format pipelines and stores the attached state. Surface-agnostic — shared by
     /// the native window-handle path and the canvas path — so it is not target-gated.
-    async fn attach(&mut self, surface: WgpuSurface) -> Result<(), AppError> {
+    async fn attach(&mut self, surface: WgpuSurface, width: u32, height: u32) -> Result<(), AppError> {
         let pipelines: RenderPipelines =
-            RenderPipelines::create(&self.device, surface.format(), &self.viewport_binding.layout).await?;
+            RenderPipelines::create(&self.device, surface.format(), &self.map_binding.layout).await?;
 
-        self.attached = Some(AttachedState { surface, pipelines });
+        self.attached = Some(AttachedState { surface, pipelines, size: (width, height) });
 
         Ok(())
     }
@@ -200,6 +221,7 @@ impl Renderer {
         let attached: &mut AttachedState = self.attached.as_mut()
                 .expect("resize_surface: a surface must be attached first");
         attached.surface.resize(&self.device, width, height);
+        attached.size = (width, height);
 
         Ok(())
     }
@@ -213,10 +235,11 @@ impl Renderer {
         };
 
         self.write_viewport_uniform(viewport);
+        self.write_country_state(frame_state);
 
         let view: TextureView = surface_texture.texture.create_view(&TextureViewDescriptor::default());
         let instance_count: u32 = if is_antimeridian_wrap(viewport) { 2 } else { 1 };
-        let command_buffer: CommandBuffer = self.record_map_pass(&view, instance_count);
+        let command_buffer: CommandBuffer = self.record_map_pass(&view, instance_count, frame_state);
 
         self.queue.submit([command_buffer]);
         self.queue.present(surface_texture);
@@ -266,14 +289,53 @@ impl Renderer {
     }
 
     fn write_viewport_uniform(&self, viewport: Viewport) {
-        let viewport_uniform: ViewportUniform = viewport.to_gpu();
+        let (width, height): (u32, u32) = self.attached.as_ref()
+            .expect("draw_frame: a surface must be attached first")
+            .size;
+        let viewport_uniform: ViewportUniform = viewport.to_gpu(Vec2 { x: width as f32, y: height as f32 });
 
-        self.queue.write_buffer(&self.viewport_binding.buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
+        self.queue.write_buffer(&self.map_binding.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
     }
 
-    fn record_map_pass(&self, view: &TextureView, instance_count: u32) -> CommandBuffer {
+    /// Rewrites the per-country highlight state each frame: the hovered region gets the lift, everything
+    /// else zero. A hovered region with no matching country (e.g. a stale hover after a bundle swap) is
+    /// skipped. Selection is not lifted — it reads in the detail panel and (later) drives zoom-to-country.
+    fn write_country_state(&self, frame_state: &FrameState) {
+        let mut country_state: Vec<CountryState> =
+            vec![CountryState { lift_px: 0.0, _padding: [0.0; 3] }; COUNTRY_STATE_CAP];
+
+        self.lift_region(&mut country_state, frame_state.hovered_region.as_ref());
+
+        self.queue.write_buffer(&self.map_binding.country_state_buffer, 0, bytemuck::cast_slice(&country_state));
+    }
+
+    fn lift_region(&self, country_state: &mut [CountryState], region: Option<&RegionCode>) {
+        let Some(region) = region else {
+            return;
+        };
+        let matching_index: Option<usize> =
+            self.country_geometry.spans.iter().position(|span| span.region_code == region.0);
+        let Some(country_index) = matching_index else {
+            return;
+        };
+
+        country_state[country_index].lift_px = HOVER_LIFT_PX;
+    }
+
+    /// The fill index range of the hovered country, or `None` when nothing is hovered or the hovered
+    /// region has no matching span. Redrawn on top of the base layer so the lifted country is not
+    /// overdrawn by neighbors.
+    fn hovered_fill_range(&self, frame_state: &FrameState) -> Option<Range<u32>> {
+        let hovered: &RegionCode = frame_state.hovered_region.as_ref()?;
+        let span: &CountrySpan = self.country_geometry.spans.iter().find(|span| span.region_code == hovered.0)?;
+
+        Some(span.fill_range())
+    }
+
+    fn record_map_pass(&self, view: &TextureView, instance_count: u32, frame_state: &FrameState) -> CommandBuffer {
         let attached: &AttachedState = self.attached.as_ref()
             .expect("draw_frame: a surface must be attached first");
+        let hovered_fill_range: Option<Range<u32>> = self.hovered_fill_range(frame_state);
 
         let mut encoder: CommandEncoder =
             self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-map-command-encoder") });
@@ -292,18 +354,38 @@ impl Renderer {
             multiview_mask: None,
         });
 
-        render_pass.set_bind_group(0, &self.viewport_binding.bind_group, &[]);
+        render_pass.set_bind_group(0, &self.map_binding.bind_group, &[]);
 
+        // Base layer: every country's fills, then every country's borders.
         render_pass.set_pipeline(&attached.pipelines.fill);
         render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
+        render_pass.set_vertex_buffer(2, self.country_geometry.highlight.slice(..));
         render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.fill.count, 0, 0..instance_count);
 
         render_pass.set_pipeline(&attached.pipelines.border);
         render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
+        render_pass.set_vertex_buffer(1, self.country_geometry.highlight.slice(..));
         render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
+
+        // On top: the hovered country, so it is not overdrawn by neighbors. First its fill triangles
+        // inflated by OUTLINE_PX and painted black (a silhouette), then the same triangles at the lift in
+        // the choropleth color on top: only the black rim shows, giving a uniform outline around the
+        // raised country (a filled silhouette, so clean even on multi-island countries).
+        if let Some(fill_range) = hovered_fill_range {
+            render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
+            render_pass.set_vertex_buffer(2, self.country_geometry.highlight.slice(..));
+            render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
+
+            render_pass.set_pipeline(&attached.pipelines.outline);
+            render_pass.draw_indexed(fill_range.clone(), 0, 0..instance_count);
+
+            render_pass.set_pipeline(&attached.pipelines.fill);
+            render_pass.draw_indexed(fill_range, 0, 0..instance_count);
+        }
 
         // wgpu has no RenderPass::end(); a pass ends only when dropped. Dropping records the end-of-pass
         // (via the backend pass's own Drop) and releases the pass's mutable borrow of the encoder; both
@@ -378,46 +460,77 @@ fn create_instance(backend: RendererBackend) -> Instance {
     }
 }
 
-fn create_viewport_binding(device: &Device) -> ViewportBinding {
-    let layout: BindGroupLayout = pipeline::create_viewport_bind_group_layout(device);
-    let buffer: Buffer = device.create_buffer(&BufferDescriptor {
+fn create_map_binding(device: &Device) -> MapBinding {
+    let layout: BindGroupLayout = pipeline::create_map_bind_group_layout(device);
+    let viewport_buffer: Buffer = device.create_buffer(&BufferDescriptor {
         label: Some("eafora-viewport-uniform"),
         size: size_of::<ViewportUniform>() as BufferAddress,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
+    let country_state_buffer: Buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("eafora-country-state-uniform"),
+        size: (COUNTRY_STATE_CAP * size_of::<CountryState>()) as BufferAddress,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
     let bind_group: BindGroup = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("eafora-viewport-bind-group"),
+        label: Some("eafora-map-bind-group"),
         layout: &layout,
-        entries: &[BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() }],
+        entries: &[
+            BindGroupEntry { binding: 0, resource: viewport_buffer.as_entire_binding() },
+            BindGroupEntry { binding: 1, resource: country_state_buffer.as_entire_binding() },
+        ],
     });
 
-    ViewportBinding { buffer, bind_group, layout }
+    MapBinding { viewport_buffer, country_state_buffer, bind_group, layout }
 }
 
 fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
     let country_meshes: Vec<CountryMesh> = country_mesh::build_country_meshes(&bundle.geometry)?;
 
+    if country_meshes.len() > COUNTRY_STATE_CAP {
+        return Err(AppError::from(format!(
+            "geometry has {} countries, over the per-country state cap of {}",
+            country_meshes.len(),
+            COUNTRY_STATE_CAP,
+        )));
+    }
+
     let mut positions: Vec<ProjectedVertex> = Vec::new();
+    let mut highlight_vertices: Vec<HighlightVertex> = Vec::new();
     let mut fill_indices: Vec<u32> = Vec::new();
     let mut border_indices: Vec<u32> = Vec::new();
     let mut spans: Vec<CountrySpan> = Vec::new();
-    for country_mesh in &country_meshes {
+    for (country_index, country_mesh) in country_meshes.iter().enumerate() {
         let vertex_start: u32 = positions.len() as u32;
+        let fill_index_start: u32 = fill_indices.len() as u32;
 
         positions.extend_from_slice(&country_mesh.vertices);
+        highlight_vertices.extend(country_mesh.normals.iter().map(|&normal| HighlightVertex {
+            normal,
+            country_index: country_index as u32,
+        }));
         fill_indices.extend(country_mesh.fill_indices.iter().map(|&index| vertex_start + index));
         border_indices.extend(country_mesh.border_indices.iter().map(|&index| vertex_start + index));
         spans.push(CountrySpan {
             iso3: country_mesh.iso3.clone(),
+            region_code: country_mesh.region_code.clone(),
             vertex_start,
             vertex_count: country_mesh.vertices.len() as u32,
+            fill_index_start,
+            fill_index_count: country_mesh.fill_indices.len() as u32,
         });
     }
 
     let positions_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
         label: Some("eafora-country-positions"),
         contents: bytemuck::cast_slice(&positions),
+        usage: BufferUsages::VERTEX,
+    });
+    let highlight_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("eafora-country-highlight"),
+        contents: bytemuck::cast_slice(&highlight_vertices),
         usage: BufferUsages::VERTEX,
     });
     let fill_index_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -433,6 +546,7 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
 
     Ok(CountryGeometry {
         positions: CountedBuffer { buffer: positions_buffer, count: positions.len() as u32 },
+        highlight: highlight_buffer,
         fill: CountedBuffer { buffer: fill_index_buffer, count: fill_indices.len() as u32 },
         border: CountedBuffer { buffer: border_index_buffer, count: border_indices.len() as u32 },
         spans,
@@ -440,10 +554,12 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
 }
 
 impl Viewport {
-    fn to_gpu(&self) -> ViewportUniform {
+    fn to_gpu(&self, surface_size: Vec2) -> ViewportUniform {
         ViewportUniform {
             projected_min: Vec2 { x: self.min.x as f32, y: self.min.y as f32 },
             projected_max: Vec2 { x: self.max.x as f32, y: self.max.y as f32 },
+            surface_size,
+            outline: Vec2 { x: OUTLINE_PX, y: 0.0 },
         }
     }
 }
@@ -472,12 +588,14 @@ mod tests {
             max: ProjectedPoint { x: 30.0, y: 1.5 },
         };
 
-        let uniform: ViewportUniform = viewport.to_gpu();
+        let uniform: ViewportUniform = viewport.to_gpu(Vec2 { x: 800.0, y: 600.0 });
 
         assert!((uniform.projected_min.x - (-10.0)).abs() < TOLERANCE);
         assert!((uniform.projected_min.y - (-1.5)).abs() < TOLERANCE);
         assert!((uniform.projected_max.x - 30.0).abs() < TOLERANCE);
         assert!((uniform.projected_max.y - 1.5).abs() < TOLERANCE);
+        assert!((uniform.surface_size.x - 800.0).abs() < TOLERANCE);
+        assert!((uniform.surface_size.y - 600.0).abs() < TOLERANCE);
     }
 
     #[test]
