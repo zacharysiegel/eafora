@@ -5,8 +5,11 @@ use crate::map::gpu_types::ProjectedVertex;
 use crate::map::projection::{self, ProjectedPoint};
 use crate::render::gpu_types::Vec2;
 
-/// Below this projected length an edge or a miter is treated as degenerate (a zero-length edge, or a
-/// spike vertex whose two edge normals cancel), and the normal falls back instead of dividing by ~zero.
+/// Divide-by-zero guard for normalizing a boundary normal, not a geometric tolerance. A normal is a
+/// vector divided by its length; a zero-length edge (duplicate vertices) or a spike vertex whose two
+/// edge normals cancel gives a ~zero length that would normalize to NaN, so below this the code falls
+/// back to a zero-or-neighbor normal. Projected units are radians and adjacent coastline vertices sit
+/// roughly 1e-4 to 1e-6 rad apart, so 1e-12 trips only on true degeneracies, never on a genuine edge.
 const NORMAL_EPSILON: f64 = 1e-12;
 
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, a per-vertex outward
