@@ -117,9 +117,10 @@ struct FillColors {
     key: Option<FillColorKey>,
 }
 
-/// Built once when the renderer is created and kept for its whole life. The render pipelines, in
-/// contrast, are rebuilt on every surface attach, because each pipeline is compiled for one specific
-/// surface pixel format; nothing here depends on the surface, so it is never rebuilt.
+/// The map's uniform buffers (shader inputs constant across a draw) and the bind group wiring them to
+/// the shaders. Built once when the renderer is created and kept for its whole life. The render
+/// pipelines, in contrast, are rebuilt on every surface attach, because each pipeline is compiled for
+/// one specific surface pixel format; nothing here depends on the surface, so it is never rebuilt.
 struct MapBinding {
     viewport_buffer: Buffer,
     country_state_buffer: Buffer,
