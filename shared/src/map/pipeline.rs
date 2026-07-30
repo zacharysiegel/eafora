@@ -173,7 +173,7 @@ fn create_triangle_pipeline(
 ) -> RenderPipeline {
     // Position, color, and highlight are separate vertex buffers, not interleaved: positions are static
     // (uploaded once); colors are rebuilt when the active statistic or period changes; the highlight
-    // buffer (per-vertex boundary normal + country index) is static. Keeping them apart lets the color
+    // buffer (per-vertex boundary outward-direction + country index) is static. Keeping them apart lets the color
     // buffer be replaced without re-uploading geometry, and lets the border pipeline reuse the position
     // and highlight buffers without the colors. The fill and outline pipelines share this layout; the
     // outline reads the color attribute's buffer too but ignores it (its fragment shader is constant).

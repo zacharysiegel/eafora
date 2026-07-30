@@ -18,12 +18,12 @@ pub struct FillVertex {
 }
 
 /// Per-vertex highlight input: the vertex shader looks the country's highlight state up by index and
-/// pushes the vertex outward along the normal by a screen-space amount. A separate buffer from the
-/// static `positions` and from `FillVertex`.
+/// pushes the vertex outward along the outward-direction by a screen-space amount. A separate buffer
+/// from the static `positions` and from `FillVertex`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct HighlightVertex {
-    pub normal: Vec2,
+    pub outward_direction: Vec2,
     pub country_index: u32,
 }
 

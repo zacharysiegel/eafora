@@ -521,8 +521,8 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         let fill_index_start: u32 = fill_indices.len() as u32;
 
         positions.extend_from_slice(&country_mesh.vertices);
-        highlight_vertices.extend(country_mesh.normals.iter().map(|&normal| HighlightVertex {
-            normal,
+        highlight_vertices.extend(country_mesh.outward_directions.iter().map(|&outward_direction| HighlightVertex {
+            outward_direction,
             country_index: country_index as u32,
         }));
         fill_indices.extend(country_mesh.fill_indices.iter().map(|&index| vertex_start + index));

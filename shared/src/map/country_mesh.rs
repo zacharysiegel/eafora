@@ -21,8 +21,8 @@ pub struct CountryMesh {
     pub iso3: String,
     pub region_code: String,
     pub vertices: Vec<ProjectedVertex>,
-    /// Parallel to `vertices`: the outward boundary normal at each vertex, for the highlight offset.
-    pub normals: Vec<Vec2>,
+    /// Parallel to `vertices`: the outward direction at each vertex, for the highlight offset.
+    pub outward_directions: Vec<Vec2>,
     pub fill_indices: Vec<u32>,
     pub border_indices: Vec<u32>,
 }
@@ -33,7 +33,7 @@ impl CountryMesh {
             iso3: feature.iso3.clone(),
             region_code: feature.region_code.clone(),
             vertices: Vec::new(),
-            normals: Vec::new(),
+            outward_directions: Vec::new(),
             fill_indices: Vec::new(),
             border_indices: Vec::new(),
         };
@@ -54,7 +54,7 @@ impl CountryMesh {
         let fill_triangle_indices: Vec<u32> = triangulate_fill(&projected_coordinates, &hole_indices, polygon_vertex_offset)?;
 
         self.vertices.extend(to_projected_vertices(&projected_coordinates));
-        self.normals.extend(polygon_outward_normals(&rings));
+        self.outward_directions.extend(polygon_outward_directions(&rings));
         self.fill_indices.extend(fill_triangle_indices);
         self.border_indices.extend(ring_edge_indices(&rings, polygon_vertex_offset));
 
@@ -162,10 +162,10 @@ fn open_ring(ring: &[(f64, f64)]) -> &[(f64, f64)] {
     }
 }
 
-/// Per-vertex outward boundary normals for a polygon's rings, in the same concatenated order
-/// `flatten_rings` produces vertices (exterior first, then holes). Offsetting a vertex along its normal
+/// Per-vertex outward directions for a polygon's rings, in the same concatenated order `flatten_rings`
+/// produces vertices (exterior first, then holes). Offsetting a vertex along its outward direction
 /// inflates the exterior and contracts the holes, so the solid area grows uniformly.
-fn polygon_outward_normals(rings: &[&[(f64, f64)]]) -> Vec<Vec2> {
+fn polygon_outward_directions(rings: &[&[(f64, f64)]]) -> Vec<Vec2> {
     rings
         .iter()
         .enumerate()
@@ -179,17 +179,17 @@ fn polygon_outward_normals(rings: &[&[(f64, f64)]]) -> Vec<Vec2> {
                 .collect();
             let is_hole: bool = ring_index > 0;
 
-            outward_normals_for_ring(&projected_ring, is_hole)
+            outward_directions_for_ring(&projected_ring, is_hole)
         })
         .collect()
 }
 
-/// The outward normal at each vertex of a closed ring of projected points (no repeated closing vertex):
-/// the unit miter of the two adjacent edges' normals, oriented away from the solid area. Winding is read
-/// from the signed area, so the ring's stored orientation does not matter; a hole flips inward so the
-/// solid grows into it. The miter is unit length (no `1/cos` scaling), so a sharp corner rounds slightly
-/// rather than shooting a spike.
-fn outward_normals_for_ring(ring: &[(f64, f64)], is_hole: bool) -> Vec<Vec2> {
+/// The outward direction at each vertex of a closed ring of projected points (no repeated closing
+/// vertex): the unit miter of the two adjacent edges' normals, oriented away from the solid area.
+/// Winding is read from the signed area, so the ring's stored orientation does not matter; a hole flips
+/// inward so the solid grows into it. The miter is unit length (no `1/cos` scaling), so a sharp corner
+/// rounds slightly rather than shooting a spike.
+fn outward_directions_for_ring(ring: &[(f64, f64)], is_hole: bool) -> Vec<Vec2> {
     let vertex_count: usize = ring.len();
     if vertex_count < 3 {
         return vec![Vec2 { x: 0.0, y: 0.0 }; vertex_count];
@@ -326,46 +326,46 @@ mod tests {
     }
 
     #[test]
-    fn outward_normals_for_ring_points_away_from_a_ccw_exterior() {
+    fn outward_directions_for_ring_points_away_from_a_ccw_exterior() {
         let square: [(f64, f64); 4] = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
 
-        let normals: Vec<Vec2> = outward_normals_for_ring(&square, false);
+        let outward_directions: Vec<Vec2> = outward_directions_for_ring(&square, false);
 
         let diagonal: f32 = 0.5_f32.sqrt();
         let expected: [(f32, f32); 4] = [(-diagonal, -diagonal), (diagonal, -diagonal), (diagonal, diagonal), (-diagonal, diagonal)];
-        for (normal, (expected_x, expected_y)) in normals.iter().zip(expected) {
-            assert!((normal.x - expected_x).abs() < 1e-5);
-            assert!((normal.y - expected_y).abs() < 1e-5);
+        for (outward_direction, (expected_x, expected_y)) in outward_directions.iter().zip(expected) {
+            assert!((outward_direction.x - expected_x).abs() < 1e-5);
+            assert!((outward_direction.y - expected_y).abs() < 1e-5);
         }
     }
 
     #[test]
-    fn outward_normals_for_ring_is_winding_agnostic() {
+    fn outward_directions_for_ring_is_winding_agnostic() {
         let clockwise_square: [(f64, f64); 4] = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)];
 
-        let normals: Vec<Vec2> = outward_normals_for_ring(&clockwise_square, false);
+        let outward_directions: Vec<Vec2> = outward_directions_for_ring(&clockwise_square, false);
 
         let diagonal: f32 = 0.5_f32.sqrt();
-        assert!((normals[0].x - -diagonal).abs() < 1e-5);
-        assert!((normals[0].y - -diagonal).abs() < 1e-5);
+        assert!((outward_directions[0].x - -diagonal).abs() < 1e-5);
+        assert!((outward_directions[0].y - -diagonal).abs() < 1e-5);
     }
 
     #[test]
-    fn outward_normals_for_ring_flips_inward_for_a_hole() {
+    fn outward_directions_for_ring_flips_inward_for_a_hole() {
         let square: [(f64, f64); 4] = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
 
-        let normals: Vec<Vec2> = outward_normals_for_ring(&square, true);
+        let outward_directions: Vec<Vec2> = outward_directions_for_ring(&square, true);
 
         let diagonal: f32 = 0.5_f32.sqrt();
-        assert!((normals[0].x - diagonal).abs() < 1e-5);
-        assert!((normals[0].y - diagonal).abs() < 1e-5);
+        assert!((outward_directions[0].x - diagonal).abs() < 1e-5);
+        assert!((outward_directions[0].y - diagonal).abs() < 1e-5);
     }
 
     #[test]
-    fn from_feature_normal_per_vertex_points_away_from_the_interior() {
+    fn from_feature_outward_direction_per_vertex_points_away_from_the_interior() {
         let mesh: CountryMesh = testland_mesh();
 
-        assert_eq!(mesh.normals.len(), mesh.vertices.len());
+        assert_eq!(mesh.outward_directions.len(), mesh.vertices.len());
 
         let projected_corners: Vec<ProjectedPoint> = TESTLAND_CORNERS
             .iter()
@@ -376,8 +376,8 @@ mod tests {
 
         for vertex_index in 0..mesh.vertices.len() {
             let (x, y): (f64, f64) = vertex_position(&mesh, vertex_index as u32);
-            let normal: &Vec2 = &mesh.normals[vertex_index];
-            let outward_dot: f64 = normal.x as f64 * (x - center_x) + normal.y as f64 * (y - center_y);
+            let outward_direction: &Vec2 = &mesh.outward_directions[vertex_index];
+            let outward_dot: f64 = outward_direction.x as f64 * (x - center_x) + outward_direction.y as f64 * (y - center_y);
 
             assert!(outward_dot > 0.0);
         }
