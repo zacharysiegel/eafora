@@ -117,9 +117,8 @@ struct FillColors {
     key: Option<FillColorKey>,
 }
 
-/// The map's device-lifetime uniform GPU resources: the per-frame viewport buffer and the per-country
-/// highlight-state buffer, and the bind group over both. Format-independent, so unlike the pipelines
-/// they are created once and outlive any surface.
+/// The map's device-lifetime uniform GPU resources. Format-independent, so unlike the pipelines they
+/// are created once and outlive any surface.
 struct MapBinding {
     viewport_buffer: Buffer,
     country_state_buffer: Buffer,
@@ -127,12 +126,12 @@ struct MapBinding {
     layout: BindGroupLayout,
 }
 
-/// The surface, its format-specialized pipelines, and its size in physical pixels (for the screen-space
-/// highlight offset), built together at attach and dropped together at detach. The geometry, map
-/// binding, and color buffer all outlive the surface.
+/// Created at attach and dropped at detach as a unit; the geometry, map binding, and color buffer all
+/// outlive the surface.
 struct AttachedState {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
+    /// Physical pixels, for converting a screen-space highlight offset to projected units.
     size: (u32, u32),
 }
 

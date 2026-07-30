@@ -17,9 +17,9 @@ pub struct FillVertex {
     pub color: Vec4,
 }
 
-/// A per-vertex outward boundary normal and the index of the country the vertex belongs to. The vertex
-/// shader looks that country's highlight state up by the index and pushes the vertex outward along the
-/// normal by a screen-space amount. A separate buffer from the static `positions` and from `FillVertex`.
+/// Per-vertex highlight input: the vertex shader looks the country's highlight state up by index and
+/// pushes the vertex outward along the normal by a screen-space amount. A separate buffer from the
+/// static `positions` and from `FillVertex`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct HighlightVertex {
@@ -27,28 +27,29 @@ pub struct HighlightVertex {
     pub country_index: u32,
 }
 
-/// The projected viewport corners plus the surface's pixel size, which the vertex shader uses to turn a
-/// screen-pixel highlight offset into a projected length. Padded to 32 bytes (a multiple of 16). The
-/// antimeridian wrap is derived in the shader from the bounds (per instance), so it is not stored here.
+/// Frame-global rendering parameters shared by every vertex shader. Padded to 32 bytes (a multiple of
+/// 16). The antimeridian wrap is derived in the shader from the bounds (per instance), so it is not
+/// stored here.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewportUniform {
     pub projected_min: Vec2,
     pub projected_max: Vec2,
+    /// Physical pixels; converts a screen-pixel highlight offset to a projected length.
     pub surface_size: Vec2,
     pub _padding: Vec2,
 }
 
 const _: () = assert!(std::mem::size_of::<ViewportUniform>() == 32);
 
-/// Per-country highlight state, indexed by `HighlightVertex::country_index` in a uniform array. `lift_px`
-/// is the outward lift in screen pixels (0 unless hovered); `outline_px` is the black outline rim width
-/// in screen pixels (0 unless hovered or selected). Padded to 16 bytes to match the std140 uniform-array
-/// element stride.
+/// Per-country highlight state, indexed by `HighlightVertex::country_index` in a uniform array. Padded
+/// to 16 bytes to match the std140 uniform-array element stride.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CountryState {
+    /// Outward lift in screen pixels (0 unless hovered).
     pub lift_px: f32,
+    /// Black outline rim width in screen pixels (0 unless hovered or selected).
     pub outline_px: f32,
     pub _padding: [f32; 2],
 }

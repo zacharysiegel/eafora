@@ -14,16 +14,14 @@ use crate::render::gpu_types::Vec2;
 /// above f64 rounding noise, so it flags only coincident points and exact spikes at any resolution.
 const NORMAL_EPSILON: f64 = 1e-12;
 
-/// A country's GPU-ready geometry: projected vertices shared by both pipelines, a per-vertex outward
-/// boundary normal (parallel to `vertices`) for the highlight offset, the fill triangle indices
-/// (earcut), and the border line-segment indices (each ring's edges as `LineList` pairs).
-/// It owns its data and holds no GPU handles, so it is `Send`: a worker thread can build it, or the
-/// producer can bake it into the artifact, without involving the renderer.
+/// A country's GPU-ready geometry. It owns its data and holds no GPU handles, so it is `Send`: a worker
+/// thread can build it, or the producer can bake it into the artifact, without involving the renderer.
 #[derive(Debug, Clone)]
 pub struct CountryMesh {
     pub iso3: String,
     pub region_code: String,
     pub vertices: Vec<ProjectedVertex>,
+    /// Parallel to `vertices`: the outward boundary normal at each vertex, for the highlight offset.
     pub normals: Vec<Vec2>,
     pub fill_indices: Vec<u32>,
     pub border_indices: Vec<u32>,
