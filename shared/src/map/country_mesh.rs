@@ -9,9 +9,9 @@ use crate::render::gpu_types::Vec2;
 /// vector divided by its length; a zero-length edge (duplicate vertices) or a spike vertex whose two
 /// edge normals cancel gives a ~zero length that would normalize to NaN. Below this the code substitutes
 /// a safe value instead of normalizing: a zero vector for a dead edge, or one adjacent edge's unit
-/// normal for a cancelling spike. Projected coordinates are order-1 radians, so 1e-12 sits far below the
-/// separation of any two genuinely distinct points yet above f64 rounding noise: it flags only
-/// coincident points and exact spikes, whatever the geometry's resolution.
+/// normal for a cancelling spike. Projected coordinates are radians spanning roughly ±π, so any distance
+/// is at most a few units; 1e-12 sits far below the separation of any two genuinely distinct points yet
+/// above f64 rounding noise, so it flags only coincident points and exact spikes at any resolution.
 const NORMAL_EPSILON: f64 = 1e-12;
 
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, a per-vertex outward
