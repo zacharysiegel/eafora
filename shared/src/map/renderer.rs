@@ -36,9 +36,10 @@ use web_sys::HtmlCanvasElement;
 /// The outward lift, in screen pixels, applied to a hovered country so it reads as raised.
 const HOVER_LIFT_PX: f32 = 4.0;
 
-/// The width, in screen pixels, of the black outline drawn around the hovered country (the inflated
-/// black silhouette's rim beyond the lifted fill).
-const OUTLINE_PX: f32 = 2.0;
+/// The black outline rim widths, in screen pixels: a thin rim on the hovered country and a bolder one on
+/// the selected country (its persistent on-map indicator, since selection does not lift).
+const HOVER_OUTLINE_PX: f32 = 2.0;
+const SELECTED_OUTLINE_PX: f32 = 6.0;
 
 /// Which GPU backend the renderer's wgpu instance may use. `ForceGl` restricts it to WebGL2 for the
 /// web client's `?renderer=webgl2` parity-testing flag; `Default` lets wgpu prefer WebGPU where present.
@@ -297,45 +298,58 @@ impl Renderer {
         self.queue.write_buffer(&self.map_binding.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
     }
 
-    /// Rewrites the per-country highlight state each frame: the hovered region gets the lift, everything
-    /// else zero. A hovered region with no matching country (e.g. a stale hover after a bundle swap) is
-    /// skipped. Selection is not lifted — it reads in the detail panel and (later) drives zoom-to-country.
+    /// Rewrites the per-country highlight state each frame: the hovered region gets the lift and a thin
+    /// outline, the selected region a bolder outline (no lift — it reads in the detail panel and, later,
+    /// drives zoom-to-country). When the same country is both, it lifts and keeps the bolder outline. A
+    /// region with no matching country (e.g. a stale hover after a bundle swap) is skipped.
     fn write_country_state(&self, frame_state: &FrameState) {
         let mut country_state: Vec<CountryState> =
-            vec![CountryState { lift_px: 0.0, _padding: [0.0; 3] }; COUNTRY_STATE_CAP];
+            vec![CountryState { lift_px: 0.0, outline_px: 0.0, _padding: [0.0; 2] }; COUNTRY_STATE_CAP];
 
-        self.lift_region(&mut country_state, frame_state.hovered_region.as_ref());
+        if let Some(index) = self.country_index_of(frame_state.selected_region.as_ref()) {
+            country_state[index].outline_px = SELECTED_OUTLINE_PX;
+        }
+        if let Some(index) = self.country_index_of(frame_state.hovered_region.as_ref()) {
+            country_state[index].lift_px = HOVER_LIFT_PX;
+            country_state[index].outline_px = country_state[index].outline_px.max(HOVER_OUTLINE_PX);
+        }
 
         self.queue.write_buffer(&self.map_binding.country_state_buffer, 0, bytemuck::cast_slice(&country_state));
     }
 
-    fn lift_region(&self, country_state: &mut [CountryState], region: Option<&RegionCode>) {
-        let Some(region) = region else {
-            return;
-        };
-        let matching_index: Option<usize> =
-            self.country_geometry.spans.iter().position(|span| span.region_code == region.0);
-        let Some(country_index) = matching_index else {
-            return;
-        };
+    /// The build-order index of the span whose region matches `region`, i.e. the `country_index` its
+    /// vertices carry, or `None` when `region` is absent or has no matching span.
+    fn country_index_of(&self, region: Option<&RegionCode>) -> Option<usize> {
+        let region: &RegionCode = region?;
 
-        country_state[country_index].lift_px = HOVER_LIFT_PX;
+        self.country_geometry.spans.iter().position(|span| span.region_code == region.0)
     }
 
-    /// The fill index range of the hovered country, or `None` when nothing is hovered or the hovered
-    /// region has no matching span. Redrawn on top of the base layer so the lifted country is not
-    /// overdrawn by neighbors.
-    fn hovered_fill_range(&self, frame_state: &FrameState) -> Option<Range<u32>> {
-        let hovered: &RegionCode = frame_state.hovered_region.as_ref()?;
-        let span: &CountrySpan = self.country_geometry.spans.iter().find(|span| span.region_code == hovered.0)?;
+    /// The fill index ranges of the selected and hovered countries in draw order (selected first,
+    /// hovered last so hover renders on top), deduplicated when they are the same country, skipping a
+    /// region with no matching span. Each is redrawn on top of the base layer as a black silhouette plus
+    /// fill, so it is not overdrawn by neighbors.
+    fn emphasized_fill_ranges(&self, frame_state: &FrameState) -> Vec<Range<u32>> {
+        let selected: Option<usize> = self.country_index_of(frame_state.selected_region.as_ref());
+        let hovered: Option<usize> = self.country_index_of(frame_state.hovered_region.as_ref());
 
-        Some(span.fill_range())
+        let mut indices: Vec<usize> = Vec::new();
+        if let Some(selected) = selected {
+            indices.push(selected);
+        }
+        if let Some(hovered) = hovered {
+            if Some(hovered) != selected {
+                indices.push(hovered);
+            }
+        }
+
+        indices.into_iter().map(|index| self.country_geometry.spans[index].fill_range()).collect()
     }
 
     fn record_map_pass(&self, view: &TextureView, instance_count: u32, frame_state: &FrameState) -> CommandBuffer {
         let attached: &AttachedState = self.attached.as_ref()
             .expect("draw_frame: a surface must be attached first");
-        let hovered_fill_range: Option<Range<u32>> = self.hovered_fill_range(frame_state);
+        let emphasized_fill_ranges: Vec<Range<u32>> = self.emphasized_fill_ranges(frame_state);
 
         let mut encoder: CommandEncoder =
             self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-map-command-encoder") });
@@ -370,11 +384,11 @@ impl Renderer {
         render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
 
-        // On top: the hovered country, so it is not overdrawn by neighbors. First its fill triangles
-        // inflated by OUTLINE_PX and painted black (a silhouette), then the same triangles at the lift in
-        // the choropleth color on top: only the black rim shows, giving a uniform outline around the
-        // raised country (a filled silhouette, so clean even on multi-island countries).
-        if let Some(fill_range) = hovered_fill_range {
+        // On top: the selected and hovered countries, so they are not overdrawn by neighbors. For each,
+        // its fill triangles inflated by its `outline_px` and painted black (a silhouette), then the same
+        // triangles at its lift in the choropleth color on top: only the black rim shows, giving a
+        // uniform outline (a filled silhouette, so clean even on multi-island countries).
+        for fill_range in &emphasized_fill_ranges {
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
             render_pass.set_vertex_buffer(2, self.country_geometry.highlight.slice(..));
@@ -384,7 +398,7 @@ impl Renderer {
             render_pass.draw_indexed(fill_range.clone(), 0, 0..instance_count);
 
             render_pass.set_pipeline(&attached.pipelines.fill);
-            render_pass.draw_indexed(fill_range, 0, 0..instance_count);
+            render_pass.draw_indexed(fill_range.clone(), 0, 0..instance_count);
         }
 
         // wgpu has no RenderPass::end(); a pass ends only when dropped. Dropping records the end-of-pass
@@ -559,7 +573,7 @@ impl Viewport {
             projected_min: Vec2 { x: self.min.x as f32, y: self.min.y as f32 },
             projected_max: Vec2 { x: self.max.x as f32, y: self.max.y as f32 },
             surface_size,
-            outline: Vec2 { x: OUTLINE_PX, y: 0.0 },
+            _padding: Vec2 { x: 0.0, y: 0.0 },
         }
     }
 }

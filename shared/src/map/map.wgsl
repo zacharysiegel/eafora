@@ -2,7 +2,7 @@ struct ViewportUniform {
     projected_min: vec2<f32>,
     projected_max: vec2<f32>,
     surface_size: vec2<f32>,
-    outline: vec2<f32>,
+    padding: vec2<f32>,
 };
 
 @group(0) @binding(0)
@@ -14,9 +14,9 @@ var<uniform> viewport: ViewportUniform;
 // WebKit require this); matches CountryState in gpu_types.rs.
 struct CountryState {
     lift_px: f32,
+    outline_px: f32,
     padding0: f32,
     padding1: f32,
-    padding2: f32,
 };
 
 @group(0) @binding(1)
@@ -95,7 +95,8 @@ fn fill_fragment_main(input: FillVertexOutput) -> @location(0) vec4<f32> {
 
 @vertex
 fn outline_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
-    let inflated: vec2<f32> = highlight_offset(input.position, input.normal, input.country_index, viewport.outline.x);
+    let outline_px: f32 = country_state[input.country_index].outline_px;
+    let inflated: vec2<f32> = highlight_offset(input.position, input.normal, input.country_index, outline_px);
     return project_to_clip(inflated, instance_index);
 }
 
