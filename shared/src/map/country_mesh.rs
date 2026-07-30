@@ -7,9 +7,11 @@ use crate::render::gpu_types::Vec2;
 
 /// Divide-by-zero guard for normalizing a boundary normal, not a geometric tolerance. A normal is a
 /// vector divided by its length; a zero-length edge (duplicate vertices) or a spike vertex whose two
-/// edge normals cancel gives a ~zero length that would normalize to NaN, so below this the code falls
-/// back to a zero-or-neighbor normal. Projected units are radians and adjacent coastline vertices sit
-/// roughly 1e-4 to 1e-6 rad apart, so 1e-12 trips only on true degeneracies, never on a genuine edge.
+/// edge normals cancel gives a ~zero length that would normalize to NaN. Below this the code substitutes
+/// a safe value instead of normalizing: a zero vector for a dead edge, or one adjacent edge's unit
+/// normal for a cancelling spike. Projected coordinates are order-1 radians, so 1e-12 sits far below the
+/// separation of any two genuinely distinct points yet above f64 rounding noise: it flags only
+/// coincident points and exact spikes, whatever the geometry's resolution.
 const NORMAL_EPSILON: f64 = 1e-12;
 
 /// A country's GPU-ready geometry: projected vertices shared by both pipelines, a per-vertex outward
