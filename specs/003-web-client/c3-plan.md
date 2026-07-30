@@ -67,69 +67,72 @@ Pan/zoom (C3.3), the selection/hover render pass (C3.2), any animation (C3.4). C
 
 ## C3.2 — selection/hover render pass
 
-- Affected crates: `shared` (map: `renderer`, `country_mesh`, `gpu_types`, `map.wgsl`); `web` unchanged (the driver already tracks `selected_region` / `hovered_region`).
+- Affected crates: `shared` (map: `renderer`, `country_mesh`, `gpu_types`, `pipeline`, `map.wgsl`); `web` unchanged for rendering (the driver already tracks `selected_region` / `hovered_region`, and now requests a redraw when either changes).
 
 ### Problem
 
-The GPU has no per-country identity: `positions`, `fill` indices, and `border` indices are each one concatenated buffer, drawn in a single `draw_indexed`. Country identity lives only CPU-side in `renderer`'s `spans` (keyed by iso3). Both C3.2 effects need the vertex shader to know, per vertex, which country it belongs to, that country's highlight state, and which way to push each boundary vertex:
+The GPU has no per-country identity: `positions`, `fill` indices, and `border` indices are each one concatenated buffer, drawn in a single `draw_indexed`. Country identity lives only CPU-side in `renderer`'s `spans`. The render pass needs the vertex shader to know, per vertex, which country it belongs to, that country's highlight state, and which way to push each boundary vertex, to produce:
 
-- a discrete lift (inflate) on the hovered and selected countries, each around its own boundary;
-- a 2px black outline on the selected country.
+- a discrete raise on the **hovered** country;
+- a black outline on the hovered country (thin) and the selected country (bold).
 
-Hit-testing must keep reading the unscaled source polygon — it already runs on a separate CPU path in `hit_test` — so a country lifting under the cursor never changes which region is hit.
+Hit-testing must keep reading the unscaled source polygon — it runs on a separate CPU path in `hit_test` — so a country raising under the cursor never changes which region is hit.
 
 ### Design
 
-**Per-country identity and boundary normals on the GPU (FR-017's uniform-indexed-by-country).**
+**Per-country identity and boundary normals (FR-017's uniform-indexed-by-country).**
 
-- Bake two per-vertex attributes at mesh build, in a new buffer alongside the static `positions` buffer: `country_index: u32` (assigned in country build order) and `outward_normal: vec2<f32>` (the unit normal perpendicular to the country's boundary at that vertex — the miter of its two adjacent edges, sign from the ring winding so it points *out* of the solid area, and *into* hole rings). Miter length is clamped so an acute cape does not shoot a spike (negligible at a 2–3px offset).
-- A per-country **state uniform buffer**: `array<CountryState, CAP>` indexed by `country_index`, each entry `{ lift_px: f32 }` padded to 16 bytes, rewritten each frame from `frame_state.selected_region` / `hovered_region` (`lift_px` is the lift amount if hovered or selected, else 0). No centroid — the offset is perpendicular-to-edge, not radial-from-center. It is a uniform buffer, not storage, because the renderer supports a WebGL2 backend (`ForceGl`) which has no storage buffers; `CAP` is a fixed cap ≥ the loaded country count (≈300).
-- `renderer`'s `CountrySpan` gains `region_code` (it currently carries only iso3) so the per-frame update can match `frame_state`'s `RegionCode`.
+- Bake two per-vertex attributes at mesh build, in a buffer alongside the static `positions`: `country_index: u32` (assigned in country build order) and `outward_normal: vec2<f32>` — the unit miter of the vertex's two adjacent edges, oriented from the ring's signed-area winding so it points *out* of the solid area, and *into* hole rings. The miter is unit length (no `1/cos` scaling), so a sharp cape rounds slightly rather than shooting a spike; no clamping needed.
+- A per-country **state uniform buffer**, `array<CountryState, COUNTRY_STATE_CAP>` indexed by `country_index`, each entry `{ lift_px: f32, outline_px: f32 }` padded to 16 bytes, rewritten each frame. Uniform, not storage, because the renderer supports a WebGL2 backend (`ForceGl`) which has no storage buffers. `COUNTRY_STATE_CAP = 512` (≥ the loaded country count; the upload errors if exceeded). The WGSL struct is padded to a full 16-byte stride: a bare-`f32` element is under-sized for a uniform array and reads misaligned on stricter WGSL validators (WebKit), rendering nothing highlighted.
+- `CountrySpan` gains `region_code` (to match `frame_state`'s `RegionCode` when writing state) and the country's **fill-index range** (to redraw just that country on top).
 
-**Perpendicular, screen-space offset (shared by the lift and the outline).**
+**Perpendicular, screen-space offset.**
 
-A vertex is pushed outward along its boundary normal by a constant *screen-space* amount, so the band is uniform width on every country, at every zoom, and on every shape — compact, elongated, or multi-island — because each edge moves perpendicular to *itself* rather than away from a shared centroid (an archipelago's islands each inflate around their own coastline instead of fleeing a centroid out in the sea):
+A vertex is pushed outward along its boundary normal by a constant *screen-space* amount, so the width is uniform on every country, at every zoom, and on every shape — compact, elongated, or multi-island — because each edge moves perpendicular to *itself*, not away from a shared centroid (an archipelago's islands each inflate around their own coastline instead of fleeing a centroid out in the sea):
 
 ```
-pos_out = pos + outward_normal * k;
+pos_out = pos + outward_normal * ((lift_px + extra_px) * projected_per_pixel)
 ```
 
-`k` is the projected-space length of a target pixel width, computed per frame from the isotropic projected-units-per-pixel — uniform in every direction precisely because C3.1 made projected space isotropic: `k = target_px * (viewport_span_y / surface_height_px)`. The shader gets the surface height via the viewport uniform (extended) or a sibling uniform.
+`projected_per_pixel = viewport_span_y / surface_height_px` — uniform in every direction precisely because C3.1 made projected space isotropic. `surface_size` is carried in the viewport uniform. `extra_px` is 0 in the fill and border vertex shaders and the country's `outline_px` in the outline vertex shader.
 
-- **Lift.** Hovered or selected countries offset by `LIFT_PX`, others by 0, in **both** the fill and border vertex shaders so a country and its hairline border lift together.
+**Hover and selection state (written per frame).**
 
-**Selection outline (black silhouette via the same offset).**
+- Selected region → `outline_px = SELECTED_OUTLINE_PX` (6px), no lift.
+- Hovered region → `lift_px = HOVER_LIFT_PX` (4px) and `outline_px = max(outline_px, HOVER_OUTLINE_PX)` (2px).
 
-The selected country's fill is redrawn over the base layer, inflated an extra 2px in black, then its normal fill on top, leaving a uniform 2px black rim that reads over neighbors:
+So selection is a bold outline with no raise (its persistent on-map marker, alongside the detail panel and the coming zoom-to-country); hover raises the country with a thin outline; a country that is both raises and keeps the bold outline.
 
-1. Fills — all countries at their lift offset (base layer).
-2. Selected outline — the selected country's fill offset by `LIFT_PX + 2px`, forced black, drawn over the base so the rim covers into neighboring fills.
-3. Selected fill — the selected country's fill at `LIFT_PX`, its choropleth color, over (2), covering the interior and leaving the 2px rim.
-4. Borders — all countries at their lift offset.
+**Outline as an inflated black silhouette.**
 
-Steps 2–3 draw only the selected country, so `CountrySpan` also carries the country's **fill-index range** (`fill_index_start` / `fill_index_count`); the renderer issues `draw_indexed` over just that range when a region is selected. A small per-draw uniform supplies the extra offset (0 or 2px) and whether to force black.
+A third triangle pipeline (`outline`) shares the fill pipeline's vertex layout; its vertex shader inflates each vertex by `outline_px` beyond the lift, and its fragment shader is a constant black. It is a filled silhouette, not stroked line segments, so the rim is uniform even on multi-island countries, with no missing-border artifact.
 
-Because the offset is a true perpendicular stroke, the rim is uniform on archipelagos and elongated countries too; there is no radial-offset residual to fall back from.
+Draw order in the map pass:
 
-**Phasing.** Two commits on the one branch: (1) per-country identity + boundary normals + state buffer + lift (fill and border); (2) the selection outline (fill-index ranges + the three-step draw order).
+1. Base fills — all countries (each raised by its `lift_px`).
+2. Base borders — all countries (each raised by its `lift_px`).
+3. For each emphasized country (selected first, hovered last, deduplicated when the same country): its black silhouette (inflated by `outline_px`), then its fill (at `lift_px`) on top.
+
+Redrawing the emphasized country on top places it above its neighbors; its fill covers the silhouette's interior — leaving only the outline rim — and covers its own hairline border (replaced by the rim). The renderer draws only that country's fill-index range for step 3.
 
 ### Testing
 
-- `country_mesh`: `country_index` assigned per country in build order; `outward_normal` bisects a vertex's two adjacent edges and points outside the solid area (winding-correct, and into hole rings) — host test over a two-feature layer (one with a hole) asserting the indices and normal directions, and that `CountrySpan`'s fill-index ranges tile the fill buffer with no gaps or overlap.
-- The screen-space `k` (target_px + viewport span + surface height → projected `k`) is a pure function — host test.
-- `renderer` (feature `render`): the per-country state buffer is rewritten from `frame_state` so the selected/hovered `RegionCode` lands on the correct `country_index`'s `lift_px`.
-- WGSL is runtime-compiled, so the shader offset and the outline draw order are validated in the browser; note this in the PR.
-- Run `cargo test -p shared --features render`.
+- `country_mesh`: `country_index` per country in build order; `outward_normal` is the winding-correct outward miter — host tests over hand-built CCW and CW rings (winding-agnostic), a hole ring (flips inward), and the Testland mesh (each normal points away from the interior).
+- `renderer` (feature `render`): `viewport.to_gpu` carries the projected bounds and the surface size.
+- WGSL is compiled at runtime, so the shader offset, the outline pipeline, and the draw order are validated in the browser (confirmed in Chrome and Safari).
+- Run `cargo test -p shared --features render` (the renderer and `country_mesh` are `render`-gated).
 
 ### Out of scope for C3.2
 
-Pan/zoom (C3.3), animation (C3.4). The lift is discrete and instant; hit-testing is unchanged.
+Pan/zoom (C3.3), animation (C3.4). The raise and outline are discrete and instant; hit-testing is unchanged.
+
+> **Deviation from the pre-implementation design.** The written plan had "a discrete lift on hovered and selected, and a 2px outline on selected," via a per-draw uniform toggling black and the offset. In building it: (a) a constant-pixel offset is a good uniform *outline* but a poor *lift* — invisible on a large country, self-intersecting on a small one — so the emphasis is carried by drawing the country on top plus the outline, with only a subtle lift; (b) selection no longer lifts (redundant with the panel and zoom-to-country) and instead gets a bolder outline; (c) the outline is a dedicated black-silhouette *pipeline* driven by a per-country `outline_px`, not a per-draw uniform; (d) the WGSL `CountryState` needed explicit 16-byte padding for WebKit. Tunable constants: `HOVER_LIFT_PX = 4.0`, `HOVER_OUTLINE_PX = 2.0`, `SELECTED_OUTLINE_PX = 6.0`.
 
 ### PR description (draft)
 
-**shared** — Give the GPU per-country identity: a per-vertex country index and boundary normal, and a per-country state uniform buffer indexed by that index (uniform, not storage, for WebGL2). The fill and border vertex shaders push a country's boundary vertices outward along their normals by a constant screen-space amount, lifting the hovered and selected countries. The selected country gets a 2px black outline, drawn as a black silhouette inflated an extra 2px with its normal fill on top. Hit-testing is unchanged.
+**shared** — Add the hover/selection render pass. Each vertex gains an outward boundary normal and a country index; a per-country `CountryState` uniform carries a lift and an outline width, rewritten each frame from the hovered and selected regions. The vertex shader offsets a vertex outward along its normal by a constant screen-space amount (via the isotropic projected-units-per-pixel). Hover raises a country with a thin black outline; selection gives a bolder outline and no raise. The outline is an inflated black fill silhouette drawn behind the normal fill, so only a uniform rim shows (clean on multi-island countries); the hovered and selected countries are redrawn on top so they are not overdrawn by neighbors. Per-vertex boundary normals are computed in the country mesh (a winding-agnostic unit miter; hole rings inward). Hit-testing is unchanged.
 
-**web** — No change; the driver already tracks the selected and hovered regions.
+**web** — No change; the driver already tracked the hovered and selected regions, and now requests a redraw when either changes.
 
 ## C3.3 — manual pan/zoom
 
