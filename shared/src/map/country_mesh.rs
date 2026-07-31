@@ -21,7 +21,7 @@ pub struct CountryMesh {
     pub iso3: String,
     pub region_code: String,
     pub vertices: Vec<ProjectedVertex>,
-    /// Parallel to `vertices`: the unit direction to push each vertex to inflate the country outward
+    /// One per item in `vertices`: the unit direction to push that vertex to inflate the country outward
     /// (away from its interior), used to raise and outline it when hovered or selected.
     pub outward_directions: Vec<Vec2>,
     pub fill_indices: Vec<u32>,
