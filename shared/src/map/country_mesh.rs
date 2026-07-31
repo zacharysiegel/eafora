@@ -163,9 +163,8 @@ fn open_ring(ring: &[(f64, f64)]) -> &[(f64, f64)] {
     }
 }
 
-/// Per-vertex outward directions for a polygon's rings, in the same concatenated order `flatten_rings`
-/// produces vertices (exterior first, then holes). Offsetting a vertex along its outward direction
-/// inflates the exterior and contracts the holes, so the solid area grows uniformly.
+/// Per-vertex outward directions for a polygon's rings, concatenated in the same order `flatten_rings`
+/// produces vertices (exterior first, then holes).
 fn polygon_outward_directions(rings: &[&[(f64, f64)]]) -> Vec<Vec2> {
     rings
         .iter()
