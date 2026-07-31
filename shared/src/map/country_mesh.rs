@@ -207,11 +207,15 @@ fn outward_directions_for_ring(ring: &[(f64, f64)], is_hole: bool) -> Vec<Vec2> 
             let incoming: (f64, f64) = edge_outward_normal(previous, current, direction_sign);
             let outgoing: (f64, f64) = edge_outward_normal(current, next, direction_sign);
 
-            // The vertex's miter is the two adjacent edge normals summed and renormalized; if they
-            // cancel (a spike), fall back to the outgoing edge's normal.
-            unit_or((incoming.0 + outgoing.0, incoming.1 + outgoing.1), outgoing)
+            miter(incoming, outgoing)
         })
         .collect()
+}
+
+/// The 2D determinant of vectors `p` and `q` (`p.x*q.y - p.y*q.x`): twice the signed area of the
+/// triangle `(origin, p, q)`, positive when `q` is counterclockwise from `p`.
+fn determinant(p: (f64, f64), q: (f64, f64)) -> f64 {
+    p.0 * q.1 - p.1 * q.0
 }
 
 /// The ring's signed area: for each edge, the determinant of its two endpoints as vectors from the
@@ -222,9 +226,9 @@ fn signed_area(ring: &[(f64, f64)]) -> f64 {
     let vertex_count: usize = ring.len();
     let mut area: f64 = 0.0;
     for index in 0..vertex_count {
-        let (x0, y0): (f64, f64) = ring[index];
-        let (x1, y1): (f64, f64) = ring[(index + 1) % vertex_count];
-        area += x0 * y1 - x1 * y0;
+        let start: (f64, f64) = ring[index];
+        let end: (f64, f64) = ring[(index + 1) % vertex_count];
+        area += determinant(start, end);
     }
 
     area / 2.0
@@ -247,6 +251,13 @@ fn edge_outward_normal(a: (f64, f64), b: (f64, f64), sign: f64) -> (f64, f64) {
 
     // Quarter turn of the unit direction: (x, y) -> (y, -x), then `sign` reverses it for holes.
     (direction_y * sign, -direction_x * sign)
+}
+
+/// The unit miter direction at a vertex whose two adjacent edges have outward normals `incoming` and
+/// `outgoing`: the two normals summed and renormalized. If they cancel (a spike vertex), falls back to
+/// the outgoing edge's normal.
+fn miter(incoming: (f64, f64), outgoing: (f64, f64)) -> Vec2 {
+    unit_or((incoming.0 + outgoing.0, incoming.1 + outgoing.1), outgoing)
 }
 
 /// Normalizes `v` to a `Vec2`, or returns `fallback` unchanged when `v` is near zero and cannot be
