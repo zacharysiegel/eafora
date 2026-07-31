@@ -207,6 +207,8 @@ fn outward_directions_for_ring(ring: &[(f64, f64)], is_hole: bool) -> Vec<Vec2> 
             let incoming: (f64, f64) = edge_outward_normal(previous, current, direction_sign);
             let outgoing: (f64, f64) = edge_outward_normal(current, next, direction_sign);
 
+            // The vertex's miter is the two adjacent edge normals summed and renormalized; if they
+            // cancel (a spike), fall back to the outgoing edge's normal.
             unit_or((incoming.0 + outgoing.0, incoming.1 + outgoing.1), outgoing)
         })
         .collect()
