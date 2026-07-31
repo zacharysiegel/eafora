@@ -228,21 +228,28 @@ fn signed_area(ring: &[(f64, f64)]) -> f64 {
     area / 2.0
 }
 
-/// Unit normal of edge `a -> b`, rotated so `sign` (+1 for a counterclockwise ring, negated for holes)
-/// makes it point away from the solid area; `(0, 0)` for a degenerate zero-length edge.
+/// The edge `a -> b`'s outward-facing unit normal: its unit direction rotated a quarter turn to face
+/// away from the solid area. For a counterclockwise ring (`sign = +1`) this is a clockwise quarter turn,
+/// the rotation matrix `[[0, 1], [-1, 0]]` that maps a direction `(x, y)` to `(y, -x)`; holes pass
+/// `sign = -1` to reverse the turn. Returns `(0, 0)` for a degenerate zero-length edge.
 fn edge_outward_normal(a: (f64, f64), b: (f64, f64), sign: f64) -> (f64, f64) {
     let dx: f64 = b.0 - a.0;
     let dy: f64 = b.1 - a.1;
     let length: f64 = (dx * dx + dy * dy).sqrt();
-    if length > NORMAL_EPSILON {
-        (dy / length * sign, -dx / length * sign)
-    } else {
-        (0.0, 0.0)
+    if length <= NORMAL_EPSILON {
+        return (0.0, 0.0);
     }
+
+    let direction_x: f64 = dx / length;
+    let direction_y: f64 = dy / length;
+
+    // Quarter turn of the unit direction: (x, y) -> (y, -x), then `sign` reverses it for holes.
+    (direction_y * sign, -direction_x * sign)
 }
 
-/// Normalize `v` into a `Vec2`, falling back to `fallback` (already unit, or zero) when `v` is near
-/// zero, which happens at a spike vertex whose two edge normals cancel.
+/// Normalizes `v` to a `Vec2`, or returns `fallback` unchanged when `v` is near zero and cannot be
+/// normalized (a spike vertex whose two edge normals cancel). `fallback` is not normalized, so pass one
+/// already of unit length, such as an edge normal (which is zero only for a degenerate edge).
 fn unit_or(v: (f64, f64), fallback: (f64, f64)) -> Vec2 {
     let length: f64 = (v.0 * v.0 + v.1 * v.1).sqrt();
     let (x, y): (f64, f64) = if length > NORMAL_EPSILON {
