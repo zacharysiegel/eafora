@@ -212,7 +212,8 @@ fn outward_directions_for_ring(ring: &[(f64, f64)], is_hole: bool) -> Vec<Vec2> 
         .collect()
 }
 
-/// Shoelace signed area; positive is counterclockwise.
+/// The ring's signed area, summing each edge's cross-product (the shoelace formula). Only its sign is
+/// used here: positive means the ring winds counterclockwise, negative clockwise.
 fn signed_area(ring: &[(f64, f64)]) -> f64 {
     let vertex_count: usize = ring.len();
     let mut area: f64 = 0.0;
