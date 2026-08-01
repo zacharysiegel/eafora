@@ -134,12 +134,170 @@ Pan/zoom (C3.3), animation (C3.4). The raise and outline are discrete and instan
 
 **web** — No change; the driver already tracked the hovered and selected regions, and now requests a redraw when either changes.
 
-## C3.3 — manual pan/zoom
+## C3.3 — manual pan/zoom (wheel, drag, and pinch)
 
-Deferred detail; scope fixed: wheel-zoom and drag-pan mutating the `Viewport` in projected space, clamped to world bounds, reusing C2's pointer listeners and the on-demand redraw. Detailed when picked up.
+- Affected crates: `shared` (map: `viewport`, `hit_test`) and `web` (driver: `canvas/driver.rs`; one added `web-sys` feature). No renderer or shader change: the viewport already reaches both the GPU and the hit-test through the `Driver::viewport` field the driver mutates, and `write_viewport_uniform` re-reads it each frame.
 
-- **Reimplement `Viewport::fill_height` on top of the zoom primitive.** Once a zoom function exists (set the viewport to a scale/zoom level around a center, with clamping), "fill the surface height with `min_y..max_y`" is just "zoom to the level at which that vertical extent spans the surface height, centered on `center_x`." `fill_height` should compute that zoom level and delegate, rather than construct the viewport directly as it does now, so the home view and manual zoom share one construction-and-clamp path.
-- The zoom-out clamp is the home framing (`HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT`): the home view is the maximum zoom-out, so a user can zoom in and pan but not zoom out past the opening view.
+### Problem
+
+The viewport is fixed. `home_viewport` builds it at attach and rebuilds it on resize; nothing else mutates `Driver::viewport`. A user cannot zoom in on a region or pan to the longitude the home framing leaves off-screen. C3.3 adds cursor-anchored wheel-zoom, drag-pan, and two-finger pinch-zoom, each updating the projected-space viewport and then calling `request_redraw()` (the same on-demand redraw hover and selection already use — there is no animation loop; a redraw happens only in response to an input event).
+
+### Invariants every viewport must satisfy
+
+The GPU path assumes four things, so the zoom/pan primitives are defined to preserve all four:
+
+1. `min.{x,y} < max.{x,y}`. `project_to_clip` divides by `span = max - min`.
+2. The viewport aspect equals the surface aspect (`(max.x - min.x) / (max.y - min.y) == surface.width / surface.height`). `emphasis_offset` derives one isotropic projected-units-per-pixel from the y-span alone, trusting x to match; a broken match would distort the hover lift and outline in x versus y.
+3. Width never exceeds `2π`. `wrap_direction` returns on the first crossed bound and assumes at most one antimeridian seam is crossed; a wider viewport crosses two and the shader shifts the wrong instance, blanking one side.
+4. Surface dimensions are positive (already guaranteed upstream).
+
+All pan/zoom math is pure `shared::map` on `Viewport` in isotropic projected radians, host-testable with no `web_sys`. The driver owns event wiring and converts a pointer position into a `SurfacePoint` and a scalar, then calls the pure primitives.
+
+### The pure primitives (`shared/src/map/viewport.rs`)
+
+Derived accessors `center()`, `half_height()`, `half_width()` (`(min + max) / 2`, `(max - min) / 2`), `pub(crate)`.
+
+A single vertical-extent clamp holds both zoom limits in one place:
+
+```rust
+fn clamp_half_height(requested: f64, max_half_height: f64) -> f64 {
+    debug_assert!(max_half_height >= MIN_ZOOM_IN_HALF_HEIGHT, "zoom-out ceiling below the zoom-in floor");
+    requested.clamp(MIN_ZOOM_IN_HALF_HEIGHT, max_half_height)
+}
+```
+
+- `MIN_ZOOM_IN_HALF_HEIGHT` is the zoom-in floor (smallest half-height; approx. one degree of latitude filling the screen, `project(0.5, 0.0).y ≈ 0.0087` rad; encode the computed literal). `max_half_height` is the zoom-out ceiling, passed in by the driver (the home framing, capped for wide surfaces; see below). Names state direction so the `clamp(floor, ceiling)` reads correctly.
+
+- `zoom_to_half_height(&self, half_height, max_half_height, surface) -> Viewport` is the construction-and-clamp core everything routes through. It clamps the half-height, re-derives `half_width = clamped_half_height * (surface.width / surface.height)` (never reads the receiver's width, so a zero-width seed is fine), and rebuilds `min`/`max` around `self.center()`. This is the one place the vertical extent clamp is applied.
+
+- `zoom_about(&self, factor, anchor, max_half_height, home_min_y, home_max_y, surface) -> Viewport` is the anchored zoom (`factor > 1` zooms in). It holds the projected `anchor` fixed on screen, with the vertical position clamp folded into the recenter so there is no post-step that could move the anchor:
+  1. `target = self.half_height() / factor`; `clamped = clamp_half_height(target, max_half_height)`; `achieved = clamped / self.half_height()` (the achieved ratio, not `1/factor`, keeps the anchor fixed when clamped at the ceiling).
+  2. `new_center = anchor + (self.center() - anchor) * achieved` (isotropic, so one scalar on both axes).
+  3. Fold the vertical position clamp into the center's y only: `center_y = new_center.y.clamp(home_min_y + clamped, home_max_y - clamped)`. The home latitude range is an absolute bound; when a zoom-out near the top or bottom edge would push the view outside it, the view is shifted back inside and the anchor yields. Horizontal anchoring is exact for every zoom; vertical anchoring is exact except within one range-height of the top/bottom edge, where the anchor's screen-y drifts by the (bounded) clamp amount. The range invariant wins over the anchor. At full zoom-out the clamp interval collapses to the range midpoint (guard the collapse with a tolerance so full zoom-out sits exactly on the range with no jitter or `clamp` panic).
+  4. Build the box from `new_center.x`, `center_y`, `clamped`, and the aspect-derived `half_width`.
+
+- `pan_by(&self, dx, dy) -> Viewport` translates both corners; width/height/aspect unchanged; no clamp on x.
+- `clamp_vertical(&self, home_min_y, home_max_y) -> Viewport` clamps only the vertical position (extent unchanged), sharing the step-3 rule via a common private helper. At full zoom-out (extent == range height) it centers on the range; zoomed in, the view slides freely inside it. The pan path calls this explicitly; the zoom path has it folded in.
+- `normalize_longitude_turns(&self) -> Viewport` shifts the viewport by whole turns of `2π` so `center().x` lands in `[-π, π]`. This keeps the two-instance antimeridian model valid for arbitrarily long horizontal pans (the renderer draws only the natural copy plus one copy shifted by `±1` turn, covering `[-π, 3π]`; without re-normalization a long east/west pan slides past that union and the map blanks). A whole-turn shift changes the resolved longitude only by a multiple of 360°, which the hit-test's `wrap_longitude` (`rem_euclid(360)`) folds away, so hover/selection are unaffected.
+
+### Horizontal behavior
+
+Horizontal position is unclamped but re-normalized by whole turns after every pan/zoom (`normalize_longitude_turns`), so the world scrolls continuously and infinitely while the two-instance model stays valid. Every driver path applies the re-normalization adjacent to the viewport-x mutation.
+
+### Zoom-out ceiling and the width ≤ 2π conflict (ultrawide surfaces)
+
+The home latitude range half-height is approx. `1.549` rad, so a full-zoom-out width of `2 * 1.549 * aspect` exceeds `2π` once the surface aspect passes approx. `2.029:1`. Three goals — home range is the maximum zoom-out, aspect locked, width ≤ `2π` — are jointly unsatisfiable above that aspect. Resolution (owner-chosen option b): cap the zoom-out ceiling at `max_half_height = min(home_range_half_height, π / aspect)`. Aspect stays locked and the width never exceeds one world turn. The consequence on a surface wider than approx. `2.029:1` is that furthest zoom-out shows the full world width once, centered, and a vertical slice of the home range that the user pans through vertically — the visible latitude shrinks; there are no empty margins and the world is not repeated horizontally. The driver computes the cap (it owns the framing constants and the surface aspect) and passes the capped `max_half_height` into the primitives:
+
+```rust
+fn zoom_out_ceiling_half_height(surface: SurfaceDimensions) -> f64 {
+    home_range_half_height().min(std::f64::consts::PI * (surface.height as f64 / surface.width as f64))
+}
+```
+
+`home_viewport`/`fill_height` are routed through the same cap: this fixes a latent bug where the existing `fill_height` already produces a `> 2π` home view on such surfaces.
+
+### `fill_height` reimplemented on the primitive
+
+`Viewport::fill_height(center_x, min_y, max_y, surface)` is reframed as "zoom to the level at which `min_y..max_y` spans the surface height, centered on `center_x`," delegating to `zoom_to_half_height` (so the home view and manual zoom share one construction-and-clamp path) and capping the width at `2π`:
+
+```rust
+pub fn fill_height(center_x: f64, min_y: f64, max_y: f64, surface: SurfaceDimensions) -> Viewport {
+    let requested_half_height: f64 = (max_y - min_y) / 2.0;
+    let center_y: f64 = (min_y + max_y) / 2.0;
+    let width_cap_half_height: f64 = std::f64::consts::PI * (surface.height as f64 / surface.width as f64);
+    let ceiling: f64 = requested_half_height.min(width_cap_half_height);
+    let seed: Viewport = Viewport { min: ProjectedPoint { x: center_x, y: center_y - requested_half_height }, max: ProjectedPoint { x: center_x, y: center_y + requested_half_height } };
+    seed.zoom_to_half_height(requested_half_height, ceiling, surface)
+}
+```
+
+On a normal (≤ approx. 2.029:1) surface `ceiling == requested_half_height`, so `fill_height` produces the identical viewport it does today (the existing host tests are the behavior-preserving guard); on an ultrawide surface the width is capped at `2π` and the view no longer fills height.
+
+### Screen-to-projected helper (shared with the hit-test)
+
+Extract `hit_test::surface_to_projected(viewport, surface_dimensions, surface_point) -> ProjectedPoint` — the body of `surface_to_geo` minus the final `unproject`. Reimplement `surface_to_geo` as `unproject(surface_to_projected(...))`, so the device-pixel → `[0,1]` → projected normalization (with the y-inversion) lives in one place and the gesture anchors and the hit-test can never disagree. The wheel/pinch/pan anchors are all computed with this helper against the current viewport, so the projected-space math the driver does is the exact inverse of what the hit-test does to resolve a pixel: a pixel held fixed by a gesture keeps resolving to the same country.
+
+### Input model — Pointer Events
+
+Migrate the driver's input from `MouseEvent` to the Pointer Events API for one model that also serves touch. C2's hover and click wiring move to pointer events too. Add `"PointerEvent"` to the `web-sys` features.
+
+- Listeners installed like the existing ones: `pointerdown`, `pointermove`, `pointerup`, `pointercancel`, `pointerleave` (each a stored `Closure` held on `Driver` for lifetime). On `pointerdown` the driver calls `set_pointer_capture(pointer_id)` so a gesture keeps receiving moves after the pointer leaves the canvas; the matching `release_pointer_capture` runs on up/cancel.
+- Hover (lift/outline) applies only to `pointer_type() == "mouse"` and only when no gesture is active; it is suppressed for the whole duration of any drag or pinch and restored afterward. `pointerleave` with a mouse pointer clears hover.
+- Selection is resolved on `pointerup` for a single-pointer gesture that never moved past the drag threshold and never became a multi-pointer gesture — this replaces the `click` handler and removes the click-after-release ordering hazard entirely.
+
+### Multi-pointer state machine (pan + pinch)
+
+The driver tracks active pointers by `pointer_id` (position per id; at most the first two matter) and a gesture that is one of `Idle`, `Pan`, or `Pinch`, plus `gesture_moved: bool` (set once movement passes the threshold or a second pointer joins; reset only at the next `pointerdown` that starts from `Idle`).
+
+- `pointerdown`:
+  - From `Idle` → `Pan { anchor = this point }`, record the press origin for the tap-vs-drag test, `gesture_moved = false`, capture.
+  - From `Pan` (a second pointer arrives) → `Pinch`; record the baseline as the two pointers' current positions (so the first pinch move computes a correct `now/previous` ratio, never a garbage first frame); set `gesture_moved = true` (a multi-pointer gesture never selects). Capture the second pointer. No viewport change on the transition itself.
+- `pointermove` updates the stored position of that pointer, then:
+  - `Pan` (one pointer): `from = surface_to_projected(viewport, anchor)`, `to = surface_to_projected(viewport, now)`, `viewport = viewport.pan_by(from.x - to.x, from.y - to.y).clamp_vertical(home_min_y, home_max_y).normalize_longitude_turns()`; advance `anchor = now`; set `gesture_moved` if the cursor is past the threshold from the press origin; skip the hover path; `request_redraw()`.
+  - `Pinch` (two pointers): compute previous and current midpoints and distances in surface space; `factor = distance_now / distance_previous` (incremental). Anchor the zoom at the projected point currently under the previous midpoint, then translate so that point tracks the new midpoint:
+    ```
+    anchor = surface_to_projected(viewport, previous_midpoint)
+    zoomed = viewport.zoom_about(factor, anchor, ceiling, home_min_y, home_max_y, surface)
+    from = surface_to_projected(zoomed, previous_midpoint)   // == anchor (zoom_about holds it fixed)
+    to   = surface_to_projected(zoomed, current_midpoint)
+    viewport = zoomed.pan_by(from.x - to.x, from.y - to.y).clamp_vertical(home_min_y, home_max_y).normalize_longitude_turns()
+    ```
+    Then store the current pointer positions as the next step's "previous." This scales by the finger-distance ratio and pins the midpoint (a similarity transform without rotation — the two finger points stay pinned along the line between them; finger rotation is not corrected, which is the standard non-rotating pinch). Because each step re-seeds from the current positions and applies against the current viewport, there is no compounding drift and the translation is applied once. The same ceiling, floor, home-range clamp, and longitude re-normalization apply as for wheel zoom.
+- `pointerup` / `pointercancel` / `pointerleave`: remove the pointer from the active set and release its capture.
+  - `Pinch` → one pointer left: switch to `Pan` and re-seed `anchor` from the remaining pointer's current position, so the next pan move computes an incremental delta from where the finger actually is — no jump. `gesture_moved` stays `true`.
+  - `Pan` → zero pointers: if this was a `pointerup`, not `pointercancel`, and `gesture_moved` is `false`, resolve selection at the release point; then go `Idle`.
+  - `pointercancel` never selects.
+
+### Driver wheel zoom
+
+`handle_wheel(event)` calls `prevent_default()`, converts the cursor with the existing surface-point conversion (`WheelEvent` extends `MouseEvent`, so offset + DPR scaling apply), and:
+
+```rust
+let clamped_delta: f64 = event.delta_y().clamp(-MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
+let factor: f64 = (-clamped_delta * WHEEL_ZOOM_SENSITIVITY).exp();   // scroll up (delta_y < 0) zooms in
+let anchor: ProjectedPoint = hit_test::surface_to_projected(self.viewport, self.surface_dimensions, surface_point);
+let zoomed: Viewport = self.viewport.zoom_about(factor, anchor, zoom_out_ceiling_half_height(self.surface_dimensions), home_min_y, home_max_y, self.surface_dimensions);
+self.viewport = zoomed.normalize_longitude_turns();
+self.request_redraw();
+```
+
+The exponential map makes zoom multiplicative and symmetric. `MAX_WHEEL_DELTA` caps one event's magnitude so a page-mode or high-resolution delta cannot zoom absurdly far in one notch (deltaMode varies by browser; a per-event cap is the desktop-first v1 guard, with deltaMode-aware scaling as a later option). `home_min_y`/`home_max_y` and `home_range_half_height` come from shared driver helpers that project `HOME_VIEW_MIN_LAT`/`HOME_VIEW_MAX_LAT` (reused by `home_viewport`, wheel, drag, and pinch rather than hand-rolled at each site).
+
+### Flow to the GPU and hit-testing
+
+`draw` passes `self.viewport` to `draw_frame`; `write_viewport_uniform` re-reads the current surface size each frame, so a mutated viewport reaches the shader on the next scheduled frame with no extra wiring, and the four invariants keep `project_to_clip`, `emphasis_offset`, and `wrap_direction` correct. Hover and selection read the live `self.viewport`, so they resolve against the mutated view. DPR is baked into the backing-store size and the `SurfacePoint` and normalized away in `surface_to_projected`; the viewport math is entirely in projected radians and needs no DPR handling.
+
+### Constants (tunable in-browser)
+
+`MIN_ZOOM_IN_HALF_HEIGHT` (shared), `WHEEL_ZOOM_SENSITIVITY`, `MAX_WHEEL_DELTA`, and `DRAG_SELECT_SUPPRESS_PX` (approx. 5 device pixels) are named constants; the design does not depend on their exact values.
+
+### Testing
+
+Pure `shared::map` host tests (no `web_sys`, no render feature — `viewport.rs`/`hit_test.rs` are not render-gated):
+
+- `clamp_half_height`: clamps up to the floor, down to the ceiling, passes through in range; `#[should_panic]` (debug assertions) when the ceiling is below the floor.
+- `zoom_to_half_height`: extent clamps both ways; aspect equals the surface aspect on square/wide/tall surfaces; center preserved for a pure zoom; width derived from aspect even from a zero-width seed.
+- `zoom_about`: horizontal anchor exact for both the unclamped and vertically-clamped cases; both-axes anchor exact when the result does not touch the range edge; near the range edge, assert the actual behavior — screen-x unchanged, box pinned to `home_max_y`/`home_min_y`, and the anchor's screen-y drift equals the clamp amount; achieved-ratio path (zoom out past the ceiling about an off-center anchor keeps x fixed and the half-height at the ceiling).
+- `pan_by`: pure translation; x may exceed `±π`.
+- `clamp_vertical`: pulled inside the range from above/below; centered at full zoom-out (equal-height edge case with tolerance); untouched when inside; extent never changed.
+- `normalize_longitude_turns`: a far-east/-west center is shifted into `[-π, π]`, width preserved, shift a whole multiple of `2π`; a fixed surface point unprojects to the same `wrap_longitude`-folded longitude before and after (the hit-test-invariance property).
+- `fill_height`: existing tests pass verbatim; a delegation test pins `fill_height == seed.zoom_to_half_height(...)`; a 32:9 test asserts width ≤ `2π` (the ultrawide cap) with aspect still matching.
+- `surface_to_projected`: `surface_to_geo == unproject(surface_to_projected(...))`; the surface center maps to the viewport center.
+- Pinch math: extract the pure part (`factor`, `previous_midpoint`, `current_midpoint`, and the compose `zoom_about` → `pan_by`) into a `pub(crate)` helper on `Viewport` taking previous/current midpoints and distances, and host-test that both midpoints and the distance ratio are honored (the world point under the previous midpoint lands under the current midpoint; the half-height scales by the inverse distance ratio, subject to the clamps) and that a lone incremental step does not drift.
+
+Driver wiring (the pointer state machine, capture, hover suppression, tap-vs-drag) is thin glue over the pure primitives and is verified manually in the browser (per the wasm-test convention): wheel zooms toward the cursor and stops at the home view; drag pans and the grabbed point tracks; a long east/west drag keeps the world visible and wrapping; vertical pan is bounded to the home range; a two-finger pinch zooms about the midpoint and does not select; lifting one finger continues the pan without a jump; a tap under the threshold selects, a drag over it does not. `cargo test -p shared` covers the pure tests (`viewport`/`hit_test` are not render-gated); `cargo check --target wasm32-unknown-unknown -p web` confirms the driver and the new `web-sys` feature compile.
+
+### Out of scope for C3.3
+
+Animated zoom-to-country and the `Camera` state machine (C3.4). Inertial/momentum pan (backlog; it needs a time-driven decay loop, which C3.3's event-driven redraw deliberately avoids). Two-finger rotation (pinch is scale + translate only). Keyboard/button zoom controls.
+
+### PR description (draft)
+
+**shared** — Add the pan/zoom primitives to `Viewport`: `zoom_to_half_height` (the construction-and-clamp core), `zoom_about` (anchored multiplicative zoom holding a projected point fixed, with the home-range vertical clamp folded into the recenter so horizontal anchoring stays exact and vertical yields only at the range edge), `pan_by`, `clamp_vertical` (keeps the view inside the home latitude range), and `normalize_longitude_turns` (re-centers x within one antimeridian turn so long horizontal pans never blank the map). The zoom-out ceiling is the home framing capped so the width never exceeds one world turn (a vertical slice on surfaces wider than approx. 2:1), and a zoom-in floor caps how far in a user can zoom. `Viewport::fill_height` is reimplemented on `zoom_to_half_height` and now caps its width at `2π`. Extract `hit_test::surface_to_projected` so the gesture anchors and the hit-test share one normalization.
+
+**web** — Wheel-zoom toward the cursor, drag-pan, and two-finger pinch-zoom, mutating the projected-space viewport and redrawing on demand (no animation loop). Zoom-out stops at the home view; vertical pan is bounded to the home latitude range; horizontal pan wraps across the antimeridian and stays visible for any distance. Input moves to the Pointer Events API with pointer capture (one model for mouse and touch); hover is mouse-only and suppressed during a gesture; a drag or multi-pointer gesture past a small pixel threshold does not select. Adds the `PointerEvent` web-sys feature.
+
+> **Deviation notes** (fill in at implementation): record any change to the zoom-factor curve, `MAX_WHEEL_DELTA`, `DRAG_SELECT_SUPPRESS_PX`, `MIN_ZOOM_IN_HALF_HEIGHT`, or `WHEEL_ZOOM_SENSITIVITY`; the exact `MIN_ZOOM_IN_HALF_HEIGHT` literal; whether `surface_to_projected` landed in `hit_test.rs`; whether the pinch pure-helper extraction held; whether the ultrawide cap was applied to `home_viewport` as well as manual zoom.
 
 ## C3.4 — animated zoom-to-country
 
