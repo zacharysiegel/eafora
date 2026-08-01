@@ -319,14 +319,15 @@ impl Renderer {
     fn country_index_of(&self, region: Option<&RegionCode>) -> Option<usize> {
         let region: &RegionCode = region?;
 
-        self.country_geometry.spans.iter().position(|span| span.region_code == region.0)
+        self.country_geometry.spans.iter()
+            .position(|span| span.region_code == region.0)
     }
 
-    /// The fill index ranges of the selected and hovered countries in draw order (selected first,
-    /// hovered last so hover renders on top), deduplicated when they are the same country, skipping a
-    /// region with no matching span. Each is redrawn on top of the base layer as a black silhouette plus
-    /// fill, so it is not overdrawn by neighbors.
-    fn emphasized_fill_ranges(&self, frame_state: &FrameState) -> Vec<Range<u32>> {
+    /// The fill-index ranges of the emphasized countries (selected, then hovered) in draw order, so the
+    /// hovered country renders last; deduplicated when they are the same country, and skipping a region
+    /// with no matching span. Each range is redrawn on top of the base layer as a black silhouette plus
+    /// fill, so neighboring fills do not cover it.
+    fn emphasized_country_fill_ranges(&self, frame_state: &FrameState) -> Vec<Range<u32>> {
         let selected: Option<usize> = self.country_index_of(frame_state.selected_region.as_ref());
         let hovered: Option<usize> = self.country_index_of(frame_state.hovered_region.as_ref());
 
@@ -340,13 +341,14 @@ impl Renderer {
             }
         }
 
-        indices.into_iter().map(|index| self.country_geometry.spans[index].fill_range()).collect()
+        indices.into_iter()
+            .map(|index| self.country_geometry.spans[index].fill_range()).collect()
     }
 
     fn record_map_pass(&self, view: &TextureView, instance_count: u32, frame_state: &FrameState) -> CommandBuffer {
         let attached: &AttachedState = self.attached.as_ref()
             .expect("draw_frame: a surface must be attached first");
-        let emphasized_fill_ranges: Vec<Range<u32>> = self.emphasized_fill_ranges(frame_state);
+        let emphasized_country_fill_ranges: Vec<Range<u32>> = self.emphasized_country_fill_ranges(frame_state);
 
         let mut encoder: CommandEncoder =
             self.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("eafora-map-command-encoder") });
@@ -381,21 +383,23 @@ impl Renderer {
         render_pass.set_index_buffer(self.country_geometry.boundary.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.boundary.count, 0, 0..instance_count);
 
-        // On top: the selected and hovered countries, so they are not overdrawn by neighbors. For each,
-        // its fill triangles inflated by its `outline_px` and painted black (a silhouette), then the same
-        // triangles at its lift in the choropleth color on top: only the black rim shows, giving a
-        // uniform outline (a filled silhouette, so clean even on multi-island countries).
-        for fill_range in &emphasized_fill_ranges {
+        // Redraw the emphasized countries on top of the base layer so neighboring fills do not cover
+        // them. Each is drawn twice through the same fill-triangle range: first inflated outward and
+        // painted black (the emphasis_outline pipeline), then in the choropleth color at its normal
+        // extent (the fill pipeline). The black copy is larger, so only its rim shows around the color
+        // fill; that rim is the outline, and being a filled silhouette it stays clean on multi-island
+        // countries.
+        for country_fill_range in &emphasized_country_fill_ranges {
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
             render_pass.set_vertex_buffer(2, self.country_geometry.emphasis.slice(..));
             render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
 
             render_pass.set_pipeline(&attached.pipelines.emphasis_outline);
-            render_pass.draw_indexed(fill_range.clone(), 0, 0..instance_count);
+            render_pass.draw_indexed(country_fill_range.clone(), 0, 0..instance_count);
 
             render_pass.set_pipeline(&attached.pipelines.fill);
-            render_pass.draw_indexed(fill_range.clone(), 0, 0..instance_count);
+            render_pass.draw_indexed(country_fill_range.clone(), 0, 0..instance_count);
         }
 
         // wgpu has no RenderPass::end(); a pass ends only when dropped. Dropping records the end-of-pass
