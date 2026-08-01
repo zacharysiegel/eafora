@@ -7,7 +7,7 @@ use wgpu::{
 };
 
 use crate::error::AppError;
-use crate::map::gpu_types::{CountryState, FillVertex, EmphasisVertex, ProjectedVertex, ViewportUniform, COUNTRY_STATE_CAP};
+use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_CAP};
 
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
 /// (re)created at attach time once that format is available.
@@ -115,12 +115,12 @@ fn create_border_pipeline(
     let emphasis_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
     let vertex_buffers: [Option<VertexBufferLayout>; 2] = [
         Some(VertexBufferLayout {
-            array_stride: std::mem::size_of::<ProjectedVertex>() as BufferAddress,
+            array_stride: std::mem::size_of::<ProjectedVertexAttributes>() as BufferAddress,
             step_mode: VertexStepMode::Vertex,
             attributes: &position_attributes,
         }),
         Some(VertexBufferLayout {
-            array_stride: std::mem::size_of::<EmphasisVertex>() as BufferAddress,
+            array_stride: std::mem::size_of::<EmphasisVertexAttributes>() as BufferAddress,
             step_mode: VertexStepMode::Vertex,
             attributes: &emphasis_attributes,
         }),
@@ -182,17 +182,17 @@ fn create_triangle_pipeline(
     let emphasis_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
     let vertex_buffers: [Option<VertexBufferLayout>; 3] = [
         Some(VertexBufferLayout {
-            array_stride: std::mem::size_of::<ProjectedVertex>() as BufferAddress,
+            array_stride: std::mem::size_of::<ProjectedVertexAttributes>() as BufferAddress,
             step_mode: VertexStepMode::Vertex,
             attributes: &position_attributes,
         }),
         Some(VertexBufferLayout {
-            array_stride: std::mem::size_of::<FillVertex>() as BufferAddress,
+            array_stride: std::mem::size_of::<FillVertexAttributes>() as BufferAddress,
             step_mode: VertexStepMode::Vertex,
             attributes: &color_attributes,
         }),
         Some(VertexBufferLayout {
-            array_stride: std::mem::size_of::<EmphasisVertex>() as BufferAddress,
+            array_stride: std::mem::size_of::<EmphasisVertexAttributes>() as BufferAddress,
             step_mode: VertexStepMode::Vertex,
             attributes: &emphasis_attributes,
         }),

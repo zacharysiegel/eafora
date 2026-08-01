@@ -19,7 +19,7 @@ use crate::error::AppError;
 use crate::map::color::{self, StatisticColorTransform, Rgba};
 use crate::map::{FrameState, RegionCode, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
-use crate::map::gpu_types::{CountryState, FillVertex, EmphasisVertex, ProjectedVertex, ViewportUniform, COUNTRY_STATE_CAP};
+use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_CAP};
 use crate::map::pipeline::{self, RenderPipelines};
 use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
@@ -167,7 +167,7 @@ impl Renderer {
         let map_binding: MapBinding = create_map_binding(&device);
         let fill_color_buffer: Buffer = device.create_buffer(&BufferDescriptor {
             label: Some("eafora-fill-colors"),
-            size: country_geometry.positions.count as BufferAddress * std::mem::size_of::<FillVertex>() as BufferAddress,
+            size: country_geometry.positions.count as BufferAddress * std::mem::size_of::<FillVertexAttributes>() as BufferAddress,
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -425,16 +425,16 @@ impl Renderer {
             return Ok(());
         }
 
-        let fill_vertices: Vec<FillVertex> = self.compute_fill_colors(bundle, frame_state)?;
+        let fill_vertices: Vec<FillVertexAttributes> = self.compute_fill_colors(bundle, frame_state)?;
         self.queue.write_buffer(&self.fill_colors.buffer, 0, bytemuck::cast_slice(&fill_vertices));
         self.fill_colors.key = Some(key);
 
         Ok(())
     }
 
-    fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Result<Vec<FillVertex>, AppError> {
-        let no_data_fill: FillVertex = color::CHOROPLETH_SCALE.no_data().to_gpu();
-        let mut fill_vertices: Vec<FillVertex> = vec![no_data_fill; self.country_geometry.positions.count as usize];
+    fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Result<Vec<FillVertexAttributes>, AppError> {
+        let no_data_fill: FillVertexAttributes = color::CHOROPLETH_SCALE.no_data().to_gpu();
+        let mut fill_vertices: Vec<FillVertexAttributes> = vec![no_data_fill; self.country_geometry.positions.count as usize];
 
         let Some(shard_bytes) = bundle.shard_for(frame_state.active_statistic) else {
             return Ok(fill_vertices);
@@ -453,7 +453,7 @@ impl Renderer {
                 Some(value) => color::CHOROPLETH_SCALE.sample(transform.position(value, statistic_min, statistic_max)),
                 None => color::CHOROPLETH_SCALE.no_data(),
             };
-            let fill_vertex: FillVertex = fill.to_gpu();
+            let fill_vertex: FillVertexAttributes = fill.to_gpu();
             for vertex_index in span.vertex_start..(span.vertex_start + span.vertex_count) {
                 fill_vertices[vertex_index as usize] = fill_vertex;
             }
@@ -511,8 +511,8 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         )));
     }
 
-    let mut positions: Vec<ProjectedVertex> = Vec::new();
-    let mut emphasis_vertices: Vec<EmphasisVertex> = Vec::new();
+    let mut positions: Vec<ProjectedVertexAttributes> = Vec::new();
+    let mut emphasis_vertices: Vec<EmphasisVertexAttributes> = Vec::new();
     let mut fill_indices: Vec<u32> = Vec::new();
     let mut border_indices: Vec<u32> = Vec::new();
     let mut spans: Vec<CountrySpan> = Vec::new();
@@ -521,7 +521,7 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         let fill_index_start: u32 = fill_indices.len() as u32;
 
         positions.extend_from_slice(&country_mesh.vertices);
-        emphasis_vertices.extend(country_mesh.outward_directions.iter().map(|&outward_direction| EmphasisVertex {
+        emphasis_vertices.extend(country_mesh.outward_directions.iter().map(|&outward_direction| EmphasisVertexAttributes {
             outward_direction,
             country_index: country_index as u32,
         }));
@@ -579,8 +579,8 @@ impl Viewport {
 }
 
 impl Rgba {
-    fn to_gpu(&self) -> FillVertex {
-        FillVertex { color: Vec4 { x: self.r, y: self.g, z: self.b, w: self.a } }
+    fn to_gpu(&self) -> FillVertexAttributes {
+        FillVertexAttributes { color: Vec4 { x: self.r, y: self.g, z: self.b, w: self.a } }
     }
 }
 

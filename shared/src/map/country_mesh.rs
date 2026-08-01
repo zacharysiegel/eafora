@@ -1,7 +1,7 @@
 use std::iter;
 use crate::artifact::geometry::{CountryFeature, GeometryLayer, Polygon};
 use crate::error::AppError;
-use crate::map::gpu_types::ProjectedVertex;
+use crate::map::gpu_types::ProjectedVertexAttributes;
 use crate::map::projection::{self, ProjectedPoint};
 use crate::render::gpu_types::Vec2;
 
@@ -20,7 +20,7 @@ const NORMAL_EPSILON: f64 = 1e-12;
 pub struct CountryMesh {
     pub iso3: String,
     pub region_code: String,
-    pub vertices: Vec<ProjectedVertex>,
+    pub vertices: Vec<ProjectedVertexAttributes>,
     /// One per item in `vertices`: the unit direction to push that vertex to inflate the country outward
     /// (away from its interior), used to raise and outline it when hovered or selected.
     pub outward_directions: Vec<Vec2>,
@@ -127,10 +127,10 @@ fn triangulate_fill(projected_coordinates: &[f64], hole_indices: &[usize], polyg
         .collect())
 }
 
-fn to_projected_vertices(projected_coordinates: &[f64]) -> Vec<ProjectedVertex> {
+fn to_projected_vertices(projected_coordinates: &[f64]) -> Vec<ProjectedVertexAttributes> {
     projected_coordinates
         .chunks_exact(2)
-        .map(|coordinate_pair| ProjectedVertex {
+        .map(|coordinate_pair| ProjectedVertexAttributes {
             position: Vec2 { x: coordinate_pair[0] as f32, y: coordinate_pair[1] as f32 },
         })
         .collect()
@@ -296,7 +296,7 @@ mod tests {
     }
 
     fn vertex_position(mesh: &CountryMesh, vertex_index: u32) -> (f64, f64) {
-        let vertex: &ProjectedVertex = &mesh.vertices[vertex_index as usize];
+        let vertex: &ProjectedVertexAttributes = &mesh.vertices[vertex_index as usize];
 
         (vertex.position.x as f64, vertex.position.y as f64)
     }

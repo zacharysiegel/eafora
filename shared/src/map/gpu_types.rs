@@ -6,23 +6,23 @@ use crate::render::gpu_types::{Vec2, Vec4};
 /// A Miller-projected 2D position.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct ProjectedVertex {
+pub struct ProjectedVertexAttributes {
     pub position: Vec2,
 }
 
 /// A per-vertex fill color; the RGBA channels map to the `Vec4`'s x, y, z, w.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct FillVertex {
+pub struct FillVertexAttributes {
     pub color: Vec4,
 }
 
 /// Per-vertex input for raising/outlining a country: the vertex shader looks the country's state up by
 /// index and pushes the vertex along `outward_direction` to inflate it outward. A separate buffer from
-/// the static `positions` and from `FillVertex`.
+/// the static `positions` and from `FillVertexAttributes`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct EmphasisVertex {
+pub struct EmphasisVertexAttributes {
     pub outward_direction: Vec2,
     pub country_index: u32,
 }
@@ -42,8 +42,8 @@ pub struct ViewportUniform {
 
 const _: () = assert!(std::mem::size_of::<ViewportUniform>() == 32);
 
-/// Per-country emphasis state, indexed by `EmphasisVertex::country_index` in a uniform array. Padded
-/// to a multiple of 16 bytes to match the std140 uniform-array element stride.
+/// Per-country emphasis state, indexed by `EmphasisVertexAttributes::country_index` in a uniform
+/// array. Padded to a multiple of 16 bytes to match the std140 uniform-array element stride.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CountryState {
