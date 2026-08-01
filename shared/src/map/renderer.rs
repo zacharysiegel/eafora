@@ -19,7 +19,7 @@ use crate::error::AppError;
 use crate::map::color::{self, StatisticColorTransform, Rgba};
 use crate::map::{FrameState, RegionCode, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
-use crate::map::gpu_types::{CountryState, FillVertex, HighlightVertex, ProjectedVertex, ViewportUniform, COUNTRY_STATE_CAP};
+use crate::map::gpu_types::{CountryState, FillVertex, EmphasisVertex, ProjectedVertex, ViewportUniform, COUNTRY_STATE_CAP};
 use crate::map::pipeline::{self, RenderPipelines};
 use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
@@ -67,7 +67,7 @@ pub struct Renderer {
 /// Uploaded to the GPU once at construction and never rebuilt.
 struct CountryGeometry {
     positions: CountedBuffer,
-    highlight: Buffer,
+    emphasis: Buffer,
     fill: CountedBuffer,
     border: CountedBuffer,
     spans: Vec<CountrySpan>,
@@ -132,7 +132,7 @@ struct MapBinding {
 struct AttachedState {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
-    /// Physical pixels, for converting a screen-space highlight offset to projected units.
+    /// Physical pixels, for converting a screen-space emphasis offset to projected units.
     size: (u32, u32),
 }
 
@@ -298,7 +298,7 @@ impl Renderer {
         self.queue.write_buffer(&self.map_binding.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
     }
 
-    /// Rewrites the per-country highlight state each frame: the hovered region gets the lift and a thin
+    /// Rewrites the per-country emphasis state each frame: the hovered region gets the lift and a thin
     /// outline, the selected region a bolder outline (no lift; it reads in the detail panel and, later,
     /// drives zoom-to-country). When the same country is both, it lifts and keeps the bolder outline. A
     /// region with no matching country (e.g. a stale hover after a bundle swap) is skipped.
@@ -374,13 +374,13 @@ impl Renderer {
         render_pass.set_pipeline(&attached.pipelines.fill);
         render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
-        render_pass.set_vertex_buffer(2, self.country_geometry.highlight.slice(..));
+        render_pass.set_vertex_buffer(2, self.country_geometry.emphasis.slice(..));
         render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.fill.count, 0, 0..instance_count);
 
         render_pass.set_pipeline(&attached.pipelines.border);
         render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.country_geometry.highlight.slice(..));
+        render_pass.set_vertex_buffer(1, self.country_geometry.emphasis.slice(..));
         render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
 
@@ -391,7 +391,7 @@ impl Renderer {
         for fill_range in &emphasized_fill_ranges {
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
-            render_pass.set_vertex_buffer(2, self.country_geometry.highlight.slice(..));
+            render_pass.set_vertex_buffer(2, self.country_geometry.emphasis.slice(..));
             render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
 
             render_pass.set_pipeline(&attached.pipelines.outline);
@@ -512,7 +512,7 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
     }
 
     let mut positions: Vec<ProjectedVertex> = Vec::new();
-    let mut highlight_vertices: Vec<HighlightVertex> = Vec::new();
+    let mut emphasis_vertices: Vec<EmphasisVertex> = Vec::new();
     let mut fill_indices: Vec<u32> = Vec::new();
     let mut border_indices: Vec<u32> = Vec::new();
     let mut spans: Vec<CountrySpan> = Vec::new();
@@ -521,7 +521,7 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         let fill_index_start: u32 = fill_indices.len() as u32;
 
         positions.extend_from_slice(&country_mesh.vertices);
-        highlight_vertices.extend(country_mesh.outward_directions.iter().map(|&outward_direction| HighlightVertex {
+        emphasis_vertices.extend(country_mesh.outward_directions.iter().map(|&outward_direction| EmphasisVertex {
             outward_direction,
             country_index: country_index as u32,
         }));
@@ -542,9 +542,9 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         contents: bytemuck::cast_slice(&positions),
         usage: BufferUsages::VERTEX,
     });
-    let highlight_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("eafora-country-highlight"),
-        contents: bytemuck::cast_slice(&highlight_vertices),
+    let emphasis_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("eafora-country-emphasis"),
+        contents: bytemuck::cast_slice(&emphasis_vertices),
         usage: BufferUsages::VERTEX,
     });
     let fill_index_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
@@ -560,7 +560,7 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
 
     Ok(CountryGeometry {
         positions: CountedBuffer { buffer: positions_buffer, count: positions.len() as u32 },
-        highlight: highlight_buffer,
+        emphasis: emphasis_buffer,
         fill: CountedBuffer { buffer: fill_index_buffer, count: fill_indices.len() as u32 },
         border: CountedBuffer { buffer: border_index_buffer, count: border_indices.len() as u32 },
         spans,

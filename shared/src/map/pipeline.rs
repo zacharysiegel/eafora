@@ -7,7 +7,7 @@ use wgpu::{
 };
 
 use crate::error::AppError;
-use crate::map::gpu_types::{CountryState, FillVertex, HighlightVertex, ProjectedVertex, ViewportUniform, COUNTRY_STATE_CAP};
+use crate::map::gpu_types::{CountryState, FillVertex, EmphasisVertex, ProjectedVertex, ViewportUniform, COUNTRY_STATE_CAP};
 
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
 /// (re)created at attach time once that format is available.
@@ -112,7 +112,7 @@ fn create_border_pipeline(
     surface_format: TextureFormat,
 ) -> RenderPipeline {
     let position_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
-    let highlight_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
+    let emphasis_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
     let vertex_buffers: [Option<VertexBufferLayout>; 2] = [
         Some(VertexBufferLayout {
             array_stride: std::mem::size_of::<ProjectedVertex>() as BufferAddress,
@@ -120,9 +120,9 @@ fn create_border_pipeline(
             attributes: &position_attributes,
         }),
         Some(VertexBufferLayout {
-            array_stride: std::mem::size_of::<HighlightVertex>() as BufferAddress,
+            array_stride: std::mem::size_of::<EmphasisVertex>() as BufferAddress,
             step_mode: VertexStepMode::Vertex,
-            attributes: &highlight_attributes,
+            attributes: &emphasis_attributes,
         }),
     ];
 
@@ -171,15 +171,15 @@ fn create_triangle_pipeline(
     vertex_entry_point: &str,
     fragment_entry_point: &str,
 ) -> RenderPipeline {
-    // Position, color, and highlight are separate vertex buffers, not interleaved: positions are static
-    // (uploaded once); colors are rebuilt when the active statistic or period changes; the highlight
+    // Position, color, and emphasis are separate vertex buffers, not interleaved: positions are static
+    // (uploaded once); colors are rebuilt when the active statistic or period changes; the emphasis
     // buffer (per-vertex boundary outward-direction + country index) is static. Keeping them apart lets the color
     // buffer be replaced without re-uploading geometry, and lets the border pipeline reuse the position
-    // and highlight buffers without the colors. The fill and outline pipelines share this layout; the
+    // and emphasis buffers without the colors. The fill and outline pipelines share this layout; the
     // outline reads the color attribute's buffer too but ignores it (its fragment shader is constant).
     let position_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
     let color_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x4];
-    let highlight_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
+    let emphasis_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
     let vertex_buffers: [Option<VertexBufferLayout>; 3] = [
         Some(VertexBufferLayout {
             array_stride: std::mem::size_of::<ProjectedVertex>() as BufferAddress,
@@ -192,9 +192,9 @@ fn create_triangle_pipeline(
             attributes: &color_attributes,
         }),
         Some(VertexBufferLayout {
-            array_stride: std::mem::size_of::<HighlightVertex>() as BufferAddress,
+            array_stride: std::mem::size_of::<EmphasisVertex>() as BufferAddress,
             step_mode: VertexStepMode::Vertex,
-            attributes: &highlight_attributes,
+            attributes: &emphasis_attributes,
         }),
     ];
 

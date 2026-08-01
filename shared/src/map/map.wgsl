@@ -8,7 +8,7 @@ struct ViewportUniform {
 @group(0) @binding(0)
 var<uniform> viewport: ViewportUniform;
 
-// Per-country highlight state, indexed by a vertex's country_index. The array length matches
+// Per-country emphasis state, indexed by a vertex's country_index. The array length matches
 // COUNTRY_STATE_CAP in renderer.rs; the bind group's min_binding_size check catches any drift. Padded
 // to 16 bytes so the uniform-array element size is a multiple of 16 (stricter WGSL validators such as
 // WebKit require this); matches CountryState in gpu_types.rs.
@@ -52,7 +52,7 @@ fn project_to_clip(position: vec2<f32>, instance_index: u32) -> vec4<f32> {
 // Pushes a vertex outward along its boundary outward-direction by its country's lift plus `extra_px`,
 // converting screen pixels to projected units via the isotropic projected-units-per-pixel (equal in x
 // and y since the viewport shares the surface's aspect). A zero lift and zero extra leave it untouched.
-fn highlight_offset(position: vec2<f32>, outward_direction: vec2<f32>, country_index: u32, extra_px: f32) -> vec2<f32> {
+fn emphasis_offset(position: vec2<f32>, outward_direction: vec2<f32>, country_index: u32, extra_px: f32) -> vec2<f32> {
     let lift_px: f32 = country_state[country_index].lift_px + extra_px;
     let projected_span_y: f32 = viewport.projected_max.y - viewport.projected_min.y;
     let projected_per_pixel: f32 = projected_span_y / viewport.surface_size.y;
@@ -78,7 +78,7 @@ struct FillVertexOutput {
 @vertex
 fn fill_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> FillVertexOutput {
     var output: FillVertexOutput;
-    let lifted: vec2<f32> = highlight_offset(input.position, input.outward_direction, input.country_index, 0.0);
+    let lifted: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, 0.0);
     output.clip_position = project_to_clip(lifted, instance_index);
     output.color = input.color;
     return output;
@@ -96,7 +96,7 @@ fn fill_fragment_main(input: FillVertexOutput) -> @location(0) vec4<f32> {
 @vertex
 fn outline_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
     let outline_px: f32 = country_state[input.country_index].outline_px;
-    let inflated: vec2<f32> = highlight_offset(input.position, input.outward_direction, input.country_index, outline_px);
+    let inflated: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, outline_px);
     return project_to_clip(inflated, instance_index);
 }
 
@@ -115,7 +115,7 @@ struct BorderVertexInput {
 
 @vertex
 fn border_vertex_main(input: BorderVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
-    let lifted: vec2<f32> = highlight_offset(input.position, input.outward_direction, input.country_index, 0.0);
+    let lifted: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, 0.0);
     return project_to_clip(lifted, instance_index);
 }
 

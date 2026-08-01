@@ -22,7 +22,7 @@ pub struct FillVertex {
 /// the static `positions` and from `FillVertex`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct HighlightVertex {
+pub struct EmphasisVertex {
     pub outward_direction: Vec2,
     pub country_index: u32,
 }
@@ -42,8 +42,8 @@ pub struct ViewportUniform {
 
 const _: () = assert!(std::mem::size_of::<ViewportUniform>() == 32);
 
-/// Per-country highlight state, indexed by `HighlightVertex::country_index` in a uniform array. Padded
-/// to 16 bytes to match the std140 uniform-array element stride.
+/// Per-country emphasis state, indexed by `EmphasisVertex::country_index` in a uniform array. Padded
+/// to a multiple of 16 bytes to match the std140 uniform-array element stride.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CountryState {
