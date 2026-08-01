@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 use tokio::sync::watch;
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen::closure::Closure;
-use web_sys::{HtmlCanvasElement, MouseEvent};
+use web_sys::{HtmlCanvasElement, MouseEvent, PointerEvent, WheelEvent};
 
 use leptos::prelude::*;
 
@@ -41,6 +41,28 @@ const HOME_CENTER: GeoPoint = GeoPoint {
 const HOME_VIEW_MIN_LAT: f64 = -56.0;
 const HOME_VIEW_MAX_LAT: f64 = 84.0;
 
+/// Wheel-zoom feel: the per-event zoom factor is `exp(-delta_y * WHEEL_ZOOM_SENSITIVITY)`, so scrolling
+/// is multiplicative and symmetric (opposite scrolls of equal magnitude compose to identity). A tuning
+/// constant with no correctness role.
+const WHEEL_ZOOM_SENSITIVITY: f64 = 0.0015;
+
+/// Caps a single wheel event's `delta_y` magnitude before the zoom factor is computed, so one line- or
+/// page-mode notch (whose delta is far larger than a pixel-mode notch) cannot zoom absurdly far. The
+/// deltaMode varies by browser and OS; this bounds the raw value rather than interpreting it.
+const MAX_WHEEL_DELTA: f64 = 240.0;
+
+/// Pointer travel in device pixels, between press and release, beyond which a single-pointer gesture is a
+/// pan rather than a tap, so it does not select. A few-pixel deadzone keeps a click that jitters slightly
+/// from being swallowed.
+const DRAG_SELECT_SUPPRESS_PX: f64 = 5.0;
+
+/// A pointer currently in contact (a held mouse button or a touching finger), tracked by `pointerId` so
+/// pan and pinch can follow the right one across moves.
+struct PointerState {
+    pointer_id: i32,
+    position: SurfacePoint,
+}
+
 /// The result of hit-testing a pointer against the regions, compared to the previously known region.
 enum RegionChange {
     /// The pointer is over the same region as before, or still over none; nothing to update.
@@ -73,11 +95,17 @@ struct Driver {
     legend: WriteSignal<Option<LegendView>>,
     selection: Option<SelectionView>,
     redraw_pending: bool,
+    pointers: Vec<PointerState>,
+    press_origin: Option<SurfacePoint>,
+    gesture_moved: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
     resize_callback: Option<Closure<dyn FnMut()>>,
-    click_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
-    mousemove_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
-    mouseleave_callback: Option<Closure<dyn FnMut(MouseEvent)>>,
+    pointerdown_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointermove_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointerup_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointercancel_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointerleave_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    wheel_callback: Option<Closure<dyn FnMut(WheelEvent)>>,
 }
 
 impl Driver {
@@ -215,6 +243,120 @@ impl Driver {
         }
 
         self.frame_state.hovered_region = None;
+        self.request_redraw();
+    }
+
+    /// Records a newly-pressed pointer. The first begins a pan (and arms tap-vs-drag tracking); a second
+    /// turns it into a pinch and marks the gesture moved, since a multi-pointer gesture never selects.
+    fn begin_pointer(&mut self, pointer_id: i32, surface_point: SurfacePoint) {
+        self.pointers.push(PointerState { pointer_id, position: surface_point });
+
+        match self.pointers.len() {
+            1 => {
+                self.press_origin = Some(surface_point);
+                self.gesture_moved = false;
+            },
+            2 => {
+                self.gesture_moved = true;
+            },
+            _ => {},
+        }
+    }
+
+    /// Advances the active gesture as a tracked pointer moves: one pointer pans, two or more pinch.
+    fn drive_pointer_move(&mut self, pointer_id: i32, surface_point: SurfacePoint) {
+        let Some(index) = self.pointers.iter().position(|pointer| pointer.pointer_id == pointer_id)
+        else {
+            return;
+        };
+
+        match self.pointers.len() {
+            1 => self.pan_from_pointer(index, surface_point),
+            _ => self.pinch_from_pointer(index, surface_point),
+        }
+    }
+
+    fn pan_from_pointer(&mut self, index: usize, surface_point: SurfacePoint) {
+        let previous: SurfacePoint = self.pointers[index].position;
+        self.pointers[index].position = surface_point;
+
+        if let Some(origin) = self.press_origin {
+            if surface_distance(origin, surface_point) > DRAG_SELECT_SUPPRESS_PX {
+                self.gesture_moved = true;
+            }
+        }
+
+        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
+        self.viewport = hit_test::pan(self.viewport, self.surface_dimensions, previous, surface_point, home_min_y, home_max_y);
+
+        self.request_redraw();
+    }
+
+    fn pinch_from_pointer(&mut self, index: usize, surface_point: SurfacePoint) {
+        // Only the first two pointers drive the pinch; a third finger is tracked but does not perturb it.
+        if index >= 2 {
+            self.pointers[index].position = surface_point;
+            return;
+        }
+
+        let previous_a: SurfacePoint = self.pointers[0].position;
+        let previous_b: SurfacePoint = self.pointers[1].position;
+        self.pointers[index].position = surface_point;
+        let current_a: SurfacePoint = self.pointers[0].position;
+        let current_b: SurfacePoint = self.pointers[1].position;
+
+        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
+        let ceiling: f64 = zoom_out_ceiling_half_height(self.surface_dimensions);
+        self.viewport = hit_test::pinch(
+            self.viewport, self.surface_dimensions, previous_a, previous_b, current_a, current_b,
+            ceiling, home_min_y, home_max_y,
+        );
+
+        self.request_redraw();
+    }
+
+    /// Ends a released pointer. A single pointer released without moving past the drag threshold is a tap
+    /// and selects at the release point; a moved or multi-pointer gesture does not. Returns the selection
+    /// to publish, or `None` when nothing changed. When one pointer remains (a finger lifted mid-pinch),
+    /// the gesture resumes as a pan from that pointer's current position, so the map does not jump.
+    fn end_pointer(&mut self, pointer_id: i32, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
+        if !self.remove_pointer(pointer_id) {
+            return None;
+        }
+
+        if self.pointers.is_empty() && !self.gesture_moved {
+            return self.select_region_at(surface_point);
+        }
+
+        None
+    }
+
+    /// Removes a pointer that was canceled or left the surface. A canceled gesture never selects.
+    fn cancel_pointer(&mut self, pointer_id: i32) {
+        self.remove_pointer(pointer_id);
+    }
+
+    fn remove_pointer(&mut self, pointer_id: i32) -> bool {
+        let Some(index) = self.pointers.iter().position(|pointer| pointer.pointer_id == pointer_id)
+        else {
+            return false;
+        };
+
+        self.pointers.remove(index);
+
+        true
+    }
+
+    /// Wheel-zooms toward the cursor: maps the wheel delta to a multiplicative factor and zooms about the
+    /// projected point under the cursor, clamped to the zoom-out ceiling and the home latitude range.
+    fn zoom_at(&mut self, surface_point: SurfacePoint, delta_y: f64) {
+        let clamped_delta: f64 = delta_y.clamp(-MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
+        let factor: f64 = (-clamped_delta * WHEEL_ZOOM_SENSITIVITY).exp();
+
+        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
+        let ceiling: f64 = zoom_out_ceiling_half_height(self.surface_dimensions);
+        self.viewport = hit_test::zoom_at_surface_point(self.viewport, self.surface_dimensions, surface_point, factor, ceiling, home_min_y, home_max_y);
+
         self.request_redraw();
     }
 
@@ -358,11 +500,17 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         legend,
         selection: None,
         redraw_pending: false,
+        pointers: Vec::new(),
+        press_origin: None,
+        gesture_moved: false,
         redraw_callback: None,
         resize_callback: Some(install_resize_listener(&canvas)),
-        click_callback: Some(install_click_listener(&canvas)),
-        mousemove_callback: Some(install_mousemove_listener(&canvas)),
-        mouseleave_callback: Some(install_mouseleave_listener(&canvas)),
+        pointerdown_callback: Some(install_pointerdown_listener(&canvas)),
+        pointermove_callback: Some(install_pointermove_listener(&canvas)),
+        pointerup_callback: Some(install_pointerup_listener(&canvas)),
+        pointercancel_callback: Some(install_pointercancel_listener(&canvas)),
+        pointerleave_callback: Some(install_pointerleave_listener(&canvas)),
+        wheel_callback: Some(install_wheel_listener(&canvas)),
     };
 
     let initial_controls: ViewControls = driver.view_controls();
@@ -431,10 +579,31 @@ fn backend_from_query() -> RendererBackend {
 /// places DC at the middle with the world continuing across the seam. Framing a fixed content band
 /// rather than the ±85° world keeps the empty ocean below the southernmost land off-screen.
 fn home_viewport(surface: SurfaceDimensions) -> Viewport {
+    let center_x: f64 = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon).x;
+    let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
+
+    Viewport::fill_height(center_x, min_y, max_y, surface)
+}
+
+/// The home latitude range's lower and upper bounds in projected space, the vertical limits pan and
+/// zoom-out clamp against.
+fn home_range_projected_y_bounds() -> (f64, f64) {
     let southern_edge: ProjectedPoint = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon);
     let northern_edge: ProjectedPoint = projection::project(HOME_VIEW_MAX_LAT, HOME_CENTER.lon);
 
-    Viewport::fill_height(southern_edge.x, southern_edge.y, northern_edge.y, surface)
+    (southern_edge.y, northern_edge.y)
+}
+
+/// The largest half-height (furthest zoom-out): the home range, capped so the aspect-locked width never
+/// exceeds one world turn. On a surface wider than the range allows within one turn the cap wins, and the
+/// furthest zoom-out shows the full world width with a vertical slice of the range rather than the whole
+/// of it.
+fn zoom_out_ceiling_half_height(surface: SurfaceDimensions) -> f64 {
+    let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
+    let home_half_height: f64 = (max_y - min_y) / 2.0;
+    let width_cap_half_height: f64 = std::f64::consts::PI * (surface.height as f64 / surface.width as f64);
+
+    home_half_height.min(width_cap_half_height)
 }
 
 /// Sizes the canvas's drawing buffer to its displayed size in device pixels so the map renders crisply
@@ -497,13 +666,48 @@ fn surface_point_from_mouse_event(event: &MouseEvent) -> SurfacePoint {
     }
 }
 
-fn handle_click(event: &MouseEvent) {
+fn handle_pointerdown(event: &PointerEvent) {
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
+    let pointer_id: i32 = event.pointer_id();
+
+    capture_pointer(event);
+
+    DRIVER.with_borrow_mut(|driver_slot| {
+        if let Some(driver) = driver_slot {
+            driver.begin_pointer(pointer_id, surface_point);
+        }
+    });
+}
+
+fn handle_pointermove(event: &PointerEvent) {
+    let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
+    let pointer_id: i32 = event.pointer_id();
+    let is_mouse: bool = event.pointer_type() == "mouse";
+
+    DRIVER.with_borrow_mut(|driver_slot| {
+        let Some(driver) = driver_slot else {
+            return;
+        };
+
+        if driver.pointers.is_empty() {
+            // No gesture in progress: a mouse move is a hover; touch and pen produce no hover.
+            if is_mouse {
+                driver.hover_region_at(surface_point);
+            }
+        } else {
+            driver.drive_pointer_move(pointer_id, surface_point);
+        }
+    });
+}
+
+fn handle_pointerup(event: &PointerEvent) {
+    let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
+    let pointer_id: i32 = event.pointer_id();
 
     let published: Option<(WriteSignal<Option<SelectionView>>, Option<SelectionView>)> =
         DRIVER.with_borrow_mut(|driver_slot| {
             let driver: &mut Driver = driver_slot.as_mut()?;
-            let new_selection: Option<SelectionView> = driver.select_region_at(surface_point)?;
+            let new_selection: Option<SelectionView> = driver.end_pointer(pointer_id, surface_point)?;
 
             Some((driver.selection_view, new_selection))
         });
@@ -513,22 +717,57 @@ fn handle_click(event: &MouseEvent) {
     }
 }
 
-fn handle_mousemove(event: &MouseEvent) {
-    let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
+fn handle_pointercancel(event: &PointerEvent) {
+    let pointer_id: i32 = event.pointer_id();
 
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
-            driver.hover_region_at(surface_point);
+            driver.cancel_pointer(pointer_id);
         }
     });
 }
 
-fn handle_mouseleave() {
+fn handle_pointerleave() {
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
             driver.clear_hover();
         }
     });
+}
+
+fn handle_wheel(event: &WheelEvent) {
+    // Suppress the page scroll so the wheel zooms the map. The canvas is not a passive-by-default wheel
+    // target (only the window, document, and body are), so preventDefault applies here.
+    event.prevent_default();
+
+    let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
+    let delta_y: f64 = event.delta_y();
+
+    DRIVER.with_borrow_mut(|driver_slot| {
+        if let Some(driver) = driver_slot {
+            driver.zoom_at(surface_point, delta_y);
+        }
+    });
+}
+
+/// Captures the pointer to the canvas so a drag keeps delivering move and up events after the pointer
+/// leaves the canvas; the browser releases the capture on pointerup/pointercancel.
+fn capture_pointer(event: &PointerEvent) {
+    let Some(target) = event.target() else {
+        return;
+    };
+    let Ok(element) = target.dyn_into::<web_sys::Element>() else {
+        return;
+    };
+
+    let _ = element.set_pointer_capture(event.pointer_id());
+}
+
+fn surface_distance(a: SurfacePoint, b: SurfacePoint) -> f64 {
+    let dx: f64 = a.x - b.x;
+    let dy: f64 = a.y - b.y;
+
+    (dx * dx + dy * dy).sqrt()
 }
 
 fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>) {
@@ -566,32 +805,62 @@ pub fn apply_period(period_start: NaiveDate) {
     publish_mutation(|driver| driver.scrub_to_period(period_start));
 }
 
-fn install_click_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
-    let click_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
-        handle_click(&event);
+fn install_pointerdown_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointerdown_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_pointerdown(&event);
     });
 
-    let _ = canvas.add_event_listener_with_callback("click", click_callback.as_ref().unchecked_ref());
+    let _ = canvas.add_event_listener_with_callback("pointerdown", pointerdown_callback.as_ref().unchecked_ref());
 
-    click_callback
+    pointerdown_callback
 }
 
-fn install_mousemove_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
-    let mousemove_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |event: MouseEvent| {
-        handle_mousemove(&event);
+fn install_pointermove_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointermove_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_pointermove(&event);
     });
 
-    let _ = canvas.add_event_listener_with_callback("mousemove", mousemove_callback.as_ref().unchecked_ref());
+    let _ = canvas.add_event_listener_with_callback("pointermove", pointermove_callback.as_ref().unchecked_ref());
 
-    mousemove_callback
+    pointermove_callback
 }
 
-fn install_mouseleave_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(MouseEvent)> {
-    let mouseleave_callback: Closure<dyn FnMut(MouseEvent)> = Closure::new(move |_event: MouseEvent| {
-        handle_mouseleave();
+fn install_pointerup_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointerup_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_pointerup(&event);
     });
 
-    let _ = canvas.add_event_listener_with_callback("mouseleave", mouseleave_callback.as_ref().unchecked_ref());
+    let _ = canvas.add_event_listener_with_callback("pointerup", pointerup_callback.as_ref().unchecked_ref());
 
-    mouseleave_callback
+    pointerup_callback
+}
+
+fn install_pointercancel_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointercancel_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_pointercancel(&event);
+    });
+
+    let _ = canvas.add_event_listener_with_callback("pointercancel", pointercancel_callback.as_ref().unchecked_ref());
+
+    pointercancel_callback
+}
+
+fn install_pointerleave_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointerleave_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |_event: PointerEvent| {
+        handle_pointerleave();
+    });
+
+    let _ = canvas.add_event_listener_with_callback("pointerleave", pointerleave_callback.as_ref().unchecked_ref());
+
+    pointerleave_callback
+}
+
+fn install_wheel_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(WheelEvent)> {
+    let wheel_callback: Closure<dyn FnMut(WheelEvent)> = Closure::new(move |event: WheelEvent| {
+        handle_wheel(&event);
+    });
+
+    let _ = canvas.add_event_listener_with_callback("wheel", wheel_callback.as_ref().unchecked_ref());
+
+    wheel_callback
 }
