@@ -22,9 +22,9 @@ pub struct Viewport {
 impl Viewport {
     /// A viewport with the surface's aspect that fills the surface vertically with the `min_y..max_y`
     /// extent, horizontally centered on `center_x`, widened by the surface aspect (isotropic, never
-    /// stretched). When filling the height would make the width exceed one world turn (`2π`) — a surface
-    /// wider than approximately 2:1 for the home framing — the width is capped at `2π` and the view then
-    /// shows a vertical slice of the extent instead of the whole of it. Delegates to
+    /// stretched). When filling the height would make the width exceed one world turn (`2π`), which
+    /// happens on a surface wider than approximately 2:1 for the home framing, the width is instead capped
+    /// at `2π` and the view shows a vertical slice of the extent rather than the whole of it. Delegates to
     /// `zoom_to_half_height` so the home view and manual zoom share one construction-and-clamp path.
     /// Assumes `surface` dimensions are nonzero and `max_y > min_y`.
     pub fn fill_height(center_x: f64, min_y: f64, max_y: f64, surface: SurfaceDimensions) -> Viewport {
