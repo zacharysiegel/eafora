@@ -27,15 +27,15 @@ pub struct HighlightVertex {
     pub country_index: u32,
 }
 
-/// Frame-global rendering parameters shared by every vertex shader. Padded to 32 bytes (a multiple of
-/// 16). The antimeridian wrap is derived in the shader from the bounds (per instance), so it is not
-/// stored here.
+/// Padded to a multiple of 16 bytes. The antimeridian wrap is derived in the shader from the bounds
+/// per instance, so it is not stored here.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewportUniform {
     pub projected_min: Vec2,
     pub projected_max: Vec2,
-    /// Physical pixels; converts a screen-pixel highlight offset to a projected length.
+    /// The render surface's size in physical pixels. The shader uses it to convert the lift and outline
+    /// widths (given in pixels) into projected-space distances.
     pub surface_size: Vec2,
     pub _padding: Vec2,
 }
