@@ -57,6 +57,5 @@ pub struct CountryState {
 const _: () = assert!(std::mem::size_of::<CountryState>() == 16);
 
 /// The fixed length of the per-country state uniform array; the shader's `array<CountryState, ...>`
-/// literal length must match this. At least the number of countries in the layer; the bind group's
-/// min_binding_size check catches a mismatch with the shader.
+/// literal length must match this. At least the number of countries in the layer.
 pub const COUNTRY_STATE_ARRAY_LEN: usize = 512;
