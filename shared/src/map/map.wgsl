@@ -77,8 +77,8 @@ struct FillVertexOutput {
 @vertex
 fn fill_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> FillVertexOutput {
     var output: FillVertexOutput;
-    let lifted: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, 0.0);
-    output.clip_position = project_to_clip(lifted, instance_index);
+    let lifted_position: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, 0.0);
+    output.clip_position = project_to_clip(lifted_position, instance_index);
     output.color = input.color;
     return output;
 }
@@ -88,37 +88,37 @@ fn fill_fragment_main(input: FillVertexOutput) -> @location(0) vec4<f32> {
     return input.color;
 }
 
-// Outline pipeline: the selected/hovered country's fill triangles, inflated by an extra `outline.x`
+// Emphasis-outline pipeline: the selected/hovered country's fill triangles, inflated by an extra `outline.x`
 // pixels and painted solid black. Drawn behind the normal fill so only the extra rim shows, giving a
 // uniform outline even on multi-island countries (a filled silhouette, not stroked line segments).
 
 @vertex
-fn outline_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
+fn emphasis_outline_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
     let outline_px: f32 = country_state[input.country_index].outline_px;
-    let inflated: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, outline_px);
-    return project_to_clip(inflated, instance_index);
+    let inflated_position: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, outline_px);
+    return project_to_clip(inflated_position, instance_index);
 }
 
 @fragment
-fn outline_fragment_main() -> @location(0) vec4<f32> {
+fn emphasis_outline_fragment_main() -> @location(0) vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
 }
 
-// Border pipeline: the country outlines as line segments, opaque black.
+// Boundary pipeline: each country's boundary as line segments, opaque black.
 
-struct BorderVertexInput {
+struct BoundaryVertexInput {
     @location(0) position: vec2<f32>,
     @location(2) outward_direction: vec2<f32>,
     @location(3) country_index: u32,
 };
 
 @vertex
-fn border_vertex_main(input: BorderVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
-    let lifted: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, 0.0);
-    return project_to_clip(lifted, instance_index);
+fn boundary_vertex_main(input: BoundaryVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
+    let lifted_position: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, 0.0);
+    return project_to_clip(lifted_position, instance_index);
 }
 
 @fragment
-fn border_fragment_main() -> @location(0) vec4<f32> {
+fn boundary_fragment_main() -> @location(0) vec4<f32> {
     return vec4<f32>(0.0, 0.0, 0.0, 1.0);
 }

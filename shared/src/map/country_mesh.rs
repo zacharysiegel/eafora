@@ -25,7 +25,7 @@ pub struct CountryMesh {
     /// (away from its interior), used to raise and outline it when hovered or selected.
     pub outward_directions: Vec<Vec2>,
     pub fill_indices: Vec<u32>,
-    pub border_indices: Vec<u32>,
+    pub boundary_indices: Vec<u32>,
 }
 
 impl CountryMesh {
@@ -36,7 +36,7 @@ impl CountryMesh {
             vertices: Vec::new(),
             outward_directions: Vec::new(),
             fill_indices: Vec::new(),
-            border_indices: Vec::new(),
+            boundary_indices: Vec::new(),
         };
 
         for polygon in &feature.polygons {
@@ -57,7 +57,7 @@ impl CountryMesh {
         self.vertices.extend(to_projected_vertices(&projected_coordinates));
         self.outward_directions.extend(polygon_outward_directions(&rings));
         self.fill_indices.extend(fill_triangle_indices);
-        self.border_indices.extend(ring_edge_indices(&rings, polygon_vertex_offset));
+        self.boundary_indices.extend(ring_edge_indices(&rings, polygon_vertex_offset));
 
         Ok(())
     }
@@ -154,7 +154,7 @@ fn ring_edge_indices(rings: &[&[(f64, f64)]], polygon_vertex_offset: u32) -> Vec
 }
 
 /// FlatGeobuf/geo-types rings repeat the first vertex as the last to close the loop; earcut and the
-/// border edges want the open ring, so drop that trailing duplicate.
+/// boundary edges want the open ring, so drop that trailing duplicate.
 fn open_ring(ring: &[(f64, f64)]) -> &[(f64, f64)] {
     if ring.len() >= 2 && ring.first() == ring.last() {
         &ring[..ring.len() - 1]
@@ -342,10 +342,10 @@ mod tests {
     }
 
     #[test]
-    fn from_feature_emits_the_closed_border_loop() {
+    fn from_feature_emits_the_closed_boundary_loop() {
         let mesh: CountryMesh = testland_mesh();
 
-        assert_eq!(mesh.border_indices, vec![0, 1, 1, 2, 2, 3, 3, 0]);
+        assert_eq!(mesh.boundary_indices, vec![0, 1, 1, 2, 2, 3, 3, 0]);
     }
 
     #[test]

@@ -12,13 +12,13 @@ use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAt
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
 /// (re)created at attach time once that format is available.
 pub struct RenderPipelines {
-    /// Outlines each country as line segments.
-    pub border: RenderPipeline,
+    /// Draws each country's boundary as line segments.
+    pub boundary: RenderPipeline,
     /// Paints the choropleth triangles.
     pub fill: RenderPipeline,
     /// The selected/hovered country's triangles, inflated and painted black, drawn behind its fill so
     /// only the extra rim shows as a uniform outline.
-    pub outline: RenderPipeline,
+    pub emphasis_outline: RenderPipeline,
 }
 
 impl RenderPipelines {
@@ -39,17 +39,17 @@ impl RenderPipelines {
             immediate_size: 0,
         });
         let shader_module: ShaderModule = create_map_shader_module(device);
-        let border: RenderPipeline = create_border_pipeline(device, &shader_module, &pipeline_layout, surface_format);
+        let boundary: RenderPipeline = create_boundary_pipeline(device, &shader_module, &pipeline_layout, surface_format);
         let fill: RenderPipeline =
             create_triangle_pipeline(device, &shader_module, &pipeline_layout, surface_format, "eafora-fill-pipeline", "fill_vertex_main", "fill_fragment_main");
-        let outline: RenderPipeline =
-            create_triangle_pipeline(device, &shader_module, &pipeline_layout, surface_format, "eafora-outline-pipeline", "outline_vertex_main", "outline_fragment_main");
+        let emphasis_outline: RenderPipeline =
+            create_triangle_pipeline(device, &shader_module, &pipeline_layout, surface_format, "eafora-emphasis-outline-pipeline", "emphasis_outline_vertex_main", "emphasis_outline_fragment_main");
 
         if let Some(error) = drain_error_scopes(error_scopes).await {
             return Err(AppError::from(format!("building the render pipelines failed: {error}")));
         }
 
-        Ok(RenderPipelines { border, fill, outline })
+        Ok(RenderPipelines { boundary, fill, emphasis_outline })
     }
 }
 
@@ -105,7 +105,7 @@ pub(crate) fn create_map_bind_group_layout(device: &Device) -> BindGroupLayout {
     })
 }
 
-fn create_border_pipeline(
+fn create_boundary_pipeline(
     device: &Device,
     shader_module: &ShaderModule,
     pipeline_layout: &PipelineLayout,
@@ -127,11 +127,11 @@ fn create_border_pipeline(
     ];
 
     device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("eafora-border-pipeline"),
+        label: Some("eafora-boundary-pipeline"),
         layout: Some(pipeline_layout),
         vertex: VertexState {
             module: shader_module,
-            entry_point: Some("border_vertex_main"),
+            entry_point: Some("boundary_vertex_main"),
             compilation_options: PipelineCompilationOptions::default(),
             buffers: &vertex_buffers,
         },
@@ -145,11 +145,11 @@ fn create_border_pipeline(
             conservative: false,
         },
         depth_stencil: None,
-        // No MSAA in v1; revisit to anti-alias the jagged border and coastline edges.
+        // No MSAA in v1; revisit to anti-alias the jagged boundary and coastline edges.
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,
-            entry_point: Some("border_fragment_main"),
+            entry_point: Some("boundary_fragment_main"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &[Some(ColorTargetState {
                 format: surface_format,
@@ -174,9 +174,9 @@ fn create_triangle_pipeline(
     // Position, color, and emphasis are separate vertex buffers, not interleaved: positions are static
     // (uploaded once); colors are rebuilt when the active statistic or period changes; the emphasis
     // buffer (per-vertex boundary outward-direction + country index) is static. Keeping them apart lets the color
-    // buffer be replaced without re-uploading geometry, and lets the border pipeline reuse the position
-    // and emphasis buffers without the colors. The fill and outline pipelines share this layout; the
-    // outline reads the color attribute's buffer too but ignores it (its fragment shader is constant).
+    // buffer be replaced without re-uploading geometry, and lets the boundary pipeline reuse the position
+    // and emphasis buffers without the colors. The fill and emphasis-outline pipelines share this layout;
+    // the emphasis outline reads the color attribute's buffer too but ignores it (its fragment shader is constant).
     let position_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
     let color_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x4];
     let emphasis_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
@@ -217,7 +217,7 @@ fn create_triangle_pipeline(
             conservative: false,
         },
         depth_stencil: None,
-        // No MSAA in v1; revisit to anti-alias the jagged border and coastline edges.
+        // No MSAA in v1; revisit to anti-alias the jagged boundary and coastline edges.
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,

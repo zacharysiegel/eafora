@@ -69,7 +69,7 @@ struct CountryGeometry {
     positions: CountedBuffer,
     emphasis: Buffer,
     fill: CountedBuffer,
-    border: CountedBuffer,
+    boundary: CountedBuffer,
     spans: Vec<CountrySpan>,
 }
 
@@ -370,7 +370,7 @@ impl Renderer {
 
         render_pass.set_bind_group(0, &self.map_binding.bind_group, &[]);
 
-        // Base layer: every country's fills, then every country's borders.
+        // Base layer: every country's fills, then every country's boundaries.
         render_pass.set_pipeline(&attached.pipelines.fill);
         render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
@@ -378,11 +378,11 @@ impl Renderer {
         render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.fill.count, 0, 0..instance_count);
 
-        render_pass.set_pipeline(&attached.pipelines.border);
+        render_pass.set_pipeline(&attached.pipelines.boundary);
         render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
         render_pass.set_vertex_buffer(1, self.country_geometry.emphasis.slice(..));
-        render_pass.set_index_buffer(self.country_geometry.border.buffer.slice(..), IndexFormat::Uint32);
-        render_pass.draw_indexed(0..self.country_geometry.border.count, 0, 0..instance_count);
+        render_pass.set_index_buffer(self.country_geometry.boundary.buffer.slice(..), IndexFormat::Uint32);
+        render_pass.draw_indexed(0..self.country_geometry.boundary.count, 0, 0..instance_count);
 
         // On top: the selected and hovered countries, so they are not overdrawn by neighbors. For each,
         // its fill triangles inflated by its `outline_px` and painted black (a silhouette), then the same
@@ -394,7 +394,7 @@ impl Renderer {
             render_pass.set_vertex_buffer(2, self.country_geometry.emphasis.slice(..));
             render_pass.set_index_buffer(self.country_geometry.fill.buffer.slice(..), IndexFormat::Uint32);
 
-            render_pass.set_pipeline(&attached.pipelines.outline);
+            render_pass.set_pipeline(&attached.pipelines.emphasis_outline);
             render_pass.draw_indexed(fill_range.clone(), 0, 0..instance_count);
 
             render_pass.set_pipeline(&attached.pipelines.fill);
@@ -514,7 +514,7 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
     let mut positions: Vec<ProjectedVertexAttributes> = Vec::new();
     let mut emphasis_vertices: Vec<EmphasisVertexAttributes> = Vec::new();
     let mut fill_indices: Vec<u32> = Vec::new();
-    let mut border_indices: Vec<u32> = Vec::new();
+    let mut boundary_indices: Vec<u32> = Vec::new();
     let mut spans: Vec<CountrySpan> = Vec::new();
     for (country_index, country_mesh) in country_meshes.iter().enumerate() {
         let vertex_start: u32 = positions.len() as u32;
@@ -526,7 +526,7 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
             country_index: country_index as u32,
         }));
         fill_indices.extend(country_mesh.fill_indices.iter().map(|&index| vertex_start + index));
-        border_indices.extend(country_mesh.border_indices.iter().map(|&index| vertex_start + index));
+        boundary_indices.extend(country_mesh.boundary_indices.iter().map(|&index| vertex_start + index));
         spans.push(CountrySpan {
             iso3: country_mesh.iso3.clone(),
             region_code: country_mesh.region_code.clone(),
@@ -552,9 +552,9 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         contents: bytemuck::cast_slice(&fill_indices),
         usage: BufferUsages::INDEX,
     });
-    let border_index_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
-        label: Some("eafora-country-border-indices"),
-        contents: bytemuck::cast_slice(&border_indices),
+    let boundary_index_buffer: Buffer = device.create_buffer_init(&BufferInitDescriptor {
+        label: Some("eafora-country-boundary-indices"),
+        contents: bytemuck::cast_slice(&boundary_indices),
         usage: BufferUsages::INDEX,
     });
 
@@ -562,7 +562,7 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         positions: CountedBuffer { buffer: positions_buffer, count: positions.len() as u32 },
         emphasis: emphasis_buffer,
         fill: CountedBuffer { buffer: fill_index_buffer, count: fill_indices.len() as u32 },
-        border: CountedBuffer { buffer: border_index_buffer, count: border_indices.len() as u32 },
+        boundary: CountedBuffer { buffer: boundary_index_buffer, count: boundary_indices.len() as u32 },
         spans,
     })
 }
