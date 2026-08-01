@@ -59,4 +59,4 @@ const _: () = assert!(std::mem::size_of::<CountryState>() == 16);
 /// The fixed length of the per-country state uniform array (`array<CountryState, 512>` in map.wgsl; the
 /// literal there must match this). At least the number of countries in the layer; the bind group's
 /// min_binding_size check catches a mismatch with the shader.
-pub const COUNTRY_STATE_CAP: usize = 512;
+pub const COUNTRY_STATE_ARRAY_LEN: usize = 512;

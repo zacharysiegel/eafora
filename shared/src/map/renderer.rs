@@ -19,7 +19,7 @@ use crate::error::AppError;
 use crate::map::color::{self, StatisticColorTransform, Rgba};
 use crate::map::{FrameState, RegionCode, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
-use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_CAP};
+use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_ARRAY_LEN};
 use crate::map::pipeline::{self, RenderPipelines};
 use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
@@ -304,7 +304,7 @@ impl Renderer {
     /// region with no matching country (e.g. a stale hover after a bundle swap) is skipped.
     fn write_country_state(&self, frame_state: &FrameState) {
         let mut country_state: Vec<CountryState> =
-            vec![CountryState { lift_px: 0.0, outline_px: 0.0, _padding: [0.0; 2] }; COUNTRY_STATE_CAP];
+            vec![CountryState { lift_px: 0.0, outline_px: 0.0, _padding: [0.0; 2] }; COUNTRY_STATE_ARRAY_LEN];
 
         if let Some(index) = self.country_index_of(frame_state.selected_region.as_ref()) {
             country_state[index].outline_px = SELECTED_OUTLINE_PX;
@@ -484,7 +484,7 @@ fn create_map_binding(device: &Device) -> MapBinding {
     });
     let country_state_buffer: Buffer = device.create_buffer(&BufferDescriptor {
         label: Some("eafora-country-state-uniform"),
-        size: (COUNTRY_STATE_CAP * size_of::<CountryState>()) as BufferAddress,
+        size: (COUNTRY_STATE_ARRAY_LEN * size_of::<CountryState>()) as BufferAddress,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -503,11 +503,11 @@ fn create_map_binding(device: &Device) -> MapBinding {
 fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
     let country_meshes: Vec<CountryMesh> = country_mesh::build_country_meshes(&bundle.geometry)?;
 
-    if country_meshes.len() > COUNTRY_STATE_CAP {
+    if country_meshes.len() > COUNTRY_STATE_ARRAY_LEN {
         return Err(AppError::from(format!(
             "geometry has {} countries, over the per-country state cap of {}",
             country_meshes.len(),
-            COUNTRY_STATE_CAP,
+            COUNTRY_STATE_ARRAY_LEN,
         )));
     }
 

@@ -7,7 +7,7 @@ use wgpu::{
 };
 
 use crate::error::AppError;
-use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_CAP};
+use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_ARRAY_LEN};
 
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
 /// (re)created at attach time once that format is available.
@@ -97,7 +97,7 @@ pub(crate) fn create_map_bind_group_layout(device: &Device) -> BindGroupLayout {
                 ty: BindingType::Buffer {
                     ty: BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: BufferSize::new((COUNTRY_STATE_CAP * std::mem::size_of::<CountryState>()) as u64),
+                    min_binding_size: BufferSize::new((COUNTRY_STATE_ARRAY_LEN * std::mem::size_of::<CountryState>()) as u64),
                 },
                 count: None,
             },
