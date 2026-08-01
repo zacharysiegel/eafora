@@ -132,8 +132,6 @@ struct MapBinding {
 struct AttachedState {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
-    /// Physical pixels, for converting a screen-space emphasis offset to projected units.
-    size: (u32, u32),
 }
 
 impl Renderer {
@@ -192,7 +190,7 @@ impl Renderer {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
 
-        self.attach(surface, width, height).await
+        self.attach(surface).await
     }
 
     #[cfg(target_arch = "wasm32")] // attaches from an HtmlCanvasElement, not a raw window handle
@@ -200,16 +198,16 @@ impl Renderer {
         let surface: WgpuSurface =
             WgpuSurface::from_canvas(&self.instance, &self.adapter, &self.device, canvas, width, height)?;
 
-        self.attach(surface, width, height).await
+        self.attach(surface).await
     }
 
     /// Builds the surface-format pipelines and stores the attached state. Surface-agnostic — shared by
     /// the native window-handle path and the canvas path — so it is not target-gated.
-    async fn attach(&mut self, surface: WgpuSurface, width: u32, height: u32) -> Result<(), AppError> {
+    async fn attach(&mut self, surface: WgpuSurface) -> Result<(), AppError> {
         let pipelines: RenderPipelines =
             RenderPipelines::create(&self.device, surface.format(), &self.map_binding.layout).await?;
 
-        self.attached = Some(AttachedState { surface, pipelines, size: (width, height) });
+        self.attached = Some(AttachedState { surface, pipelines });
 
         Ok(())
     }
@@ -222,7 +220,6 @@ impl Renderer {
         let attached: &mut AttachedState = self.attached.as_mut()
                 .expect("resize_surface: a surface must be attached first");
         attached.surface.resize(&self.device, width, height);
-        attached.size = (width, height);
 
         Ok(())
     }
@@ -292,7 +289,7 @@ impl Renderer {
     fn write_viewport_uniform(&self, viewport: Viewport) {
         let (width, height): (u32, u32) = self.attached.as_ref()
             .expect("draw_frame: a surface must be attached first")
-            .size;
+            .surface.size();
         let viewport_uniform: ViewportUniform = viewport.to_gpu(Vec2 { x: width as f32, y: height as f32 });
 
         self.queue.write_buffer(&self.map_binding.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));

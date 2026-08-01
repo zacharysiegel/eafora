@@ -20,6 +20,10 @@ impl WgpuSurface {
         self.config.format
     }
 
+    pub fn size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
+    }
+
     pub fn resize(&mut self, device: &Device, width: u32, height: u32) {
         self.config.width = width;
         self.config.height = height;
