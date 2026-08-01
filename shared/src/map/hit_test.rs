@@ -57,9 +57,8 @@ pub fn surface_to_projected(viewport: Viewport, surface_dimensions: SurfaceDimen
     let normalized_x: f64 = surface_point.x / surface_dimensions.width as f64;
     let normalized_y: f64 = surface_point.y / surface_dimensions.height as f64;
 
-    // The normalized position places the cursor within the surface on [0, 1]: 0 at the left/top edge, 1
-    // at the right/bottom. Surface y grows downward, so normalized_y 0 maps to the viewport's max
-    // projected y (the top of the view), not its min.
+    // Surface y grows downward, so normalized_y 0 (the top edge) maps to the viewport's max projected y,
+    // hence the `max.y -` term.
     ProjectedPoint {
         x: viewport.min.x + normalized_x * (viewport.max.x - viewport.min.x),
         y: viewport.max.y - normalized_y * (viewport.max.y - viewport.min.y),
@@ -151,7 +150,7 @@ fn surface_midpoint(a: SurfacePoint, b: SurfacePoint) -> SurfacePoint {
     SurfacePoint { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 }
 }
 
-fn surface_distance(a: SurfacePoint, b: SurfacePoint) -> f64 {
+pub fn surface_distance(a: SurfacePoint, b: SurfacePoint) -> f64 {
     let dx: f64 = a.x - b.x;
     let dy: f64 = a.y - b.y;
 

@@ -253,6 +253,9 @@ impl Driver {
 
         match self.pointers.len() {
             1 => {
+                // Suppress hover for the gesture's duration; the pre-press highlight must not stay pinned
+                // to its region while the map pans.
+                self.clear_hover();
                 self.press_origin = Some(surface_point);
                 self.gesture_moved = false;
             },
@@ -281,7 +284,7 @@ impl Driver {
         self.pointers[index].position = surface_point;
 
         if let Some(origin) = self.press_origin {
-            if surface_distance(origin, surface_point) > DRAG_SELECT_SUPPRESS_PX {
+            if hit_test::surface_distance(origin, surface_point) > DRAG_SELECT_SUPPRESS_PX {
                 self.gesture_moved = true;
             }
         }
@@ -761,13 +764,6 @@ fn capture_pointer(event: &PointerEvent) {
     };
 
     let _ = element.set_pointer_capture(event.pointer_id());
-}
-
-fn surface_distance(a: SurfacePoint, b: SurfacePoint) -> f64 {
-    let dx: f64 = a.x - b.x;
-    let dy: f64 = a.y - b.y;
-
-    (dx * dx + dy * dy).sqrt()
 }
 
 fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>) {
