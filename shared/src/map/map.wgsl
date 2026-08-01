@@ -9,9 +9,9 @@ struct ViewportUniform {
 var<uniform> viewport: ViewportUniform;
 
 // Per-country emphasis state, indexed by a vertex's country_index. The array length matches
-// COUNTRY_STATE_CAP in gpu_types.rs; the bind group's min_binding_size check catches any drift. Padded
-// to 16 bytes so the uniform-array element size is a multiple of 16 (stricter WGSL validators such as
-// WebKit require this); matches CountryState in gpu_types.rs.
+// COUNTRY_STATE_ARRAY_LEN on the Rust side; the bind group's min_binding_size check catches any drift.
+// Padded to 16 bytes so the uniform-array element size is a multiple of 16 (stricter WGSL validators
+// such as WebKit require this); matches the Rust CountryState struct.
 struct CountryState {
     lift_px: f32,
     outline_px: f32,
