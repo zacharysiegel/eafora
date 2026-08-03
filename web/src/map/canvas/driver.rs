@@ -100,11 +100,11 @@ struct Driver {
     gesture_moved: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
     resize_callback: Option<Closure<dyn FnMut()>>,
-    pointerdown_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
-    pointermove_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
-    pointerup_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
-    pointercancel_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
-    pointerleave_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointer_down_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointer_move_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointer_up_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointer_cancel_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    pointer_leave_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
     wheel_callback: Option<Closure<dyn FnMut(WheelEvent)>>,
 }
 
@@ -513,11 +513,11 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         gesture_moved: false,
         redraw_callback: None,
         resize_callback: Some(install_resize_listener(&canvas)),
-        pointerdown_callback: Some(install_pointerdown_listener(&canvas)),
-        pointermove_callback: Some(install_pointermove_listener(&canvas)),
-        pointerup_callback: Some(install_pointerup_listener(&canvas)),
-        pointercancel_callback: Some(install_pointercancel_listener(&canvas)),
-        pointerleave_callback: Some(install_pointerleave_listener(&canvas)),
+        pointer_down_callback: Some(install_pointer_down_listener(&canvas)),
+        pointer_move_callback: Some(install_pointer_move_listener(&canvas)),
+        pointer_up_callback: Some(install_pointer_up_listener(&canvas)),
+        pointer_cancel_callback: Some(install_pointer_cancel_listener(&canvas)),
+        pointer_leave_callback: Some(install_pointer_leave_listener(&canvas)),
         wheel_callback: Some(install_wheel_listener(&canvas)),
     };
 
@@ -674,7 +674,7 @@ fn surface_point_from_mouse_event(event: &MouseEvent) -> SurfacePoint {
     }
 }
 
-fn handle_pointerdown(event: &PointerEvent) {
+fn handle_pointer_down(event: &PointerEvent) {
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let pointer_id: i32 = event.pointer_id();
 
@@ -687,7 +687,7 @@ fn handle_pointerdown(event: &PointerEvent) {
     });
 }
 
-fn handle_pointermove(event: &PointerEvent) {
+fn handle_pointer_move(event: &PointerEvent) {
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let pointer_id: i32 = event.pointer_id();
     let is_mouse: bool = event.pointer_type() == "mouse";
@@ -708,7 +708,7 @@ fn handle_pointermove(event: &PointerEvent) {
     });
 }
 
-fn handle_pointerup(event: &PointerEvent) {
+fn handle_pointer_up(event: &PointerEvent) {
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let pointer_id: i32 = event.pointer_id();
 
@@ -725,7 +725,7 @@ fn handle_pointerup(event: &PointerEvent) {
     }
 }
 
-fn handle_pointercancel(event: &PointerEvent) {
+fn handle_pointer_cancel(event: &PointerEvent) {
     let pointer_id: i32 = event.pointer_id();
 
     DRIVER.with_borrow_mut(|driver_slot| {
@@ -735,7 +735,7 @@ fn handle_pointercancel(event: &PointerEvent) {
     });
 }
 
-fn handle_pointerleave() {
+fn handle_pointer_leave() {
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
             driver.clear_hover();
@@ -806,54 +806,54 @@ pub fn apply_period(period_start: NaiveDate) {
     publish_mutation(|driver| driver.scrub_to_period(period_start));
 }
 
-fn install_pointerdown_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
-    let pointerdown_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
-        handle_pointerdown(&event);
+fn install_pointer_down_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointer_down_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_pointer_down(&event);
     });
 
-    let _ = canvas.add_event_listener_with_callback("pointerdown", pointerdown_callback.as_ref().unchecked_ref());
+    let _ = canvas.add_event_listener_with_callback("pointerdown", pointer_down_callback.as_ref().unchecked_ref());
 
-    pointerdown_callback
+    pointer_down_callback
 }
 
-fn install_pointermove_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
-    let pointermove_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
-        handle_pointermove(&event);
+fn install_pointer_move_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointer_move_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_pointer_move(&event);
     });
 
-    let _ = canvas.add_event_listener_with_callback("pointermove", pointermove_callback.as_ref().unchecked_ref());
+    let _ = canvas.add_event_listener_with_callback("pointermove", pointer_move_callback.as_ref().unchecked_ref());
 
-    pointermove_callback
+    pointer_move_callback
 }
 
-fn install_pointerup_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
-    let pointerup_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
-        handle_pointerup(&event);
+fn install_pointer_up_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointer_up_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_pointer_up(&event);
     });
 
-    let _ = canvas.add_event_listener_with_callback("pointerup", pointerup_callback.as_ref().unchecked_ref());
+    let _ = canvas.add_event_listener_with_callback("pointerup", pointer_up_callback.as_ref().unchecked_ref());
 
-    pointerup_callback
+    pointer_up_callback
 }
 
-fn install_pointercancel_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
-    let pointercancel_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
-        handle_pointercancel(&event);
+fn install_pointer_cancel_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointer_cancel_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_pointer_cancel(&event);
     });
 
-    let _ = canvas.add_event_listener_with_callback("pointercancel", pointercancel_callback.as_ref().unchecked_ref());
+    let _ = canvas.add_event_listener_with_callback("pointercancel", pointer_cancel_callback.as_ref().unchecked_ref());
 
-    pointercancel_callback
+    pointer_cancel_callback
 }
 
-fn install_pointerleave_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
-    let pointerleave_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |_event: PointerEvent| {
-        handle_pointerleave();
+fn install_pointer_leave_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let pointer_leave_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |_event: PointerEvent| {
+        handle_pointer_leave();
     });
 
-    let _ = canvas.add_event_listener_with_callback("pointerleave", pointerleave_callback.as_ref().unchecked_ref());
+    let _ = canvas.add_event_listener_with_callback("pointerleave", pointer_leave_callback.as_ref().unchecked_ref());
 
-    pointerleave_callback
+    pointer_leave_callback
 }
 
 fn install_wheel_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(WheelEvent)> {
