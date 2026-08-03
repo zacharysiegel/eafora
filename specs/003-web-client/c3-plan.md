@@ -7,7 +7,7 @@
 
 C3 completes the map's interaction model. It is four sub-slices, built in order, each its own PR (and, for the render pass and camera work, its own detailed design section added here as it is picked up):
 
-- **C3.1 — viewport aspect correction.** Fit the world to the canvas without stretching; home view centered on Washington DC. Detailed below.
+- **C3.1 — viewport aspect correction.** Fit the world to the canvas without stretching; home view centered on the prime meridian (Greenwich). Detailed below.
 - **C3.2 — selection/hover render pass.** On-map feedback: a 2px black outline on the selected country and a slight scale-up on both hovered and selected countries; hit-testing stays on the unscaled polygon.
 - **C3.3 — manual pan/zoom.** Wheel-zoom + drag-pan the camera, in projected space, clamped to world bounds. Event-driven, so it rides the existing on-demand redraw (no animation loop).
 - **C3.4 — animated zoom-to-country.** A `Camera` state machine (cubic easing, centroid target, bounding-box + margin scale) advanced by a self-scheduling `requestAnimationFrame` loop; click-to-zoom, coexisting with the C3.2 selection.
@@ -39,7 +39,7 @@ Result: geographic domain (geometry, `GeoPoint`, `WORLD_BOUNDS`, hit-test's poin
 
 **Vertical-fill viewport.** A pure `shared::map` function, `Viewport::fill_height`, produces a `Viewport` whose aspect equals the surface aspect and whose vertical extent is exactly the requested half-height, filling the surface top to bottom; the horizontal extent is that half-height times the surface aspect (isotropic, never stretched). On a surface narrower than the content, the horizontal sides fall outside the viewport and are reached by panning (C3.3); it never leaves paper margins on the filled (vertical) axis.
 
-**Home view.** The home viewport fills the surface vertically with a **fixed latitude band** (`HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT`, −56°..84°, chosen to enclose the drawn continents from Tierra del Fuego to northern Greenland), **horizontally centered on Washington DC's longitude** (≈ 77.04° W; the implementation defines a `HOME_CENTER` constant at ≈ 38.91° N, 77.04° W). Vertically it is centered on that band's midpoint (≈ 14°N, since the band skews north), not the equator, so no empty ocean shows below the southernmost land. Longitude runs at the same isotropic scale, so the surface width shows as much as fits; the remaining longitude is reached by horizontal pan (C3.3), with the wraparound placing DC at the middle. A surface wider than the band's aspect would repeat the world horizontally; that case is not special-cased for C3.1.
+**Home view.** The home viewport fills the surface vertically with a **fixed latitude band** (`HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT`, −56°..84°, chosen to enclose the drawn continents from Tierra del Fuego to northern Greenland), **horizontally centered on the prime meridian** (Greenwich, longitude 0°; the implementation defines a `HOME_CENTER` constant at longitude 0°). Vertically it is centered on that band's midpoint (≈ 14°N, since the band skews north), not the equator, so no empty ocean shows below the southernmost land. Longitude runs at the same isotropic scale, so the surface width shows as much as fits; the remaining longitude is reached by horizontal pan (C3.3), with the wraparound placing the prime meridian at the middle. A surface wider than the band's aspect would repeat the world horizontally; that case is not special-cased for C3.1.
 
 **Resize.** On resize the surface aspect changes, so the driver recomputes the viewport with `fill_height` around the same center and latitude band. The driver calls it at startup and in its resize handler.
 
@@ -57,13 +57,13 @@ Result: geographic domain (geometry, `GeoPoint`, `WORLD_BOUNDS`, hit-test's poin
 
 ### Out of scope for C3.1
 
-Pan/zoom (C3.3), the selection/hover render pass (C3.2), any animation (C3.4). C3.1 ships a fixed, aspect-correct, DC-centered whole-world view.
+Pan/zoom (C3.3), the selection/hover render pass (C3.2), any animation (C3.4). C3.1 ships a fixed, aspect-correct, prime-meridian-centered whole-world view.
 
 ### PR description (draft)
 
 **shared** — Make the projected plane isotropic: `project`/`unproject` carry longitude in radians (geographic coordinates stay degrees), and the WGSL wraparound constants become `±π` / `2π`. Add `Viewport::fill_height`, which frames a vertical extent into a surface-aspect viewport that fills the surface vertically.
 
-**web** — The map viewport now fills the canvas vertically with a fixed latitude band (−56°..84°, chosen to enclose the drawn content, so no empty ocean shows below the southernmost land) and is recomputed on resize; the home view centers horizontally on Washington DC's longitude, with longitude beyond the canvas width reached by panning.
+**web** — The map viewport now fills the canvas vertically with a fixed latitude band (−56°..84°, chosen to enclose the drawn content, so no empty ocean shows below the southernmost land) and is recomputed on resize; the home view centers horizontally on the prime meridian (Greenwich), with longitude beyond the canvas width reached by panning.
 
 ## C3.2 — selection/hover render pass
 

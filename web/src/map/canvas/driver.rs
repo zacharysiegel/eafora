@@ -26,12 +26,12 @@ thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
 }
 
-/// Washington DC. The home view is centered horizontally on its longitude; vertically it is centered on
-/// the home-view latitude framing's midpoint (see `HOME_VIEW_MIN_LAT` / `home_viewport`), so DC drives
-/// the horizontal center only.
+/// Greenwich, on the prime meridian. The home view is centered horizontally on its longitude (0°);
+/// vertically it is centered on the home-view latitude framing's midpoint (see `HOME_VIEW_MIN_LAT` /
+/// `home_viewport`), so only the longitude is used.
 const HOME_CENTER: GeoPoint = GeoPoint {
-    lat: 38.9072,
-    lon: -77.0369,
+    lat: 51.4779,
+    lon: 0.0,
 };
 
 /// The home view's latitude framing, in degrees: chosen to enclose the drawn continents (Tierra del
@@ -607,10 +607,11 @@ fn backend_from_query() -> RendererBackend {
 }
 
 /// The home view: the `HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT` latitude band fills the surface
-/// vertically, centered horizontally on Washington DC's longitude. Longitude runs at the same isotropic
-/// scale, so the surface width shows as much as fits and the rest is reached by panning; the wraparound
-/// places DC at the middle with the world continuing across the seam. Framing a fixed content band
-/// rather than the ±85° world keeps the empty ocean below the southernmost land off-screen.
+/// vertically, centered horizontally on the prime meridian (Greenwich, longitude 0°). Longitude runs at
+/// the same isotropic scale, so the surface width shows as much as fits and the rest is reached by
+/// panning; the wraparound places the prime meridian at the middle with the world continuing across the
+/// seam. Framing a fixed content band rather than the ±85° world keeps the empty ocean below the
+/// southernmost land off-screen.
 fn home_viewport(surface: SurfaceDimensions) -> Viewport {
     let center_x: f64 = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon).x;
     let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
