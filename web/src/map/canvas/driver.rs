@@ -54,7 +54,7 @@ const MAX_WHEEL_DELTA: f64 = 240.0;
 /// Pointer travel in device pixels, between press and release, beyond which a single-pointer gesture is a
 /// pan rather than a tap, so it does not select. A few-pixel deadzone keeps a click that jitters slightly
 /// from being swallowed.
-const DRAG_SELECT_SUPPRESS_PX: f64 = 5.0;
+const DRAG_SELECT_SUPPRESS_PX: f64 = 7.0;
 
 /// A pointer currently in contact (a held mouse button or a touching finger), tracked by `pointerId` so
 /// pan and pinch can follow the right one across moves.
