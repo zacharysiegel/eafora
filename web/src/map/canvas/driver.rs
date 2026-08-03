@@ -56,84 +56,74 @@ const MAX_WHEEL_DELTA: f64 = 240.0;
 /// from being swallowed.
 const DRAG_SELECT_SUPPRESS_PX: f64 = 7.0;
 
-/// A pointer currently in contact (a held mouse button or a touching finger), tracked by `pointerId` so
-/// pan and pinch can follow the right one across moves.
+/// A pointer in contact (a held mouse button or a touching finger), tracked by `pointerId` so pan and
+/// pinch can follow the right one across moves.
+#[derive(Debug, Clone, Copy)]
 struct PointerState {
     pointer_id: i32,
     position: SurfacePoint,
 }
 
-/// Whether a pan move has just crossed the tap-vs-drag threshold, so the caller can suppress hover once.
-enum DragTransition {
-    Unchanged,
-    JustStarted,
+/// The in-progress pointer gesture. Each variant owns exactly the state its stage needs, so combinations
+/// like a press origin with no pointer down cannot arise. Only `Tap` selects on release; `Pan` and
+/// `Pinch` do not.
+#[derive(Debug, Clone, Copy)]
+enum Gesture {
+    Idle,
+    /// One pointer down, not yet past the tap threshold. `origin` is where it pressed, for that test.
+    Tap { pointer: PointerState, origin: SurfacePoint },
+    /// One pointer dragged past the threshold: panning.
+    Pan { pointer: PointerState },
+    /// Two pointers down: pinch-zoom. A third finger is ignored, not tracked.
+    Pinch { first: PointerState, second: PointerState },
 }
 
-/// The in-progress pointer gesture: the pointers currently in contact, where the primary press began
-/// (for the tap-vs-drag test), and whether the gesture has become a pan or pinch rather than a tap.
-struct GestureState {
-    pointers: Vec<PointerState>,
-    press_origin: Option<SurfacePoint>,
-    moved: bool,
+/// Whether releasing a pointer completed a tap (so the caller selects) or ended a pan/pinch (so it does
+/// not).
+enum PointerRelease {
+    Tap,
+    NoSelect,
 }
 
-impl GestureState {
-    fn new() -> GestureState {
-        GestureState { pointers: Vec::new(), press_origin: None, moved: false }
-    }
-
+impl Gesture {
     fn is_active(&self) -> bool {
-        !self.pointers.is_empty()
+        !matches!(self, Gesture::Idle)
     }
 
-    /// Records a newly-pressed pointer. The first arms tap-vs-drag tracking; a second marks the gesture
-    /// moved, since a multi-pointer gesture (a pinch) never selects.
+    /// Transitions on a newly-pressed pointer: the first press is a tap candidate; a second turns the
+    /// gesture into a pinch; a third while pinching is ignored.
     fn begin(&mut self, pointer_id: i32, position: SurfacePoint) {
-        self.pointers.push(PointerState { pointer_id, position });
+        let pointer: PointerState = PointerState { pointer_id, position };
 
-        match self.pointers.len() {
-            1 => {
-                self.press_origin = Some(position);
-                self.moved = false;
+        *self = match *self {
+            Gesture::Idle => Gesture::Tap { pointer, origin: position },
+            Gesture::Tap { pointer: existing, .. } | Gesture::Pan { pointer: existing } => {
+                Gesture::Pinch { first: existing, second: pointer }
             },
-            2 => {
-                self.moved = true;
+            Gesture::Pinch { first, second } => Gesture::Pinch { first, second },
+        };
+    }
+
+    /// Transitions on a released or canceled pointer: a single-pointer gesture ends, a pinch collapses to
+    /// a pan of the remaining pointer (no jump, since that pointer keeps its position). Reports whether a
+    /// tap completed so the caller can decide to select; a pan or pinch reports `NoSelect`.
+    fn release(&mut self, pointer_id: i32) -> PointerRelease {
+        match *self {
+            Gesture::Tap { pointer, .. } if pointer.pointer_id == pointer_id => {
+                *self = Gesture::Idle;
+                PointerRelease::Tap
             },
-            _ => {},
+            Gesture::Pan { pointer } if pointer.pointer_id == pointer_id => {
+                *self = Gesture::Idle;
+                PointerRelease::NoSelect
+            },
+            Gesture::Pinch { first, second } if first.pointer_id == pointer_id || second.pointer_id == pointer_id => {
+                let remaining: PointerState = if first.pointer_id == pointer_id { second } else { first };
+                *self = Gesture::Pan { pointer: remaining };
+                PointerRelease::NoSelect
+            },
+            _ => PointerRelease::NoSelect,
         }
-    }
-
-    fn pointer_index(&self, pointer_id: i32) -> Option<usize> {
-        self.pointers.iter().position(|pointer| pointer.pointer_id == pointer_id)
-    }
-
-    /// Removes a released, canceled, or departed pointer; returns whether it was tracked.
-    fn remove(&mut self, pointer_id: i32) -> bool {
-        let Some(index) = self.pointer_index(pointer_id)
-        else {
-            return false;
-        };
-
-        self.pointers.remove(index);
-
-        true
-    }
-
-    /// Marks the gesture moved once the pointer has traveled past the tap threshold from the press origin,
-    /// reporting the crossing so the caller suppresses hover exactly once.
-    fn mark_dragged_past_threshold(&mut self, position: SurfacePoint) -> DragTransition {
-        let Some(origin) = self.press_origin
-        else {
-            return DragTransition::Unchanged;
-        };
-
-        if self.moved || hit_test::surface_distance(origin, position) <= DRAG_SELECT_SUPPRESS_PX {
-            return DragTransition::Unchanged;
-        }
-
-        self.moved = true;
-
-        DragTransition::JustStarted
     }
 }
 
@@ -169,7 +159,7 @@ struct Driver {
     legend: WriteSignal<Option<LegendView>>,
     selection: Option<SelectionView>,
     redraw_pending: bool,
-    gesture: GestureState,
+    gesture: Gesture,
     redraw_callback: Option<Closure<dyn FnMut()>>,
     resize_callback: Option<Closure<dyn FnMut()>>,
     pointer_down_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
@@ -323,49 +313,51 @@ impl Driver {
         self.request_redraw();
     }
 
-    /// Advances the active gesture as a tracked pointer moves: one pointer pans, two or more pinch.
+    /// Advances the active gesture as a tracked pointer moves: a single pointer pans (and a `Tap` becomes
+    /// a `Pan` once it crosses the threshold), two pointers pinch.
     fn drive_pointer_move(&mut self, pointer_id: i32, surface_point: SurfacePoint) {
-        let Some(index) = self.gesture.pointer_index(pointer_id)
-        else {
-            return;
-        };
+        match self.gesture {
+            Gesture::Tap { pointer, origin } if pointer.pointer_id == pointer_id => {
+                self.pan_view(pointer.position, surface_point);
 
-        match self.gesture.pointers.len() {
-            1 => self.pan_from_pointer(index, surface_point),
-            _ => self.pinch_from_pointer(index, surface_point),
+                if hit_test::surface_distance(origin, surface_point) > DRAG_SELECT_SUPPRESS_PX {
+                    // The press has become a pan; suppress the pre-press hover highlight so it does not
+                    // stay pinned to its region while the map moves.
+                    self.gesture = Gesture::Pan { pointer: PointerState { pointer_id, position: surface_point } };
+                    self.clear_hover();
+                } else {
+                    self.gesture = Gesture::Tap { pointer: PointerState { pointer_id, position: surface_point }, origin };
+                }
+            },
+            Gesture::Pan { pointer } if pointer.pointer_id == pointer_id => {
+                self.pan_view(pointer.position, surface_point);
+                self.gesture = Gesture::Pan { pointer: PointerState { pointer_id, position: surface_point } };
+            },
+            Gesture::Pinch { first, second } => {
+                let (new_first, new_second): (PointerState, PointerState) = if first.pointer_id == pointer_id {
+                    (PointerState { pointer_id, position: surface_point }, second)
+                } else if second.pointer_id == pointer_id {
+                    (first, PointerState { pointer_id, position: surface_point })
+                } else {
+                    // A third finger moved; it does not drive the pinch.
+                    return;
+                };
+
+                self.pinch_view(first.position, second.position, new_first.position, new_second.position);
+                self.gesture = Gesture::Pinch { first: new_first, second: new_second };
+            },
+            _ => {},
         }
     }
 
-    fn pan_from_pointer(&mut self, index: usize, surface_point: SurfacePoint) {
-        let previous: SurfacePoint = self.gesture.pointers[index].position;
-        self.gesture.pointers[index].position = surface_point;
-
-        let drag_transition: DragTransition = self.gesture.mark_dragged_past_threshold(surface_point);
-        if let DragTransition::JustStarted = drag_transition {
-            // The press has become a pan; suppress the pre-press hover highlight so it does not stay
-            // pinned to its region while the map moves.
-            self.clear_hover();
-        }
-
+    fn pan_view(&mut self, from: SurfacePoint, to: SurfacePoint) {
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
-        self.viewport = hit_test::pan(self.viewport, self.surface_dimensions, previous, surface_point, home_min_y, home_max_y);
+        self.viewport = hit_test::pan(self.viewport, self.surface_dimensions, from, to, home_min_y, home_max_y);
 
         self.request_redraw();
     }
 
-    fn pinch_from_pointer(&mut self, index: usize, surface_point: SurfacePoint) {
-        // Only the first two pointers drive the pinch; a third finger is tracked but does not perturb it.
-        if index >= 2 {
-            self.gesture.pointers[index].position = surface_point;
-            return;
-        }
-
-        let previous_a: SurfacePoint = self.gesture.pointers[0].position;
-        let previous_b: SurfacePoint = self.gesture.pointers[1].position;
-        self.gesture.pointers[index].position = surface_point;
-        let current_a: SurfacePoint = self.gesture.pointers[0].position;
-        let current_b: SurfacePoint = self.gesture.pointers[1].position;
-
+    fn pinch_view(&mut self, previous_a: SurfacePoint, previous_b: SurfacePoint, current_a: SurfacePoint, current_b: SurfacePoint) {
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         let ceiling: f64 = zoom_out_ceiling_half_height(self.surface_dimensions);
         self.viewport = hit_test::pinch(
@@ -376,20 +368,18 @@ impl Driver {
         self.request_redraw();
     }
 
-    /// Ends a released pointer. A single pointer released without moving past the drag threshold is a tap
-    /// and selects at the release point; a moved or multi-pointer gesture does not. Returns the selection
-    /// to publish, or `None` when nothing changed. When one pointer remains (a finger lifted mid-pinch),
-    /// the gesture resumes as a pan from that pointer's current position, so the map does not jump.
+    /// Ends a released pointer. A tap (a single pointer that never dragged) selects at the release point;
+    /// a pan or pinch does not. Returns the selection to publish, or `None` when nothing selects.
     fn end_pointer(&mut self, pointer_id: i32, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
-        if !self.gesture.remove(pointer_id) {
-            return None;
+        match self.gesture.release(pointer_id) {
+            PointerRelease::Tap => self.select_region_at(surface_point),
+            PointerRelease::NoSelect => None,
         }
+    }
 
-        if !self.gesture.is_active() && !self.gesture.moved {
-            return self.select_region_at(surface_point);
-        }
-
-        None
+    /// Ends a canceled pointer (the browser aborted the gesture). Never selects.
+    fn cancel_pointer(&mut self, pointer_id: i32) {
+        self.gesture.release(pointer_id);
     }
 
     /// Wheel-zooms toward the cursor: maps the wheel delta to a multiplicative factor and zooms about the
@@ -545,7 +535,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         legend,
         selection: None,
         redraw_pending: false,
-        gesture: GestureState::new(),
+        gesture: Gesture::Idle,
         redraw_callback: None,
         resize_callback: Some(install_resize_listener(&canvas)),
         pointer_down_callback: Some(install_pointer_down_listener(&canvas)),
@@ -763,7 +753,7 @@ fn handle_pointer_cancel(event: &PointerEvent) {
 
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
-            driver.gesture.remove(pointer_id);
+            driver.cancel_pointer(pointer_id);
         }
     });
 }
