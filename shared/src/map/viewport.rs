@@ -124,6 +124,16 @@ impl Viewport {
         self.pan_by(-turns * TAU, 0.0)
     }
 
+    /// This view re-fitted to a new surface: the center and zoom level (vertical half-extent) are kept
+    /// while the width is re-derived from the new aspect, then the zoom-out ceiling, the home latitude
+    /// range, and the antimeridian normalization are re-applied. Called on a surface resize or a
+    /// device-pixel-ratio change so the user's pan/zoom is preserved rather than reset to the home view.
+    pub fn refit_to_surface(&self, surface: SurfaceDimensions, max_half_height: f64, home_min_y: f64, home_max_y: f64) -> Viewport {
+        self.zoom_to_half_height(self.half_height(), max_half_height, surface)
+            .clamp_vertical(home_min_y, home_max_y)
+            .normalize_longitude_turns()
+    }
+
     fn center(&self) -> ProjectedPoint {
         ProjectedPoint {
             x: (self.min.x + self.max.x) / 2.0,
@@ -398,5 +408,27 @@ mod tests {
 
         let inside: Viewport = Viewport { min: ProjectedPoint { x: -0.5, y: -0.5 }, max: ProjectedPoint { x: 0.5, y: 0.5 } };
         assert_eq!(inside.normalize_longitude_turns(), inside, "already within one turn is untouched");
+    }
+
+    #[test]
+    fn refit_to_surface_preserves_center_and_zoom() {
+        // A zoomed-in, off-center view at aspect 2 (matching a 200x100 surface).
+        let viewport: Viewport = Viewport { min: ProjectedPoint { x: -0.8, y: -0.1 }, max: ProjectedPoint { x: 0.8, y: 0.7 } };
+        let center_x: f64 = 0.0;
+        let center_y: f64 = 0.3;
+        let half_height: f64 = 0.4;
+
+        // A device-pixel-ratio change scales the surface but keeps the aspect, so the view is unchanged.
+        let same_aspect: Viewport = viewport.refit_to_surface(SurfaceDimensions { width: 400, height: 200 }, 2.0, HOME_MIN_Y, HOME_MAX_Y);
+        assert!(((same_aspect.min.x + same_aspect.max.x) / 2.0 - center_x).abs() < TOLERANCE, "center x kept");
+        assert!(((same_aspect.min.y + same_aspect.max.y) / 2.0 - center_y).abs() < TOLERANCE, "center y kept");
+        assert!(((same_aspect.max.y - same_aspect.min.y) / 2.0 - half_height).abs() < TOLERANCE, "zoom kept");
+        assert!(((same_aspect.max.x - same_aspect.min.x) / 2.0 - 0.8).abs() < TOLERANCE, "width kept at same aspect");
+
+        // A window resize to a square surface keeps the center and zoom but re-derives the width.
+        let new_aspect: Viewport = viewport.refit_to_surface(SurfaceDimensions { width: 100, height: 100 }, 2.0, HOME_MIN_Y, HOME_MAX_Y);
+        assert!(((new_aspect.min.x + new_aspect.max.x) / 2.0 - center_x).abs() < TOLERANCE, "center x kept across aspect change");
+        assert!(((new_aspect.max.y - new_aspect.min.y) / 2.0 - half_height).abs() < TOLERANCE, "zoom kept across aspect change");
+        assert!(((new_aspect.max.x - new_aspect.min.x) / 2.0 - half_height).abs() < TOLERANCE, "width re-derived from the square aspect");
     }
 }
