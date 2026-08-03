@@ -119,7 +119,12 @@ impl Driver {
 
     fn resize(&mut self, width: u32, height: u32) {
         self.surface_dimensions = SurfaceDimensions { width, height };
-        self.viewport = home_viewport(self.surface_dimensions);
+
+        // Preserve the current pan/zoom across a resize or device-pixel-ratio change, re-fitting only the
+        // aspect; do not reset to the home view.
+        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
+        let ceiling: f64 = zoom_out_ceiling_half_height(self.surface_dimensions);
+        self.viewport = self.viewport.refit_to_surface(self.surface_dimensions, ceiling, home_min_y, home_max_y);
 
         if let Err(error) = self.renderer.resize_surface(width, height) {
             log::error!("resizing the render surface failed [error={error}]");
@@ -253,9 +258,6 @@ impl Driver {
 
         match self.pointers.len() {
             1 => {
-                // Suppress hover for the gesture's duration; the pre-press highlight must not stay pinned
-                // to its region while the map pans.
-                self.clear_hover();
                 self.press_origin = Some(surface_point);
                 self.gesture_moved = false;
             },
@@ -284,8 +286,11 @@ impl Driver {
         self.pointers[index].position = surface_point;
 
         if let Some(origin) = self.press_origin {
-            if hit_test::surface_distance(origin, surface_point) > DRAG_SELECT_SUPPRESS_PX {
+            if !self.gesture_moved && hit_test::surface_distance(origin, surface_point) > DRAG_SELECT_SUPPRESS_PX {
+                // The press has become a pan; suppress the pre-press hover highlight so it does not stay
+                // pinned to its region while the map moves.
                 self.gesture_moved = true;
+                self.clear_hover();
             }
         }
 
