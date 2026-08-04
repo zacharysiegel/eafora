@@ -2,12 +2,12 @@ use std::f64::consts::{PI, TAU};
 
 use crate::map::projection::ProjectedPoint;
 
-/// The smallest height, in projected radians, the camera may zoom in to: roughly one degree of latitude
-/// filling the surface. Past this the `f64`->`f32` cast into the viewport uniform loses precision and no
-/// country needs more room, and it stops a fast wheel or pinch from driving the view to a degenerate
-/// sub-microradian box. Equals the projected height of a one-degree latitude band about the equator
-/// (`project(0.5, 0.0).y - project(-0.5, 0.0).y`), pinned by a test.
-const MIN_ZOOM_IN_HEIGHT: f64 = 0.01745343429705546;
+/// The smallest height, in projected radians, the camera may zoom in to: roughly an eight-degree band of
+/// latitude (a country and its neighbors) filling the surface. This caps zoom-in so the atlas stays at a
+/// regional scale, and past a much tighter bound the `f64`->`f32` cast into the viewport uniform loses
+/// precision. Equals the projected height of an eight-degree latitude band about the equator
+/// (`project(4.0, 0.0).y - project(-4.0, 0.0).y`), pinned by a test.
+const MIN_ZOOM_IN_HEIGHT: f64 = 0.13969898581435658;
 
 /// The camera window in Miller-projected space. Stored projected, not geographic, so pan/zoom
 /// arithmetic is uniform on screen: a constant projected increment moves the view a constant screen
@@ -280,9 +280,9 @@ mod tests {
     }
 
     #[test]
-    fn min_zoom_in_height_is_one_degree_of_latitude() {
-        let one_degree_height: f64 = projection::project(0.5, 0.0).y - projection::project(-0.5, 0.0).y;
-        assert!((MIN_ZOOM_IN_HEIGHT - one_degree_height).abs() < 1e-15);
+    fn min_zoom_in_height_is_an_eight_degree_band_of_latitude() {
+        let eight_degree_height: f64 = projection::project(4.0, 0.0).y - projection::project(-4.0, 0.0).y;
+        assert!((MIN_ZOOM_IN_HEIGHT - eight_degree_height).abs() < 1e-15);
     }
 
     #[test]
