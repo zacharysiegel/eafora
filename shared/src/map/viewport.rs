@@ -2,12 +2,12 @@ use std::f64::consts::{PI, TAU};
 
 use crate::map::projection::ProjectedPoint;
 
-/// The smallest half-height, in projected radians, the camera may zoom in to: roughly one degree of
-/// latitude filling the surface height. Past this the `f64`->`f32` cast into the viewport uniform loses
-/// precision and no country needs more room, and it stops a fast wheel or pinch from driving the view to
-/// a degenerate sub-microradian box. Equals `projection::project(0.5, 0.0).y` (half of a one-degree band
-/// about the equator), pinned by a test.
-const MIN_ZOOM_IN_HALF_HEIGHT: f64 = 0.00872671714852773;
+/// The smallest height, in projected radians, the camera may zoom in to: roughly one degree of latitude
+/// filling the surface. Past this the `f64`->`f32` cast into the viewport uniform loses precision and no
+/// country needs more room, and it stops a fast wheel or pinch from driving the view to a degenerate
+/// sub-microradian box. Equals the projected height of a one-degree latitude band about the equator
+/// (`project(0.5, 0.0).y - project(-0.5, 0.0).y`), pinned by a test.
+const MIN_ZOOM_IN_HEIGHT: f64 = 0.01745343429705546;
 
 /// The camera window in Miller-projected space. Stored projected, not geographic, so pan/zoom
 /// arithmetic is uniform on screen: a constant projected increment moves the view a constant screen
@@ -25,69 +25,69 @@ impl Viewport {
     /// stretched). When filling the height would make the width exceed one world turn (`2π`), which
     /// happens on a surface wider than approximately 2:1 for the home framing, the width is instead capped
     /// at `2π` and the view shows a vertical slice of the extent rather than the whole of it. Delegates to
-    /// `zoom_to_half_height` so the home view and manual zoom share one construction-and-clamp path.
-    /// Assumes `surface` dimensions are nonzero and `max_y > min_y`.
+    /// `zoom_to_height` so the home view and manual zoom share one construction-and-clamp path. Assumes
+    /// `surface` dimensions are nonzero and `max_y > min_y`.
     pub fn fill_height(center_x: f64, min_y: f64, max_y: f64, surface: SurfaceDimensions) -> Viewport {
-        let requested_half_height: f64 = (max_y - min_y) / 2.0;
+        let requested_height: f64 = max_y - min_y;
         let center_y: f64 = (min_y + max_y) / 2.0;
-        let width_cap_half_height: f64 = PI * (surface.height as f64 / surface.width as f64);
-        let max_half_height: f64 = requested_half_height.min(width_cap_half_height);
+        let width_cap_height: f64 = TAU * (surface.height as f64 / surface.width as f64);
+        let max_height: f64 = requested_height.min(width_cap_height);
 
         let seed: Viewport = Viewport {
             min: ProjectedPoint { x: center_x, y: center_y },
             max: ProjectedPoint { x: center_x, y: center_y },
         };
 
-        seed.zoom_to_half_height(requested_half_height, max_half_height, surface)
+        seed.zoom_to_height(requested_height, max_height, surface)
     }
 
-    /// The construction-and-clamp core: a viewport of the given vertical half-extent (clamped into
-    /// `[MIN_ZOOM_IN_HALF_HEIGHT, max_half_height]`), keeping this viewport's center, with the width
-    /// re-derived from `surface`'s aspect so the map is never stretched. The width is derived from the
-    /// clamped half-height alone, never read from `self`, so a zero-width seed is valid.
-    pub fn zoom_to_half_height(&self, half_height: f64, max_half_height: f64, surface: SurfaceDimensions) -> Viewport {
-        let clamped_half_height: f64 = clamp_half_height(half_height, max_half_height);
+    /// The construction-and-clamp core: a viewport of the given visible height (clamped into
+    /// `[MIN_ZOOM_IN_HEIGHT, max_height]`), keeping this viewport's center, with the width re-derived from
+    /// `surface`'s aspect so the map is never stretched. The width is derived from the clamped height
+    /// alone, never read from `self`, so a zero-width seed is valid.
+    pub fn zoom_to_height(&self, height: f64, max_height: f64, surface: SurfaceDimensions) -> Viewport {
+        let clamped_height: f64 = clamp_height(height, max_height);
         let center: ProjectedPoint = self.center();
-        let half_width: f64 = clamped_half_height * (surface.width as f64 / surface.height as f64);
+        let width: f64 = clamped_height * (surface.width as f64 / surface.height as f64);
 
         Viewport {
-            min: ProjectedPoint { x: center.x - half_width, y: center.y - clamped_half_height },
-            max: ProjectedPoint { x: center.x + half_width, y: center.y + clamped_half_height },
+            min: ProjectedPoint { x: center.x - width / 2.0, y: center.y - clamped_height / 2.0 },
+            max: ProjectedPoint { x: center.x + width / 2.0, y: center.y + clamped_height / 2.0 },
         }
     }
 
     /// A viewport zoomed by `factor` (greater than 1 zooms in) about the projected `anchor`, holding that
     /// anchor fixed on screen. The vertical position clamp against the home latitude range is folded into
     /// the recenter, so there is no post-step that could move the anchor: horizontal anchoring is exact
-    /// for every zoom, and vertical anchoring is exact except within one range-height of the top/bottom
+    /// for every zoom, and vertical anchoring is exact except within half a range-height of the top/bottom
     /// edge, where the range bound wins and the anchor's screen-y yields by the clamp amount. `factor` is
     /// assumed positive.
     pub fn zoom_about(
         &self,
         factor: f64,
         anchor: ProjectedPoint,
-        max_half_height: f64,
+        max_height: f64,
         home_min_y: f64,
         home_max_y: f64,
         surface: SurfaceDimensions,
     ) -> Viewport {
-        let target_half_height: f64 = self.half_height() / factor;
-        let clamped_half_height: f64 = clamp_half_height(target_half_height, max_half_height);
+        let target_height: f64 = self.height() / factor;
+        let clamped_height: f64 = clamp_height(target_height, max_height);
 
         // The ratio actually achieved after clamping, not the requested `1/factor`, is what keeps the
         // anchor fixed when the zoom is clamped at the ceiling.
-        let achieved_ratio: f64 = clamped_half_height / self.half_height();
+        let achieved_ratio: f64 = clamped_height / self.height();
 
         let center: ProjectedPoint = self.center();
         let new_center_x: f64 = anchor.x + (center.x - anchor.x) * achieved_ratio;
         let new_center_y: f64 = anchor.y + (center.y - anchor.y) * achieved_ratio;
-        let clamped_center_y: f64 = clamp_center_y(new_center_y, clamped_half_height, home_min_y, home_max_y);
+        let clamped_center_y: f64 = clamp_center_y(new_center_y, clamped_height, home_min_y, home_max_y);
 
-        let half_width: f64 = clamped_half_height * (surface.width as f64 / surface.height as f64);
+        let width: f64 = clamped_height * (surface.width as f64 / surface.height as f64);
 
         Viewport {
-            min: ProjectedPoint { x: new_center_x - half_width, y: clamped_center_y - clamped_half_height },
-            max: ProjectedPoint { x: new_center_x + half_width, y: clamped_center_y + clamped_half_height },
+            min: ProjectedPoint { x: new_center_x - width / 2.0, y: clamped_center_y - clamped_height / 2.0 },
+            max: ProjectedPoint { x: new_center_x + width / 2.0, y: clamped_center_y + clamped_height / 2.0 },
         }
     }
 
@@ -102,11 +102,11 @@ impl Viewport {
     }
 
     /// This viewport slid vertically so it stays inside the home latitude range `[home_min_y, home_max_y]`,
-    /// with its extent unchanged. When the view is at least as tall as the range (full zoom-out) it
+    /// with its height unchanged. When the view is at least as tall as the range (full zoom-out) it
     /// centers on the range. Horizontal is untouched.
     pub fn clamp_vertical(&self, home_min_y: f64, home_max_y: f64) -> Viewport {
         let center: ProjectedPoint = self.center();
-        let clamped_center_y: f64 = clamp_center_y(center.y, self.half_height(), home_min_y, home_max_y);
+        let clamped_center_y: f64 = clamp_center_y(center.y, self.height(), home_min_y, home_max_y);
 
         self.pan_by(0.0, clamped_center_y - center.y)
     }
@@ -124,12 +124,12 @@ impl Viewport {
         self.pan_by(-turns * TAU, 0.0)
     }
 
-    /// This view re-fitted to a new surface: the center and zoom level (vertical half-extent) are kept
-    /// while the width is re-derived from the new aspect, then the zoom-out ceiling, the home latitude
-    /// range, and the antimeridian normalization are re-applied. Called on a surface resize or a
+    /// This view re-fitted to a new surface: the center and zoom level (the visible height) are kept while
+    /// the width is re-derived from the new aspect, then the zoom-out ceiling, the home latitude range,
+    /// and the antimeridian normalization are re-applied. Called on a surface resize or a
     /// device-pixel-ratio change so the user's pan/zoom is preserved rather than reset to the home view.
-    pub fn refit_to_surface(&self, surface: SurfaceDimensions, max_half_height: f64, home_min_y: f64, home_max_y: f64) -> Viewport {
-        self.zoom_to_half_height(self.half_height(), max_half_height, surface)
+    pub fn refit_to_surface(&self, surface: SurfaceDimensions, max_height: f64, home_min_y: f64, home_max_y: f64) -> Viewport {
+        self.zoom_to_height(self.height(), max_height, surface)
             .clamp_vertical(home_min_y, home_max_y)
             .normalize_longitude_turns()
     }
@@ -141,29 +141,29 @@ impl Viewport {
         }
     }
 
-    fn half_height(&self) -> f64 {
-        (self.max.y - self.min.y) / 2.0
+    fn height(&self) -> f64 {
+        self.max.y - self.min.y
     }
 }
 
-/// Clamps a requested half-height into `[MIN_ZOOM_IN_HALF_HEIGHT, max_half_height]`: the zoom-in floor
-/// and the caller-supplied zoom-out ceiling. The `debug_assert` front-runs the `clamp` panic with a
-/// legible message if a caller passes a ceiling below the floor.
-fn clamp_half_height(requested: f64, max_half_height: f64) -> f64 {
+/// Clamps a requested height into `[MIN_ZOOM_IN_HEIGHT, max_height]`: the zoom-in floor and the
+/// caller-supplied zoom-out ceiling. The `debug_assert` front-runs the `clamp` panic with a legible
+/// message if a caller passes a ceiling below the floor.
+fn clamp_height(requested: f64, max_height: f64) -> f64 {
     debug_assert!(
-        max_half_height >= MIN_ZOOM_IN_HALF_HEIGHT,
+        max_height >= MIN_ZOOM_IN_HEIGHT,
         "the zoom-out ceiling must not fall below the zoom-in floor",
     );
 
-    requested.clamp(MIN_ZOOM_IN_HALF_HEIGHT, max_half_height)
+    requested.clamp(MIN_ZOOM_IN_HEIGHT, max_height)
 }
 
-/// Clamps a center-y so a view of half-height `half_height` stays inside `[home_min_y, home_max_y]`. When
-/// the view is at least as tall as the range the valid interval collapses, so the view centers on the
-/// range midpoint rather than letting a floating-point `lo > hi` panic `clamp`.
-fn clamp_center_y(center_y: f64, half_height: f64, home_min_y: f64, home_max_y: f64) -> f64 {
-    let lo: f64 = home_min_y + half_height;
-    let hi: f64 = home_max_y - half_height;
+/// Clamps a center-y so a view of the given height stays inside `[home_min_y, home_max_y]`. When the view
+/// is at least as tall as the range the valid interval collapses, so the view centers on the range
+/// midpoint rather than letting a floating-point `lo > hi` panic `clamp`.
+fn clamp_center_y(center_y: f64, height: f64, home_min_y: f64, home_max_y: f64) -> f64 {
+    let lo: f64 = home_min_y + height / 2.0;
+    let hi: f64 = home_max_y - height / 2.0;
 
     if lo >= hi {
         (home_min_y + home_max_y) / 2.0
@@ -195,24 +195,24 @@ mod tests {
 
     const CENTER_X: f64 = 0.5;
     const MIN_Y: f64 = -1.25;
-    const MAX_Y: f64 = 0.75; // extent midpoint -0.25, half-height 1.0
+    const MAX_Y: f64 = 0.75; // extent midpoint -0.25, height 2.0
     const TOLERANCE: f64 = 1e-12;
 
     // A home latitude range wide enough that a zoomed-in view slides freely inside it, for the pan and
     // zoom clamp tests.
     const HOME_MIN_Y: f64 = -1.1;
     const HOME_MAX_Y: f64 = 2.0;
-    const HOME_HALF_HEIGHT: f64 = (HOME_MAX_Y - HOME_MIN_Y) / 2.0;
+    const HOME_HEIGHT: f64 = HOME_MAX_Y - HOME_MIN_Y;
 
     fn assert_fill_height_invariants(surface: SurfaceDimensions) {
         let viewport: Viewport = Viewport::fill_height(CENTER_X, MIN_Y, MAX_Y, surface);
-        let half_width: f64 = (viewport.max.x - viewport.min.x) / 2.0;
-        let half_height: f64 = (viewport.max.y - viewport.min.y) / 2.0;
+        let width: f64 = viewport.max.x - viewport.min.x;
+        let height: f64 = viewport.max.y - viewport.min.y;
         let surface_aspect: f64 = surface.width as f64 / surface.height as f64;
 
         assert!((viewport.min.y - MIN_Y).abs() < TOLERANCE, "min_y fills the surface bottom");
         assert!((viewport.max.y - MAX_Y).abs() < TOLERANCE, "max_y fills the surface top");
-        assert!((half_width / half_height - surface_aspect).abs() < TOLERANCE, "aspect matches surface");
+        assert!((width / height - surface_aspect).abs() < TOLERANCE, "aspect matches surface");
         assert!(((viewport.min.x + viewport.max.x) / 2.0 - CENTER_X).abs() < TOLERANCE, "centered x");
     }
 
@@ -237,7 +237,7 @@ mod tests {
         assert_fill_height_invariants(surface);
 
         let viewport: Viewport = Viewport::fill_height(CENTER_X, MIN_Y, MAX_Y, surface);
-        assert!((viewport.max.x - viewport.min.x) / 2.0 > (MAX_Y - MIN_Y) / 2.0, "wider than tall");
+        assert!(viewport.max.x - viewport.min.x > MAX_Y - MIN_Y, "wider than tall");
     }
 
     #[test]
@@ -246,7 +246,7 @@ mod tests {
         assert_fill_height_invariants(surface);
 
         let viewport: Viewport = Viewport::fill_height(CENTER_X, MIN_Y, MAX_Y, surface);
-        assert!((viewport.max.x - viewport.min.x) / 2.0 < (MAX_Y - MIN_Y) / 2.0, "narrower than tall");
+        assert!(viewport.max.x - viewport.min.x < MAX_Y - MIN_Y, "narrower than tall");
     }
 
     #[test]
@@ -256,19 +256,18 @@ mod tests {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 320, height: 90 };
         let viewport: Viewport = Viewport::fill_height(CENTER_X, MIN_Y, MAX_Y, surface);
         let width: f64 = viewport.max.x - viewport.min.x;
-        let half_width: f64 = width / 2.0;
-        let half_height: f64 = (viewport.max.y - viewport.min.y) / 2.0;
+        let height: f64 = viewport.max.y - viewport.min.y;
 
         assert!((width - TAU).abs() < 1e-9, "width capped at one world turn");
-        assert!(half_height < (MAX_Y - MIN_Y) / 2.0, "no longer fills the full height");
-        assert!((half_width / half_height - surface.width as f64 / surface.height as f64).abs() < 1e-9, "aspect still locked");
+        assert!(height < MAX_Y - MIN_Y, "no longer fills the full height");
+        assert!((width / height - surface.width as f64 / surface.height as f64).abs() < 1e-9, "aspect still locked");
     }
 
     #[test]
-    fn fill_height_delegates_to_zoom_to_half_height() {
+    fn fill_height_delegates_to_zoom_to_height() {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 300, height: 100 };
-        let requested_half_height: f64 = (MAX_Y - MIN_Y) / 2.0;
-        let ceiling: f64 = requested_half_height.min(PI * (surface.height as f64 / surface.width as f64));
+        let requested_height: f64 = MAX_Y - MIN_Y;
+        let ceiling: f64 = requested_height.min(TAU * (surface.height as f64 / surface.width as f64));
         let seed: Viewport = Viewport {
             min: ProjectedPoint { x: CENTER_X, y: (MIN_Y + MAX_Y) / 2.0 },
             max: ProjectedPoint { x: CENTER_X, y: (MIN_Y + MAX_Y) / 2.0 },
@@ -276,42 +275,43 @@ mod tests {
 
         assert_eq!(
             Viewport::fill_height(CENTER_X, MIN_Y, MAX_Y, surface),
-            seed.zoom_to_half_height(requested_half_height, ceiling, surface),
+            seed.zoom_to_height(requested_height, ceiling, surface),
         );
     }
 
     #[test]
-    fn min_zoom_in_half_height_is_one_degree_of_latitude() {
-        assert!((MIN_ZOOM_IN_HALF_HEIGHT - projection::project(0.5, 0.0).y).abs() < 1e-15);
+    fn min_zoom_in_height_is_one_degree_of_latitude() {
+        let one_degree_height: f64 = projection::project(0.5, 0.0).y - projection::project(-0.5, 0.0).y;
+        assert!((MIN_ZOOM_IN_HEIGHT - one_degree_height).abs() < 1e-15);
     }
 
     #[test]
-    fn clamp_half_height_bounds_both_directions() {
-        assert_eq!(clamp_half_height(5.0, 2.0), 2.0);
-        assert_eq!(clamp_half_height(1e-9, 2.0), MIN_ZOOM_IN_HALF_HEIGHT);
-        assert_eq!(clamp_half_height(1.0, 2.0), 1.0);
+    fn clamp_height_bounds_both_directions() {
+        assert_eq!(clamp_height(5.0, 2.0), 2.0);
+        assert_eq!(clamp_height(1e-9, 2.0), MIN_ZOOM_IN_HEIGHT);
+        assert_eq!(clamp_height(1.0, 2.0), 1.0);
     }
 
     #[test]
     #[should_panic(expected = "zoom-out ceiling")]
-    fn clamp_half_height_asserts_ceiling_above_floor() {
-        let _clamped: f64 = clamp_half_height(1.0, MIN_ZOOM_IN_HALF_HEIGHT / 2.0);
+    fn clamp_height_asserts_ceiling_above_floor() {
+        let _clamped: f64 = clamp_height(1.0, MIN_ZOOM_IN_HEIGHT / 2.0);
     }
 
     #[test]
-    fn zoom_to_half_height_matches_surface_aspect_from_a_zero_width_seed() {
+    fn zoom_to_height_matches_surface_aspect_from_a_zero_width_seed() {
         for surface in [
             SurfaceDimensions { width: 100, height: 100 },
             SurfaceDimensions { width: 300, height: 100 },
             SurfaceDimensions { width: 100, height: 300 },
         ] {
             let seed: Viewport = Viewport { min: ProjectedPoint { x: 0.3, y: 0.2 }, max: ProjectedPoint { x: 0.3, y: 0.2 } };
-            let zoomed: Viewport = seed.zoom_to_half_height(0.5, 2.0, surface);
-            let half_width: f64 = (zoomed.max.x - zoomed.min.x) / 2.0;
-            let half_height: f64 = (zoomed.max.y - zoomed.min.y) / 2.0;
+            let zoomed: Viewport = seed.zoom_to_height(1.0, 4.0, surface);
+            let width: f64 = zoomed.max.x - zoomed.min.x;
+            let height: f64 = zoomed.max.y - zoomed.min.y;
 
-            assert!((half_height - 0.5).abs() < TOLERANCE, "half-height honored");
-            assert!((half_width / half_height - surface.width as f64 / surface.height as f64).abs() < TOLERANCE, "aspect matches");
+            assert!((height - 1.0).abs() < TOLERANCE, "height honored");
+            assert!((width / height - surface.width as f64 / surface.height as f64).abs() < TOLERANCE, "aspect matches");
             assert!(((zoomed.min.x + zoomed.max.x) / 2.0 - 0.3).abs() < TOLERANCE, "center x preserved");
             assert!(((zoomed.min.y + zoomed.max.y) / 2.0 - 0.2).abs() < TOLERANCE, "center y preserved");
         }
@@ -320,12 +320,12 @@ mod tests {
     #[test]
     fn zoom_about_holds_the_anchor_fixed_when_unclamped() {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 200, height: 100 };
-        // Aspect 2 matches the surface (invariant zoom_about assumes).
+        // Aspect 2 matches the surface (the invariant zoom_about assumes).
         let viewport: Viewport = Viewport { min: ProjectedPoint { x: -2.0, y: -1.0 }, max: ProjectedPoint { x: 2.0, y: 1.0 } };
         let anchor: ProjectedPoint = ProjectedPoint { x: 1.0, y: 0.3 };
 
         let before: (f64, f64) = normalized_screen_position(viewport, anchor);
-        let zoomed: Viewport = viewport.zoom_about(2.0, anchor, HOME_HALF_HEIGHT, HOME_MIN_Y, HOME_MAX_Y, surface);
+        let zoomed: Viewport = viewport.zoom_about(2.0, anchor, HOME_HEIGHT, HOME_MIN_Y, HOME_MAX_Y, surface);
         let after: (f64, f64) = normalized_screen_position(zoomed, anchor);
 
         assert!((before.0 - after.0).abs() < 1e-9, "anchor screen-x fixed");
@@ -339,10 +339,10 @@ mod tests {
         let viewport: Viewport = Viewport { min: ProjectedPoint { x: -0.2, y: 0.2 }, max: ProjectedPoint { x: 0.2, y: 0.4 } };
         let anchor: ProjectedPoint = ProjectedPoint { x: 0.15, y: 0.35 };
 
-        // Zoom out hard; the half-height clamps to the ceiling but the horizontal anchor must not drift.
-        let zoomed: Viewport = viewport.zoom_about(0.01, anchor, HOME_HALF_HEIGHT, HOME_MIN_Y, HOME_MAX_Y, surface);
+        // Zoom out hard; the height clamps to the ceiling but the horizontal anchor must not drift.
+        let zoomed: Viewport = viewport.zoom_about(0.01, anchor, HOME_HEIGHT, HOME_MIN_Y, HOME_MAX_Y, surface);
 
-        assert!(((zoomed.max.y - zoomed.min.y) / 2.0 - HOME_HALF_HEIGHT).abs() < 1e-9, "half-height at the ceiling");
+        assert!((zoomed.max.y - zoomed.min.y - HOME_HEIGHT).abs() < 1e-9, "height at the ceiling");
         let before_x: f64 = normalized_screen_position(viewport, anchor).0;
         let after_x: f64 = normalized_screen_position(zoomed, anchor).0;
         assert!((before_x - after_x).abs() < 1e-9, "horizontal anchor fixed at the ceiling");
@@ -356,7 +356,7 @@ mod tests {
         let viewport: Viewport = Viewport { min: ProjectedPoint { x: -0.1, y: 1.7 }, max: ProjectedPoint { x: 0.1, y: 1.9 } };
         let anchor: ProjectedPoint = ProjectedPoint { x: 0.0, y: 1.88 };
 
-        let zoomed: Viewport = viewport.zoom_about(0.1, anchor, HOME_HALF_HEIGHT, HOME_MIN_Y, HOME_MAX_Y, surface);
+        let zoomed: Viewport = viewport.zoom_about(0.1, anchor, HOME_HEIGHT, HOME_MIN_Y, HOME_MAX_Y, surface);
 
         assert!(zoomed.max.y <= HOME_MAX_Y + 1e-12, "box top stays within the range");
         assert!((zoomed.max.y - HOME_MAX_Y).abs() < 1e-9, "box top pinned to the range edge");
@@ -376,7 +376,7 @@ mod tests {
         let above: Viewport = Viewport { min: ProjectedPoint { x: 0.0, y: 1.8 }, max: ProjectedPoint { x: 1.0, y: 2.3 } };
         let clamped_above: Viewport = above.clamp_vertical(HOME_MIN_Y, HOME_MAX_Y);
         assert!((clamped_above.max.y - HOME_MAX_Y).abs() < TOLERANCE, "top pulled to the range top");
-        assert!((clamped_above.max.y - clamped_above.min.y - 0.5).abs() < TOLERANCE, "extent unchanged");
+        assert!((clamped_above.max.y - clamped_above.min.y - 0.5).abs() < TOLERANCE, "height unchanged");
 
         let below: Viewport = Viewport { min: ProjectedPoint { x: 0.0, y: -1.6 }, max: ProjectedPoint { x: 1.0, y: -1.1 } };
         let clamped_below: Viewport = below.clamp_vertical(HOME_MIN_Y, HOME_MAX_Y);
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn clamp_vertical_centers_a_full_range_height_view() {
-        let full: Viewport = Viewport { min: ProjectedPoint { x: 0.0, y: -3.0 }, max: ProjectedPoint { x: 1.0, y: -3.0 + 2.0 * HOME_HALF_HEIGHT } };
+        let full: Viewport = Viewport { min: ProjectedPoint { x: 0.0, y: -3.0 }, max: ProjectedPoint { x: 1.0, y: -3.0 + HOME_HEIGHT } };
         let clamped: Viewport = full.clamp_vertical(HOME_MIN_Y, HOME_MAX_Y);
 
         assert!((clamped.min.y - HOME_MIN_Y).abs() < TOLERANCE, "centered on the range bottom");
@@ -412,23 +412,23 @@ mod tests {
 
     #[test]
     fn refit_to_surface_preserves_center_and_zoom() {
-        // A zoomed-in, off-center view at aspect 2 (matching a 200x100 surface).
+        // A zoomed-in, off-center view at aspect 2 (matching a 200x100 surface): height 0.8, width 1.6.
         let viewport: Viewport = Viewport { min: ProjectedPoint { x: -0.8, y: -0.1 }, max: ProjectedPoint { x: 0.8, y: 0.7 } };
         let center_x: f64 = 0.0;
         let center_y: f64 = 0.3;
-        let half_height: f64 = 0.4;
+        let height: f64 = 0.8;
 
         // A device-pixel-ratio change scales the surface but keeps the aspect, so the view is unchanged.
-        let same_aspect: Viewport = viewport.refit_to_surface(SurfaceDimensions { width: 400, height: 200 }, 2.0, HOME_MIN_Y, HOME_MAX_Y);
+        let same_aspect: Viewport = viewport.refit_to_surface(SurfaceDimensions { width: 400, height: 200 }, 4.0, HOME_MIN_Y, HOME_MAX_Y);
         assert!(((same_aspect.min.x + same_aspect.max.x) / 2.0 - center_x).abs() < TOLERANCE, "center x kept");
         assert!(((same_aspect.min.y + same_aspect.max.y) / 2.0 - center_y).abs() < TOLERANCE, "center y kept");
-        assert!(((same_aspect.max.y - same_aspect.min.y) / 2.0 - half_height).abs() < TOLERANCE, "zoom kept");
-        assert!(((same_aspect.max.x - same_aspect.min.x) / 2.0 - 0.8).abs() < TOLERANCE, "width kept at same aspect");
+        assert!((same_aspect.max.y - same_aspect.min.y - height).abs() < TOLERANCE, "height kept");
+        assert!((same_aspect.max.x - same_aspect.min.x - 1.6).abs() < TOLERANCE, "width kept at same aspect");
 
-        // A window resize to a square surface keeps the center and zoom but re-derives the width.
-        let new_aspect: Viewport = viewport.refit_to_surface(SurfaceDimensions { width: 100, height: 100 }, 2.0, HOME_MIN_Y, HOME_MAX_Y);
+        // A window resize to a square surface keeps the center and height but re-derives the width.
+        let new_aspect: Viewport = viewport.refit_to_surface(SurfaceDimensions { width: 100, height: 100 }, 4.0, HOME_MIN_Y, HOME_MAX_Y);
         assert!(((new_aspect.min.x + new_aspect.max.x) / 2.0 - center_x).abs() < TOLERANCE, "center x kept across aspect change");
-        assert!(((new_aspect.max.y - new_aspect.min.y) / 2.0 - half_height).abs() < TOLERANCE, "zoom kept across aspect change");
-        assert!(((new_aspect.max.x - new_aspect.min.x) / 2.0 - half_height).abs() < TOLERANCE, "width re-derived from the square aspect");
+        assert!((new_aspect.max.y - new_aspect.min.y - height).abs() < TOLERANCE, "height kept across aspect change");
+        assert!((new_aspect.max.x - new_aspect.min.x - height).abs() < TOLERANCE, "width re-derived from the square aspect");
     }
 }

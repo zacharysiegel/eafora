@@ -97,14 +97,14 @@ pub fn zoom_at_surface_point(
     surface_dimensions: SurfaceDimensions,
     surface_point: SurfacePoint,
     factor: f64,
-    max_half_height: f64,
+    max_height: f64,
     home_min_y: f64,
     home_max_y: f64,
 ) -> Viewport {
     let anchor: ProjectedPoint = surface_to_projected(viewport, surface_dimensions, surface_point);
 
     viewport
-        .zoom_about(factor, anchor, max_half_height, home_min_y, home_max_y, surface_dimensions)
+        .zoom_about(factor, anchor, max_height, home_min_y, home_max_y, surface_dimensions)
         .normalize_longitude_turns()
 }
 
@@ -120,7 +120,7 @@ pub fn pinch(
     previous_b: SurfacePoint,
     current_a: SurfacePoint,
     current_b: SurfacePoint,
-    max_half_height: f64,
+    max_height: f64,
     home_min_y: f64,
     home_max_y: f64,
 ) -> Viewport {
@@ -134,7 +134,7 @@ pub fn pinch(
     let current_midpoint: SurfacePoint = surface_midpoint(current_a, current_b);
 
     let anchor: ProjectedPoint = surface_to_projected(viewport, surface_dimensions, previous_midpoint);
-    let zoomed: Viewport = viewport.zoom_about(factor, anchor, max_half_height, home_min_y, home_max_y, surface_dimensions);
+    let zoomed: Viewport = viewport.zoom_about(factor, anchor, max_height, home_min_y, home_max_y, surface_dimensions);
 
     // zoom_about held `anchor` under previous_midpoint; translate so it tracks to current_midpoint.
     let from: ProjectedPoint = surface_to_projected(zoomed, surface_dimensions, previous_midpoint);

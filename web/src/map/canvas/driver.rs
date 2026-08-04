@@ -185,7 +185,7 @@ impl Driver {
         // Preserve the current pan/zoom across a resize or device-pixel-ratio change, re-fitting only the
         // aspect; do not reset to the home view.
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
-        let ceiling: f64 = zoom_out_ceiling_half_height(self.surface_dimensions);
+        let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
         self.viewport = self.viewport.refit_to_surface(self.surface_dimensions, ceiling, home_min_y, home_max_y);
 
         if let Err(error) = self.renderer.resize_surface(width, height) {
@@ -359,7 +359,7 @@ impl Driver {
 
     fn pinch_view(&mut self, previous_a: SurfacePoint, previous_b: SurfacePoint, current_a: SurfacePoint, current_b: SurfacePoint) {
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
-        let ceiling: f64 = zoom_out_ceiling_half_height(self.surface_dimensions);
+        let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
         self.viewport = hit_test::pinch(
             self.viewport, self.surface_dimensions, previous_a, previous_b, current_a, current_b,
             ceiling, home_min_y, home_max_y,
@@ -389,7 +389,7 @@ impl Driver {
         let factor: f64 = (-clamped_delta * WHEEL_ZOOM_SENSITIVITY).exp();
 
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
-        let ceiling: f64 = zoom_out_ceiling_half_height(self.surface_dimensions);
+        let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
         self.viewport = hit_test::zoom_at_surface_point(self.viewport, self.surface_dimensions, surface_point, factor, ceiling, home_min_y, home_max_y);
 
         self.request_redraw();
@@ -628,16 +628,16 @@ fn home_range_projected_y_bounds() -> (f64, f64) {
     (southern_edge.y, northern_edge.y)
 }
 
-/// The largest half-height (furthest zoom-out): the home range, capped so the aspect-locked width never
+/// The largest height (furthest zoom-out): the home range, capped so the aspect-locked width never
 /// exceeds one world turn. On a surface wider than the range allows within one turn the cap wins, and the
 /// furthest zoom-out shows the full world width with a vertical slice of the range rather than the whole
 /// of it.
-fn zoom_out_ceiling_half_height(surface: SurfaceDimensions) -> f64 {
+fn zoom_out_ceiling_height(surface: SurfaceDimensions) -> f64 {
     let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
-    let home_half_height: f64 = (max_y - min_y) / 2.0;
-    let width_cap_half_height: f64 = std::f64::consts::PI * (surface.height as f64 / surface.width as f64);
+    let home_height: f64 = max_y - min_y;
+    let width_cap_height: f64 = std::f64::consts::TAU * (surface.height as f64 / surface.width as f64);
 
-    home_half_height.min(width_cap_half_height)
+    home_height.min(width_cap_height)
 }
 
 /// Sizes the canvas's drawing buffer to its displayed size in device pixels so the map renders crisply
