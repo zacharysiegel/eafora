@@ -46,6 +46,11 @@ const HOME_VIEW_MAX_LAT: f64 = 84.0;
 /// constant with no correctness role.
 const WHEEL_ZOOM_SENSITIVITY: f64 = 0.0015;
 
+/// Trackpad / browser pinch-zoom feel. Browsers report a pinch as a wheel event with `ctrlKey` set (even
+/// with no ctrl pressed), at a smaller per-event delta than a scroll notch, so a pinch gets a higher
+/// sensitivity than a scroll wheel. Tuning constant with no correctness role.
+const PINCH_ZOOM_SENSITIVITY: f64 = 0.003;
+
 /// Caps a single wheel event's `delta_y` magnitude before the zoom factor is computed, so one line- or
 /// page-mode notch (whose delta is far larger than a pixel-mode notch) cannot zoom absurdly far. The
 /// deltaMode varies by browser and OS; this bounds the raw value rather than interpreting it.
@@ -382,11 +387,12 @@ impl Driver {
         self.gesture.release(pointer_id);
     }
 
-    /// Wheel-zooms toward the cursor: maps the wheel delta to a multiplicative factor and zooms about the
-    /// projected point under the cursor, clamped to the zoom-out ceiling and the home latitude range.
-    fn zoom_at(&mut self, surface_point: SurfacePoint, delta_y: f64) {
+    /// Wheel-zooms toward the cursor: maps the wheel delta to a multiplicative factor (scaled by
+    /// `sensitivity`, which differs for a scroll wheel versus a pinch) and zooms about the projected point
+    /// under the cursor, clamped to the zoom-out ceiling and the home latitude range.
+    fn zoom_at(&mut self, surface_point: SurfacePoint, delta_y: f64, sensitivity: f64) {
         let clamped_delta: f64 = delta_y.clamp(-MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
-        let factor: f64 = (-clamped_delta * WHEEL_ZOOM_SENSITIVITY).exp();
+        let factor: f64 = (-clamped_delta * sensitivity).exp();
 
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
@@ -774,10 +780,13 @@ fn handle_wheel(event: &WheelEvent) {
 
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let delta_y: f64 = event.delta_y();
+    // Browsers report a trackpad or browser pinch-zoom as a wheel event with ctrlKey set (even with no
+    // ctrl pressed); a pinch gets a higher sensitivity than a scroll wheel.
+    let sensitivity: f64 = if event.ctrl_key() { PINCH_ZOOM_SENSITIVITY } else { WHEEL_ZOOM_SENSITIVITY };
 
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
-            driver.zoom_at(surface_point, delta_y);
+            driver.zoom_at(surface_point, delta_y, sensitivity);
         }
     });
 }
