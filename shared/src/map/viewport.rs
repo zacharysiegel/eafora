@@ -185,7 +185,7 @@ impl SurfacePoint {
         SurfacePoint { x: (self.x + other.x) / 2.0, y: (self.y + other.y) / 2.0 }
     }
 
-    pub fn distance(self, other: SurfacePoint) -> f64 {
+    pub fn euclidean_distance(self, other: SurfacePoint) -> f64 {
         let dx: f64 = self.x - other.x;
         let dy: f64 = self.y - other.y;
 

@@ -333,7 +333,7 @@ impl Driver {
             Gesture::Tap { pointer, origin } if pointer.pointer_id == pointer_id => {
                 self.pan_view(pointer.position, surface_point);
 
-                if origin.distance(surface_point) > DRAG_SELECT_SUPPRESS_PX {
+                if origin.euclidean_distance(surface_point) > DRAG_SELECT_SUPPRESS_PX {
                     // The press has become a pan; suppress the pre-press hover highlight so it does not
                     // stay pinned to its region while the map moves.
                     self.gesture = Gesture::Pan { pointer: PointerState { pointer_id, position: surface_point } };

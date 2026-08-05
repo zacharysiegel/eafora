@@ -121,12 +121,12 @@ pub fn pinch(
     home_min_y: f64,
     home_max_y: f64,
 ) -> Viewport {
-    let previous_distance: f64 = previous_a.distance(previous_b);
+    let previous_distance: f64 = previous_a.euclidean_distance(previous_b);
     if previous_distance <= f64::EPSILON {
         return viewport;
     }
 
-    let factor: f64 = current_a.distance(current_b) / previous_distance;
+    let factor: f64 = current_a.euclidean_distance(current_b) / previous_distance;
     let previous_midpoint: SurfacePoint = previous_a.midpoint(previous_b);
     let current_midpoint: SurfacePoint = current_a.midpoint(current_b);
 
