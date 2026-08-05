@@ -49,7 +49,7 @@ const WHEEL_ZOOM_SENSITIVITY: f64 = 0.0015;
 /// Trackpad / browser pinch-zoom feel. Browsers report a pinch as a wheel event with `ctrlKey` set (even
 /// with no ctrl pressed), at a smaller per-event delta than a scroll notch, so a pinch gets a higher
 /// sensitivity than a scroll wheel. Tuning constant with no correctness role.
-const PINCH_ZOOM_SENSITIVITY: f64 = 0.003;
+const PINCH_ZOOM_SENSITIVITY: f64 = 0.006;
 
 /// Caps a single wheel event's `delta_y` magnitude before the zoom factor is computed, so one line- or
 /// page-mode notch (whose delta is far larger than a pixel-mode notch) cannot zoom absurdly far. The
