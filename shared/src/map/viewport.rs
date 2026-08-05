@@ -181,12 +181,10 @@ pub struct SurfacePoint {
 }
 
 impl SurfacePoint {
-    /// The point halfway between this and `other`.
     pub fn midpoint(self, other: SurfacePoint) -> SurfacePoint {
         SurfacePoint { x: (self.x + other.x) / 2.0, y: (self.y + other.y) / 2.0 }
     }
 
-    /// The Euclidean distance, in device pixels, between this and `other`.
     pub fn distance(self, other: SurfacePoint) -> f64 {
         let dx: f64 = self.x - other.x;
         let dy: f64 = self.y - other.y;
