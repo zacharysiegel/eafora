@@ -46,10 +46,16 @@ const HOME_VIEW_MAX_LAT: f64 = 84.0;
 /// constant with no correctness role.
 const WHEEL_ZOOM_SENSITIVITY: f64 = 0.0015;
 
-/// Trackpad / browser pinch-zoom feel. Browsers report a pinch as a wheel event with `ctrlKey` set (even
-/// with no ctrl pressed), at a smaller per-event delta than a scroll notch, so a pinch gets a higher
-/// sensitivity than a scroll wheel. Tuning constant with no correctness role.
+/// Trackpad / browser pinch-zoom feel. A pinch arrives as a wheel event with `ctrlKey` set (even with no
+/// ctrl pressed), at a smaller per-event delta than a scroll notch, so a pinch gets a higher sensitivity
+/// than a scroll wheel. Tuning constant with no correctness role.
 const PINCH_ZOOM_SENSITIVITY: f64 = 0.006;
+
+/// Distinguishes a trackpad pinch from a real Ctrl+mouse-wheel, which both set `ctrlKey`: a pinch sends a
+/// small, pixel-mode delta, while a wheel notch is larger (or reported in line/page mode). A ctrlKey wheel
+/// event with a pixel delta below this is a pinch; at or above it (or in a non-pixel mode) it is treated
+/// as an ordinary wheel zoom.
+const TRACKPAD_PINCH_MAX_DELTA: f64 = 50.0;
 
 /// Caps a single wheel event's `delta_y` magnitude before the zoom factor is computed, so one line- or
 /// page-mode notch (whose delta is far larger than a pixel-mode notch) cannot zoom absurdly far. The
@@ -780,9 +786,13 @@ fn handle_wheel(event: &WheelEvent) {
 
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let delta_y: f64 = event.delta_y();
-    // Browsers report a trackpad or browser pinch-zoom as a wheel event with ctrlKey set (even with no
-    // ctrl pressed); a pinch gets a higher sensitivity than a scroll wheel.
-    let sensitivity: f64 = if event.ctrl_key() { PINCH_ZOOM_SENSITIVITY } else { WHEEL_ZOOM_SENSITIVITY };
+    // A trackpad or browser pinch arrives as a wheel event with ctrlKey set, small, and in pixel mode; a
+    // real Ctrl+mouse-wheel also sets ctrlKey but sends a large or line/page-mode delta, so it zooms at
+    // the ordinary wheel sensitivity, not the pinch one.
+    let is_trackpad_pinch: bool = event.ctrl_key()
+        && event.delta_mode() == web_sys::WheelEvent::DOM_DELTA_PIXEL
+        && delta_y.abs() < TRACKPAD_PINCH_MAX_DELTA;
+    let sensitivity: f64 = if is_trackpad_pinch { PINCH_ZOOM_SENSITIVITY } else { WHEEL_ZOOM_SENSITIVITY };
 
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
