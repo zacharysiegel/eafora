@@ -121,14 +121,14 @@ pub fn pinch(
     home_min_y: f64,
     home_max_y: f64,
 ) -> Viewport {
-    let previous_distance: f64 = surface_distance(previous_a, previous_b);
+    let previous_distance: f64 = previous_a.distance(previous_b);
     if previous_distance <= f64::EPSILON {
         return viewport;
     }
 
-    let factor: f64 = surface_distance(current_a, current_b) / previous_distance;
-    let previous_midpoint: SurfacePoint = surface_midpoint(previous_a, previous_b);
-    let current_midpoint: SurfacePoint = surface_midpoint(current_a, current_b);
+    let factor: f64 = current_a.distance(current_b) / previous_distance;
+    let previous_midpoint: SurfacePoint = previous_a.midpoint(previous_b);
+    let current_midpoint: SurfacePoint = current_a.midpoint(current_b);
 
     let anchor: ProjectedPoint = surface_to_projected(viewport, surface_dimensions, previous_midpoint);
     let zoomed: Viewport = viewport.zoom_about(factor, anchor, max_height, home_min_y, home_max_y, surface_dimensions);
@@ -141,17 +141,6 @@ pub fn pinch(
         .pan_by(from.x - to.x, from.y - to.y)
         .clamp_vertical(home_min_y, home_max_y)
         .normalize_longitude_turns()
-}
-
-fn surface_midpoint(a: SurfacePoint, b: SurfacePoint) -> SurfacePoint {
-    SurfacePoint { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 }
-}
-
-pub fn surface_distance(a: SurfacePoint, b: SurfacePoint) -> f64 {
-    let dx: f64 = a.x - b.x;
-    let dy: f64 = a.y - b.y;
-
-    (dx * dx + dy * dy).sqrt()
 }
 
 fn wrap_longitude(lon: f64) -> f64 {
