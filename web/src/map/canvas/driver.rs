@@ -46,10 +46,12 @@ const HOME_VIEW_MAX_LAT: f64 = 84.0;
 /// constant with no correctness role.
 const WHEEL_ZOOM_SENSITIVITY: f64 = 0.0015;
 
-/// Trackpad / browser pinch-zoom feel. A pinch arrives as a wheel event with `ctrlKey` set (even with no
-/// ctrl pressed), at a smaller per-event delta than a scroll notch, so a pinch gets a higher sensitivity
-/// than a scroll wheel. Tuning constant with no correctness role.
-const PINCH_ZOOM_SENSITIVITY: f64 = 0.006;
+/// Trackpad (or browser) pinch-zoom feel: the browser reports a trackpad pinch as a wheel event with
+/// `ctrlKey` set, at a smaller per-event delta than a scroll notch, so it gets a higher sensitivity than a
+/// scroll wheel. This is not the touchscreen two-finger pinch, which is a real multi-pointer gesture
+/// applied in `hit_test::pinch` by the finger-distance ratio (no sensitivity constant). Tuning constant
+/// with no correctness role.
+const TRACKPAD_PINCH_ZOOM_SENSITIVITY: f64 = 0.006;
 
 /// Distinguishes a trackpad pinch from a real Ctrl+mouse-wheel, which both set `ctrlKey`: a pinch sends a
 /// small, pixel-mode delta, while a wheel notch is larger (or reported in line/page mode). A ctrlKey wheel
@@ -786,19 +788,22 @@ fn handle_wheel(event: &WheelEvent) {
 
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let delta_y: f64 = event.delta_y();
-    // A trackpad or browser pinch arrives as a wheel event with ctrlKey set, small, and in pixel mode; a
-    // real Ctrl+mouse-wheel also sets ctrlKey but sends a large or line/page-mode delta, so it zooms at
-    // the ordinary wheel sensitivity, not the pinch one.
-    let is_trackpad_pinch: bool = event.ctrl_key()
-        && event.delta_mode() == web_sys::WheelEvent::DOM_DELTA_PIXEL
-        && delta_y.abs() < TRACKPAD_PINCH_MAX_DELTA;
-    let sensitivity: f64 = if is_trackpad_pinch { PINCH_ZOOM_SENSITIVITY } else { WHEEL_ZOOM_SENSITIVITY };
+    let sensitivity: f64 = if is_trackpad_pinch(event) { TRACKPAD_PINCH_ZOOM_SENSITIVITY } else { WHEEL_ZOOM_SENSITIVITY };
 
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
             driver.zoom_at(surface_point, delta_y, sensitivity);
         }
     });
+}
+
+/// Whether a wheel event is a trackpad or browser pinch rather than a mouse wheel. Both set ctrlKey, so
+/// they are told apart by the delta: a pinch is small and in pixel mode, while a mouse wheel notch is
+/// larger or reported in line/page mode.
+fn is_trackpad_pinch(event: &WheelEvent) -> bool {
+    event.ctrl_key()
+        && event.delta_mode() == web_sys::WheelEvent::DOM_DELTA_PIXEL
+        && event.delta_y().abs() < TRACKPAD_PINCH_MAX_DELTA
 }
 
 /// Captures the pointer to the canvas so a drag keeps delivering move and up events after the pointer
