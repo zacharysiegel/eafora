@@ -315,7 +315,7 @@ impl Driver {
 
     /// Advances the active gesture as a tracked pointer moves: a single pointer pans (and a `Tap` becomes
     /// a `Pan` once it crosses the threshold), two pointers pinch.
-    fn drive_pointer_move(&mut self, pointer_id: i32, surface_point: SurfacePoint) {
+    fn apply_pointer_move(&mut self, pointer_id: i32, surface_point: SurfacePoint) {
         match self.gesture {
             Gesture::Tap { pointer, origin } if pointer.pointer_id == pointer_id => {
                 self.pan_view(pointer.position, surface_point);
@@ -724,7 +724,7 @@ fn handle_pointer_move(event: &PointerEvent) {
         };
 
         if driver.gesture.is_active() {
-            driver.drive_pointer_move(pointer_id, surface_point);
+            driver.apply_pointer_move(pointer_id, surface_point);
         } else if is_mouse {
             // No gesture in progress: a mouse move is a hover; touch and pen produce no hover.
             driver.hover_region_at(surface_point);
