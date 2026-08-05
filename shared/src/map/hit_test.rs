@@ -50,9 +50,7 @@ pub fn region_at_point(
     })
 }
 
-/// Maps a device-pixel surface point through the viewport into Miller projected space. The gesture
-/// helpers and `surface_to_geo` share this one normalization, so a pixel a gesture holds fixed keeps
-/// resolving to the same projected point.
+/// Maps a device-pixel surface point through the viewport into Miller projected space.
 pub fn surface_to_projected(viewport: Viewport, surface_dimensions: SurfaceDimensions, surface_point: SurfacePoint) -> ProjectedPoint {
     let normalized_x: f64 = surface_point.x / surface_dimensions.width as f64;
     let normalized_y: f64 = surface_point.y / surface_dimensions.height as f64;
@@ -71,8 +69,7 @@ fn surface_to_geo(viewport: Viewport, surface_dimensions: SurfaceDimensions, sur
     projection::unproject(projected.x, projected.y)
 }
 
-/// The viewport after a drag-pan step: the world point under `from` tracks to `to`, then the view is kept
-/// inside the home latitude range and re-normalized across the antimeridian.
+/// The viewport after a drag-pan step: the world point under `from` tracks to `to`.
 pub fn pan(
     viewport: Viewport,
     surface_dimensions: SurfaceDimensions,
@@ -90,8 +87,8 @@ pub fn pan(
         .normalize_longitude_turns()
 }
 
-/// The viewport after a wheel-zoom step: zoom by `factor` about the projected point under `surface_point`
-/// (holding it under the cursor), then re-normalize across the antimeridian.
+/// The viewport after a wheel-zoom step: zoom by `factor` about the projected point under
+/// `surface_point`, holding it under the cursor.
 pub fn zoom_at_surface_point(
     viewport: Viewport,
     surface_dimensions: SurfaceDimensions,
@@ -111,8 +108,8 @@ pub fn zoom_at_surface_point(
 /// The viewport after one incremental two-finger pinch step: scale by the ratio of the current to the
 /// previous finger distance about the previous midpoint, then translate so that projected point tracks
 /// the current midpoint (a similarity transform without rotation; the two contact points stay pinned
-/// along the line between them). Kept inside the home latitude range and re-normalized. Coincident
-/// previous fingers (a near-zero previous distance) leave the viewport unchanged.
+/// along the line between them). Coincident previous fingers (a near-zero previous distance) leave the
+/// viewport unchanged.
 pub fn pinch(
     viewport: Viewport,
     surface_dimensions: SurfaceDimensions,
