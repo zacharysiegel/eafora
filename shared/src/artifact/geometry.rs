@@ -6,6 +6,7 @@ use geozero::ToGeo;
 
 use crate::error::AppError;
 use crate::map::projection::GeoPoint;
+use crate::math;
 
 /// Natural Earth scale denominator (1:50m). The single source for the scale token
 /// shared by the layer name and the filename stem; a bump to 1:10m geometry changes
@@ -101,7 +102,7 @@ impl Polygon {
         }
 
         let t: f64 = inverse_lerp(b_lat, a_lat, point.lat);
-        let crossing_lon: f64 = lerp(b_lon, a_lon, t);
+        let crossing_lon: f64 = math::lerp(b_lon, a_lon, t);
 
         crossing_lon > point.lon
     }
@@ -245,10 +246,6 @@ fn polygons_from_geometry(geometry: geo_types::Geometry<f64>) -> Result<Vec<Poly
     }
 
     Ok(polygons)
-}
-
-fn lerp(from: f64, to: f64, t: f64) -> f64 {
-    from + t * (to - from)
 }
 
 fn inverse_lerp(from: f64, to: f64, value: f64) -> f64 {

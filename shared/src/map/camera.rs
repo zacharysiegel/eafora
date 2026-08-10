@@ -1,9 +1,8 @@
 use crate::map::{SurfaceDimensions, Viewport};
 
-/// An in-progress animated viewport transition. Interpolation happens in center-and-height space (see
-/// `Viewport::interpolate_to`), so both endpoints are stored as full viewports and the intermediate width
-/// is re-derived from the surface aspect each frame. The camera does no scheduling and reads the clock
-/// only through the `now_ms` argument to `sample`.
+/// An in-progress animated viewport transition, interpolated in center-and-height space by
+/// `Viewport::interpolate_to`. The camera does no scheduling and reads the clock only through the
+/// `now_ms` argument to `sample`.
 #[derive(Debug, Clone, Copy)]
 pub struct Camera {
     from: Viewport,
@@ -13,8 +12,7 @@ pub struct Camera {
     duration_ms: f64,
 }
 
-/// Whether a sampled frame is mid-transition (the caller schedules another frame) or the last one (it has
-/// landed on the target; the caller stops the loop).
+/// Whether a sampled frame is mid-transition or the final one (the transition has landed on the target).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Progress {
     Animating,
@@ -43,8 +41,7 @@ impl Camera {
     }
 }
 
-/// Cubic ease-in-out, pinned to `p(0) = 0` and `p(1) = 1`: accelerates off the start and decelerates onto
-/// the end, so the move reads as a deliberate camera settle rather than a linear glide.
+/// Cubic ease-in-out; pinned to `p(0) = 0` and `p(1) = 1`.
 fn ease_in_out_cubic(t: f64) -> f64 {
     if t < 0.5 {
         4.0 * t * t * t

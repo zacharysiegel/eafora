@@ -1,4 +1,5 @@
 use crate::canonical::StatisticKind;
+use crate::math;
 
 /// An sRGB color; each component is in `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -141,15 +142,11 @@ fn piecewise_cubic_arctan(value: f64, x0: f64, y0: f64, toe: f64) -> f64 {
 
 fn srgb_lerp(from: Rgba, to: Rgba, t: f32) -> Rgba {
     Rgba {
-        r: lerp(from.r, to.r, t),
-        g: lerp(from.g, to.g, t),
-        b: lerp(from.b, to.b, t),
-        a: lerp(from.a, to.a, t),
+        r: math::lerp(from.r, to.r, t),
+        g: math::lerp(from.g, to.g, t),
+        b: math::lerp(from.b, to.b, t),
+        a: math::lerp(from.a, to.a, t),
     }
-}
-
-fn lerp(from: f32, to: f32, t: f32) -> f32 {
-    from + t * (to - from)
 }
 
 #[cfg(test)]

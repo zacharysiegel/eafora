@@ -7,10 +7,9 @@ use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer, Poly
 use crate::map::projection::{self, GeoPoint, ProjectedPoint};
 use crate::map::{RegionCode, SurfacePoint, SurfaceDimensions, Viewport};
 
-/// A country's projected framing for the zoom-to-country target: its bounding rectangle in projected
-/// space and its area-weighted centroid. Longitudes are unwrapped into one contiguous frame before
-/// projecting (see `country_framing`), so an antimeridian-crossing country frames its true extent rather
-/// than the whole globe; the values may sit slightly past ±π in x, which the caller re-normalizes.
+/// A country's projected framing for the zoom-to-country target. Its longitudes are unwrapped into one
+/// contiguous frame before projecting (see `country_framing`), so an antimeridian-crossing country frames
+/// its true extent, not the whole globe; the `x` values may therefore sit slightly outside ±π.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CountryFraming {
     pub min: ProjectedPoint,
@@ -18,9 +17,8 @@ pub struct CountryFraming {
     pub centroid: ProjectedPoint,
 }
 
-/// A hit-test result: the region under the cursor plus the fields a caller needs (`iso3`, `name_en`) and
-/// the country's projected framing for the zoom-to-country target, all resolved in the single hit-test
-/// pass so callers do not re-query the geometry layer.
+/// The region under the cursor and the details resolved for it in the same hit-test pass, so a caller
+/// need not re-query the geometry layer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegionHit {
     pub region_code: RegionCode,
@@ -64,10 +62,10 @@ pub fn region_at_point(
     })
 }
 
-/// The projected bounding rectangle and area-weighted centroid of a country, computed after unwrapping
-/// its vertex longitudes into a contiguous frame via a largest-longitude-gap cut, so an antimeridian-
-/// crossing country (its Natural Earth geometry split near +180 and -180) frames its true extent rather
-/// than the whole globe. The unwrap is a no-op for a non-crossing country. Assumes a country's true
+/// The `CountryFraming` of a country, computed after unwrapping its vertex longitudes into a contiguous
+/// frame via a largest-longitude-gap cut, so an antimeridian-crossing country (its Natural Earth geometry
+/// split near +180 and -180) frames its true extent rather than the whole globe. The unwrap is a no-op
+/// for a non-crossing country. Assumes a country's true
 /// longitude span is under 360° (every Natural Earth 50m country satisfies this).
 pub fn country_framing(feature: &CountryFeature) -> CountryFraming {
     let base_lon: f64 = occupied_arc_start_longitude(feature);

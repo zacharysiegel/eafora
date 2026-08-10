@@ -5,6 +5,7 @@ pub mod filesystem;
 pub mod http;
 pub mod license;
 pub mod map;
+pub mod math;
 // render: the wgpu GPU stack. Feature-gated so the ingestion producer never links wgpu. Reached via
 // `render::` rather than flattened at the crate root: it is general GPU infrastructure
 #[cfg(feature = "render")]

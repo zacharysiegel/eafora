@@ -69,20 +69,14 @@ const MAX_WHEEL_DELTA: f64 = 240.0;
 /// from being swallowed.
 const DRAG_SELECT_SUPPRESS_PX: f64 = 7.0;
 
-/// The zoom-to-country animation length in milliseconds: long enough to keep the eye's bearings across a
-/// rescaling of the globe, short enough to read as crisp. A tuning constant with no correctness role.
 const ANIMATION_DURATION_MS: f64 = 600.0;
 
-/// The padding the zoom-to-country target leaves around the framed country, as a fraction of its extent,
-/// so the country reads with generous surrounding context rather than filling the view. At 1.5 the framed
-/// extent is 2.5x the country, so the country spans about 40% of the governing dimension. A tuning constant.
+/// Padding around the framed country, as a fraction of its projected extent.
 const ZOOM_TO_COUNTRY_MARGIN_FRACTION: f64 = 1.5;
 
-/// The generous-context floor for zoom-to-country, as the half-height of a latitude band about the equator:
-/// a country smaller than the resulting frame lands at this regional zoom-out (its neighbors in view)
-/// instead of filling the screen. Deliberately looser than the manual wheel/pinch zoom-in floor
-/// (`MIN_ZOOM_IN_HEIGHT`); framing a country is a regional view, not the tightest possible zoom. A tuning
-/// constant.
+/// The zoom-to-country zoom-in floor, as the half-height in degrees of an equatorial latitude band.
+/// Deliberately looser than the manual zoom-in floor (`MIN_ZOOM_IN_HEIGHT`) so a small country frames its
+/// surrounding region, not just itself.
 const ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT: f64 = 8.0;
 
 /// A pointer in contact (a held mouse button or a touching finger), tracked by `pointerId` so pan and
@@ -274,9 +268,8 @@ impl Driver {
         }
     }
 
-    /// One frame of the zoom-to-country animation: sample the camera at `now_ms`, set the viewport, draw
-    /// directly (not through the coalesced `request_redraw`, which would fight the loop's scheduling), and
-    /// either schedule the next frame or, when finished, drop the camera and stop.
+    /// Advances the zoom-to-country animation by one frame. Draws directly rather than through the
+    /// coalesced `request_redraw`, which would fight this loop's own scheduling.
     fn advance_animation(&mut self, now_ms: f64) {
         self.animation_frame_pending = false;
 
@@ -759,8 +752,7 @@ fn home_range_projected_y_bounds() -> (f64, f64) {
     (southern_edge.y, northern_edge.y)
 }
 
-/// The projected height of the `ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT` band about the equator, the lower bound
-/// on a zoom-to-country frame's height (see the constant).
+/// The projected height of the `ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT` band, the zoom-to-country height floor.
 fn zoom_to_country_min_height() -> f64 {
     let northern_edge: ProjectedPoint = projection::project(ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT, HOME_CENTER.lon);
     let southern_edge: ProjectedPoint = projection::project(-ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT, HOME_CENTER.lon);
@@ -839,9 +831,8 @@ fn draw_pending_frame() {
     });
 }
 
-/// The `requestAnimationFrame` callback for the zoom-to-country loop. The browser passes the frame's
-/// `performance.now()` timestamp, which the camera samples against; the driver reschedules from within
-/// `advance_animation` while the transition is still running.
+/// The `requestAnimationFrame` callback for the zoom-to-country loop; the browser passes the frame's
+/// `performance.now()` timestamp, which the camera samples against.
 fn advance_pending_animation(now_ms: f64) {
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {

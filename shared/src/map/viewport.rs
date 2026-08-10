@@ -1,6 +1,7 @@
 use std::f64::consts::{PI, TAU};
 
 use crate::map::projection::ProjectedPoint;
+use crate::math;
 
 /// The smallest height, in projected radians, the camera may zoom in to: roughly an eight-degree band of
 /// latitude (a country and its neighbors) filling the surface. This caps zoom-in so the atlas stays at a
@@ -131,13 +132,10 @@ impl Viewport {
             .normalize_longitude_turns()
     }
 
-    /// A viewport containing the projected rectangle `[min_x, max_x] x [min_y, max_y]` centered on
-    /// `center`, with `margin_fraction` padding, at the surface aspect and never stretched. The
-    /// counterpart to `fill_height`: `fill_height` frames only the vertical extent (letting the
-    /// horizontal overflow); this frames the whole rectangle by taking whichever of its height or its
-    /// width-over-aspect is larger, so both axes fit. The framed height is floored at `min_height` (so a
-    /// small rectangle still lands at a legible zoom-out rather than filling the view) and then clamped
-    /// into `[MIN_ZOOM_IN_HEIGHT, max_height]`.
+    /// A viewport containing the projected rectangle `[min_x, max_x] x [min_y, max_y]`, centered on
+    /// `center`, at the surface aspect (never stretched), with `margin_fraction` padding. The framed height
+    /// is floored at `min_height` (so a small rectangle lands at a legible zoom-out rather than filling the
+    /// view) and clamped to `[MIN_ZOOM_IN_HEIGHT, max_height]`.
     pub fn fit_bounds(
         min_x: f64,
         max_x: f64,
@@ -167,8 +165,8 @@ impl Viewport {
         let from_center: ProjectedPoint = self.center();
         let target_center: ProjectedPoint = target.center();
 
-        let center_x: f64 = lerp(from_center.x, unwrap_nearest(from_center.x, target_center.x), t);
-        let center_y: f64 = lerp(from_center.y, target_center.y, t);
+        let center_x: f64 = math::lerp(from_center.x, unwrap_nearest(from_center.x, target_center.x), t);
+        let center_y: f64 = math::lerp(from_center.y, target_center.y, t);
         let height: f64 = geometric_lerp(self.height(), target.height(), t);
 
         let seed: Viewport = Viewport {
@@ -213,10 +211,6 @@ fn clamp_center_y(center_y: f64, height: f64, min_y: f64, max_y: f64) -> f64 {
     } else {
         center_y.clamp(lo, hi)
     }
-}
-
-fn lerp(from: f64, to: f64, t: f64) -> f64 {
-    from + (to - from) * t
 }
 
 /// A blend linear in the logarithm, so the ratio between successive `t` steps is constant: a uniform
