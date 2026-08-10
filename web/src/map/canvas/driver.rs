@@ -74,8 +74,16 @@ const DRAG_SELECT_SUPPRESS_PX: f64 = 7.0;
 const ANIMATION_DURATION_MS: f64 = 600.0;
 
 /// The padding the zoom-to-country target leaves around the framed country, as a fraction of its extent,
-/// so the country is not jammed against the screen edges. A tuning constant.
-const ZOOM_TO_COUNTRY_MARGIN_FRACTION: f64 = 0.1;
+/// so the country reads with generous surrounding context rather than filling the view. At 1.5 the framed
+/// extent is 2.5x the country, so the country spans about 40% of the governing dimension. A tuning constant.
+const ZOOM_TO_COUNTRY_MARGIN_FRACTION: f64 = 1.5;
+
+/// The generous-context floor for zoom-to-country, as the half-height of a latitude band about the equator:
+/// a country smaller than the resulting frame lands at this regional zoom-out (its neighbors in view)
+/// instead of filling the screen. Deliberately looser than the manual wheel/pinch zoom-in floor
+/// (`MIN_ZOOM_IN_HEIGHT`); framing a country is a regional view, not the tightest possible zoom. A tuning
+/// constant.
+const ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT: f64 = 8.0;
 
 /// A pointer in contact (a held mouse button or a touching finger), tracked by `pointerId` so pan and
 /// pinch can follow the right one across moves.
@@ -300,15 +308,17 @@ impl Driver {
         self.schedule_animation_frame();
     }
 
-    /// The viewport that frames a country's projected bounds and centroid with a margin, clamped to the
-    /// same zoom-out ceiling and home latitude range as manual zoom and re-normalized across the seam.
+    /// The viewport that frames a country's projected bounds and centroid with a margin and a
+    /// generous-context minimum zoom-out, clamped to the same zoom-out ceiling and home latitude range as
+    /// manual zoom and re-normalized across the seam.
     fn zoom_target(&self, framing: CountryFraming) -> Viewport {
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
+        let min_height: f64 = zoom_to_country_min_height();
 
         Viewport::fit_bounds(
             framing.min.x, framing.max.x, framing.min.y, framing.max.y,
-            framing.centroid, ZOOM_TO_COUNTRY_MARGIN_FRACTION, ceiling, self.surface_dimensions,
+            framing.centroid, ZOOM_TO_COUNTRY_MARGIN_FRACTION, min_height, ceiling, self.surface_dimensions,
         )
         .clamp_vertical(home_min_y, home_max_y)
         .normalize_longitude_turns()
@@ -740,6 +750,15 @@ fn home_range_projected_y_bounds() -> (f64, f64) {
     let northern_edge: ProjectedPoint = projection::project(HOME_VIEW_MAX_LAT, HOME_CENTER.lon);
 
     (southern_edge.y, northern_edge.y)
+}
+
+/// The projected height of the `ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT` band about the equator, the lower bound
+/// on a zoom-to-country frame's height (see the constant).
+fn zoom_to_country_min_height() -> f64 {
+    let northern_edge: ProjectedPoint = projection::project(ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT, HOME_CENTER.lon);
+    let southern_edge: ProjectedPoint = projection::project(-ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT, HOME_CENTER.lon);
+
+    northern_edge.y - southern_edge.y
 }
 
 /// The largest height (furthest zoom-out): the home range, capped so the aspect-locked width never

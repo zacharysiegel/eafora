@@ -135,7 +135,9 @@ impl Viewport {
     /// `center`, with `margin_fraction` padding, at the surface aspect and never stretched. The
     /// counterpart to `fill_height`: `fill_height` frames only the vertical extent (letting the
     /// horizontal overflow); this frames the whole rectangle by taking whichever of its height or its
-    /// width-over-aspect is larger, so both axes fit. Height is clamped into `[MIN_ZOOM_IN_HEIGHT, max_height]`.
+    /// width-over-aspect is larger, so both axes fit. The framed height is floored at `min_height` (so a
+    /// small rectangle still lands at a legible zoom-out rather than filling the view) and then clamped
+    /// into `[MIN_ZOOM_IN_HEIGHT, max_height]`.
     pub fn fit_bounds(
         min_x: f64,
         max_x: f64,
@@ -143,12 +145,13 @@ impl Viewport {
         max_y: f64,
         center: ProjectedPoint,
         margin_fraction: f64,
+        min_height: f64,
         max_height: f64,
         surface: SurfaceDimensions,
     ) -> Viewport {
         let aspect: f64 = surface.width as f64 / surface.height as f64;
         let contain_height: f64 = (max_y - min_y).max((max_x - min_x) / aspect);
-        let padded_height: f64 = contain_height * (1.0 + margin_fraction);
+        let padded_height: f64 = (contain_height * (1.0 + margin_fraction)).max(min_height);
 
         let seed: Viewport = Viewport { min: center, max: center };
 
@@ -528,7 +531,7 @@ mod tests {
     #[test]
     fn fit_bounds_contains_the_rectangle_with_margin_and_matches_aspect() {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 200, height: 100 };
-        let fitted: Viewport = Viewport::fit_bounds(-1.0, 1.0, -0.5, 0.5, ProjectedPoint { x: 0.0, y: 0.0 }, 0.1, 4.0, surface);
+        let fitted: Viewport = Viewport::fit_bounds(-1.0, 1.0, -0.5, 0.5, ProjectedPoint { x: 0.0, y: 0.0 }, 0.1, MIN_ZOOM_IN_HEIGHT, 4.0, surface);
 
         assert!(fitted.min.x <= -1.0 && fitted.max.x >= 1.0, "contains the rectangle horizontally");
         assert!(fitted.min.y <= -0.5 && fitted.max.y >= 0.5, "contains the rectangle vertically");
@@ -541,7 +544,7 @@ mod tests {
     #[test]
     fn fit_bounds_frames_by_height_for_a_tall_rectangle() {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 200, height: 100 };
-        let fitted: Viewport = Viewport::fit_bounds(-0.1, 0.1, -2.0, 2.0, ProjectedPoint { x: 0.0, y: 0.0 }, 0.1, 8.0, surface);
+        let fitted: Viewport = Viewport::fit_bounds(-0.1, 0.1, -2.0, 2.0, ProjectedPoint { x: 0.0, y: 0.0 }, 0.1, MIN_ZOOM_IN_HEIGHT, 8.0, surface);
         // Height 4 governs (0.2/2 == 0.1 < 4); padded to 4.4.
         assert!((fitted.max.y - fitted.min.y - 4.4).abs() < TOLERANCE);
     }
@@ -549,16 +552,25 @@ mod tests {
     #[test]
     fn fit_bounds_centers_on_the_passed_center_not_the_rectangle_center() {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
-        let fitted: Viewport = Viewport::fit_bounds(-1.0, 1.0, -1.0, 1.0, ProjectedPoint { x: 5.0, y: 5.0 }, 0.1, 8.0, surface);
+        let fitted: Viewport = Viewport::fit_bounds(-1.0, 1.0, -1.0, 1.0, ProjectedPoint { x: 5.0, y: 5.0 }, 0.1, MIN_ZOOM_IN_HEIGHT, 8.0, surface);
 
         assert!(((fitted.min.x + fitted.max.x) / 2.0 - 5.0).abs() < TOLERANCE, "centered on the passed center x");
         assert!(((fitted.min.y + fitted.max.y) / 2.0 - 5.0).abs() < TOLERANCE, "centered on the passed center y");
     }
 
     #[test]
+    fn fit_bounds_floors_a_small_rectangle_at_min_height() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
+        // A tiny rectangle whose padded extent (approx. 0.11) is below the 0.6 floor: the floor governs.
+        let fitted: Viewport = Viewport::fit_bounds(-0.05, 0.05, -0.05, 0.05, ProjectedPoint { x: 0.0, y: 0.0 }, 0.1, 0.6, 4.0, surface);
+
+        assert!((fitted.max.y - fitted.min.y - 0.6).abs() < TOLERANCE, "framed to the min-height floor, not the tiny extent");
+    }
+
+    #[test]
     fn fit_bounds_clamps_a_degenerate_rectangle_to_the_zoom_in_floor() {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
-        let fitted: Viewport = Viewport::fit_bounds(0.3, 0.3, 0.2, 0.2, ProjectedPoint { x: 0.3, y: 0.2 }, 0.1, 8.0, surface);
+        let fitted: Viewport = Viewport::fit_bounds(0.3, 0.3, 0.2, 0.2, ProjectedPoint { x: 0.3, y: 0.2 }, 0.1, MIN_ZOOM_IN_HEIGHT, 8.0, surface);
 
         assert!((fitted.max.y - fitted.min.y - MIN_ZOOM_IN_HEIGHT).abs() < TOLERANCE, "clamped to the zoom-in floor");
     }
