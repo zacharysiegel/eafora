@@ -133,7 +133,7 @@ impl Viewport {
     }
 
     /// A viewport containing the projected rectangle `[min_x, max_x] x [min_y, max_y]`, centered on
-    /// `center`, at the surface aspect (never stretched), with `margin_fraction` padding. The framed height
+    /// `center`, at the surface aspect (never stretched), with `margin_proportion` padding. The framed height
     /// is floored at `min_height` (so a small rectangle lands at a legible zoom-out rather than filling the
     /// view) and clamped to `[MIN_ZOOM_IN_HEIGHT, max_height]`.
     pub fn fit_bounds(
@@ -142,14 +142,14 @@ impl Viewport {
         min_y: f64,
         max_y: f64,
         center: ProjectedPoint,
-        margin_fraction: f64,
+        margin_proportion: f64,
         min_height: f64,
         max_height: f64,
         surface: SurfaceDimensions,
     ) -> Viewport {
         let aspect: f64 = surface.width as f64 / surface.height as f64;
         let contain_height: f64 = (max_y - min_y).max((max_x - min_x) / aspect);
-        let padded_height: f64 = (contain_height * (1.0 + margin_fraction)).max(min_height);
+        let padded_height: f64 = (contain_height * (1.0 + margin_proportion)).max(min_height);
 
         let seed: Viewport = Viewport { min: center, max: center };
 

@@ -71,8 +71,8 @@ const DRAG_SELECT_SUPPRESS_PX: f64 = 7.0;
 
 const ZOOM_TO_COUNTRY_ANIMATION_DURATION_MS: f64 = 600.0;
 
-/// Padding around the framed country, as a fraction of its projected extent.
-const ZOOM_TO_COUNTRY_MARGIN_FRACTION: f64 = 1.5;
+/// Padding around the framed country, as a proportion of its projected extent.
+const ZOOM_TO_COUNTRY_MARGIN_PROPORTION: f64 = 1.5;
 
 /// The zoom-to-country zoom-in floor, as the half-height in degrees of an equatorial latitude band.
 /// Deliberately looser than the manual zoom-in floor (`MIN_ZOOM_IN_HEIGHT`) so a small country frames its
@@ -311,7 +311,7 @@ impl Driver {
 
         Viewport::fit_bounds(
             framing.min.x, framing.max.x, framing.min.y, framing.max.y,
-            framing.centroid, ZOOM_TO_COUNTRY_MARGIN_FRACTION, min_height, ceiling, self.surface_dimensions,
+            framing.centroid, ZOOM_TO_COUNTRY_MARGIN_PROPORTION, min_height, ceiling, self.surface_dimensions,
         )
         .clamp_vertical(home_min_y, home_max_y)
         .normalize_longitude_turns()
