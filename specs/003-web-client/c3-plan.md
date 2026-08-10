@@ -493,11 +493,13 @@ The camera start is driven off the raw `RegionHit`, not off the selection's chan
 
 Three docs assert this feature is out of v1 and move together (matching the C3 scope decision at the top of this plan):
 
-- `docs/design/README.md` §Animation: the blanket "Through v1, there are no animations at all. State changes are instant." carves out the zoom-to-country transition (the only v1 animation: a short cubic-eased viewport move on country selection; all other state changes stay instant). The nearby "no animations in <v2" blockquote gets a parenthetical carve-out.
+- `docs/design/README.md` §Animation: the blanket "Through v1, there are no animations at all. State changes are instant." carves out the zoom-to-country transition (the only v1 animation: a short cubic-eased viewport move on country selection; all other state changes stay instant). The nearby "no animations in <v2" line is NOT edited: it lives in the `## Origin` provenance quote of the author's 2026-06-15 prompt, and the authoritative §Animation prose above it now carries the carve-out, so the verbatim record is left intact.
 - `specs/006-core-renderer/spec.md` §Scope cutoff: the "zoom-to-country Camera ... v1.5+" bullet changes to "implemented in `003-web-client` phase C3.4," noting the camera lives at `shared::map::camera::Camera` (not the aspirational `core::geometry::animation::Camera`) and the contain-fit returns as `Viewport::fit_bounds`. The `hover_scale` bullet stays deferred.
 - `specs/006-core-renderer/checklists/requirements.md`: the clause pairing "zoom-to-country Camera state machine" with "v1.5+" is updated to reflect the C3.4 inclusion.
 
-After editing, grep `specs/` and `docs/` for `v1.5` and "no animations" to confirm nothing still asserts the feature is deferred.
+After editing, grep `specs/` and `docs/` for `v1.5` and "no animations" to confirm nothing authoritative still asserts the feature is deferred. Two "no animations" hits are expected to remain: the `## Origin` provenance quote in `docs/design/README.md` (deliberately unedited, see above) and the static-stub descriptions (the stub HTML fixtures genuinely have no animation).
+
+> Deviation from the original plan: the plan called for a parenthetical carve-out on the "no animations in <v2" blockquote. That line is a preserved-for-provenance verbatim author quote, so editing it would corrupt the record; it is left untouched and the authoritative §Animation prose carries the carve-out instead.
 
 ### Testing
 

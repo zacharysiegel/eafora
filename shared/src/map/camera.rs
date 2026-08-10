@@ -2,13 +2,13 @@ use crate::map::{SurfaceDimensions, Viewport};
 
 /// An in-progress animated viewport transition. Interpolation happens in center-and-height space (see
 /// `Viewport::interpolate_to`), so both endpoints are stored as full viewports and the intermediate width
-/// is re-derived from the surface aspect each frame. `start_time_ms` is the timestamp the driver passes
-/// from `requestAnimationFrame` (the `performance.now()` clock); the camera does no scheduling and reads
-/// the clock only through the `now_ms` argument to `sample`.
+/// is re-derived from the surface aspect each frame. The camera does no scheduling and reads the clock
+/// only through the `now_ms` argument to `sample`.
 #[derive(Debug, Clone, Copy)]
 pub struct Camera {
     from: Viewport,
     target: Viewport,
+    /// The `performance.now()` timestamp the driver stamps from its `requestAnimationFrame` callback.
     start_time_ms: f64,
     duration_ms: f64,
 }
