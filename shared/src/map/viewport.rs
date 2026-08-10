@@ -21,12 +21,9 @@ pub struct Viewport {
 
 impl Viewport {
     /// A viewport with the surface's aspect that fills the surface vertically with the `min_y..max_y`
-    /// extent, horizontally centered on `center_x`, widened by the surface aspect (isotropic, never
-    /// stretched). When filling the height would make the width exceed one world turn (`2π`), which
-    /// happens on a surface wider than approximately 2:1 for the home framing, the width is instead capped
-    /// at `2π` and the view shows a vertical slice of the extent rather than the whole of it. Delegates to
-    /// `zoom_to_height` so the home view and manual zoom share one construction-and-clamp path. Assumes
-    /// `surface` dimensions are nonzero and `max_y > min_y`.
+    /// extent, horizontally centered on `center_x` (isotropic, never stretched). Exception: the width
+    /// never exceeds one world turn (`2π`), so on a surface too wide to fit the extent within one turn the
+    /// width is capped and the view then covers less than the full extent.
     pub fn fill_height(center_x: f64, min_y: f64, max_y: f64, surface: SurfaceDimensions) -> Viewport {
         let requested_height: f64 = max_y - min_y;
         let center_y: f64 = (min_y + max_y) / 2.0;
@@ -67,8 +64,8 @@ impl Viewport {
         factor: f64,
         anchor: ProjectedPoint,
         max_height: f64,
-        home_min_y: f64,
-        home_max_y: f64,
+        min_y: f64,
+        max_y: f64,
         surface: SurfaceDimensions,
     ) -> Viewport {
         let target_height: f64 = self.height() / factor;
@@ -81,7 +78,7 @@ impl Viewport {
         let center: ProjectedPoint = self.center();
         let new_center_x: f64 = anchor.x + (center.x - anchor.x) * achieved_ratio;
         let new_center_y: f64 = anchor.y + (center.y - anchor.y) * achieved_ratio;
-        let clamped_center_y: f64 = clamp_center_y(new_center_y, clamped_height, home_min_y, home_max_y);
+        let clamped_center_y: f64 = clamp_center_y(new_center_y, clamped_height, min_y, max_y);
 
         let width: f64 = clamped_height * (surface.width as f64 / surface.height as f64);
 
@@ -101,12 +98,12 @@ impl Viewport {
         }
     }
 
-    /// This viewport slid vertically so it stays inside the home latitude range `[home_min_y, home_max_y]`,
+    /// This viewport slid vertically so it stays inside the home latitude range `[min_y, max_y]`,
     /// with its height unchanged. When the view is at least as tall as the range (full zoom-out) it
     /// centers on the range. Horizontal is untouched.
-    pub fn clamp_vertical(&self, home_min_y: f64, home_max_y: f64) -> Viewport {
+    pub fn clamp_vertical(&self, min_y: f64, max_y: f64) -> Viewport {
         let center: ProjectedPoint = self.center();
-        let clamped_center_y: f64 = clamp_center_y(center.y, self.height(), home_min_y, home_max_y);
+        let clamped_center_y: f64 = clamp_center_y(center.y, self.height(), min_y, max_y);
 
         self.pan_by(0.0, clamped_center_y - center.y)
     }
@@ -128,9 +125,9 @@ impl Viewport {
     /// the width is re-derived from the new aspect, then the zoom-out ceiling, the home latitude range,
     /// and the antimeridian normalization are re-applied. Called on a surface resize or a
     /// device-pixel-ratio change so the user's pan/zoom is preserved rather than reset to the home view.
-    pub fn refit_to_surface(&self, surface: SurfaceDimensions, max_height: f64, home_min_y: f64, home_max_y: f64) -> Viewport {
+    pub fn refit_to_surface(&self, surface: SurfaceDimensions, max_height: f64, min_y: f64, max_y: f64) -> Viewport {
         self.zoom_to_height(self.height(), max_height, surface)
-            .clamp_vertical(home_min_y, home_max_y)
+            .clamp_vertical(min_y, max_y)
             .normalize_longitude_turns()
     }
 
@@ -146,9 +143,7 @@ impl Viewport {
     }
 }
 
-/// Clamps a requested height into `[MIN_ZOOM_IN_HEIGHT, max_height]`: the zoom-in floor and the
-/// caller-supplied zoom-out ceiling. The `debug_assert` front-runs the `clamp` panic with a legible
-/// message if a caller passes a ceiling below the floor.
+/// Clamps a requested height into `[MIN_ZOOM_IN_HEIGHT, max_height]`.
 fn clamp_height(requested: f64, max_height: f64) -> f64 {
     debug_assert!(
         max_height >= MIN_ZOOM_IN_HEIGHT,
@@ -158,15 +153,15 @@ fn clamp_height(requested: f64, max_height: f64) -> f64 {
     requested.clamp(MIN_ZOOM_IN_HEIGHT, max_height)
 }
 
-/// Clamps a center-y so a view of the given height stays inside `[home_min_y, home_max_y]`. When the view
+/// Clamps a center-y so a view of the given height stays inside `[min_y, max_y]`. When the view
 /// is at least as tall as the range the valid interval collapses, so the view centers on the range
 /// midpoint rather than letting a floating-point `lo > hi` panic `clamp`.
-fn clamp_center_y(center_y: f64, height: f64, home_min_y: f64, home_max_y: f64) -> f64 {
-    let lo: f64 = home_min_y + height / 2.0;
-    let hi: f64 = home_max_y - height / 2.0;
+fn clamp_center_y(center_y: f64, height: f64, min_y: f64, max_y: f64) -> f64 {
+    let lo: f64 = min_y + height / 2.0;
+    let hi: f64 = max_y - height / 2.0;
 
     if lo >= hi {
-        (home_min_y + home_max_y) / 2.0
+        (min_y + max_y) / 2.0
     } else {
         center_y.clamp(lo, hi)
     }
@@ -365,7 +360,7 @@ mod tests {
     fn zoom_about_pins_the_view_to_the_range_edge_and_yields_vertical_anchor() {
         let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
         // A small view near the top of the home range; zooming out about a near-top anchor grows the box
-        // past home_max_y, so the range bound wins and the box top sits exactly at home_max_y.
+        // past max_y, so the range bound wins and the box top sits exactly at max_y.
         let viewport: Viewport = Viewport { min: ProjectedPoint { x: -0.1, y: 1.7 }, max: ProjectedPoint { x: 0.1, y: 1.9 } };
         let anchor: ProjectedPoint = ProjectedPoint { x: 0.0, y: 1.88 };
 

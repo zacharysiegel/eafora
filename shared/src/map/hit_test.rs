@@ -75,15 +75,15 @@ pub fn pan(
     surface_dimensions: SurfaceDimensions,
     from: SurfacePoint,
     to: SurfacePoint,
-    home_min_y: f64,
-    home_max_y: f64,
+    min_y: f64,
+    max_y: f64,
 ) -> Viewport {
     let from_projected: ProjectedPoint = surface_to_projected(viewport, surface_dimensions, from);
     let to_projected: ProjectedPoint = surface_to_projected(viewport, surface_dimensions, to);
 
     viewport
         .pan_by(from_projected.x - to_projected.x, from_projected.y - to_projected.y)
-        .clamp_vertical(home_min_y, home_max_y)
+        .clamp_vertical(min_y, max_y)
         .normalize_longitude_turns()
 }
 
@@ -95,13 +95,13 @@ pub fn zoom_at_surface_point(
     surface_point: SurfacePoint,
     factor: f64,
     max_height: f64,
-    home_min_y: f64,
-    home_max_y: f64,
+    min_y: f64,
+    max_y: f64,
 ) -> Viewport {
     let anchor: ProjectedPoint = surface_to_projected(viewport, surface_dimensions, surface_point);
 
     viewport
-        .zoom_about(factor, anchor, max_height, home_min_y, home_max_y, surface_dimensions)
+        .zoom_about(factor, anchor, max_height, min_y, max_y, surface_dimensions)
         .normalize_longitude_turns()
 }
 
@@ -118,8 +118,8 @@ pub fn pinch(
     current_a: SurfacePoint,
     current_b: SurfacePoint,
     max_height: f64,
-    home_min_y: f64,
-    home_max_y: f64,
+    min_y: f64,
+    max_y: f64,
 ) -> Viewport {
     let previous_distance: f64 = previous_a.euclidean_distance(previous_b);
     if previous_distance <= f64::EPSILON {
@@ -131,7 +131,7 @@ pub fn pinch(
     let current_midpoint: SurfacePoint = current_a.midpoint(current_b);
 
     let anchor: ProjectedPoint = surface_to_projected(viewport, surface_dimensions, previous_midpoint);
-    let zoomed: Viewport = viewport.zoom_about(factor, anchor, max_height, home_min_y, home_max_y, surface_dimensions);
+    let zoomed: Viewport = viewport.zoom_about(factor, anchor, max_height, min_y, max_y, surface_dimensions);
 
     // zoom_about held `anchor` under previous_midpoint; translate so it tracks to current_midpoint.
     let from: ProjectedPoint = surface_to_projected(zoomed, surface_dimensions, previous_midpoint);
@@ -139,7 +139,7 @@ pub fn pinch(
 
     zoomed
         .pan_by(from.x - to.x, from.y - to.y)
-        .clamp_vertical(home_min_y, home_max_y)
+        .clamp_vertical(min_y, max_y)
         .normalize_longitude_turns()
 }
 
