@@ -1,4 +1,3 @@
-use std::f64::consts::TAU;
 use std::ops::{Add, Mul, Sub};
 
 /// Linear interpolation; `t` outside `[0, 1]` extrapolates.
@@ -21,14 +20,9 @@ pub fn geometric_interpolate(from: f64, to: f64, t: f64) -> f64 {
     from * (to / from).powf(t)
 }
 
-/// `target` shifted by whole turns of `2π` to land within ±π of `reference`: the representation of the
-/// same angle reachable by the shortest move.
-pub fn unwrap_nearest(reference: f64, target: f64) -> f64 {
-    target - ((target - reference) / TAU).round() * TAU
-}
-
-/// Cubic ease-in-out; pinned to `p(0) = 0` and `p(1) = 1`.
-pub fn ease_in_out_cubic(t: f64) -> f64 {
+/// A cubic ease-in-out: maps `[0, 1]` monotonically onto `[0, 1]`, pinned to `p(0) = 0` and `p(1) = 1`,
+/// accelerating off the start and decelerating onto the end.
+pub fn cubic_ease_in_out(t: f64) -> f64 {
     if t < 0.5 {
         4.0 * t * t * t
     } else {
@@ -60,24 +54,14 @@ mod tests {
     }
 
     #[test]
-    fn unwrap_nearest_shifts_to_the_near_representative() {
-        // -3 rad is more than half a turn from +3 rad; the near representative is +3.28 (one turn up).
-        let unwrapped: f64 = unwrap_nearest(3.0, -3.0);
-        assert!((unwrapped - (-3.0 + TAU)).abs() < TOLERANCE);
-        assert!((unwrap_nearest(0.5, 0.7) - 0.7).abs() < TOLERANCE, "already within a turn is unchanged");
-        let shift: f64 = unwrap_nearest(3.0, -3.0) - (-3.0);
-        assert!((shift / TAU - (shift / TAU).round()).abs() < 1e-12, "shift is a whole number of turns");
-    }
-
-    #[test]
-    fn ease_in_out_cubic_is_pinned_and_symmetric() {
-        assert!(ease_in_out_cubic(0.0).abs() < 1e-12);
-        assert!((ease_in_out_cubic(1.0) - 1.0).abs() < 1e-12);
-        assert!((ease_in_out_cubic(0.5) - 0.5).abs() < 1e-12);
+    fn cubic_ease_in_out_is_pinned_and_symmetric() {
+        assert!(cubic_ease_in_out(0.0).abs() < 1e-12);
+        assert!((cubic_ease_in_out(1.0) - 1.0).abs() < 1e-12);
+        assert!((cubic_ease_in_out(0.5) - 0.5).abs() < 1e-12);
 
         let mut previous: f64 = -1.0;
         for step in 0..=20 {
-            let value: f64 = ease_in_out_cubic(step as f64 / 20.0);
+            let value: f64 = cubic_ease_in_out(step as f64 / 20.0);
             assert!(value >= previous, "monotonic increasing");
             previous = value;
         }

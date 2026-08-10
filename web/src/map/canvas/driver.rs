@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::{DataSourceKind, StatisticKind};
-use shared::map::{Camera, CountryFraming, FrameState, GeoPoint, ProjectedPoint, Progress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
+use shared::map::{Camera, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
 use shared::sqlite::shard_db;
@@ -283,13 +283,13 @@ impl Driver {
             return;
         };
 
-        let (viewport, progress): (Viewport, Progress) = camera.sample(now_ms, self.surface_dimensions);
+        let (viewport, progress): (Viewport, AnimationProgress) = camera.sample(now_ms, self.surface_dimensions);
         self.viewport = viewport;
         self.draw();
 
         match progress {
-            Progress::Animating => self.schedule_animation_frame(),
-            Progress::Finished => self.camera = None,
+            AnimationProgress::Animating => self.schedule_animation_frame(),
+            AnimationProgress::Finished => self.camera = None,
         }
     }
 

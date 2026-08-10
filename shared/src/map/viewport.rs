@@ -218,7 +218,7 @@ impl Viewport {
         let from_center: ProjectedPoint = self.center();
         let target_center: ProjectedPoint = target.center();
 
-        let center_x: f64 = math::lerp(from_center.x, math::unwrap_nearest(from_center.x, target_center.x), t);
+        let center_x: f64 = math::lerp(from_center.x, unwrap_nearest(from_center.x, target_center.x), t);
         let center_y: f64 = math::lerp(from_center.y, target_center.y, t);
         let height: f64 = math::geometric_interpolate(self.height(), target.height(), t);
 
@@ -264,6 +264,13 @@ fn clamp_center_y(center_y: f64, height: f64, min_y: f64, max_y: f64) -> f64 {
     } else {
         center_y.clamp(lo, hi)
     }
+}
+
+/// The copy of `target` shifted by whole turns of `2π` to land within ±π of `reference`: the projected-x
+/// (longitude) representation reachable from `reference` by the shortest move, so a viewport blend crosses
+/// the antimeridian the short way rather than unwinding back across the whole world.
+fn unwrap_nearest(reference: f64, target: f64) -> f64 {
+    target - ((target - reference) / TAU).round() * TAU
 }
 
 /// Physical device pixels: the platform shell multiplies the CSS-pixel cursor position by
@@ -664,5 +671,15 @@ mod tests {
         let bottom_margin: f64 = content_min.y - balanced.min.y;
         assert!(top_margin.abs() < TOLERANCE, "no top margin: the country is against the pole edge");
         assert!((bottom_margin - 0.1).abs() < TOLERANCE, "the opposite margin is held at the minimum, not shrunk to zero");
+    }
+
+    #[test]
+    fn unwrap_nearest_shifts_to_the_near_representative() {
+        // -3 rad is more than half a turn from +3 rad; the near representative is +3.28 (one turn up).
+        let unwrapped: f64 = unwrap_nearest(3.0, -3.0);
+        assert!((unwrapped - (-3.0 + TAU)).abs() < TOLERANCE);
+        assert!((unwrap_nearest(0.5, 0.7) - 0.7).abs() < TOLERANCE, "already within a turn is unchanged");
+        let shift: f64 = unwrap_nearest(3.0, -3.0) - (-3.0);
+        assert!((shift / TAU - (shift / TAU).round()).abs() < 1e-12, "shift is a whole number of turns");
     }
 }
