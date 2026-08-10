@@ -25,8 +25,8 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
    - Phase C3 (viewport camera/aspect + pan/zoom + the selection/hover renderer pass) — split out of C2 per `c2-plan.md` §Deferred to C3, detailed in `specs/003-web-client/c3-plan.md`. **In progress.**
      - C3.1 (viewport aspect correction: isotropic projected radians + `Viewport::fill_height`, prime-meridian-centered home view) — landed.
      - C3.2 (selection/hover render pass: per-country GPU identity, emphasis lift + outline) — landed.
-     - C3.3 (manual pan/zoom + pinch) — **In progress on `web-map-pan-zoom`.** Pointer Events input; wheel-zoom toward the cursor, drag-pan, and two-finger pinch mutating the projected viewport; zoom-out clamped to the home latitude range, horizontal wrap re-normalized so long pans stay visible.
-     - C3.4 (animated zoom-to-country `Camera`) — pending.
+     - C3.3 (manual pan/zoom + pinch) — landed. Pointer Events input; wheel-zoom toward the cursor, drag-pan, and two-finger pinch mutating the projected viewport; zoom-out clamped to the home latitude range, horizontal wrap re-normalized so long pans stay visible.
+     - C3.4 (animated zoom-to-country `Camera`) — **In progress on `web-map-zoom-to-country`.** Tapping a country eases the viewport to frame it: a pure `Camera` state machine in `shared::map::camera` (cubic ease-in-out, geometric height interpolation, antimeridian short-way) sampled by a self-scheduling rAF loop in the web driver; any manual gesture, press, or resize cancels the animation.
    - Phase D (browser fetch + discovery + speculative fetch + bundle hot-swap) — pending.
    - Phase E (perf-budget script + precompress + `wrangler` deploy config) — pending.
 2. **`004-ios-client`** — Xcode project + xcframework + SwiftUI shell + file-system cache adapter + AASA deploy + TestFlight pipeline. Spec: `specs/004-ios-client/spec.md`. Off `master`; may run in parallel with the web phases. **Pending.**

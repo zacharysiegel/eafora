@@ -76,9 +76,11 @@ reference work, not browsing a feed.
 
 ## Animation
 
-Through v1, there are no animations at all. State changes are instant. This is consistent with the paper-and-ink metaphor: turning a page does not have an easing curve.
+Through v1 there is exactly one animation: the zoom-to-country camera move. Selecting a region eases the viewport from its current framing to one that frames the country, over roughly 600ms with a cubic ease-in-out. Every other state change is instant, consistent with the paper-and-ink metaphor: turning a page does not have an easing curve.
 
-From v2 onward, animations may be introduced selectively, governed by a single principle: **crispness over smoothness**. A motion that snaps cleanly into place reads as sharp; a motion that glides reads as soft, which contradicts the visual identity. This biases the choice of *whether* to animate (the answer is usually no) and *how* to animate when the answer is yes:
+The camera move is a deliberate exception to that metaphor because it is the one transition where an instant cut destroys information. When the globe rescales and recenters at once, a hard cut leaves the viewer with no way to track where the new view sits relative to the old one; the eased move preserves that spatial continuity. The exception is scoped narrowly to viewport motion and does not license eased transitions elsewhere.
+
+From v2 onward, further animations may be introduced selectively, governed by a single principle: **crispness over smoothness**. A motion that snaps cleanly into place reads as sharp; a motion that glides reads as soft, which contradicts the visual identity. This biases the choice of *whether* to animate (the answer is usually no) and *how* to animate when the answer is yes:
 
 - Prefer step transitions, very short fades (under 100ms), or hard cuts over interpolated movement.
 - When position or size must animate, use short durations (under 150ms) and linear or near-linear easing. No spring physics, no overshoot, no elastic curves.

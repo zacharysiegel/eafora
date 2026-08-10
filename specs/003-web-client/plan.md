@@ -55,8 +55,8 @@ static CDN-delivered data; no origin server, no live API).
 
 **Performance Goals**: first paint within the 2 MB compressed cap (WASM approx. 600–700 KB brotli +
 embedded bundle approx. 700 KB–1 MB + page shell <50 KB); second paint under 3 MB. Interactions are
-instant (no animation through v1). Rendering is event-driven (dirty flag + `requestAnimationFrame`);
-no idle rAF loop at refresh rate.
+instant apart from the zoom-to-country camera move (the one v1 animation). Rendering is event-driven
+(dirty flag + `requestAnimationFrame`); no idle rAF loop at refresh rate.
 
 **Constraints**: single-threaded WASM — no `SharedArrayBuffer`, so no cross-origin-isolation headers
 required, so the page embeds in a third-party `<iframe>` freely. The `ArtifactCache` trait is `!Send`

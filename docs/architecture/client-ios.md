@@ -30,7 +30,7 @@ From the constitution, `docs/architecture/overview.md`, `docs/architecture/clien
 - Embedded bundle on native: bytes baked into the app binary at build time; loads synchronously before the first frame; doubles as the offline-capable baseline. (Client §Embedded downsampled artifact)
 - Web and iOS develop in parallel from v1, deliberately, to prevent the architecture from overfitting to the web platform's constraints. Android lags. The native apps double as personal-learning goals for the parallel game project; for funder pitches, only the web is the user-facing v1 deliverable. (Project memory)
 - Apple Developer Program: $99/year; App Store Connect API key for CI; TestFlight for testing; ~24–48 hour App Store review. (Overview §App store distribution)
-- Visual identity: sharp white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, no animations through v1. (`docs/design/README.md`)
+- Visual identity: sharp white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, only the zoom-to-country animation through v1. (`docs/design/README.md`)
 - No live API through v2: every datum the user sees came from a versioned CDN artifact. (Constitution VI)
 
 ## Workspace placement
@@ -361,9 +361,9 @@ The Swift-to-Rust attach call hands a `WindowHandle.uiKit(layerPtr:, viewPtr:)` 
 
 The renderer's wgpu device, queue, and pipeline state are constructed once at `EaforaCore::new` time. The surface is attached later when the view is ready. The two-phase setup is necessary because the platform render target doesn't exist at app init; everything else does.
 
-Per `docs/design/README.md`, **no animations through v1**. Rendering is **event-driven**, not loop-driven: `MTKView.isPaused = true` plus `setNeedsDisplay()` on every state change. State changes — selection, hover, statistic-picker, year-scrubber drag, bundle hot-swap — invalidate the view; MTKView coalesces multiple invalidations between vsyncs into one draw call at the next vsync; the GPU stays idle when nothing is happening. The same shape `client-web.md` §Client-side map view describes for web (dirty flag + `requestAnimationFrame`), expressed in iOS's native vocabulary.
+Per `docs/design/README.md`, the only v1 animation is the zoom-to-country camera move; every other state change is instant. Rendering is **event-driven**, not loop-driven: `MTKView.isPaused = true` plus `setNeedsDisplay()` on every state change. State changes — selection, hover, statistic-picker, year-scrubber drag, bundle hot-swap — invalidate the view; MTKView coalesces multiple invalidations between vsyncs into one draw call at the next vsync; the GPU stays idle when nothing is happening. The zoom-to-country move is the one case that runs a temporary per-frame loop: on country selection the shell polls the `shared::map::Camera` each vsync (via `setNeedsDisplay()` scheduled per frame) for a fresh interpolated viewport, then stops when the transition lands. The same shape `client-web.md` §Client-side map view describes for web (dirty flag + `requestAnimationFrame`), expressed in iOS's native vocabulary.
 
-When v2+ adds animations (per `docs/design/README.md` §Animation — under 150ms, linear easing, snap-don't-glide), the animation handler self-perpetuates a chain of `setNeedsDisplay()` calls until the animation ends, then stops. Continuous render rate during the animation; idle again after. Same pattern client-web.md describes for animation handling there.
+When v2+ adds further animations (per `docs/design/README.md` §Animation — under 150ms, linear easing, snap-don't-glide), the same self-perpetuating chain of `setNeedsDisplay()` calls carries them: continuous render rate during the animation; idle again after. Same pattern client-web.md describes for animation handling there.
 
 ### GPU baseline
 

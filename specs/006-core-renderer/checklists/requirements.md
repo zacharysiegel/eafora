@@ -26,7 +26,7 @@
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
 
-> §Scope cutoff explicitly names what's NOT in this feature (per-platform FFI modules, animation curves, zoom-to-country Camera state machine, GPU-based label rendering). Each cut item is paired with where it lives instead (003 / 004, v2+ animation work, v1.5+ feature, future SDF / MSDF pipeline).
+> §Scope cutoff explicitly names what's NOT in this feature (per-platform FFI modules, `hover_scale` easing curves, GPU-based label rendering). Each cut item is paired with where it lives instead (003 / 004, v2+ animation work, future SDF / MSDF pipeline). The zoom-to-country `Camera` state machine, formerly cut to v1.5+, has since landed in `shared::map::camera` with the driver wiring in the web client (003).
 
 - [x] Dependencies and assumptions identified
 

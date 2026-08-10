@@ -13,7 +13,7 @@ This document covers everything between **the consumer-side contract `client.md`
 - The deploy target: Cloudflare Workers Assets, headers, and the manifest-vs-immutable cache disposition that mirrors the producer-side R2 settings.
 - Testing strategy for the web-only TDD-required surfaces.
 
-Cross-cutting client behavior (artifact-consumption contract, fetch / cache / load pipeline shape, SQLite-in-the-client, FlatGeobuf reading, license-shard composition, embedded bundle semantics, hot-swap protocol) is in `client.md` and is **not relitigated here**. The visual identity (sharp white-and-red, square corners, 1px borders, no shadows, no animations in v1) is in `docs/design/README.md` and is also not relitigated.
+Cross-cutting client behavior (artifact-consumption contract, fetch / cache / load pipeline shape, SQLite-in-the-client, FlatGeobuf reading, license-shard composition, embedded bundle semantics, hot-swap protocol) is in `client.md` and is **not relitigated here**. The visual identity (sharp white-and-red, square corners, 1px borders, no shadows, only the zoom-to-country animation in v1) is in `docs/design/README.md` and is also not relitigated.
 
 ## Locked decisions referenced (not relitigated)
 
@@ -27,7 +27,7 @@ From the constitution, `docs/architecture/overview.md`, `docs/architecture/clien
 - Embedded bundle on web: shipped as a static asset alongside the wasm on Cloudflare Workers Assets, fetched on first visit, HTTP-cached for return visits. (Client §Embedded downsampled artifact)
 - Perf budget: 2 MB total compressed at first paint (wasm + static-asset embedded bundle + page shell), 3 MB total compressed at second paint (after the live CDN bundle resolves). A target, not a contract; exceeding it produces a CI warning, not a build failure. (Client §Web first-paint perf budget)
 - CSS: hand-written CSS organized as Sass partials (Sass used only for splitting/bundling, not scripting); **Tailwind and utility-class libraries are explicitly ruled out**. (Project memory; design `README.md`)
-- Visual identity: sharp, white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, no animations through v1. (`docs/design/README.md`)
+- Visual identity: sharp, white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, only the zoom-to-country animation through v1. (`docs/design/README.md`)
 - Hot-swap protocol: renderer subscribes to a `tokio::sync::watch::Receiver<Arc<Bundle>>` published by the loader. (Client §Bundle hot-swap)
 - No live API through v2: every datum the user sees came from a versioned CDN artifact. (Constitution VI)
 - CDN: Cloudflare R2 for artifacts, Cloudflare Workers Assets for the web app's static files. (Overview §Artifact distribution)
@@ -211,13 +211,13 @@ Rendering is **event-driven**, not loop-driven. There is no `requestAnimationFra
 
 - User input that changes the scene (`pointerdown` selecting a region, `pointermove` panning, `wheel` zooming, statistic-picker selection, year-scrubber drag).
 - A new bundle landing on the watch channel (a background task awaits `Receiver::changed()` and posts a redraw on each wake).
-- An in-progress animation in v1.5+, which is a self-perpetuating chain of `requestAnimationFrame(redraw)` callbacks that stops scheduling itself when the animation completes. Through v1 there are no animations per `docs/design/README.md`, so this case doesn't apply.
+- An in-progress animation, which is a self-perpetuating chain of `requestAnimationFrame(redraw)` callbacks that stops scheduling itself when the animation completes. Through v1 the one animation is the zoom-to-country camera move (per `docs/design/README.md` §Animation): selecting a country starts the loop, each tick samples the `Camera` for a fresh interpolated viewport and redraws, and the loop stops when the transition lands. Any manual gesture, press, or resize cancels it.
 
 The scheduling primitive is a dirty flag plus `requestAnimationFrame`: input handlers set the flag and call `request_redraw()`, which calls `requestAnimationFrame(draw)` if a frame isn't already pending. Multiple `request_redraw()` calls between vsyncs coalesce into one draw at the next vsync, so smooth pan-drag still renders every frame the display can show, but stationary idle states cost zero GPU work. The matching iOS pattern is `MTKView.isPaused = true` + `setNeedsDisplay()` (see `client-ios.md` §Rendering); same shape, platform-specific mechanism.
 
 When `draw` runs, it reads the current `Arc<Bundle>` from the watch receiver (`Receiver::borrow()`, a synchronous atomic load) and issues wgpu draw calls against that bundle. The bundle is initially the static-asset embedded bundle (loaded at startup before the first paint); the live CDN fetch replaces it via the watch channel when complete, and the next scheduled redraw picks it up.
 
-Per `docs/design/README.md`, **no animations through v1**. State changes are instant: the map re-renders the new selection on the next frame; controls update synchronously. The hover effect on regions is a discrete state change to a 1px red outline — see overview §Hover scaling for the visual-vs-hit-test transform separation already locked at the core layer.
+Per `docs/design/README.md`, the only v1 animation is the zoom-to-country camera move. Every other state change is instant: the map re-renders the new selection on the next frame; controls update synchronously. Selecting a country additionally eases the viewport to frame it (a short cubic-eased camera move). The hover effect on regions is a discrete state change to a 1px red outline — see overview §Hover scaling for the visual-vs-hit-test transform separation already locked at the core layer.
 
 ### SSG for region detail and About pages
 
