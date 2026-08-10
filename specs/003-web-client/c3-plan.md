@@ -301,4 +301,230 @@ Animated zoom-to-country and the `Camera` state machine (C3.4). Inertial/momentu
 
 ## C3.4 — animated zoom-to-country
 
-Deferred detail; scope fixed: the `Camera` state machine per `docs/architecture/overview.md` §Zoom-to-country, advanced by a self-scheduling `requestAnimationFrame` loop, framing the clicked country's bounding box (adding a contain-style fit alongside `fill_height` when it is picked up). Updates `006-core-renderer/spec.md` and the design README to move zoom-to-country into v1. Detailed when picked up.
+- Affected crates: `shared` (map: a new `camera` module, `viewport`, `hit_test`; geometry: a centroid helper in `artifact/geometry.rs`) and `web` (driver: `canvas/driver.rs`). No renderer, shader, `country_mesh`, or `gpu_types` change: `draw_frame(viewport, ..)` already takes the viewport per call and writes it to the uniform (`write_viewport_uniform`) and the renderer owns no camera state, so animation is just the driver supplying a different viewport on successive frames. The shader recomputes the antimeridian wrap direction from the drawn viewport each frame (`wrap_direction`), so every interpolated frame renders its own two-instance coverage correctly, as long as the interpolated width never exceeds one world turn (it cannot: height is bounded by the zoom-out ceiling, whose width is capped at `2π`).
+
+### Problem
+
+C3.3 gave manual pan/zoom but left no way to bring a chosen country into frame in one action. A tap selects the region and publishes the detail panel, but the viewport does not move; a small country stays small and off-center. C3.4 makes a tap also animate the viewport, from where it is to a viewport framing the tapped country's bounding box with a margin, centered on the country's centroid, over a short cubic-eased transition. This is the one animation permitted through v1 (`docs/design/README.md` §Animation); a jump-cut to a distant, rescaled viewport loses the eye's bearings on the globe in a way this transition prevents.
+
+### Where the pieces live
+
+Pure `shared::map` math (host-testable, no `web_sys`) plus driver wiring, mirroring C3.3:
+
+- A `Camera` state machine in a new `shared/src/map/camera.rs` (`pub mod camera;` + `pub use camera::*;`, non-render-gated). It holds the from-viewport, target-viewport, start time, and duration, and exposes one function that samples the interpolated `Viewport` at a given time and reports whether the transition has finished. The architecture's aspirational `core::geometry::animation::Camera` maps to `shared::map::camera::Camera` here.
+- `Viewport::fit_bounds`, the contain-style counterpart to `fill_height` (removed in C3.1, returns here): frames a projected rectangle within the surface aspect with a margin, clamped.
+- `Viewport::interpolate_to`, the per-frame blend the `Camera` calls.
+- `region_at_point` returns the tapped country's framing data in its `RegionHit`. `RegionHit` gains the country's projected bounding rectangle and projected centroid, computed in the single hit-test pass that already resolves the `CountryFeature` by point-in-polygon. This is the chosen shape (over exposing a surface-to-geographic helper and re-querying the geometry at the tap point): the tap resolves everything in one pass, no second geometry query. The selection path ignores the new fields.
+- A pure area-weighted centroid helper in `artifact/geometry.rs` (no centroid exists today), used to fill `RegionHit`'s centroid.
+- The driver owns the `requestAnimationFrame` loop, the target-viewport construction (it holds the framing constants, the surface aspect, and the ceiling), the time source, and the cancellation wiring.
+
+### (a) The `Camera` state machine
+
+Pure: no scheduling, no `web_sys`, reads the clock only through a time value the caller passes in. The driver stores it in an `Option<Camera>`.
+
+```rust
+/// An in-progress animated viewport transition. Interpolation happens in center-and-height space, so
+/// both endpoints are stored as full viewports and the intermediate width is re-derived from the surface
+/// aspect each frame rather than lerped. `start_time_ms` is the DOMHighResTimeStamp the driver passes from
+/// requestAnimationFrame (the performance.now() clock); the camera does no scheduling.
+#[derive(Debug, Clone, Copy)]
+pub struct Camera {
+    from: Viewport,
+    target: Viewport,
+    start_time_ms: f64,
+    duration_ms: f64,
+}
+
+/// Whether a sampled frame is mid-transition (schedule another frame) or the last one (landed on the
+/// target; stop the loop).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Progress {
+    Animating,
+    Finished,
+}
+
+impl Camera {
+    pub fn new(from: Viewport, target: Viewport, start_time_ms: f64, duration_ms: f64) -> Camera {
+        Camera { from, target, start_time_ms, duration_ms }
+    }
+
+    /// The interpolated viewport at `now_ms` and whether the transition has finished. At or past the end
+    /// (or a non-positive duration) it returns `target` verbatim with `Finished`, so the final frame is
+    /// bit-identical to the caller's clamped target and a backgrounded-then-foregrounded tab snaps to the
+    /// end on its first frame back.
+    pub fn sample(&self, now_ms: f64, surface: SurfaceDimensions) -> (Viewport, Progress) {
+        let elapsed_ms: f64 = now_ms - self.start_time_ms;
+
+        if self.duration_ms <= 0.0 || elapsed_ms >= self.duration_ms {
+            return (self.target, Progress::Finished);
+        }
+
+        let eased_t: f64 = ease_in_out_cubic((elapsed_ms / self.duration_ms).clamp(0.0, 1.0));
+
+        (self.from.interpolate_to(self.target, eased_t, surface), Progress::Animating)
+    }
+}
+
+fn ease_in_out_cubic(t: f64) -> f64 {
+    if t < 0.5 {
+        4.0 * t * t * t
+    } else {
+        let f: f64 = -2.0 * t + 2.0;
+        1.0 - f * f * f / 2.0
+    }
+}
+```
+
+The final frame returns `self.target` verbatim, not `interpolate_to(.., 1.0, ..)`: rounding through the blend could land a fraction off, and on the antimeridian short-way case (see §d) `interpolate_to` at `t == 1` can differ from `target` by a whole `2π` turn. Tests assert the landing via `sample` at `Finished`, never against `interpolate_to` at `t == 1`. The camera does not re-clamp per frame: both endpoints are valid (the from-viewport is the live one C3.3 keeps valid; the target is clamped once in §b), and interpolating center-and-height between two points in the convex clamp region stays in the region (see §d).
+
+### (b) Computing the target viewport
+
+Computed once when the tap resolves, then handed to `Camera::new`.
+
+1. **Framing data from the hit (Option B).** `region_at_point` already locates the `CountryFeature` by point-in-polygon; it now also computes, for the hit, the country's projected bounding rectangle and projected centroid and returns them in `RegionHit`. The **projected bounding rectangle** comes from the feature's `bbox` (geographic degrees): Miller is separable and monotonic, so `min_y = project(min_lat, 0).y`, `max_y = project(max_lat, 0).y`, `min_x = project(0, min_lon).x`, `max_x = project(0, max_lon).x`. The **antimeridian-spanning case** is handled here: Natural Earth splits antimeridian-crossing geometry into pieces near `+180` and `−180`, so `BoundingBox::from_polygons` reports a longitude span near 360° for Russia, Fiji, the US (Aleutians), NZ Chathams, Kiribati. A `max_lon − min_lon` exceeding 180° (no genuine compact country does) flags this; for those, the horizontal extent is not taken from the bbox (that would frame the whole globe) but from a fixed regional half-span constant about the centroid, while the latitude extent still comes from the bbox (latitude never wraps). The **centroid** is the area-weighted centroid of the exterior rings with holes subtracted, weighted across multi-polygon components, computed in projected space; for an antimeridian-spanning country the vertex longitudes are recentered on the dominant landmass before projecting, else the area-weighting averages `+179` and `−179` toward `0` and lands on the wrong hemisphere.
+2. **The driver builds the target.** From the `RegionHit`'s projected rectangle and centroid, the driver calls `Viewport::fit_bounds` (§c) with the margin fraction, the surface, and the same zoom-out ceiling the manual path uses, then chains `clamp_vertical(home_min_y, home_max_y)` and `normalize_longitude_turns()` exactly as the wheel/pan/pinch paths do. This keeps the target inside the home latitude range and within one antimeridian turn.
+
+The projection-of-bbox, antimeridian-span detection, and centroid together are a pure helper (unit-testable without the driver); the centroid is its own pure helper in `geometry.rs`. Computing them in `region_at_point` means the hover path (which calls `region_at_point` every move) recomputes them each hit; the cost is one feature's vertices, comparable to the containment test already done for it, so it is acceptable for v1 (memoize per iso3 if a profile ever shows it).
+
+### (c) The `Viewport` contain-fit helper
+
+```rust
+impl Viewport {
+    /// A viewport containing the projected rectangle `[min_x, max_x] x [min_y, max_y]` centered on
+    /// `center`, with `margin_fraction` padding, at the surface aspect and never stretched. The
+    /// counterpart to `fill_height`: where `fill_height` frames only the vertical extent (letting the
+    /// horizontal overflow), this frames the whole rectangle by taking whichever of its height or its
+    /// width-over-aspect is larger, so both axes fit. Height is clamped into `[MIN_ZOOM_IN_HEIGHT, max_height]`.
+    pub fn fit_bounds(
+        min_x: f64,
+        max_x: f64,
+        min_y: f64,
+        max_y: f64,
+        center: ProjectedPoint,
+        margin_fraction: f64,
+        max_height: f64,
+        surface: SurfaceDimensions,
+    ) -> Viewport {
+        let aspect: f64 = surface.width as f64 / surface.height as f64;
+        let contain_height: f64 = (max_y - min_y).max((max_x - min_x) / aspect);
+        let padded_height: f64 = contain_height * (1.0 + margin_fraction);
+
+        let seed: Viewport = Viewport { min: center, max: center };
+
+        seed.zoom_to_height(padded_height, max_height, surface)
+    }
+}
+```
+
+Centers on the passed `center` (the centroid), which may differ from the rectangle's geometric center. Width is re-derived by `zoom_to_height` from the padded height and aspect, so it is never stretched. The position clamps are chained by the caller (§b), matching how `zoom_to_height` is a construction primitive. A degenerate zero-extent rectangle clamps up to `MIN_ZOOM_IN_HEIGHT`; no special case.
+
+### (d) The interpolation
+
+```rust
+impl Viewport {
+    /// This viewport blended toward `target` by eased `t` in `[0, 1]`, interpolating center and visible
+    /// height and re-deriving width from the surface aspect so no intermediate frame is stretched. Height
+    /// is blended geometrically (constant perceived zoom rate); center linearly. The horizontal blend
+    /// takes the short way across the antimeridian: the target center-x is unwrapped to within half a
+    /// world turn of this center-x first.
+    pub fn interpolate_to(&self, target: Viewport, t: f64, surface: SurfaceDimensions) -> Viewport {
+        let from_center: ProjectedPoint = self.center();
+        let target_center: ProjectedPoint = target.center();
+
+        let center_x: f64 = lerp(from_center.x, unwrap_nearest(from_center.x, target_center.x), t);
+        let center_y: f64 = lerp(from_center.y, target_center.y, t);
+        let height: f64 = geometric_lerp(self.height(), target.height(), t);
+
+        let seed: Viewport = Viewport {
+            min: ProjectedPoint { x: center_x, y: center_y },
+            max: ProjectedPoint { x: center_x, y: center_y },
+        };
+
+        seed.zoom_to_height(height, height, surface)
+    }
+}
+
+/// `target` shifted by whole turns of `2π` to land within ±π of `reference` (the shortest horizontal move).
+fn unwrap_nearest(reference: f64, target: f64) -> f64 {
+    target - ((target - reference) / TAU).round() * TAU
+}
+
+/// A blend linear in the logarithm, so the ratio between successive frames is constant. Used for height
+/// so the perceived zoom rate is uniform across a large scale change.
+fn geometric_lerp(from: f64, to: f64, t: f64) -> f64 {
+    from * (to / from).powf(t)
+}
+```
+
+Interpolating center + height (not corners) and re-deriving width holds C3.3's aspect invariant on every frame. Height blends in log space so a large zoom does not crawl-then-rush; both endpoints are at least `MIN_ZOOM_IN_HEIGHT`, so `geometric_lerp` is well-defined and stays in the clamp interval. `zoom_to_height(height, height, ..)` makes the per-frame ceiling a no-op (the floor still applies harmlessly). Center-y stays in the home range without a per-frame `clamp_vertical`: both endpoints' center-y lie in the convex feasible set `{ min_y + h/2 <= center_y <= max_y - h/2 }`, and a linear center-y with monotone height traces a path that stays feasible. `unwrap_nearest` makes a seam-crossing zoom sweep at most half a turn instead of unrolling the globe.
+
+### (e) The self-scheduling `requestAnimationFrame` loop
+
+Distinct from the existing coalesced on-demand redraw (`request_redraw`, which schedules one frame per input event). The animation loop schedules a fresh frame at the end of each frame until the camera reports `Finished`.
+
+New `Driver` state:
+
+- `camera: Option<Camera>` — `Some` while a transition is in flight. The source of truth for "is a transition running."
+- `animation_frame_pending: bool` — whether an animation frame is currently queued in the browser. This mirrors `redraw_pending` and is what makes exactly one loop exist across cancel/restart interleaving: `camera.is_some()` cannot serve this, because a stale queued frame from a cancelled animation can re-adopt a freshly started camera, so "running" and "frame scheduled" are two distinct facts.
+- `animation_callback: Option<Closure<dyn FnMut(f64)>>` — the rAF closure, held for lifetime; it takes the `f64` timestamp, so the loop needs no separate clock read (a different closure type from `redraw_callback`, so a new field).
+
+One scheduling helper `schedule_animation_frame(&mut self)` returns early when `animation_frame_pending` is set, else schedules `animation_callback` and sets the flag only on a successful schedule (the retryable discipline of `request_redraw`).
+
+The loop: (1) **Start** — on a tap resolving to a country with a target, read the timestamp, build `Camera::new(self.viewport, target, now_ms, ANIMATION_DURATION_MS)`, store it, and `schedule_animation_frame` (a no-op if a stale frame is still queued, so no second loop). (2) **Each frame** `advance_animation(now_ms)` first clears `animation_frame_pending = false`; if `camera` is `None`, returns (a cancellation cleared it); else samples, sets `self.viewport`, and calls `self.draw()` directly (not `request_redraw`, which would fight the loop's scheduling); on `Animating` calls `schedule_animation_frame`, on `Finished` clears `self.camera = None` and stops. The stale-frame double-loop is impossible: scheduling is gated on `animation_frame_pending`, so a stale frame firing after a new camera started sees the flag false at its top, samples the current camera, draws, and reschedules once, while the start path's `schedule_animation_frame` was a no-op. No `cancelAnimationFrame` handle-tracking needed.
+
+Coexistence with the coalesced redraw: a reactive redraw mid-animation (e.g. a statistic change) schedules its own one-shot frame, which draws the current `self.viewport` with the new frame state; both paths only read/write `self.viewport` and call `draw_frame`, so at most one extra draw per animation frame in the rare overlap. Tab backgrounding: rAF pauses; the first frame back is far past the end, so `sample` returns the target/`Finished` and the transition snaps to its end (acceptable; the glide's only value is continuity for a watching user).
+
+Cancellation — set `self.camera = None` the instant the user takes manual control, so a gesture never fights the camera:
+
+- Manual pan: at the top of `pan_view`, before the viewport mutation.
+- Manual wheel/trackpad zoom: at the top of `zoom_at`.
+- Manual pinch: at the top of `pinch_view`.
+- A new press: in `handle_pointer_down`'s driver-borrow block (not in `Gesture::begin`, which is a pure enum method with no `Driver` access), so a press cancels any in-flight camera; if the press turns into a tap on another country, that release starts a fresh animation from the current (cancelled) viewport, a smooth redirect.
+- Resize: `resize` refits `self.viewport` to the new aspect; a camera in flight holds old-aspect endpoints, so `resize` clears `self.camera = None` (continuing to interpolate old-aspect endpoints at a new aspect would briefly distort, since `interpolate_to` assumes both endpoints already have the surface aspect).
+- Detach/teardown: the `DRIVER` thread-local holds the whole `Driver`; teardown drops it and the `animation_callback` closure, so no frame fires against a dead driver.
+
+### (f) Click-to-zoom coexisting with the C3.2 selection
+
+The camera start is driven off the raw `RegionHit`, not off `select_region_at`'s change result. `select_region_at` short-circuits (returns `None`) when the tapped region equals the selected one, so hanging the camera off it would make re-tapping an already-selected country (after panning away) a no-op. Instead, on `pointerup` for an unmoved tap, the driver resolves the `RegionHit` once (`region_at`), keeps `select_region_at`'s unchanged short-circuit for the panel publish, and separately: on a country hit, computes the target and, if the current viewport's center and height differ from it beyond a small tolerance, starts the camera (a re-tap while already framed is a no-op; a re-tap after panning away re-frames). A tap on open ocean deselects and starts no animation. Selection and animation are independent effects of the tap: the selection state paints on the next frame; the animation moves the viewport over its duration. The camera start stays in the driver (it needs the rAF timestamp), inside the `DRIVER.with_borrow_mut` block `handle_pointer_up` already holds.
+
+### (g) Documentation updates
+
+Three docs assert this feature is out of v1 and move together (matching the C3 scope decision at the top of this plan):
+
+- `docs/design/README.md` §Animation: the blanket "Through v1, there are no animations at all. State changes are instant." carves out the zoom-to-country transition (the only v1 animation: a short cubic-eased viewport move on country selection; all other state changes stay instant). The nearby "no animations in <v2" blockquote gets a parenthetical carve-out.
+- `specs/006-core-renderer/spec.md` §Scope cutoff: the "zoom-to-country Camera ... v1.5+" bullet changes to "implemented in `003-web-client` phase C3.4," noting the camera lives at `shared::map::camera::Camera` (not the aspirational `core::geometry::animation::Camera`) and the contain-fit returns as `Viewport::fit_bounds`. The `hover_scale` bullet stays deferred.
+- `specs/006-core-renderer/checklists/requirements.md`: the clause pairing "zoom-to-country Camera state machine" with "v1.5+" is updated to reflect the C3.4 inclusion.
+
+After editing, grep `specs/` and `docs/` for `v1.5` and "no animations" to confirm nothing still asserts the feature is deferred.
+
+### Testing
+
+Pure `shared::map` / geometry host tests (no `web_sys`, no render feature):
+
+- `ease_in_out_cubic`: `p(0) == 0`, `p(1) == 1`, `p(0.5) == 0.5`, monotonic.
+- `geometric_lerp`: `t=0` is `from`, `t=1` is `to`, constant ratio across equal steps, stays in `[from, to]`.
+- `Camera::sample`: at `start` returns the from-viewport (tolerance) and `Animating`; at/after `start+duration`, and far past it (backgrounded tab), and for a non-positive duration, returns `target` verbatim and `Finished`; a mid sample lies between the endpoints and has the surface aspect. Assert the `Finished` landing against the stored `target`, never `interpolate_to(target, 1.0)`.
+- `Viewport::fit_bounds`: contains the rectangle plus margin; aspect matches on square/wide/tall; a wide rectangle frames by width, a tall one by height; a zero-extent rectangle clamps to the floor; height clamps to the ceiling; centered on the passed `center`.
+- `Viewport::interpolate_to`: aspect matches the surface at every `t` (no distortion); `t=0`/`t=1` hit the endpoints' center/height; center-y is the linear blend, height the geometric blend; the antimeridian short-way case sweeps center-x less than half a turn.
+- `unwrap_nearest`: a far target shifts to within ±π; a near one is unchanged; the shift is a whole `2π` multiple.
+- The centroid helper: a convex ring's centroid is its geometric center; a hole subtracts; a multi-polygon weights by component area; an antimeridian-split feature centers on the dominant landmass, not `0°`.
+- Target framing: a synthetic feature with a `−179..+179` bbox does not frame the whole world (the target height reflects the fixed regional span, not `2π`). Extract the projected-rectangle-plus-centroid computation as a pure helper so this is testable without the driver.
+- `region_at_point`: the returned `RegionHit` carries the correct projected bbox and centroid for a hit (extend the existing hit-test tests).
+
+Driver wiring (the rAF loop, the `animation_frame_pending` gate, cancellation on each gesture and press and resize, the tap starting selection and animation off the raw hit) is thin glue verified in the browser per the wasm-test convention: a small country glides centered and framed; a large one zooms out to frame it; an antimeridian country frames its landmass, not the globe; a mid-animation pan/wheel/pinch stops the glide instantly; a second tap mid-glide redirects smoothly with no double-speed runaway; re-tapping after panning recenters; re-tapping an already-framed country does nothing; a seam-crossing zoom sweeps the short way; an ocean tap deselects with no move. `cargo test -p shared` covers the pure tests; `cargo check --target wasm32-unknown-unknown -p web` confirms the driver compiles.
+
+### Constants (tunable in-browser)
+
+`ANIMATION_DURATION_MS = 600.0` (the transition length), `ZOOM_TO_COUNTRY_MARGIN_FRACTION = 0.1`, and `ANTIMERIDIAN_COUNTRY_LON_HALF_SPAN_DEG` (the fixed regional half-span for antimeridian-spanning countries) are named driver constants; the design does not depend on their exact values. `MIN_ZOOM_IN_HEIGHT`, the zoom-out ceiling, and the home range are reused unchanged. The 180°-span antimeridian detection threshold is a fixed structural constant, not a tuning knob.
+
+### Out of scope for C3.4
+
+Inertial/momentum pan (backlog). Animating anything other than the zoom-to-country transition. A general animation framework. Zoom-to-country from a source other than a map tap (search/deep-link; the `Camera` and target primitives are reusable for that later). Recomputing the true longitude extent of antimeridian-spanning countries (v1.5; v1 uses the fixed regional span). A cached by-iso3 geometry index.
+
+### PR description (draft)
+
+**shared** — Add the animated zoom-to-country primitives. A pure `Camera` (`shared::map::camera`) holds the from- and target-viewports, a start time, and a duration, and samples an interpolated viewport at a given time with cubic ease-in-out, reporting when it has finished. `Viewport::fit_bounds` returns as the contain-style counterpart to `fill_height`, framing a projected rectangle within the surface aspect with a margin. `Viewport::interpolate_to` blends two viewports in center-and-height space, re-deriving the width each frame (no distortion), interpolating height geometrically and taking the shortest path across the antimeridian. `region_at_point` now returns the tapped country's projected bounding rectangle and area-weighted centroid in its `RegionHit`, and `artifact::geometry` gains a pure centroid helper; antimeridian-split countries frame off their landmass rather than the globe.
+
+**web** — On a country tap the map both selects the country (unchanged) and animates the viewport to frame it, over a short cubic-eased transition driven by a self-scheduling `requestAnimationFrame` loop distinct from the on-demand redraw and guarded by an `animation_frame_pending` flag so a mid-glide re-tap redirects without a second loop. The camera start is driven off the raw hit, so re-tapping a panned-away country recenters it. The animation cancels the instant the user takes manual control (pan, wheel/trackpad zoom, pinch, a new press, or a resize), handing off from the current viewport. The target is clamped to the same zoom-in floor, zoom-out ceiling, and home latitude range as manual zoom.
+
+**docs** — `docs/design/README.md` §Animation, `specs/006-core-renderer/spec.md` §Scope cutoff, and its requirements checklist move animated zoom-to-country from deferred (v1.5+) into v1.
