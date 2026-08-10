@@ -218,9 +218,9 @@ impl Viewport {
         let from_center: ProjectedPoint = self.center();
         let target_center: ProjectedPoint = target.center();
 
-        let center_x: f64 = math::lerp(from_center.x, unwrap_nearest(from_center.x, target_center.x), t);
+        let center_x: f64 = math::lerp(from_center.x, math::unwrap_nearest(from_center.x, target_center.x), t);
         let center_y: f64 = math::lerp(from_center.y, target_center.y, t);
-        let height: f64 = geometric_lerp(self.height(), target.height(), t);
+        let height: f64 = math::geometric_interpolate(self.height(), target.height(), t);
 
         let seed: Viewport = Viewport {
             min: ProjectedPoint { x: center_x, y: center_y },
@@ -264,19 +264,6 @@ fn clamp_center_y(center_y: f64, height: f64, min_y: f64, max_y: f64) -> f64 {
     } else {
         center_y.clamp(lo, hi)
     }
-}
-
-/// A blend linear in the logarithm, so the ratio between successive `t` steps is constant: a uniform
-/// perceived zoom rate across a large scale change. Both `from` and `to` are strictly positive here (a
-/// viewport height is at least `MIN_ZOOM_IN_HEIGHT`).
-fn geometric_lerp(from: f64, to: f64, t: f64) -> f64 {
-    from * (to / from).powf(t)
-}
-
-/// `target` shifted by whole turns of `2π` to land within ±π of `reference`: the representation of the
-/// same longitude reachable by the shortest horizontal move.
-fn unwrap_nearest(reference: f64, target: f64) -> f64 {
-    target - ((target - reference) / TAU).round() * TAU
 }
 
 /// Physical device pixels: the platform shell multiplies the CSS-pixel cursor position by
@@ -554,25 +541,6 @@ mod tests {
 
     fn viewport_aspect(viewport: Viewport) -> f64 {
         (viewport.max.x - viewport.min.x) / (viewport.max.y - viewport.min.y)
-    }
-
-    #[test]
-    fn geometric_lerp_endpoints_and_constant_ratio() {
-        assert!((geometric_lerp(2.0, 8.0, 0.0) - 2.0).abs() < TOLERANCE);
-        assert!((geometric_lerp(2.0, 8.0, 1.0) - 8.0).abs() < TOLERANCE);
-        // Constant ratio: the midpoint is the geometric mean, so it squares to the product of the ends.
-        let mid: f64 = geometric_lerp(2.0, 8.0, 0.5);
-        assert!((mid - 4.0).abs() < 1e-9, "geometric midpoint of 2 and 8 is 4");
-    }
-
-    #[test]
-    fn unwrap_nearest_shifts_to_the_near_representative() {
-        // -3 rad is more than half a turn from +3 rad; the near representative is +3.28 (one turn up).
-        let unwrapped: f64 = unwrap_nearest(3.0, -3.0);
-        assert!((unwrapped - (-3.0 + TAU)).abs() < TOLERANCE);
-        assert!((unwrap_nearest(0.5, 0.7) - 0.7).abs() < TOLERANCE, "already within a turn is unchanged");
-        let shift: f64 = unwrap_nearest(3.0, -3.0) - (-3.0);
-        assert!((shift / TAU - (shift / TAU).round()).abs() < 1e-12, "shift is a whole number of turns");
     }
 
     #[test]

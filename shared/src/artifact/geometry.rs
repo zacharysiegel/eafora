@@ -101,7 +101,7 @@ impl Polygon {
             return false;
         }
 
-        let t: f64 = inverse_lerp(b_lat, a_lat, point.lat);
+        let t: f64 = math::inverse_lerp(b_lat, a_lat, point.lat);
         let crossing_lon: f64 = math::lerp(b_lon, a_lon, t);
 
         crossing_lon > point.lon
@@ -246,10 +246,6 @@ fn polygons_from_geometry(geometry: geo_types::Geometry<f64>) -> Result<Vec<Poly
     }
 
     Ok(polygons)
-}
-
-fn inverse_lerp(from: f64, to: f64, value: f64) -> f64 {
-    (value - from) / (to - from)
 }
 
 #[cfg(test)]

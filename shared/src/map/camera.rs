@@ -1,4 +1,5 @@
 use crate::map::{SurfaceDimensions, Viewport};
+use crate::math;
 
 /// An in-progress animated viewport transition, interpolated in center-and-height space by
 /// `Viewport::interpolate_to`. The camera does no scheduling and reads the clock only through the
@@ -35,19 +36,9 @@ impl Camera {
             return (self.target, Progress::Finished);
         }
 
-        let eased_t: f64 = ease_in_out_cubic((elapsed_ms / self.duration_ms).clamp(0.0, 1.0));
+        let eased_t: f64 = math::ease_in_out_cubic((elapsed_ms / self.duration_ms).clamp(0.0, 1.0));
 
         (self.from.interpolate_to(self.target, eased_t, surface), Progress::Animating)
-    }
-}
-
-/// Cubic ease-in-out; pinned to `p(0) = 0` and `p(1) = 1`.
-fn ease_in_out_cubic(t: f64) -> f64 {
-    if t < 0.5 {
-        4.0 * t * t * t
-    } else {
-        let f: f64 = -2.0 * t + 2.0;
-        1.0 - f * f * f / 2.0
     }
 }
 
@@ -65,19 +56,6 @@ mod tests {
 
     fn target_viewport() -> Viewport {
         Viewport { min: ProjectedPoint { x: 1.75, y: 1.5 }, max: ProjectedPoint { x: 2.25, y: 2.0 } }
-    }
-
-    #[test]
-    fn ease_in_out_cubic_is_pinned_and_symmetric() {
-        assert!(ease_in_out_cubic(0.0).abs() < 1e-12);
-        assert!((ease_in_out_cubic(1.0) - 1.0).abs() < 1e-12);
-        assert!((ease_in_out_cubic(0.5) - 0.5).abs() < 1e-12);
-        let mut previous: f64 = -1.0;
-        for step in 0..=20 {
-            let value: f64 = ease_in_out_cubic(step as f64 / 20.0);
-            assert!(value >= previous, "monotonic increasing");
-            previous = value;
-        }
     }
 
     #[test]
