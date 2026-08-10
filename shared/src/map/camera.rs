@@ -1,0 +1,124 @@
+use crate::map::{SurfaceDimensions, Viewport};
+
+/// An in-progress animated viewport transition. Interpolation happens in center-and-height space (see
+/// `Viewport::interpolate_to`), so both endpoints are stored as full viewports and the intermediate width
+/// is re-derived from the surface aspect each frame. `start_time_ms` is the timestamp the driver passes
+/// from `requestAnimationFrame` (the `performance.now()` clock); the camera does no scheduling and reads
+/// the clock only through the `now_ms` argument to `sample`.
+#[derive(Debug, Clone, Copy)]
+pub struct Camera {
+    from: Viewport,
+    target: Viewport,
+    start_time_ms: f64,
+    duration_ms: f64,
+}
+
+/// Whether a sampled frame is mid-transition (the caller schedules another frame) or the last one (it has
+/// landed on the target; the caller stops the loop).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Progress {
+    Animating,
+    Finished,
+}
+
+impl Camera {
+    pub fn new(from: Viewport, target: Viewport, start_time_ms: f64, duration_ms: f64) -> Camera {
+        Camera { from, target, start_time_ms, duration_ms }
+    }
+
+    /// The interpolated viewport at `now_ms` and whether the transition has finished. At or past the end
+    /// (or for a non-positive duration) it returns `target` verbatim with `Finished`, so the final frame
+    /// is bit-identical to the caller's clamped target and a tab backgrounded mid-transition snaps to the
+    /// end on its first frame back.
+    pub fn sample(&self, now_ms: f64, surface: SurfaceDimensions) -> (Viewport, Progress) {
+        let elapsed_ms: f64 = now_ms - self.start_time_ms;
+
+        if self.duration_ms <= 0.0 || elapsed_ms >= self.duration_ms {
+            return (self.target, Progress::Finished);
+        }
+
+        let eased_t: f64 = ease_in_out_cubic((elapsed_ms / self.duration_ms).clamp(0.0, 1.0));
+
+        (self.from.interpolate_to(self.target, eased_t, surface), Progress::Animating)
+    }
+}
+
+/// Cubic ease-in-out, pinned to `p(0) = 0` and `p(1) = 1`: accelerates off the start and decelerates onto
+/// the end, so the move reads as a deliberate camera settle rather than a linear glide.
+fn ease_in_out_cubic(t: f64) -> f64 {
+    if t < 0.5 {
+        4.0 * t * t * t
+    } else {
+        let f: f64 = -2.0 * t + 2.0;
+        1.0 - f * f * f / 2.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::ProjectedPoint;
+
+    const SURFACE: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
+
+    // Aspect 1 (matching SURFACE); from center (0, 0) height 2, target center (2, 1.75) height 0.5.
+    fn from_viewport() -> Viewport {
+        Viewport { min: ProjectedPoint { x: -1.0, y: -1.0 }, max: ProjectedPoint { x: 1.0, y: 1.0 } }
+    }
+
+    fn target_viewport() -> Viewport {
+        Viewport { min: ProjectedPoint { x: 1.75, y: 1.5 }, max: ProjectedPoint { x: 2.25, y: 2.0 } }
+    }
+
+    #[test]
+    fn ease_in_out_cubic_is_pinned_and_symmetric() {
+        assert!(ease_in_out_cubic(0.0).abs() < 1e-12);
+        assert!((ease_in_out_cubic(1.0) - 1.0).abs() < 1e-12);
+        assert!((ease_in_out_cubic(0.5) - 0.5).abs() < 1e-12);
+        let mut previous: f64 = -1.0;
+        for step in 0..=20 {
+            let value: f64 = ease_in_out_cubic(step as f64 / 20.0);
+            assert!(value >= previous, "monotonic increasing");
+            previous = value;
+        }
+    }
+
+    #[test]
+    fn sample_at_start_returns_the_from_view_and_animating() {
+        let camera: Camera = Camera::new(from_viewport(), target_viewport(), 1000.0, 600.0);
+        let (viewport, progress): (Viewport, Progress) = camera.sample(1000.0, SURFACE);
+
+        assert_eq!(progress, Progress::Animating);
+        assert!(((viewport.min.x + viewport.max.x) / 2.0).abs() < 1e-9, "center x is the from center");
+        assert!((viewport.max.y - viewport.min.y - 2.0).abs() < 1e-9, "height is the from height");
+    }
+
+    #[test]
+    fn sample_at_and_past_the_end_returns_the_target_verbatim_and_finished() {
+        let camera: Camera = Camera::new(from_viewport(), target_viewport(), 1000.0, 600.0);
+
+        assert_eq!(camera.sample(1600.0, SURFACE), (target_viewport(), Progress::Finished));
+        // Far past the end (a backgrounded-then-foregrounded tab) snaps to the target.
+        assert_eq!(camera.sample(999_999.0, SURFACE), (target_viewport(), Progress::Finished));
+    }
+
+    #[test]
+    fn sample_with_non_positive_duration_finishes_immediately() {
+        let camera: Camera = Camera::new(from_viewport(), target_viewport(), 1000.0, 0.0);
+
+        assert_eq!(camera.sample(1000.0, SURFACE), (target_viewport(), Progress::Finished));
+    }
+
+    #[test]
+    fn sample_midway_lies_between_the_endpoints_at_the_surface_aspect() {
+        let camera: Camera = Camera::new(from_viewport(), target_viewport(), 1000.0, 600.0);
+        let (viewport, progress): (Viewport, Progress) = camera.sample(1300.0, SURFACE);
+        let center_x: f64 = (viewport.min.x + viewport.max.x) / 2.0;
+        let height: f64 = viewport.max.y - viewport.min.y;
+
+        assert_eq!(progress, Progress::Animating);
+        assert!(center_x > 0.0 && center_x < 2.0, "center x between the endpoints");
+        assert!(height < 2.0 && height > 0.5, "height between the endpoints");
+        assert!(((viewport.max.x - viewport.min.x) / height - 1.0).abs() < 1e-9, "surface aspect held");
+    }
+}

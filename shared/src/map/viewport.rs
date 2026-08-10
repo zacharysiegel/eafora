@@ -131,6 +131,51 @@ impl Viewport {
             .normalize_longitude_turns()
     }
 
+    /// A viewport containing the projected rectangle `[min_x, max_x] x [min_y, max_y]` centered on
+    /// `center`, with `margin_fraction` padding, at the surface aspect and never stretched. The
+    /// counterpart to `fill_height`: `fill_height` frames only the vertical extent (letting the
+    /// horizontal overflow); this frames the whole rectangle by taking whichever of its height or its
+    /// width-over-aspect is larger, so both axes fit. Height is clamped into `[MIN_ZOOM_IN_HEIGHT, max_height]`.
+    pub fn fit_bounds(
+        min_x: f64,
+        max_x: f64,
+        min_y: f64,
+        max_y: f64,
+        center: ProjectedPoint,
+        margin_fraction: f64,
+        max_height: f64,
+        surface: SurfaceDimensions,
+    ) -> Viewport {
+        let aspect: f64 = surface.width as f64 / surface.height as f64;
+        let contain_height: f64 = (max_y - min_y).max((max_x - min_x) / aspect);
+        let padded_height: f64 = contain_height * (1.0 + margin_fraction);
+
+        let seed: Viewport = Viewport { min: center, max: center };
+
+        seed.zoom_to_height(padded_height, max_height, surface)
+    }
+
+    /// This viewport blended toward `target` by eased `t` in `[0, 1]`, interpolating the center and the
+    /// visible height and re-deriving the width from the surface aspect so no intermediate frame is
+    /// stretched. Height blends geometrically (constant perceived zoom rate); center linearly. The
+    /// horizontal blend takes the short way across the antimeridian: the target center-x is unwrapped to
+    /// within half a world turn of this center-x first.
+    pub fn interpolate_to(&self, target: Viewport, t: f64, surface: SurfaceDimensions) -> Viewport {
+        let from_center: ProjectedPoint = self.center();
+        let target_center: ProjectedPoint = target.center();
+
+        let center_x: f64 = lerp(from_center.x, unwrap_nearest(from_center.x, target_center.x), t);
+        let center_y: f64 = lerp(from_center.y, target_center.y, t);
+        let height: f64 = geometric_lerp(self.height(), target.height(), t);
+
+        let seed: Viewport = Viewport {
+            min: ProjectedPoint { x: center_x, y: center_y },
+            max: ProjectedPoint { x: center_x, y: center_y },
+        };
+
+        seed.zoom_to_height(height, height, surface)
+    }
+
     fn center(&self) -> ProjectedPoint {
         ProjectedPoint {
             x: (self.min.x + self.max.x) / 2.0,
@@ -165,6 +210,23 @@ fn clamp_center_y(center_y: f64, height: f64, min_y: f64, max_y: f64) -> f64 {
     } else {
         center_y.clamp(lo, hi)
     }
+}
+
+fn lerp(from: f64, to: f64, t: f64) -> f64 {
+    from + (to - from) * t
+}
+
+/// A blend linear in the logarithm, so the ratio between successive `t` steps is constant: a uniform
+/// perceived zoom rate across a large scale change. Both `from` and `to` are strictly positive here (a
+/// viewport height is at least `MIN_ZOOM_IN_HEIGHT`).
+fn geometric_lerp(from: f64, to: f64, t: f64) -> f64 {
+    from * (to / from).powf(t)
+}
+
+/// `target` shifted by whole turns of `2π` to land within ±π of `reference`: the representation of the
+/// same longitude reachable by the shortest horizontal move.
+fn unwrap_nearest(reference: f64, target: f64) -> f64 {
+    target - ((target - reference) / TAU).round() * TAU
 }
 
 /// Physical device pixels: the platform shell multiplies the CSS-pixel cursor position by
@@ -438,5 +500,96 @@ mod tests {
         assert!(((new_aspect.min.x + new_aspect.max.x) / 2.0 - center_x).abs() < TOLERANCE, "center x kept across aspect change");
         assert!((new_aspect.max.y - new_aspect.min.y - height).abs() < TOLERANCE, "height kept across aspect change");
         assert!((new_aspect.max.x - new_aspect.min.x - height).abs() < TOLERANCE, "width re-derived from the square aspect");
+    }
+
+    fn viewport_aspect(viewport: Viewport) -> f64 {
+        (viewport.max.x - viewport.min.x) / (viewport.max.y - viewport.min.y)
+    }
+
+    #[test]
+    fn geometric_lerp_endpoints_and_constant_ratio() {
+        assert!((geometric_lerp(2.0, 8.0, 0.0) - 2.0).abs() < TOLERANCE);
+        assert!((geometric_lerp(2.0, 8.0, 1.0) - 8.0).abs() < TOLERANCE);
+        // Constant ratio: the midpoint is the geometric mean, so it squares to the product of the ends.
+        let mid: f64 = geometric_lerp(2.0, 8.0, 0.5);
+        assert!((mid - 4.0).abs() < 1e-9, "geometric midpoint of 2 and 8 is 4");
+    }
+
+    #[test]
+    fn unwrap_nearest_shifts_to_the_near_representative() {
+        // -3 rad is more than half a turn from +3 rad; the near representative is +3.28 (one turn up).
+        let unwrapped: f64 = unwrap_nearest(3.0, -3.0);
+        assert!((unwrapped - (-3.0 + TAU)).abs() < TOLERANCE);
+        assert!((unwrap_nearest(0.5, 0.7) - 0.7).abs() < TOLERANCE, "already within a turn is unchanged");
+        let shift: f64 = unwrap_nearest(3.0, -3.0) - (-3.0);
+        assert!((shift / TAU - (shift / TAU).round()).abs() < 1e-12, "shift is a whole number of turns");
+    }
+
+    #[test]
+    fn fit_bounds_contains_the_rectangle_with_margin_and_matches_aspect() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 200, height: 100 };
+        let fitted: Viewport = Viewport::fit_bounds(-1.0, 1.0, -0.5, 0.5, ProjectedPoint { x: 0.0, y: 0.0 }, 0.1, 4.0, surface);
+
+        assert!(fitted.min.x <= -1.0 && fitted.max.x >= 1.0, "contains the rectangle horizontally");
+        assert!(fitted.min.y <= -0.5 && fitted.max.y >= 0.5, "contains the rectangle vertically");
+        assert!((viewport_aspect(fitted) - 2.0).abs() < TOLERANCE, "aspect matches the surface");
+        assert!(((fitted.min.x + fitted.max.x) / 2.0).abs() < TOLERANCE, "centered x");
+        // width 2 governs at aspect 2 (2/2 == height 1); padded height is 1.1.
+        assert!((fitted.max.y - fitted.min.y - 1.1).abs() < TOLERANCE, "framed to the padded governing extent");
+    }
+
+    #[test]
+    fn fit_bounds_frames_by_height_for_a_tall_rectangle() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 200, height: 100 };
+        let fitted: Viewport = Viewport::fit_bounds(-0.1, 0.1, -2.0, 2.0, ProjectedPoint { x: 0.0, y: 0.0 }, 0.1, 8.0, surface);
+        // Height 4 governs (0.2/2 == 0.1 < 4); padded to 4.4.
+        assert!((fitted.max.y - fitted.min.y - 4.4).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn fit_bounds_centers_on_the_passed_center_not_the_rectangle_center() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
+        let fitted: Viewport = Viewport::fit_bounds(-1.0, 1.0, -1.0, 1.0, ProjectedPoint { x: 5.0, y: 5.0 }, 0.1, 8.0, surface);
+
+        assert!(((fitted.min.x + fitted.max.x) / 2.0 - 5.0).abs() < TOLERANCE, "centered on the passed center x");
+        assert!(((fitted.min.y + fitted.max.y) / 2.0 - 5.0).abs() < TOLERANCE, "centered on the passed center y");
+    }
+
+    #[test]
+    fn fit_bounds_clamps_a_degenerate_rectangle_to_the_zoom_in_floor() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
+        let fitted: Viewport = Viewport::fit_bounds(0.3, 0.3, 0.2, 0.2, ProjectedPoint { x: 0.3, y: 0.2 }, 0.1, 8.0, surface);
+
+        assert!((fitted.max.y - fitted.min.y - MIN_ZOOM_IN_HEIGHT).abs() < TOLERANCE, "clamped to the zoom-in floor");
+    }
+
+    #[test]
+    fn interpolate_to_holds_aspect_and_hits_the_endpoints() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 200, height: 100 };
+        let from: Viewport = Viewport { min: ProjectedPoint { x: -1.0, y: -0.5 }, max: ProjectedPoint { x: 1.0, y: 0.5 } };
+        let target: Viewport = Viewport { min: ProjectedPoint { x: 1.5, y: 0.15 }, max: ProjectedPoint { x: 2.5, y: 0.65 } };
+
+        let at_start: Viewport = from.interpolate_to(target, 0.0, surface);
+        assert!(((at_start.min.x + at_start.max.x) / 2.0).abs() < 1e-9 && (at_start.max.y - at_start.min.y - 1.0).abs() < 1e-9, "t=0 is the from view");
+
+        let at_end: Viewport = from.interpolate_to(target, 1.0, surface);
+        assert!(((at_end.min.x + at_end.max.x) / 2.0 - 2.0).abs() < 1e-9, "t=1 center x is the target");
+        assert!((at_end.max.y - at_end.min.y - 0.5).abs() < 1e-9, "t=1 height is the target");
+
+        let midway: Viewport = from.interpolate_to(target, 0.5, surface);
+        assert!((viewport_aspect(midway) - 2.0).abs() < 1e-9, "aspect held at the surface aspect");
+        assert!(((midway.min.x + midway.max.x) / 2.0 - 1.0).abs() < 1e-9, "center x is the linear blend");
+        assert!((midway.max.y - midway.min.y - (0.5_f64).sqrt()).abs() < 1e-9, "height is the geometric blend");
+    }
+
+    #[test]
+    fn interpolate_to_takes_the_short_way_across_the_antimeridian() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
+        let from: Viewport = Viewport { min: ProjectedPoint { x: 2.5, y: -0.5 }, max: ProjectedPoint { x: 3.5, y: 0.5 } };
+        let target: Viewport = Viewport { min: ProjectedPoint { x: -3.5, y: -0.5 }, max: ProjectedPoint { x: -2.5, y: 0.5 } };
+
+        let midway: Viewport = from.interpolate_to(target, 0.5, surface);
+        let center_x: f64 = (midway.min.x + midway.max.x) / 2.0;
+        assert!(center_x > 3.0, "swept the short way past the seam, not back through zero");
     }
 }

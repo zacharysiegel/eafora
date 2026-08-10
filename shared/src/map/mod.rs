@@ -1,3 +1,4 @@
+pub mod camera;
 pub mod color;
 pub mod frame_state;
 pub mod hit_test;
@@ -15,6 +16,7 @@ pub mod renderer;
 #[cfg(feature = "render")]
 pub mod pipeline;
 
+pub use camera::*;
 pub use color::*;
 pub use frame_state::*;
 pub use hit_test::*;

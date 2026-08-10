@@ -3,17 +3,30 @@
 //! layer), and apply pan, wheel-zoom, and two-finger pinch gestures to the viewport. The gesture math is
 //! pure and shares one surface normalization with the hit-test.
 
-use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer};
+use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer, Polygon};
 use crate::map::projection::{self, GeoPoint, ProjectedPoint};
 use crate::map::{RegionCode, SurfacePoint, SurfaceDimensions, Viewport};
 
-/// A hit-test result: the region under the cursor plus the fields a caller needs (`iso3`, `name_en`),
-/// resolved here so callers do not re-parse the geometry layer to recover them.
+/// A country's projected framing for the zoom-to-country target: its bounding rectangle in projected
+/// space and its area-weighted centroid. Longitudes are unwrapped into one contiguous frame before
+/// projecting (see `country_framing`), so an antimeridian-crossing country frames its true extent rather
+/// than the whole globe; the values may sit slightly past ±π in x, which the caller re-normalizes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CountryFraming {
+    pub min: ProjectedPoint,
+    pub max: ProjectedPoint,
+    pub centroid: ProjectedPoint,
+}
+
+/// A hit-test result: the region under the cursor plus the fields a caller needs (`iso3`, `name_en`) and
+/// the country's projected framing for the zoom-to-country target, all resolved in the single hit-test
+/// pass so callers do not re-query the geometry layer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegionHit {
     pub region_code: RegionCode,
     pub iso3: String,
     pub name_en: String,
+    pub framing: CountryFraming,
 }
 
 /// The region whose polygon contains `surface_point`, or `None` when the point is off every country
@@ -47,7 +60,137 @@ pub fn region_at_point(
         region_code: RegionCode(hit_feature.region_code.clone()),
         iso3: hit_feature.iso3.clone(),
         name_en: hit_feature.name_en.clone(),
+        framing: country_framing(hit_feature),
     })
+}
+
+/// The projected bounding rectangle and area-weighted centroid of a country, computed after unwrapping
+/// its vertex longitudes into a contiguous frame via a largest-longitude-gap cut, so an antimeridian-
+/// crossing country (its Natural Earth geometry split near +180 and -180) frames its true extent rather
+/// than the whole globe. The unwrap is a no-op for a non-crossing country. Assumes a country's true
+/// longitude span is under 360° (every Natural Earth 50m country satisfies this).
+pub fn country_framing(feature: &CountryFeature) -> CountryFraming {
+    let base_lon: f64 = occupied_arc_start_longitude(feature);
+
+    let mut min: ProjectedPoint = ProjectedPoint { x: f64::INFINITY, y: f64::INFINITY };
+    let mut max: ProjectedPoint = ProjectedPoint { x: f64::NEG_INFINITY, y: f64::NEG_INFINITY };
+    for polygon in &feature.polygons {
+        // Holes lie inside the exterior, so the exterior rings alone bound the country.
+        for &(lon, lat) in &polygon.exterior {
+            let projected: ProjectedPoint = projection::project(lat, unwrap_longitude(lon, base_lon));
+            min.x = min.x.min(projected.x);
+            min.y = min.y.min(projected.y);
+            max.x = max.x.max(projected.x);
+            max.y = max.y.max(projected.y);
+        }
+    }
+
+    let bounds_center: ProjectedPoint = ProjectedPoint { x: (min.x + max.x) / 2.0, y: (min.y + max.y) / 2.0 };
+    let centroid: ProjectedPoint = area_weighted_centroid(&feature.polygons, base_lon).unwrap_or(bounds_center);
+
+    CountryFraming { min, max, centroid }
+}
+
+/// The longitude at the start of the country's occupied arc: the vertex just after the largest gap
+/// between adjacent longitudes around the circle (including the wrap gap across ±180). Unwrapping every
+/// longitude into `[base, base + 360)` then places the vertices contiguously, even across the seam.
+fn occupied_arc_start_longitude(feature: &CountryFeature) -> f64 {
+    let mut longitudes: Vec<f64> = feature.polygons
+        .iter()
+        .flat_map(|polygon| polygon.exterior.iter())
+        .map(|&(lon, _lat)| lon)
+        .collect();
+    longitudes.sort_by(|a, b| a.partial_cmp(b).expect("longitudes are finite"));
+
+    if longitudes.is_empty() {
+        return 0.0;
+    }
+
+    // The wrap gap (from the max back up to the min) is the default largest gap, and its high side is the
+    // minimum longitude; an internal gap wins when it is wider, and its high side is its upper endpoint.
+    let mut base: f64 = longitudes[0];
+    let mut largest_gap: f64 = (longitudes[0] + 360.0) - longitudes[longitudes.len() - 1];
+    for window in longitudes.windows(2) {
+        let gap: f64 = window[1] - window[0];
+        if gap > largest_gap {
+            largest_gap = gap;
+            base = window[1];
+        }
+    }
+
+    base
+}
+
+/// `lon` shifted by whole turns of 360° into `[base, base + 360)`.
+fn unwrap_longitude(lon: f64, base: f64) -> f64 {
+    base + (lon - base).rem_euclid(360.0)
+}
+
+/// The area-weighted centroid of the country's polygons in projected space (holes subtracted), or `None`
+/// when the total area is negligible (a degenerate feature). Longitudes are unwrapped against `base_lon`
+/// before projecting so the centroid lands on the landmass, not averaged across the antimeridian.
+fn area_weighted_centroid(polygons: &[Polygon], base_lon: f64) -> Option<ProjectedPoint> {
+    let mut weighted_x: f64 = 0.0;
+    let mut weighted_y: f64 = 0.0;
+    let mut total_area: f64 = 0.0;
+
+    for polygon in polygons {
+        let (exterior_area, exterior_centroid): (f64, ProjectedPoint) = ring_area_and_centroid(&polygon.exterior, base_lon);
+        weighted_x += exterior_area * exterior_centroid.x;
+        weighted_y += exterior_area * exterior_centroid.y;
+        total_area += exterior_area;
+
+        for interior in &polygon.interiors {
+            let (hole_area, hole_centroid): (f64, ProjectedPoint) = ring_area_and_centroid(interior, base_lon);
+            weighted_x -= hole_area * hole_centroid.x;
+            weighted_y -= hole_area * hole_centroid.y;
+            total_area -= hole_area;
+        }
+    }
+
+    if total_area.abs() <= f64::EPSILON {
+        return None;
+    }
+
+    Some(ProjectedPoint { x: weighted_x / total_area, y: weighted_y / total_area })
+}
+
+/// The unsigned area and centroid of a ring, its vertices unwrapped against `base_lon` then projected.
+/// Winding-independent: reversing the ring flips both the signed area and the moment sums, so the
+/// centroid is unchanged; the area is returned as a magnitude for the hole-subtracting sum above.
+fn ring_area_and_centroid(ring: &[(f64, f64)], base_lon: f64) -> (f64, ProjectedPoint) {
+    let projected: Vec<ProjectedPoint> = ring
+        .iter()
+        .map(|&(lon, lat)| projection::project(lat, unwrap_longitude(lon, base_lon)))
+        .collect();
+
+    let vertex_count: usize = projected.len();
+    if vertex_count < 3 {
+        return (0.0, ProjectedPoint { x: 0.0, y: 0.0 });
+    }
+
+    let mut signed_area_times_two: f64 = 0.0;
+    let mut moment_x: f64 = 0.0;
+    let mut moment_y: f64 = 0.0;
+    for index in 0..vertex_count {
+        let current: ProjectedPoint = projected[index];
+        let next: ProjectedPoint = projected[(index + 1) % vertex_count];
+        let cross: f64 = current.x * next.y - next.x * current.y;
+        signed_area_times_two += cross;
+        moment_x += (current.x + next.x) * cross;
+        moment_y += (current.y + next.y) * cross;
+    }
+
+    if signed_area_times_two.abs() <= f64::EPSILON {
+        return (0.0, ProjectedPoint { x: 0.0, y: 0.0 });
+    }
+
+    let centroid: ProjectedPoint = ProjectedPoint {
+        x: moment_x / (3.0 * signed_area_times_two),
+        y: moment_y / (3.0 * signed_area_times_two),
+    };
+
+    (signed_area_times_two.abs() / 2.0, centroid)
 }
 
 /// Maps a device-pixel surface point through the viewport into Miller projected space.
@@ -168,12 +311,11 @@ mod tests {
         }
     }
 
-    fn testland_hit() -> RegionHit {
-        RegionHit {
-            region_code: RegionCode("testland".to_string()),
-            iso3: "TST".to_string(),
-            name_en: "Testland".to_string(),
-        }
+    fn assert_is_testland(result: Option<RegionHit>) {
+        let hit: RegionHit = result.expect("a region under the cursor");
+        assert_eq!(hit.region_code, RegionCode("testland".to_string()));
+        assert_eq!(hit.iso3, "TST");
+        assert_eq!(hit.name_en, "Testland");
     }
 
     #[test]
@@ -185,7 +327,7 @@ mod tests {
         let result: Option<RegionHit> =
             region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, SurfacePoint { x: 110.0, y: 100.0 });
 
-        assert_eq!(result, Some(testland_hit()));
+        assert_is_testland(result);
     }
 
     #[test]
@@ -212,7 +354,7 @@ mod tests {
             let result: Option<RegionHit> =
                 region_at_point(&geometry, viewport, scaled_dimensions, scaled_point);
 
-            assert_eq!(result, Some(testland_hit()), "DPR {device_pixel_ratio}");
+            assert_is_testland(result);
         }
     }
 
@@ -235,7 +377,7 @@ mod tests {
         let result: Option<RegionHit> =
             region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, SurfacePoint { x: 11.0, y: 100.0 });
 
-        assert_eq!(result, Some(testland_hit()));
+        assert_is_testland(result);
     }
 
     const GESTURE_DIMENSIONS: SurfaceDimensions = SurfaceDimensions { width: 200, height: 100 };
@@ -332,5 +474,53 @@ mod tests {
         assert!((under_current_midpoint.x - under_previous_midpoint.x).abs() < 1e-9, "the point under the old midpoint tracks to the new midpoint (x)");
         assert!((under_current_midpoint.y - under_previous_midpoint.y).abs() < 1e-9, "and y");
         assert!(((pinched.max.y - pinched.min.y) / 2.0 - 1.0).abs() < 1e-9, "half-height unchanged at factor 1");
+    }
+
+    fn framing_feature(polygons: Vec<Polygon>) -> CountryFeature {
+        CountryFeature {
+            iso3: "TST".to_string(),
+            name_en: "Testland".to_string(),
+            region_code: "testland".to_string(),
+            polygons,
+            bbox: BoundingBox { min_lon: 0.0, min_lat: 0.0, max_lon: 0.0, max_lat: 0.0 },
+        }
+    }
+
+    #[test]
+    fn country_framing_bounds_and_centers_a_simple_rectangle() {
+        // A rectangle over lon 0..2, lat 0..3. Miller is separable, so the projected shape is an
+        // axis-aligned rectangle and its area-weighted centroid is the geometric center.
+        let feature: CountryFeature =
+            framing_feature(vec![Polygon { exterior: vec![(0.0, 0.0), (2.0, 0.0), (2.0, 3.0), (0.0, 3.0)], interiors: vec![] }]);
+        let framing: CountryFraming = country_framing(&feature);
+
+        assert!((framing.min.x - 0.0).abs() < 1e-12 && (framing.max.x - 2.0_f64.to_radians()).abs() < 1e-12, "x bounds are the projected lon extent");
+        assert!((framing.min.y - 0.0).abs() < 1e-12 && (framing.max.y - projection::project(3.0, 0.0).y).abs() < 1e-12, "y bounds are the projected lat extent");
+        assert!((framing.centroid.x - 1.0_f64.to_radians()).abs() < 1e-12, "centroid x is the rectangle center");
+        assert!((framing.centroid.y - projection::project(3.0, 0.0).y / 2.0).abs() < 1e-12, "centroid y is the rectangle center");
+    }
+
+    #[test]
+    fn country_framing_unwraps_an_antimeridian_country_to_its_true_extent() {
+        // A quad straddling the seam, stored split near +179 and -179 (the Natural Earth shape). The
+        // largest-gap unwrap must rejoin it as a ~2-degree strip near +180, not the whole globe.
+        let feature: CountryFeature =
+            framing_feature(vec![Polygon { exterior: vec![(179.0, 0.0), (-179.0, 0.0), (-179.0, 2.0), (179.0, 2.0)], interiors: vec![] }]);
+        let framing: CountryFraming = country_framing(&feature);
+        let width: f64 = framing.max.x - framing.min.x;
+
+        assert!(width < 0.1, "framed to the true ~2-degree width, not the ~2π globe span");
+        assert!((framing.centroid.x - 180.0_f64.to_radians()).abs() < 1e-6, "centroid on the date line, not averaged toward longitude 0");
+    }
+
+    #[test]
+    fn country_framing_subtracts_a_hole_from_the_centroid() {
+        // A square with a hole pushed to the right half pulls the centroid left of the square's center.
+        let square: Vec<(f64, f64)> = vec![(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)];
+        let hole: Vec<(f64, f64)> = vec![(2.5, 1.0), (3.5, 1.0), (3.5, 3.0), (2.5, 3.0)];
+        let feature: CountryFeature = framing_feature(vec![Polygon { exterior: square, interiors: vec![hole] }]);
+        let framing: CountryFraming = country_framing(&feature);
+
+        assert!(framing.centroid.x < 2.0_f64.to_radians(), "the hole on the right shifts the centroid left of the square center");
     }
 }
