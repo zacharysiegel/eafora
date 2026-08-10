@@ -240,7 +240,7 @@ The `core::geometry` module is the math heart of the renderer. Concretely:
 - **Projection**: **Miller cylindrical**, the only projection. Rectangular (~5:3 aspect ratio) so it fills the viewport corners with no UI dead zones; closed-form `(lon, lat) → (x, y)` in ~5 lines. Less polar inflation than Mercator while staying conformal at low latitudes. No alternate projections, no toggle, no v2+ plans for additional projections — this decision is closed. Implementation is a pure function in `core::geometry::projection`; no GIS library required.
 - **Polygon representation**: full polygons everywhere; no LOD, no tile pyramid, no per-frame simplification. v1 ships ~200 country polygons (~5 MB compressed in FlatGeobuf, with the format's built-in R-tree spatial index used directly for hit-testing). When sub-national geometry lands in v2+, it joins the same FlatGeobuf as additional features and loads in the background after country features render. The wgpu pipeline rasterizes the same vertex data at every zoom level — small countries at low zoom contribute fewer pixels, which is the right behavior for free, with no LOD-boundary popping. Continuous zoom drops out automatically.
 - **Hit-testing**: A spatial index (R-tree or interval-tree) over the country polygons, queried at viewport-space resolution. **Critical UX rule**: the hit-test geometry uses the *unscaled* country polygon. The hover-scale effect only changes the rendering transform, never the hit-test — this is the user-stated requirement that off-the-shelf map SDKs typically violate.
-- **Animation**: Zoom-to-country uses a cubic-easing time curve; the camera target is the country's polygon centroid; the camera scale is computed from the polygon's bounding box plus a margin. Implemented as a `core::geometry::animation::Camera` state machine the platform shell polls each frame.
+- **Animation**: Zoom-to-country uses a cubic-easing time curve; the camera target is the country's polygon centroid; the camera scale is computed from the polygon's bounding box plus a margin. Implemented as a `core::geometry::animation::ViewportTransition` the platform shell polls each frame.
 
 ### wgpu rendering pipeline
 
@@ -484,7 +484,7 @@ Implementation: the renderer maintains two transforms per country — a `scale_v
 
 ### Zoom-to-country
 
-When the user clicks a country, the camera animates from current viewport to a viewport framing the country's bounding box (with margin). The Rust core exposes a `Camera` state machine; the platform shell polls it once per frame and asks for a fresh render.
+When the user clicks a country, the camera animates from current viewport to a viewport framing the country's bounding box (with margin). The Rust core exposes a `ViewportTransition`; the platform shell polls it once per frame and asks for a fresh render.
 
 ### Borders
 

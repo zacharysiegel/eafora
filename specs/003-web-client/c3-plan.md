@@ -301,6 +301,8 @@ Animated zoom-to-country and the `Camera` state machine (C3.4). Inertial/momentu
 
 ## C3.4 — animated zoom-to-country
 
+> **Deviation (post-review renames).** The names below reflect the original design; a review pass renamed several. The `Camera` type shipped as `ViewportTransition` in `shared/src/map/viewport_transition.rs` (`Camera` is a poor name for a transient in-progress transition), the `Progress` enum as `AnimationProgress`, and the pure numeric helpers (`lerp`, `inverse_lerp`, the geometric blend renamed `geometric_lerp`→`geometric_interpolate`, and `cubic_ease_in_out`) live in `shared::math`. Read `Camera`→`ViewportTransition` and `shared::map::camera`→`shared::map::viewport_transition` throughout this section.
+
 - Affected crates: `shared` (map: a new `camera` module, `viewport`, `hit_test`; geometry: a centroid helper in `artifact/geometry.rs`) and `web` (driver: `canvas/driver.rs`). No renderer, shader, `country_mesh`, or `gpu_types` change: `draw_frame(viewport, ..)` already takes the viewport per call and writes it to the uniform (`write_viewport_uniform`) and the renderer owns no camera state, so animation is just the driver supplying a different viewport on successive frames. The shader recomputes the antimeridian wrap direction from the drawn viewport each frame (`wrap_direction`), so every interpolated frame renders its own two-instance coverage correctly, as long as the interpolated width never exceeds one world turn (it cannot: height is bounded by the zoom-out ceiling, whose width is capped at `2π`).
 
 ### Problem

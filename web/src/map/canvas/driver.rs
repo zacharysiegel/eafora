@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::{DataSourceKind, StatisticKind};
-use shared::map::{Camera, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
+use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
 use shared::sqlite::shard_db;
@@ -188,7 +188,7 @@ struct Driver {
     selection: Option<SelectionView>,
     redraw_pending: bool,
     gesture: Gesture,
-    camera: Option<Camera>,
+    transition: Option<ViewportTransition>,
     animation_frame_pending: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
     animation_callback: Option<Closure<dyn FnMut(f64)>>,
@@ -211,7 +211,7 @@ impl Driver {
     }
 
     fn resize(&mut self, width: u32, height: u32) {
-        self.camera = None;
+        self.transition = None;
         self.surface_dimensions = SurfaceDimensions { width, height };
 
         // Preserve the current pan/zoom across a resize or device-pixel-ratio change, re-fitting only the
@@ -251,9 +251,9 @@ impl Driver {
     }
 
     /// Schedules one animation frame if none is already queued. Mirrors `request_redraw`'s failed-schedule
-    /// discipline; the `animation_frame_pending` gate (not `camera.is_some()`) is what guarantees exactly
+    /// discipline; the `animation_frame_pending` gate (not `transition.is_some()`) is what guarantees exactly
     /// one loop survives a cancel-then-restart interleaving, since a stale queued frame can outlive the
-    /// camera it was scheduled for.
+    /// transition it was scheduled for.
     fn schedule_animation_frame(&mut self) {
         if self.animation_frame_pending {
             return;
@@ -278,18 +278,18 @@ impl Driver {
     fn advance_animation(&mut self, now_ms: f64) {
         self.animation_frame_pending = false;
 
-        let Some(camera) = self.camera
+        let Some(transition) = self.transition
         else {
             return;
         };
 
-        let (viewport, progress): (Viewport, AnimationProgress) = camera.sample(now_ms, self.surface_dimensions);
+        let (viewport, progress): (Viewport, AnimationProgress) = transition.sample(now_ms, self.surface_dimensions);
         self.viewport = viewport;
         self.draw();
 
         match progress {
             AnimationProgress::Animating => self.schedule_animation_frame(),
-            AnimationProgress::Finished => self.camera = None,
+            AnimationProgress::Finished => self.transition = None,
         }
     }
 
@@ -302,7 +302,7 @@ impl Driver {
             return;
         }
 
-        self.camera = Some(Camera::new(self.viewport, target, now_ms(), ZOOM_TO_COUNTRY_ANIMATION_DURATION_MS));
+        self.transition = Some(ViewportTransition::new(self.viewport, target, now_ms(), ZOOM_TO_COUNTRY_ANIMATION_DURATION_MS));
         self.schedule_animation_frame();
     }
 
@@ -461,7 +461,7 @@ impl Driver {
     }
 
     fn pan_view(&mut self, from: SurfacePoint, to: SurfacePoint) {
-        self.camera = None;
+        self.transition = None;
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         self.viewport = hit_test::pan(self.viewport, self.surface_dimensions, from, to, home_min_y, home_max_y);
 
@@ -469,7 +469,7 @@ impl Driver {
     }
 
     fn pinch_view(&mut self, previous_a: SurfacePoint, previous_b: SurfacePoint, current_a: SurfacePoint, current_b: SurfacePoint) {
-        self.camera = None;
+        self.transition = None;
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
         self.viewport = hit_test::pinch(
@@ -481,7 +481,7 @@ impl Driver {
     }
 
     /// Ends a released pointer. A tap (a single pointer that never dragged) selects the region under the
-    /// release point; re-tapping the region that is already selected zooms the camera to frame it. A pan or
+    /// release point; re-tapping the region that is already selected zooms to frame it. A pan or
     /// pinch does neither. Returns the selection to publish, or `None` when nothing selects.
     fn end_pointer(&mut self, pointer_id: i32, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
         match self.gesture.release(pointer_id) {
@@ -514,7 +514,7 @@ impl Driver {
     /// `sensitivity`, which differs for a scroll wheel versus a pinch) and zooms about the projected point
     /// under the cursor, clamped to the zoom-out ceiling and the home latitude range.
     fn zoom_at(&mut self, surface_point: SurfacePoint, delta_y: f64, sensitivity: f64) {
-        self.camera = None;
+        self.transition = None;
         let clamped_delta: f64 = delta_y.clamp(-MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
         let factor: f64 = (-clamped_delta * sensitivity).exp();
 
@@ -666,7 +666,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         selection: None,
         redraw_pending: false,
         gesture: Gesture::Idle,
-        camera: None,
+        transition: None,
         animation_frame_pending: false,
         redraw_callback: None,
         animation_callback: None,
@@ -841,7 +841,7 @@ fn draw_pending_frame() {
 }
 
 /// The `requestAnimationFrame` callback for the zoom-to-country loop; the browser passes the frame's
-/// `performance.now()` timestamp, which the camera samples against.
+/// `performance.now()` timestamp, which the transition samples against.
 fn advance_pending_animation(now_ms: f64) {
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
@@ -890,7 +890,7 @@ fn handle_pointer_down(event: &PointerEvent) {
     capture_pointer(event);
 
     with_driver(|driver| {
-        driver.camera = None;
+        driver.transition = None;
         driver.gesture.begin(pointer_id, surface_point);
     });
 }

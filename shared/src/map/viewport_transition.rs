@@ -1,11 +1,11 @@
 use crate::map::{SurfaceDimensions, Viewport};
 use crate::math;
 
-/// An in-progress animated viewport transition, interpolated in center-and-height space by
-/// `Viewport::interpolate_to`. The camera does no scheduling and reads the clock only through the
-/// `now_ms` argument to `sample`.
+/// An animated transition between two viewports, interpolated in center-and-height space by
+/// `Viewport::interpolate_to`. Does no scheduling and reads the clock only through the `now_ms` argument
+/// to `sample`.
 #[derive(Debug, Clone, Copy)]
-pub struct Camera {
+pub struct ViewportTransition {
     from: Viewport,
     target: Viewport,
     /// The `performance.now()` timestamp the driver stamps from its `requestAnimationFrame` callback.
@@ -20,9 +20,9 @@ pub enum AnimationProgress {
     Finished,
 }
 
-impl Camera {
-    pub fn new(from: Viewport, target: Viewport, start_time_ms: f64, duration_ms: f64) -> Camera {
-        Camera { from, target, start_time_ms, duration_ms }
+impl ViewportTransition {
+    pub fn new(from: Viewport, target: Viewport, start_time_ms: f64, duration_ms: f64) -> ViewportTransition {
+        ViewportTransition { from, target, start_time_ms, duration_ms }
     }
 
     /// The interpolated viewport at `now_ms` and whether the transition has finished. At or past the end
@@ -60,8 +60,8 @@ mod tests {
 
     #[test]
     fn sample_at_start_returns_the_from_view_and_animating() {
-        let camera: Camera = Camera::new(from_viewport(), target_viewport(), 1000.0, 600.0);
-        let (viewport, progress): (Viewport, AnimationProgress) = camera.sample(1000.0, SURFACE);
+        let transition: ViewportTransition = ViewportTransition::new(from_viewport(), target_viewport(), 1000.0, 600.0);
+        let (viewport, progress): (Viewport, AnimationProgress) = transition.sample(1000.0, SURFACE);
 
         assert_eq!(progress, AnimationProgress::Animating);
         assert!(((viewport.min.x + viewport.max.x) / 2.0).abs() < 1e-9, "center x is the from center");
@@ -70,24 +70,24 @@ mod tests {
 
     #[test]
     fn sample_at_and_past_the_end_returns_the_target_verbatim_and_finished() {
-        let camera: Camera = Camera::new(from_viewport(), target_viewport(), 1000.0, 600.0);
+        let transition: ViewportTransition = ViewportTransition::new(from_viewport(), target_viewport(), 1000.0, 600.0);
 
-        assert_eq!(camera.sample(1600.0, SURFACE), (target_viewport(), AnimationProgress::Finished));
+        assert_eq!(transition.sample(1600.0, SURFACE), (target_viewport(), AnimationProgress::Finished));
         // Far past the end (a backgrounded-then-foregrounded tab) snaps to the target.
-        assert_eq!(camera.sample(999_999.0, SURFACE), (target_viewport(), AnimationProgress::Finished));
+        assert_eq!(transition.sample(999_999.0, SURFACE), (target_viewport(), AnimationProgress::Finished));
     }
 
     #[test]
     fn sample_with_non_positive_duration_finishes_immediately() {
-        let camera: Camera = Camera::new(from_viewport(), target_viewport(), 1000.0, 0.0);
+        let transition: ViewportTransition = ViewportTransition::new(from_viewport(), target_viewport(), 1000.0, 0.0);
 
-        assert_eq!(camera.sample(1000.0, SURFACE), (target_viewport(), AnimationProgress::Finished));
+        assert_eq!(transition.sample(1000.0, SURFACE), (target_viewport(), AnimationProgress::Finished));
     }
 
     #[test]
     fn sample_midway_lies_between_the_endpoints_at_the_surface_aspect() {
-        let camera: Camera = Camera::new(from_viewport(), target_viewport(), 1000.0, 600.0);
-        let (viewport, progress): (Viewport, AnimationProgress) = camera.sample(1300.0, SURFACE);
+        let transition: ViewportTransition = ViewportTransition::new(from_viewport(), target_viewport(), 1000.0, 600.0);
+        let (viewport, progress): (Viewport, AnimationProgress) = transition.sample(1300.0, SURFACE);
         let center_x: f64 = (viewport.min.x + viewport.max.x) / 2.0;
         let height: f64 = viewport.max.y - viewport.min.y;
 
