@@ -42,8 +42,8 @@ impl Viewport {
     /// `[MIN_ZOOM_IN_HEIGHT, max_height]`), keeping this viewport's center, with the width re-derived from
     /// `surface`'s aspect so the map is never stretched. The width is derived from the clamped height
     /// alone, never read from `self`, so a zero-width seed is valid.
-    pub fn zoom_to_height(&self, height: f64, max_height: f64, surface: SurfaceDimensions) -> Viewport {
-        let clamped_height: f64 = clamp_height(height, max_height);
+    pub fn zoom_to_height(&self, target_height: f64, max_height: f64, surface: SurfaceDimensions) -> Viewport {
+        let clamped_height: f64 = clamp_height(target_height, max_height);
         let center: ProjectedPoint = self.center();
         let width: f64 = clamped_height * (surface.width as f64 / surface.height as f64);
 
