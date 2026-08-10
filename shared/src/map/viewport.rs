@@ -109,6 +109,59 @@ impl Viewport {
         self.pan_by(0.0, clamped_center_y - center.y)
     }
 
+    /// This viewport fitted vertically into `[display_min_y, display_max_y]` while keeping the framed
+    /// content `[content_min, content_max]` balanced. When one side's padding overflows the range (a
+    /// hidden near-polar band the home view never shows), that side is clipped to the range edge and the
+    /// opposite side is pulled in by the same amount, so the content stays balanced rather than slid to
+    /// the far edge (which is what `clamp_vertical` would do). The pulled-in side keeps at least
+    /// `min_margin`, the content is never cropped horizontally or vertically, and the width is re-derived
+    /// from the surface aspect so nothing stretches. With no overflow it returns the viewport unchanged.
+    pub fn clamp_vertical_balanced(
+        &self,
+        content_min: ProjectedPoint,
+        content_max: ProjectedPoint,
+        display_min_y: f64,
+        display_max_y: f64,
+        min_margin: f64,
+        surface: SurfaceDimensions,
+    ) -> Viewport {
+        let top_overflow: f64 = (self.max.y - display_max_y).max(0.0);
+        let bottom_overflow: f64 = (display_min_y - self.min.y).max(0.0);
+
+        if top_overflow <= 0.0 && bottom_overflow <= 0.0 {
+            return *self;
+        }
+
+        let (mut new_min_y, mut new_max_y): (f64, f64) = if top_overflow > 0.0 {
+            let bottom_room: f64 = (content_min.y - self.min.y - min_margin).max(0.0);
+            (self.min.y + top_overflow.min(bottom_room), display_max_y)
+        } else {
+            let top_room: f64 = (self.max.y - content_max.y - min_margin).max(0.0);
+            (display_min_y, self.max.y - bottom_overflow.min(top_room))
+        };
+
+        // Reducing the height narrows the aspect-locked width; grow the away-from-pole side if needed so
+        // the content is still contained horizontally.
+        let aspect: f64 = surface.width as f64 / surface.height as f64;
+        let min_height_for_width: f64 = (content_max.x - content_min.x) / aspect;
+        if new_max_y - new_min_y < min_height_for_width {
+            if top_overflow > 0.0 {
+                new_min_y = new_max_y - min_height_for_width;
+            } else {
+                new_max_y = new_min_y + min_height_for_width;
+            }
+        }
+
+        let center_x: f64 = (self.min.x + self.max.x) / 2.0;
+        let center_y: f64 = (new_min_y + new_max_y) / 2.0;
+        let seed: Viewport = Viewport {
+            min: ProjectedPoint { x: center_x, y: center_y },
+            max: ProjectedPoint { x: center_x, y: center_y },
+        };
+
+        seed.zoom_to_height(new_max_y - new_min_y, new_max_y - new_min_y, surface)
+    }
+
     /// This viewport shifted by whole turns of `2π` along `x` so its center lands in `[-π, π]`. This keeps
     /// the renderer's two-instance antimeridian model valid for arbitrarily long horizontal pans: the
     /// renderer draws only the natural copy plus one copy shifted by one turn, covering `[-π, 3π]`, so a
@@ -597,5 +650,51 @@ mod tests {
         let midway: Viewport = from.interpolate_to(target, 0.5, surface);
         let center_x: f64 = (midway.min.x + midway.max.x) / 2.0;
         assert!(center_x > 3.0, "swept the short way past the seam, not back through zero");
+    }
+
+    #[test]
+    fn clamp_vertical_balanced_leaves_an_in_range_frame_unchanged() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
+        let content_min: ProjectedPoint = ProjectedPoint { x: -0.1, y: -0.1 };
+        let content_max: ProjectedPoint = ProjectedPoint { x: 0.1, y: 0.1 };
+        let frame: Viewport = Viewport { min: ProjectedPoint { x: -0.3, y: -0.3 }, max: ProjectedPoint { x: 0.3, y: 0.3 } };
+
+        assert_eq!(frame.clamp_vertical_balanced(content_min, content_max, -1.0, 1.0, 0.1, surface), frame);
+    }
+
+    #[test]
+    fn clamp_vertical_balanced_clips_the_pole_side_and_shrinks_the_opposite_equally() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
+        // A country near the top edge of the display range [-1, 1]; content y in [0.5, 0.9].
+        let content_min: ProjectedPoint = ProjectedPoint { x: -0.2, y: 0.5 };
+        let content_max: ProjectedPoint = ProjectedPoint { x: 0.2, y: 0.9 };
+        // A frame centered on the content whose top (1.5) overflows the range edge (1.0) by 0.5.
+        let frame: Viewport = Viewport { min: ProjectedPoint { x: -0.8, y: -0.1 }, max: ProjectedPoint { x: 0.8, y: 1.5 } };
+
+        let balanced: Viewport = frame.clamp_vertical_balanced(content_min, content_max, -1.0, 1.0, 0.1, surface);
+
+        assert!((balanced.max.y - 1.0).abs() < TOLERANCE, "top clipped to the display edge");
+        assert!(balanced.min.y <= content_min.y && balanced.max.y >= content_max.y, "content still contained");
+        let top_margin: f64 = balanced.max.y - content_max.y;
+        let bottom_margin: f64 = content_min.y - balanced.min.y;
+        assert!((top_margin - bottom_margin).abs() < TOLERANCE, "the opposite margin shrank to match the clipped side");
+        assert!(bottom_margin >= 0.1 - TOLERANCE, "the opposite margin keeps at least the minimum");
+    }
+
+    #[test]
+    fn clamp_vertical_balanced_holds_the_opposite_margin_at_the_minimum_against_the_pole() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 100, height: 100 };
+        // Content flush against the top edge (content_max.y == display_max_y == 1.0): no room to pad the top.
+        let content_min: ProjectedPoint = ProjectedPoint { x: -0.2, y: 0.4 };
+        let content_max: ProjectedPoint = ProjectedPoint { x: 0.2, y: 1.0 };
+        let frame: Viewport = Viewport { min: ProjectedPoint { x: -1.0, y: -0.2 }, max: ProjectedPoint { x: 1.0, y: 1.8 } };
+
+        let balanced: Viewport = frame.clamp_vertical_balanced(content_min, content_max, -1.0, 1.0, 0.1, surface);
+
+        assert!((balanced.max.y - 1.0).abs() < TOLERANCE, "top clipped to the display edge");
+        let top_margin: f64 = balanced.max.y - content_max.y;
+        let bottom_margin: f64 = content_min.y - balanced.min.y;
+        assert!(top_margin.abs() < TOLERANCE, "no top margin: the country is against the pole edge");
+        assert!((bottom_margin - 0.1).abs() < TOLERANCE, "the opposite margin is held at the minimum, not shrunk to zero");
     }
 }

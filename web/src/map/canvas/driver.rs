@@ -79,6 +79,11 @@ const ZOOM_TO_COUNTRY_MARGIN_PROPORTION: f64 = 1.5;
 /// surrounding region, not just itself.
 const ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT: f64 = 8.0;
 
+/// The floor, in projected units, on the margin opposite the clipped (pole) side. When a country sits
+/// hard against the pole-side clip edge, `Viewport::clamp_vertical_balanced` shrinks the opposite margin
+/// by the clipped amount, which would otherwise reach zero; this is the minimum it may shrink to.
+const ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN: f64 = 0.1;
+
 /// A pointer in contact (a held mouse button or a touching finger), tracked by `pointerId` so pan and
 /// pinch can follow the right one across moves.
 #[derive(Debug, Clone, Copy)]
@@ -302,8 +307,9 @@ impl Driver {
     }
 
     /// The viewport that frames a country's projected bounds and centroid with a margin and a
-    /// generous-context minimum zoom-out, clamped to the same zoom-out ceiling and home latitude range as
-    /// manual zoom and re-normalized across the seam.
+    /// generous-context minimum zoom-out, balanced against the home latitude range (so a pole-adjacent
+    /// country zooms in and stays centered rather than sliding off the far edge) and re-normalized across
+    /// the seam.
     fn zoom_target(&self, framing: CountryFraming) -> Viewport {
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
@@ -313,7 +319,10 @@ impl Driver {
             framing.min.x, framing.max.x, framing.min.y, framing.max.y,
             framing.centroid, ZOOM_TO_COUNTRY_MARGIN_PROPORTION, min_height, ceiling, self.surface_dimensions,
         )
-        .clamp_vertical(home_min_y, home_max_y)
+        .clamp_vertical_balanced(
+            framing.min, framing.max, home_min_y, home_max_y,
+            ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN, self.surface_dimensions,
+        )
         .normalize_longitude_turns()
     }
 
