@@ -11,6 +11,7 @@ pub mod math;
 #[cfg(feature = "render")]
 pub mod render;
 pub mod revision;
+pub mod settings;
 pub mod sqlite;
 
 pub use error::AppError;

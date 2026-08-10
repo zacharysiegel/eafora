@@ -295,10 +295,10 @@ impl Renderer {
         self.queue.write_buffer(&self.map_binding.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
     }
 
-    /// Rewrites the per-country emphasis state each frame: the hovered region gets the lift and a thin
-    /// outline, the selected region a bolder outline (no lift; it reads in the detail panel and, later,
-    /// drives zoom-to-country). When the same country is both, it lifts and keeps the bolder outline. A
-    /// region with no matching country (e.g. a stale hover after a bundle swap) is skipped.
+    /// Rewrites the per-country emphasis state each frame: the hovered region gets a thin outline and,
+    /// when `frame_state.hover_lift_enabled`, the lift; the selected region a bolder outline (no lift; it
+    /// reads in the detail panel and drives zoom-to-country). When the same country is both, it keeps the
+    /// bolder outline. A region with no matching country (e.g. a stale hover after a bundle swap) is skipped.
     fn write_country_state(&self, frame_state: &FrameState) {
         let mut country_state: Vec<CountryState> =
             vec![CountryState { lift_px: 0.0, outline_px: 0.0, _padding: [0.0; 2] }; COUNTRY_STATE_ARRAY_LEN];
@@ -307,7 +307,9 @@ impl Renderer {
             country_state[index].outline_px = SELECTED_OUTLINE_PX;
         }
         if let Some(index) = self.country_index_of(frame_state.hovered_region.as_ref()) {
-            country_state[index].lift_px = HOVER_LIFT_PX;
+            if frame_state.hover_lift_enabled {
+                country_state[index].lift_px = HOVER_LIFT_PX;
+            }
             country_state[index].outline_px = country_state[index].outline_px.max(HOVER_OUTLINE_PX);
         }
 
