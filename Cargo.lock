@@ -7179,6 +7179,7 @@ name = "web"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "base64",
  "chrono",
  "console_error_panic_hook",
  "console_log",
