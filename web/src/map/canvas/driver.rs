@@ -69,7 +69,7 @@ const MAX_WHEEL_DELTA: f64 = 240.0;
 /// from being swallowed.
 const DRAG_SELECT_SUPPRESS_PX: f64 = 7.0;
 
-const ANIMATION_DURATION_MS: f64 = 600.0;
+const ZOOM_TO_COUNTRY_ANIMATION_DURATION_MS: f64 = 600.0;
 
 /// Padding around the framed country, as a fraction of its projected extent.
 const ZOOM_TO_COUNTRY_MARGIN_FRACTION: f64 = 1.5;
@@ -297,7 +297,7 @@ impl Driver {
             return;
         }
 
-        self.camera = Some(Camera::new(self.viewport, target, now_ms(), ANIMATION_DURATION_MS));
+        self.camera = Some(Camera::new(self.viewport, target, now_ms(), ZOOM_TO_COUNTRY_ANIMATION_DURATION_MS));
         self.schedule_animation_frame();
     }
 
