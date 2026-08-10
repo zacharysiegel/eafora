@@ -781,11 +781,7 @@ fn install_resize_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut()> {
     let resize_callback: Closure<dyn FnMut()> = Closure::new(move || {
         let (width, height): (u32, u32) = configure_canvas_backing_store(&canvas);
 
-        DRIVER.with_borrow_mut(|driver_slot| {
-            if let Some(driver) = driver_slot {
-                driver.resize(width, height);
-            }
-        });
+        with_driver(|driver| driver.resize(width, height));
     });
 
     if let Some(window) = web_sys::window() {
@@ -793,6 +789,20 @@ fn install_resize_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut()> {
     }
 
     resize_callback
+}
+
+/// Runs `action` against the live driver, or does nothing if the driver is absent or its `RefCell` is
+/// already borrowed. DOM event handlers funnel through here rather than `with_borrow_mut` so a synchronous
+/// re-entrant dispatch (a pointer event delivered by the browser while an animation frame still holds the
+/// borrow across its draw) is dropped instead of panicking the abort-on-panic `RefCell`; the transient
+/// hover/gesture state the dropped event would have set is re-established by the next event or frame.
+fn with_driver<R>(action: impl FnOnce(&mut Driver) -> R) -> Option<R> {
+    DRIVER.with(|cell| {
+        let mut slot: std::cell::RefMut<'_, Option<Driver>> = cell.try_borrow_mut().ok()?;
+        let driver: &mut Driver = slot.as_mut()?;
+
+        Some(action(driver))
+    })
 }
 
 fn draw_pending_frame() {
@@ -853,11 +863,9 @@ fn handle_pointer_down(event: &PointerEvent) {
 
     capture_pointer(event);
 
-    DRIVER.with_borrow_mut(|driver_slot| {
-        if let Some(driver) = driver_slot {
-            driver.camera = None;
-            driver.gesture.begin(pointer_id, surface_point);
-        }
+    with_driver(|driver| {
+        driver.camera = None;
+        driver.gesture.begin(pointer_id, surface_point);
     });
 }
 
@@ -866,11 +874,7 @@ fn handle_pointer_move(event: &PointerEvent) {
     let pointer_id: i32 = event.pointer_id();
     let is_mouse: bool = event.pointer_type() == "mouse";
 
-    DRIVER.with_borrow_mut(|driver_slot| {
-        let Some(driver) = driver_slot else {
-            return;
-        };
-
+    with_driver(|driver| {
         if driver.gesture.is_active() {
             driver.apply_pointer_move(pointer_id, surface_point);
         } else if is_mouse {
@@ -885,12 +889,12 @@ fn handle_pointer_up(event: &PointerEvent) {
     let pointer_id: i32 = event.pointer_id();
 
     let published: Option<(WriteSignal<Option<SelectionView>>, Option<SelectionView>)> =
-        DRIVER.with_borrow_mut(|driver_slot| {
-            let driver: &mut Driver = driver_slot.as_mut()?;
+        with_driver(|driver| {
             let new_selection: Option<SelectionView> = driver.end_pointer(pointer_id, surface_point)?;
 
             Some((driver.selection_view, new_selection))
-        });
+        })
+        .flatten();
 
     if let Some((selection_view, new_selection)) = published {
         selection_view.set(new_selection);
@@ -900,19 +904,11 @@ fn handle_pointer_up(event: &PointerEvent) {
 fn handle_pointer_cancel(event: &PointerEvent) {
     let pointer_id: i32 = event.pointer_id();
 
-    DRIVER.with_borrow_mut(|driver_slot| {
-        if let Some(driver) = driver_slot {
-            driver.cancel_pointer(pointer_id);
-        }
-    });
+    with_driver(|driver| driver.cancel_pointer(pointer_id));
 }
 
 fn handle_pointer_leave() {
-    DRIVER.with_borrow_mut(|driver_slot| {
-        if let Some(driver) = driver_slot {
-            driver.clear_hover();
-        }
-    });
+    with_driver(|driver| driver.clear_hover());
 }
 
 fn handle_wheel(event: &WheelEvent) {
@@ -924,11 +920,7 @@ fn handle_wheel(event: &WheelEvent) {
     let delta_y: f64 = event.delta_y();
     let sensitivity: f64 = if is_trackpad_pinch(event) { TRACKPAD_PINCH_ZOOM_SENSITIVITY } else { WHEEL_ZOOM_SENSITIVITY };
 
-    DRIVER.with_borrow_mut(|driver_slot| {
-        if let Some(driver) = driver_slot {
-            driver.zoom_at(surface_point, delta_y, sensitivity);
-        }
-    });
+    with_driver(|driver| driver.zoom_at(surface_point, delta_y, sensitivity));
 }
 
 /// Whether a wheel event is a trackpad or browser pinch rather than a mouse wheel. Both set ctrlKey, so
@@ -961,8 +953,7 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
         views: RepublishedViews,
     }
 
-    let pending: Option<PendingPublish> = DRIVER.with_borrow_mut(|driver_slot| {
-        let driver: &mut Driver = driver_slot.as_mut()?;
+    let pending: Option<PendingPublish> = with_driver(|driver| {
         let views: RepublishedViews = mutate(driver)?;
 
         Some(PendingPublish {
@@ -971,7 +962,8 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
             legend_signal: driver.legend,
             views,
         })
-    });
+    })
+    .flatten();
 
     if let Some(pending) = pending {
         pending.controls_signal.set(Some(pending.views.view_controls));
