@@ -19,6 +19,7 @@ js-sys = { workspace = true, optional = true }
 web-sys = { workspace = true, optional = true, features = [
     "Window",
     "Navigator",
+    "Performance",
     "StorageManager",
     "StorageEstimate",
     "FileSystemDirectoryHandle",

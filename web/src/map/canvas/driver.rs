@@ -12,7 +12,7 @@ use leptos::prelude::*;
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::{DataSourceKind, StatisticKind};
-use shared::map::{FrameState, GeoPoint, ProjectedPoint, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
+use shared::map::{Camera, CountryFraming, FrameState, GeoPoint, ProjectedPoint, Progress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
 use shared::sqlite::shard_db;
@@ -68,6 +68,14 @@ const MAX_WHEEL_DELTA: f64 = 240.0;
 /// pan rather than a tap, so it does not select. A few-pixel deadzone keeps a click that jitters slightly
 /// from being swallowed.
 const DRAG_SELECT_SUPPRESS_PX: f64 = 7.0;
+
+/// The zoom-to-country animation length in milliseconds: long enough to keep the eye's bearings across a
+/// rescaling of the globe, short enough to read as crisp. A tuning constant with no correctness role.
+const ANIMATION_DURATION_MS: f64 = 600.0;
+
+/// The padding the zoom-to-country target leaves around the framed country, as a fraction of its extent,
+/// so the country is not jammed against the screen edges. A tuning constant.
+const ZOOM_TO_COUNTRY_MARGIN_FRACTION: f64 = 0.1;
 
 /// A pointer in contact (a held mouse button or a touching finger), tracked by `pointerId` so pan and
 /// pinch can follow the right one across moves.
@@ -173,7 +181,10 @@ struct Driver {
     selection: Option<SelectionView>,
     redraw_pending: bool,
     gesture: Gesture,
+    camera: Option<Camera>,
+    animation_frame_pending: bool,
     redraw_callback: Option<Closure<dyn FnMut()>>,
+    animation_callback: Option<Closure<dyn FnMut(f64)>>,
     resize_callback: Option<Closure<dyn FnMut()>>,
     pointer_down_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
     pointer_move_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
@@ -193,6 +204,7 @@ impl Driver {
     }
 
     fn resize(&mut self, width: u32, height: u32) {
+        self.camera = None;
         self.surface_dimensions = SurfaceDimensions { width, height };
 
         // Preserve the current pan/zoom across a resize or device-pixel-ratio change, re-fitting only the
@@ -229,6 +241,77 @@ impl Driver {
             // retryable; otherwise the flag would latch and every later redraw would short-circuit on it.
             self.redraw_pending = true;
         }
+    }
+
+    /// Schedules one animation frame if none is already queued. Mirrors `request_redraw`'s failed-schedule
+    /// discipline; the `animation_frame_pending` gate (not `camera.is_some()`) is what guarantees exactly
+    /// one loop survives a cancel-then-restart interleaving, since a stale queued frame can outlive the
+    /// camera it was scheduled for.
+    fn schedule_animation_frame(&mut self) {
+        if self.animation_frame_pending {
+            return;
+        }
+
+        let callback: &Closure<dyn FnMut(f64)> =
+            self.animation_callback.get_or_insert_with(|| Closure::new(advance_pending_animation));
+
+        let Some(window) = web_sys::window() else {
+            log::error!("no window available; cannot schedule an animation frame");
+            return;
+        };
+
+        let schedule_result: Result<i32, JsValue> = window.request_animation_frame(callback.as_ref().unchecked_ref());
+        if schedule_result.is_ok() {
+            self.animation_frame_pending = true;
+        }
+    }
+
+    /// One frame of the zoom-to-country animation: sample the camera at `now_ms`, set the viewport, draw
+    /// directly (not through the coalesced `request_redraw`, which would fight the loop's scheduling), and
+    /// either schedule the next frame or, when finished, drop the camera and stop.
+    fn advance_animation(&mut self, now_ms: f64) {
+        self.animation_frame_pending = false;
+
+        let Some(camera) = self.camera
+        else {
+            return;
+        };
+
+        let (viewport, progress): (Viewport, Progress) = camera.sample(now_ms, self.surface_dimensions);
+        self.viewport = viewport;
+        self.draw();
+
+        match progress {
+            Progress::Animating => self.schedule_animation_frame(),
+            Progress::Finished => self.camera = None,
+        }
+    }
+
+    /// Starts (or redirects) the zoom-to-country animation toward the viewport framing `framing`, from the
+    /// current viewport. A no-op when the current view already matches that target within a tolerance, so a
+    /// tap on an already-framed country does not jitter.
+    fn start_zoom_to_country(&mut self, framing: CountryFraming) {
+        let target: Viewport = self.zoom_target(framing);
+        if viewports_match(self.viewport, target) {
+            return;
+        }
+
+        self.camera = Some(Camera::new(self.viewport, target, now_ms(), ANIMATION_DURATION_MS));
+        self.schedule_animation_frame();
+    }
+
+    /// The viewport that frames a country's projected bounds and centroid with a margin, clamped to the
+    /// same zoom-out ceiling and home latitude range as manual zoom and re-normalized across the seam.
+    fn zoom_target(&self, framing: CountryFraming) -> Viewport {
+        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
+        let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
+
+        Viewport::fit_bounds(
+            framing.min.x, framing.max.x, framing.min.y, framing.max.y,
+            framing.centroid, ZOOM_TO_COUNTRY_MARGIN_FRACTION, ceiling, self.surface_dimensions,
+        )
+        .clamp_vertical(home_min_y, home_max_y)
+        .normalize_longitude_turns()
     }
 
     fn region_at(&self, surface_point: SurfacePoint) -> Option<RegionHit> {
@@ -284,15 +367,17 @@ impl Driver {
         RegionChange::Changed(region_hit)
     }
 
-    /// Updates the selected region from `surface_point`. Returns the `SelectionView` to publish, or
-    /// `None` when the selection is unchanged so no redundant publish happens.
-    fn select_region_at(&mut self, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
-        let RegionChange::Changed(region_hit) = self.region_change(surface_point, &self.frame_state.selected_region)
-        else {
-            return None;
-        };
+    /// Updates the selected region from an already-resolved hit (`None` for empty space). Returns the
+    /// `SelectionView` to publish, or `None` when the selection is unchanged so no redundant publish happens.
+    fn select_region(&mut self, region_hit: Option<RegionHit>) -> Option<Option<SelectionView>> {
+        let region_code: Option<RegionCode> =
+            region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
 
-        self.frame_state.selected_region = region_hit.as_ref().map(|region_hit| region_hit.region_code.clone());
+        if region_code == self.frame_state.selected_region {
+            return None;
+        }
+
+        self.frame_state.selected_region = region_code;
         self.request_redraw();
 
         let selection_view: Option<SelectionView> =
@@ -364,6 +449,7 @@ impl Driver {
     }
 
     fn pan_view(&mut self, from: SurfacePoint, to: SurfacePoint) {
+        self.camera = None;
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         self.viewport = hit_test::pan(self.viewport, self.surface_dimensions, from, to, home_min_y, home_max_y);
 
@@ -371,6 +457,7 @@ impl Driver {
     }
 
     fn pinch_view(&mut self, previous_a: SurfacePoint, previous_b: SurfacePoint, current_a: SurfacePoint, current_b: SurfacePoint) {
+        self.camera = None;
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
         self.viewport = hit_test::pinch(
@@ -381,11 +468,20 @@ impl Driver {
         self.request_redraw();
     }
 
-    /// Ends a released pointer. A tap (a single pointer that never dragged) selects at the release point;
-    /// a pan or pinch does not. Returns the selection to publish, or `None` when nothing selects.
+    /// Ends a released pointer. A tap (a single pointer that never dragged) resolves the region under the
+    /// release point, animates the camera to frame it, and selects it; a pan or pinch does not. Returns the
+    /// selection to publish, or `None` when nothing selects.
     fn end_pointer(&mut self, pointer_id: i32, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
         match self.gesture.release(pointer_id) {
-            PointerRelease::Tap => self.select_region_at(surface_point),
+            PointerRelease::Tap => {
+                let region_hit: Option<RegionHit> = self.region_at(surface_point);
+
+                if let Some(hit) = &region_hit {
+                    self.start_zoom_to_country(hit.framing);
+                }
+
+                self.select_region(region_hit)
+            },
             PointerRelease::NoSelect => None,
         }
     }
@@ -399,6 +495,7 @@ impl Driver {
     /// `sensitivity`, which differs for a scroll wheel versus a pinch) and zooms about the projected point
     /// under the cursor, clamped to the zoom-out ceiling and the home latitude range.
     fn zoom_at(&mut self, surface_point: SurfacePoint, delta_y: f64, sensitivity: f64) {
+        self.camera = None;
         let clamped_delta: f64 = delta_y.clamp(-MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
         let factor: f64 = (-clamped_delta * sensitivity).exp();
 
@@ -550,7 +647,10 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         selection: None,
         redraw_pending: false,
         gesture: Gesture::Idle,
+        camera: None,
+        animation_frame_pending: false,
         redraw_callback: None,
+        animation_callback: None,
         resize_callback: Some(install_resize_listener(&canvas)),
         pointer_down_callback: Some(install_pointer_down_listener(&canvas)),
         pointer_move_callback: Some(install_pointer_move_listener(&canvas)),
@@ -703,6 +803,39 @@ fn draw_pending_frame() {
     });
 }
 
+/// The `requestAnimationFrame` callback for the zoom-to-country loop. The browser passes the frame's
+/// `performance.now()` timestamp, which the camera samples against; the driver reschedules from within
+/// `advance_animation` while the transition is still running.
+fn advance_pending_animation(now_ms: f64) {
+    DRIVER.with_borrow_mut(|driver_slot| {
+        if let Some(driver) = driver_slot {
+            driver.advance_animation(now_ms);
+        }
+    });
+}
+
+/// The current high-resolution monotonic timestamp (`performance.now()`), the same clock
+/// `requestAnimationFrame` stamps its callbacks with. Falls back to `0.0` if `performance` is
+/// unavailable, which collapses a started animation to its final frame rather than crashing.
+fn now_ms() -> f64 {
+    web_sys::window()
+        .and_then(|window| window.performance())
+        .map(|performance| performance.now())
+        .unwrap_or(0.0)
+}
+
+/// Whether two viewports are equal within a projected-space tolerance, used to skip a zoom-to-country
+/// animation whose target is already on screen. The tolerance absorbs the sub-pixel drift of re-deriving
+/// a viewport through the fit-and-clamp path.
+fn viewports_match(a: Viewport, b: Viewport) -> bool {
+    const EPSILON: f64 = 1e-9;
+
+    (a.min.x - b.min.x).abs() < EPSILON
+        && (a.min.y - b.min.y).abs() < EPSILON
+        && (a.max.x - b.max.x).abs() < EPSILON
+        && (a.max.y - b.max.y).abs() < EPSILON
+}
+
 fn surface_point_from_mouse_event(event: &MouseEvent) -> SurfacePoint {
     let device_pixel_ratio: f64 = web_sys::window()
         .map(|window| window.device_pixel_ratio())
@@ -722,6 +855,7 @@ fn handle_pointer_down(event: &PointerEvent) {
 
     DRIVER.with_borrow_mut(|driver_slot| {
         if let Some(driver) = driver_slot {
+            driver.camera = None;
             driver.gesture.begin(pointer_id, surface_point);
         }
     });
