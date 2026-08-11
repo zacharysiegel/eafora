@@ -8,12 +8,11 @@ use crate::math;
 pub struct ViewportTransition {
     from: Viewport,
     target: Viewport,
-    /// The `performance.now()` timestamp the driver stamps from its `requestAnimationFrame` callback.
+    /// When the transition began, on the same clock the caller passes to `sample`.
     start_time_ms: f64,
     duration_ms: f64,
 }
 
-/// Whether a sampled frame is mid-transition or the final one (the transition has landed on the target).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AnimationProgress {
     Animating,
