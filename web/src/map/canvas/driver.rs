@@ -480,29 +480,32 @@ impl Driver {
         self.request_redraw();
     }
 
-    /// Ends a released pointer. A tap (a single pointer that never dragged) selects the region under the
-    /// release point; re-tapping the region that is already selected zooms to frame it. A pan or
-    /// pinch does neither. Returns the selection to publish, or `None` when nothing selects.
+    /// Ends a released pointer: a tap (a single pointer that never dragged) selects, and may zoom, via
+    /// `select_from_tap`; a pan or pinch does neither. Returns the selection to publish, or `None` when
+    /// nothing selects.
     fn end_pointer(&mut self, pointer_id: i32, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
         match self.gesture.release(pointer_id) {
-            PointerRelease::Tap => {
-                let region_hit: Option<RegionHit> = self.region_at(surface_point);
-
-                if let Some(hit) = &region_hit {
-                    // The first tap only selects; a second tap on the now-selected country zooms. A
-                    // double-click falls out of this: its first click selects, its second zooms.
-                    let re_taps_the_selection: bool =
-                        self.frame_state.selected_region.as_ref() == Some(&hit.region_code);
-
-                    if re_taps_the_selection {
-                        self.start_zoom_to_country(hit.framing);
-                    }
-                }
-
-                self.select_region(region_hit)
-            },
+            PointerRelease::Tap => self.select_from_tap(surface_point),
             PointerRelease::NoSelect => None,
         }
+    }
+
+    /// Completes a tap at `surface_point`: selects the region there, and zooms to frame it when the tap
+    /// re-selects the already-selected region (so a first tap selects, and a second tap or a double-click
+    /// zooms). Returns the selection to publish.
+    fn select_from_tap(&mut self, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
+        let region_hit: Option<RegionHit> = self.region_at(surface_point);
+
+        if let Some(hit) = &region_hit {
+            let re_taps_the_selection: bool =
+                self.frame_state.selected_region.as_ref() == Some(&hit.region_code);
+
+            if re_taps_the_selection {
+                self.start_zoom_to_country(hit.framing);
+            }
+        }
+
+        self.select_region(region_hit)
     }
 
     /// Ends a canceled pointer (the browser aborted the gesture). Never selects.
