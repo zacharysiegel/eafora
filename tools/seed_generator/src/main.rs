@@ -75,7 +75,8 @@ fn parse_csv(text: &str) -> Result<Vec<CountryRow>, Box<dyn Error>> {
             intermediate_code: fields[10].clone(),
         };
         if row.region_name.is_empty() {
-            // Antarctica is the only such row in current M49 data; skip it.
+            // UN M49 leaves the region fields blank for Antarctica and for Taiwan (which it folds into
+            // China); skip both.
             continue;
         }
         country_rows.push(row);

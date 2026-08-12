@@ -13,6 +13,20 @@ const NATURAL_EARTH_URL: &str = concatcp!(
     ".zip"
 );
 
+/// Natural Earth's `ADM0_A3` diverges from ISO 3166-1 alpha-3 for a few disputed or newly independent
+/// states, and Natural Earth ships two unrecognized territories as their own features that we render as
+/// part of their internationally recognized sovereign. Each pair maps the Natural Earth code to the
+/// canonical ISO3 the seed keys on; a code not listed here already equals its ISO3.
+const ADM0_A3_TO_CANONICAL_ISO3: &[(&str, &str)] = &[
+    ("SDS", "SSD"), // South Sudan
+    ("SAH", "ESH"), // Western Sahara
+    ("PSX", "PSE"), // Palestine
+    ("ALD", "ALA"), // Åland Islands
+    ("KOS", "XKX"), // Kosovo, keyed on the World Bank's user-assigned code
+    ("SOL", "SOM"), // Somaliland, folded into Somalia
+    ("CYN", "CYP"), // Northern Cyprus, folded into Cyprus
+];
+
 #[derive(Debug, Clone)]
 pub struct ShapefileBytes {
     pub shp: Vec<u8>,
@@ -47,4 +61,14 @@ fn read_named_entry(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, extension: &st
     let mut buffer: Vec<u8> = Vec::with_capacity(entry.size() as usize);
     entry.read_to_end(&mut buffer)?;
     Ok(buffer)
+}
+
+/// The canonical ISO3 the seed keys on for a Natural Earth `ADM0_A3` code, translating the codes that
+/// diverge from ISO 3166-1 alpha-3 (see `ADM0_A3_TO_CANONICAL_ISO3`) and returning the code unchanged
+/// otherwise.
+pub fn canonical_iso3(adm0_a3: &str) -> &str {
+    ADM0_A3_TO_CANONICAL_ISO3.iter()
+        .find(|(natural_earth_code, _)| *natural_earth_code == adm0_a3)
+        .map(|(_, canonical_iso3)| *canonical_iso3)
+        .unwrap_or(adm0_a3)
 }
