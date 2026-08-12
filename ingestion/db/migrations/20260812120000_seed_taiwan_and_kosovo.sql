@@ -16,5 +16,9 @@ insert into country (region_id, iso3, iso2) values
 
 -- migrate:down
 
+-- statistic_value and source_choice reference region(id) without ON DELETE CASCADE, and Kosovo
+-- accumulates World Bank values, so clear dependents before removing the regions.
+delete from statistic_value where region_id in (select id from region where code in ('twn', 'xkx'));
+delete from source_choice   where region_id in (select id from region where code in ('twn', 'xkx'));
 delete from country where iso3 in ('TWN', 'XKX');
 delete from region  where code in ('twn', 'xkx');
