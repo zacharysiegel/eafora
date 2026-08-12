@@ -15,7 +15,6 @@ pub struct FrameState {
     pub active_period_start: NaiveDate,
     pub selected_region: Option<RegionCode>,
     pub hovered_region: Option<RegionCode>,
-    /// When false, a hovered region keeps its outline but does not lift; the web "regions expand on
-    /// hover" setting drives this. Touch platforms never hover, so it has no effect there.
+    /// When false, a hovered region keeps its outline but does not lift.
     pub hover_lift_enabled: bool,
 }
