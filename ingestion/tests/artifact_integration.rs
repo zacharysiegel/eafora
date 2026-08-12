@@ -22,6 +22,7 @@ use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, w
 use shared::artifact::geometry;
 use shared::artifact::manifest;
 use shared::filesystem::FileReference;
+use shared::map::projection::GeoPoint;
 use ingestion::geometry::natural_earth::{self, ShapefileBytes};
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
@@ -330,9 +331,9 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
 
     let layer: geometry::GeometryLayer =
         geometry::parse_geometry_layer(fs::read(&geometry.path).unwrap()).unwrap();
-    let region_codes: Vec<String> = layer.iter_features().unwrap()
-        .into_iter()
-        .map(|country_feature| country_feature.region_code)
+    let country_features: Vec<geometry::CountryFeature> = layer.iter_features().unwrap();
+    let region_codes: Vec<&str> = country_features.iter()
+        .map(|country_feature| country_feature.region_code.as_str())
         .collect();
 
     // Aliased ISO3 (SDS->ssd, SAH->esh, PSX->pse), countries seeded outside the M49 source (Taiwan,
@@ -340,7 +341,7 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
     // where a hole appeared before.
     for expected_region_code in ["ssd", "twn", "esh", "pse", "xkx", "som", "cyp"] {
         assert!(
-            region_codes.iter().any(|region_code| region_code == expected_region_code),
+            region_codes.contains(&expected_region_code),
             "expected region_code {} in the geometry layer",
             expected_region_code,
         );
@@ -351,11 +352,28 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
     let mut seen_region_codes: BTreeSet<&str> = BTreeSet::new();
     for region_code in &region_codes {
         assert!(
-            seen_region_codes.insert(region_code.as_str()),
+            seen_region_codes.insert(region_code),
             "region_code {} emitted more than once",
             region_code,
         );
     }
+
+    // The fold is a geometry merge, not just a shared code: a point inside Somaliland now falls in
+    // Somalia and a point inside Northern Cyprus now falls in Cyprus. Natural Earth's sovereign polygons
+    // exclude these territories, so both were outside their sovereign before the merge.
+    let sovereign_contains = |region_code: &str, point: GeoPoint| -> bool {
+        country_features.iter()
+            .filter(|country_feature| country_feature.region_code == region_code)
+            .any(|country_feature| country_feature.contains(point))
+    };
+    assert!(
+        sovereign_contains("som", GeoPoint { lat: 9.56, lon: 44.065 }),
+        "Somalia must cover Somaliland (Hargeisa) after the merge",
+    );
+    assert!(
+        sovereign_contains("cyp", GeoPoint { lat: 35.34, lon: 33.32 }),
+        "Cyprus must cover Northern Cyprus (Kyrenia) after the merge",
+    );
 
     transaction.rollback().await.unwrap();
 }
