@@ -575,6 +575,17 @@ impl Driver {
         Some(self.republish())
     }
 
+    /// Toggles the hovered-region lift (the "regions expand on hover" setting). Redraws only on a change;
+    /// affects rendering alone, so it does not republish the panel or controls.
+    fn set_hover_lift_enabled(&mut self, enabled: bool) {
+        if self.frame_state.hover_lift_enabled == enabled {
+            return;
+        }
+
+        self.frame_state.hover_lift_enabled = enabled;
+        self.request_redraw();
+    }
+
     /// Re-resolves the retained selection against the current frame state and bundles it with fresh
     /// controls, so a statistic or period change refreshes both the detail panel and the controls.
     fn republish(&mut self) -> RepublishedViews {
@@ -708,6 +719,7 @@ fn initial_frame_state(bundle: &Bundle) -> FrameState {
         active_period_start,
         selected_region: None,
         hovered_region: None,
+        hover_lift_enabled: crate::map::settings::regions_expand_on_hover(),
     }
 }
 
@@ -1007,6 +1019,10 @@ pub fn apply_statistic(statistic: StatisticKind) {
 
 pub fn apply_period(period_start: NaiveDate) {
     publish_mutation(|driver| driver.scrub_to_period(period_start));
+}
+
+pub fn apply_regions_expand_on_hover(enabled: bool) {
+    with_driver(|driver| driver.set_hover_lift_enabled(enabled));
 }
 
 fn install_pointer_down_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {

@@ -24,5 +24,11 @@
     },
     "source": {
         "wb_wdi": "World Bank WDI"
+    },
+    "settings": {
+        "title": "Settings",
+        "open": "Settings",
+        "close": "Close settings",
+        "regions_expand_on_hover": "Regions expand on hover"
     }
 }

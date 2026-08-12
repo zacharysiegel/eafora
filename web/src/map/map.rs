@@ -4,6 +4,7 @@ use crate::map::canvas::{LegendView, MapCanvas, SelectionView, ViewControls};
 use crate::map::controls::Controls;
 use crate::map::detail_panel::RegionDetailPanel;
 use crate::map::legend::Legend;
+use crate::map::settings::SettingsModal;
 
 #[component]
 pub fn MapView() -> impl IntoView {
@@ -22,6 +23,7 @@ pub fn MapView() -> impl IntoView {
             <RegionDetailPanel />
             <Controls />
             <Legend />
+            <SettingsModal />
         </main>
     }
 }

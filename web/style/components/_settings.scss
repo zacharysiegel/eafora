@@ -1,0 +1,137 @@
+// The bottom-right settings control: a square button replaced in place by a settings panel while open.
+.settings {
+    position: absolute;
+    bottom: var(--space-lg);
+    right: var(--space-lg);
+}
+
+.settings-button {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    border: var(--border-ink);
+    border-radius: var(--radius-input);
+    cursor: pointer;
+}
+
+.settings-button:hover {
+    color: var(--color-accent-active);
+    border-color: var(--color-accent-active);
+}
+
+.settings-button svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+// Hidden until opened; open/close is instant (the zoom-to-country camera is the only v1 animation).
+// Positioned above the scrim so clicks on the panel reach its controls; the scrim only catches clicks
+// outside it.
+.settings-modal {
+    display: none;
+    position: relative;
+    z-index: 1;
+    width: 18rem;
+}
+
+.settings.is-open .settings-button {
+    display: none;
+}
+
+.settings.is-open .settings-modal {
+    display: block;
+}
+
+.settings-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.settings-modal-title {
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.settings-close {
+    width: 1.5rem;
+    height: 1.5rem;
+    display: grid;
+    // Right-align the glyph (not centered) so its right edge matches the checkbox's, one panel margin in.
+    place-items: center end;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--color-ink);
+    cursor: pointer;
+}
+
+.settings-close:hover {
+    color: var(--color-accent-active);
+}
+
+.settings-close svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+}
+
+.settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+}
+
+.settings-row-label {
+    font-size: var(--type-size-body);
+}
+
+// Square checkbox with a red-ink check when on.
+.settings-check {
+    flex: none;
+    width: 1.125rem;
+    height: 1.125rem;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    background: var(--color-paper);
+    border: var(--border-ink);
+    border-radius: var(--radius-default);
+    cursor: pointer;
+}
+
+.settings-check svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    visibility: hidden;
+    color: var(--color-accent-active);
+}
+
+.settings-check[aria-checked="true"] {
+    border-color: var(--color-accent-active);
+}
+
+.settings-check[aria-checked="true"] svg {
+    visibility: visible;
+}
+
+// An invisible full-screen catcher so a click outside the panel closes it; no dimming, per the flat identity.
+.settings-scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+}
+
+.settings.is-open .settings-scrim {
+    display: block;
+}
