@@ -336,10 +336,10 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
         .map(|country_feature| country_feature.region_code.as_str())
         .collect();
 
-    // Aliased ISO3 (SDS->ssd, SAH->esh, PSX->pse), countries seeded outside the M49 source (Taiwan,
-    // Kosovo), and the sovereigns the unrecognized territories fold into (Somalia, Cyprus) all render
-    // where a hole appeared before.
-    for expected_region_code in ["ssd", "twn", "esh", "pse", "xkx", "som", "cyp"] {
+    // Aliased ISO3 (SDS->ssd, SAH->esh, PSX->pse) and countries seeded outside the M49 source (Taiwan,
+    // Kosovo) render where a hole appeared before. Somalia and Cyprus already rendered pre-fix, so their
+    // presence proves nothing; the containment checks below guard the fold instead.
+    for expected_region_code in ["ssd", "twn", "esh", "pse", "xkx"] {
         assert!(
             region_codes.contains(&expected_region_code),
             "expected region_code {} in the geometry layer",

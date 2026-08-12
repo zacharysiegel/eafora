@@ -158,9 +158,9 @@ fn read_character_field(record: &shapefile::dbase::Record, field_name: &str) -> 
     }
 }
 
-/// The constituent polygons of a feature's geometry, flattening a `MultiPolygon` and wrapping a lone
-/// `Polygon`, so features grouped under one canonical ISO3 can be concatenated into a single
-/// `MultiPolygon`. Admin-0 features are always polygonal; any other geometry contributes nothing.
+/// The constituent polygons of a feature's geometry, so features grouped under one canonical ISO3 can
+/// be concatenated into a single `MultiPolygon`. Admin-0 features are always polygonal; any other
+/// geometry contributes nothing.
 fn polygons_of(geometry: geo_types::Geometry<f64>) -> Vec<geo_types::Polygon<f64>> {
     match geometry {
         geo_types::Geometry::Polygon(polygon) => vec![polygon],
