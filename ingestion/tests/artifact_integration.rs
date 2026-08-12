@@ -5,6 +5,7 @@
 
 mod helpers;
 
+use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -305,6 +306,56 @@ async fn write_flatgeobuf_from_bundled_natural_earth_sample() {
             .expect("offline geometry shard emitted");
 
     assert_geometry_fgb_well_formed(&geometry.path);
+
+    transaction.rollback().await.unwrap();
+}
+
+/// Natural Earth's `ADM0_A3` codes for South Sudan, Western Sahara, and Palestine diverge from ISO
+/// 3166-1 alpha-3, Taiwan and Kosovo are seeded outside the M49 source, and Somaliland and Northern
+/// Cyprus are folded into their recognized sovereign. Each previously-dropped country must render, and
+/// grouping by canonical ISO3 must emit one feature per country.
+#[tokio::test]
+async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
+    let pool: PgPool = test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let zip_bytes: Vec<u8> = fs::read(BUNDLED_NATURAL_EARTH_ZIP).unwrap();
+    let shapefile_bytes: ShapefileBytes = natural_earth::extract_shapefile_from_zip(&zip_bytes).unwrap();
+
+    let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let geometry: FileReference =
+        write_flatgeobuf_from_shapefile(&mut *transaction, &shapefile_bytes, temp_dir.path())
+            .await
+            .expect("offline geometry shard emitted");
+
+    let layer: geometry::GeometryLayer =
+        geometry::parse_geometry_layer(fs::read(&geometry.path).unwrap()).unwrap();
+    let region_codes: Vec<String> = layer.iter_features().unwrap()
+        .into_iter()
+        .map(|country_feature| country_feature.region_code)
+        .collect();
+
+    // Aliased ISO3 (SDS->ssd, SAH->esh, PSX->pse), countries seeded outside the M49 source (Taiwan,
+    // Kosovo), and the sovereigns the unrecognized territories fold into (Somalia, Cyprus) all render
+    // where a hole appeared before.
+    for expected_region_code in ["ssd", "twn", "esh", "pse", "xkx", "som", "cyp"] {
+        assert!(
+            region_codes.iter().any(|region_code| region_code == expected_region_code),
+            "expected region_code {} in the geometry layer",
+            expected_region_code,
+        );
+    }
+
+    // Grouping by canonical ISO3 emits one feature per country, so Somaliland and Northern Cyprus do not
+    // produce a second feature sharing their sovereign's region_code.
+    let mut seen_region_codes: BTreeSet<&str> = BTreeSet::new();
+    for region_code in &region_codes {
+        assert!(
+            seen_region_codes.insert(region_code.as_str()),
+            "region_code {} emitted more than once",
+            region_code,
+        );
+    }
 
     transaction.rollback().await.unwrap();
 }

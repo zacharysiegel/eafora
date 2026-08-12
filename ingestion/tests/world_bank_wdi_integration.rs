@@ -53,7 +53,7 @@ async fn normalize_unknown_country_warns_and_skips() {
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
     let parsed: Vec<ParsedWdiStatisticValue> = vec![ParsedWdiStatisticValue {
-        iso3: "XKX".to_string(),
+        iso3: "ZZZ".to_string(),
         year: 2024,
         value: Some(1.5),
     }];
@@ -66,7 +66,7 @@ async fn normalize_unknown_country_warns_and_skips() {
     assert!(normalized.is_empty());
     assert_eq!(warnings.len(), 1);
     assert_eq!(warnings[0].kind, IngestWarningKind::UnknownCountry);
-    assert!(warnings[0].message.contains("XKX"));
+    assert!(warnings[0].message.contains("ZZZ"));
 
     transaction.rollback().await.unwrap();
 }
