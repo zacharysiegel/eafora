@@ -72,79 +72,83 @@ pub fn SettingsModal() -> impl IntoView {
     }
 }
 
-// The web's settings and their persistence. `SettingsStore` is string-medium (localStorage), so it
-// base64-encodes each value's bytes; both live only in the hydrate build, with ssr fallbacks below so the
-// component still renders server-side.
+// The persistence layer splits by build: `hydrate` (the client) has a DOM and a real localStorage-backed
+// store; `ssr` (the server) has neither, so it returns the component's defaults. Each build re-exports its
+// own pair of accessors.
 #[cfg(feature = "hydrate")]
-use base64::Engine;
+pub use hydrate::regions_expand_on_hover;
 #[cfg(feature = "hydrate")]
-use shared::settings::{Setting, SettingKey, SettingValue, SettingsStore};
-
-/// The web client's settings keys. Platform-specific: a touch platform, which has no hover, would not
-/// define `RegionsExpandOnHover`.
-#[cfg(feature = "hydrate")]
-#[derive(Clone, Copy)]
-enum WebSettingKey {
-    RegionsExpandOnHover,
-}
+use hydrate::set_regions_expand_on_hover;
+#[cfg(not(feature = "hydrate"))]
+pub use ssr::regions_expand_on_hover;
+#[cfg(not(feature = "hydrate"))]
+use ssr::set_regions_expand_on_hover;
 
 #[cfg(feature = "hydrate")]
-impl SettingKey for WebSettingKey {
-    fn storage_key(self) -> &'static str {
-        match self {
-            WebSettingKey::RegionsExpandOnHover => "regions-expand-on-hover",
+mod hydrate {
+    use base64::Engine;
+    use shared::settings::{Setting, SettingKey, SettingValue, SettingsStore};
+
+    /// The web client's settings keys. Platform-specific: a touch platform, which has no hover, would not
+    /// define `RegionsExpandOnHover`.
+    #[derive(Clone, Copy)]
+    enum WebSettingKey {
+        RegionsExpandOnHover,
+    }
+
+    impl SettingKey for WebSettingKey {
+        fn storage_key(self) -> &'static str {
+            match self {
+                WebSettingKey::RegionsExpandOnHover => "regions-expand-on-hover",
+            }
         }
     }
-}
 
-#[cfg(feature = "hydrate")]
-const REGIONS_EXPAND_ON_HOVER: Setting<WebSettingKey, bool> =
-    Setting::new(WebSettingKey::RegionsExpandOnHover, true);
+    const REGIONS_EXPAND_ON_HOVER: Setting<WebSettingKey, bool> =
+        Setting::new(WebSettingKey::RegionsExpandOnHover, true);
 
-#[cfg(feature = "hydrate")]
-struct LocalStorageStore;
+    // localStorage holds strings, so each value's bytes are base64-encoded.
+    struct LocalStorageStore;
 
-#[cfg(feature = "hydrate")]
-impl SettingsStore for LocalStorageStore {
-    fn load<K: SettingKey>(&self, key: K) -> Option<SettingValue> {
-        let storage: web_sys::Storage = local_storage()?;
-        let encoded: String = storage.get_item(key.storage_key()).ok().flatten()?;
-        let bytes: Vec<u8> = base64::engine::general_purpose::STANDARD.decode(encoded).ok()?;
+    impl SettingsStore for LocalStorageStore {
+        fn load<K: SettingKey>(&self, key: K) -> Option<SettingValue> {
+            let storage: web_sys::Storage = local_storage()?;
+            let encoded: String = storage.get_item(key.storage_key()).ok().flatten()?;
+            let bytes: Vec<u8> = base64::engine::general_purpose::STANDARD.decode(encoded).ok()?;
 
-        SettingValue::from_bytes(&bytes)
+            SettingValue::from_bytes(&bytes)
+        }
+
+        fn store<K: SettingKey>(&self, key: K, value: SettingValue) {
+            let Some(storage) = local_storage()
+            else {
+                return;
+            };
+            let encoded: String = base64::engine::general_purpose::STANDARD.encode(value.to_bytes());
+
+            let _ = storage.set_item(key.storage_key(), &encoded);
+        }
     }
 
-    fn store<K: SettingKey>(&self, key: K, value: SettingValue) {
-        let Some(storage) = local_storage()
-        else {
-            return;
-        };
-        let encoded: String = base64::engine::general_purpose::STANDARD.encode(value.to_bytes());
+    fn local_storage() -> Option<web_sys::Storage> {
+        web_sys::window()?.local_storage().ok().flatten()
+    }
 
-        let _ = storage.set_item(key.storage_key(), &encoded);
+    pub fn regions_expand_on_hover() -> bool {
+        REGIONS_EXPAND_ON_HOVER.read(&LocalStorageStore)
+    }
+
+    pub fn set_regions_expand_on_hover(enabled: bool) {
+        REGIONS_EXPAND_ON_HOVER.write(&LocalStorageStore, enabled);
+        crate::map::canvas::driver::apply_regions_expand_on_hover(enabled);
     }
 }
 
-#[cfg(feature = "hydrate")]
-fn local_storage() -> Option<web_sys::Storage> {
-    web_sys::window()?.local_storage().ok().flatten()
-}
+#[cfg(not(feature = "hydrate"))]
+mod ssr {
+    pub fn regions_expand_on_hover() -> bool {
+        true
+    }
 
-#[cfg(feature = "hydrate")]
-pub fn regions_expand_on_hover() -> bool {
-    REGIONS_EXPAND_ON_HOVER.read(&LocalStorageStore)
+    pub fn set_regions_expand_on_hover(_enabled: bool) {}
 }
-
-#[cfg(not(feature = "hydrate"))] // no localStorage server-side; the client-only default
-pub fn regions_expand_on_hover() -> bool {
-    true
-}
-
-#[cfg(feature = "hydrate")]
-fn set_regions_expand_on_hover(enabled: bool) {
-    REGIONS_EXPAND_ON_HOVER.write(&LocalStorageStore, enabled);
-    crate::map::canvas::driver::apply_regions_expand_on_hover(enabled);
-}
-
-#[cfg(not(feature = "hydrate"))] // no driver or localStorage server-side
-fn set_regions_expand_on_hover(_enabled: bool) {}
