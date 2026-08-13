@@ -18,7 +18,7 @@ pub const TABLE_SHARD_KEY: &str = "shard_key";
 
 pub const INDEX_STATISTIC_VALUE_BY_REGION: &str = "statistic_value_by_region";
 
-pub const COL_REGION_ISO3: &str = "region_iso3";
+pub const COL_REGION_CODE: &str = "region_code";
 pub const COL_REGION_ID: &str = "region_id";
 pub const COL_PERIOD_START: &str = "period_start";
 pub const COL_PERIOD_END: &str = "period_end";
@@ -45,7 +45,7 @@ pub fn shard_schema_ddl() -> &'static str {
 );
 
 create table {TABLE_STATISTIC_VALUE} (
-    {COL_REGION_ISO3} text not null,
+    {COL_REGION_CODE} text not null,
     {COL_REGION_ID} blob not null,
     {COL_PERIOD_START} text not null,
     {COL_PERIOD_END} text not null,
@@ -53,7 +53,7 @@ create table {TABLE_STATISTIC_VALUE} (
     {COL_DATA_STATUS} text not null,
     {COL_DATA_SOURCE_CODE} text not null,
     {COL_DATA_SOURCE_REVISION} text not null,
-    primary key ({COL_REGION_ISO3}, {COL_PERIOD_START}, {COL_PERIOD_END})
+    primary key ({COL_REGION_CODE}, {COL_PERIOD_START}, {COL_PERIOD_END})
 );
 create index {INDEX_STATISTIC_VALUE_BY_REGION} on {TABLE_STATISTIC_VALUE} ({COL_REGION_ID});
 "
@@ -120,14 +120,14 @@ mod tests {
             .unwrap();
         assert_eq!(index_count, 1);
 
-        let region_iso3_count: i64 = connection
+        let region_code_count: i64 = connection
             .query_row(
-                formatcp!("select count(*) from pragma_table_info('{TABLE_STATISTIC_VALUE}') where name = '{COL_REGION_ISO3}'"),
+                formatcp!("select count(*) from pragma_table_info('{TABLE_STATISTIC_VALUE}') where name = '{COL_REGION_CODE}'"),
                 [],
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(region_iso3_count, 1);
+        assert_eq!(region_code_count, 1);
     }
 
     #[test]
