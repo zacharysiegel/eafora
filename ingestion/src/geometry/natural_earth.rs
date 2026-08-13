@@ -22,7 +22,7 @@ const ADM0_A3_TO_CANONICAL_ISO3: &[(&str, &str)] = &[
     ("SAH", "ESH"), // Western Sahara
     ("PSX", "PSE"), // Palestine
     ("ALD", "ALA"), // Åland Islands
-    ("KOS", "XKX"), // Kosovo, keyed on the World Bank's user-assigned code
+    ("KOS", "XKX"), // Kosovo has no ISO 3166-1 code; XKX is the code the World Bank uses, matched so its data joins
     ("SOL", "SOM"), // Somaliland, folded into Somalia
     ("CYN", "CYP"), // Northern Cyprus, folded into Cyprus
 ];

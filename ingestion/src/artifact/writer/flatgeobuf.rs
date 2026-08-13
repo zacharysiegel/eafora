@@ -176,9 +176,8 @@ fn read_character_field(record: &shapefile::dbase::Record, field_name: &str) -> 
     }
 }
 
-/// The constituent polygons of a feature's geometry, so features grouped under one canonical ISO3 can
-/// be concatenated into a single `MultiPolygon`. Region features are polygonal; any other geometry
-/// contributes nothing.
+/// The polygons that make up a feature's geometry; non-polygonal geometry (which a region feature never
+/// is) yields none.
 fn polygons_of(geometry: geo_types::Geometry<f64>) -> Vec<geo_types::Polygon<f64>> {
     match geometry {
         geo_types::Geometry::Polygon(polygon) => vec![polygon],
@@ -187,8 +186,8 @@ fn polygons_of(geometry: geo_types::Geometry<f64>) -> Vec<geo_types::Polygon<f64
     }
 }
 
-/// Unions a region's polygons into one outline, merging the shared border where a folded territory
-/// abuts its sovereign. Expects a non-empty slice (a grouped region always has at least one polygon).
+/// Unions the polygons into a single `MultiPolygon`, so adjacent ones merge into one outline. Expects a
+/// non-empty slice.
 fn union_polygons(polygons: &[geo_types::Polygon<f64>]) -> geo_types::MultiPolygon<f64> {
     polygons.iter()
         .skip(1)
