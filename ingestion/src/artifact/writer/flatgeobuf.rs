@@ -40,9 +40,8 @@ use crate::http;
 
 const ADM0_A3_FIELD: &str = "ADM0_A3";
 pub const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
-const COLUMN_ISO3: Column = Column { index: 0, name: geometry::FEATURE_COLUMN_ISO3 };
-const COLUMN_NAME_EN: Column = Column { index: 1, name: geometry::FEATURE_COLUMN_NAME_EN };
-const COLUMN_REGION_CODE: Column = Column { index: 2, name: geometry::FEATURE_COLUMN_REGION_CODE };
+const COLUMN_NAME_EN: Column = Column { index: 0, name: geometry::FEATURE_COLUMN_NAME_EN };
+const COLUMN_REGION_CODE: Column = Column { index: 1, name: geometry::FEATURE_COLUMN_REGION_CODE };
 
 struct Column {
     index: usize,
@@ -77,7 +76,6 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     let path: PathBuf = build_tmp_geometry_path(artifact_dir)?;
 
     let mut writer: FgbWriter<'_> = FgbWriter::create(geometry::GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon)?;
-    writer.add_column(COLUMN_ISO3.name, ColumnType::String, |_fbb, _col| {});
     writer.add_column(COLUMN_NAME_EN.name, ColumnType::String, |_fbb, _col| {});
     writer.add_column(COLUMN_REGION_CODE.name, ColumnType::String, |_fbb, _col| {});
 
@@ -124,7 +122,6 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
         };
 
         writer.add_feature_geom(geo_types::Geometry::MultiPolygon(feature_polygons), |feature| {
-            feature.property(COLUMN_ISO3.index, COLUMN_ISO3.name, &ColumnValue::String(iso3)).ok();
             feature.property(COLUMN_NAME_EN.index, COLUMN_NAME_EN.name, &ColumnValue::String(&metadata.name_en)).ok();
             feature.property(COLUMN_REGION_CODE.index, COLUMN_REGION_CODE.name, &ColumnValue::String(&metadata.region_code)).ok();
         })?;

@@ -185,7 +185,7 @@ mod tests {
 
         let features = bundle.geometry.iter_features().unwrap();
         assert_eq!(features.len(), 1);
-        assert_eq!(features[0].iso3, "TST");
+        assert_eq!(features[0].region_code, "testland");
     }
 
     #[tokio::test]

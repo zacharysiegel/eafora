@@ -19,9 +19,6 @@ pub const GEOMETRY_LAYER_NAME: &str = formatcp!("world_{}_admin_0", GEOMETRY_SCA
 /// Filename stem the producer uses; final filename is `{stem}-{sha8}.fgb`.
 pub const GEOMETRY_FILENAME_STEM: &str = formatcp!("world-{}", GEOMETRY_SCALE);
 
-/// FlatGeobuf feature column carrying the country's ISO 3166 alpha-3 code.
-pub const FEATURE_COLUMN_ISO3: &str = "iso3";
-
 /// FlatGeobuf feature column carrying the country's English name.
 pub const FEATURE_COLUMN_NAME_EN: &str = "name_en";
 
@@ -152,7 +149,6 @@ impl BoundingBox {
 
 #[derive(Debug, Clone)]
 pub struct CountryFeature {
-    pub iso3: String,
     pub name_en: String,
     pub region_code: String,
     pub polygons: Vec<Polygon>,
@@ -163,7 +159,6 @@ impl<'a> TryFrom<&'a FgbFeature> for CountryFeature {
     type Error = AppError;
 
     fn try_from(fgb_feature: &'a FgbFeature) -> Result<Self, AppError> {
-        let iso3: String = fgb_feature.property(FEATURE_COLUMN_ISO3)?;
         let name_en: String = fgb_feature.property(FEATURE_COLUMN_NAME_EN)?;
         let region_code: String = fgb_feature.property(FEATURE_COLUMN_REGION_CODE)?;
 
@@ -173,7 +168,7 @@ impl<'a> TryFrom<&'a FgbFeature> for CountryFeature {
         let bbox: BoundingBox = BoundingBox::from_polygons(&polygons)
             .ok_or_else(|| AppError::from("geometry feature has no coordinates".to_string()))?;
 
-        Ok(CountryFeature { iso3, name_en, region_code, polygons, bbox })
+        Ok(CountryFeature { name_en, region_code, polygons, bbox })
     }
 }
 
@@ -252,7 +247,7 @@ fn polygons_from_geometry(geometry: geo_types::Geometry<f64>) -> Result<Vec<Poly
 pub(crate) mod tests {
     use super::*;
 
-    /// One feature: a rectangle over lon 0..2, lat 0..3, iso3 "TST" / name_en "Testland" / region_code "testland".
+    /// One feature: a rectangle over lon 0..2, lat 0..3, name_en "Testland" / region_code "testland".
     pub(crate) fn one_feature_fgb_bytes() -> Vec<u8> {
         include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/one-feature.fgb")).to_vec()
     }
@@ -267,7 +262,6 @@ pub(crate) mod tests {
         use geozero::{ColumnValue, PropertyProcessor};
 
         let mut writer: FgbWriter<'_> = FgbWriter::create(GEOMETRY_LAYER_NAME, GeometryType::MultiPolygon).unwrap();
-        writer.add_column(FEATURE_COLUMN_ISO3, ColumnType::String, |_fbb, _col| {});
         writer.add_column(FEATURE_COLUMN_NAME_EN, ColumnType::String, |_fbb, _col| {});
         writer.add_column(FEATURE_COLUMN_REGION_CODE, ColumnType::String, |_fbb, _col| {});
 
@@ -280,9 +274,8 @@ pub(crate) mod tests {
 
         writer
             .add_feature_geom(geometry, |feature| {
-                feature.property(0, FEATURE_COLUMN_ISO3, &ColumnValue::String("TST")).ok();
-                feature.property(1, FEATURE_COLUMN_NAME_EN, &ColumnValue::String("Testland")).ok();
-                feature.property(2, FEATURE_COLUMN_REGION_CODE, &ColumnValue::String("testland")).ok();
+                feature.property(0, FEATURE_COLUMN_NAME_EN, &ColumnValue::String("Testland")).ok();
+                feature.property(1, FEATURE_COLUMN_REGION_CODE, &ColumnValue::String("testland")).ok();
             })
             .unwrap();
 
@@ -302,7 +295,6 @@ pub(crate) mod tests {
 
         assert_eq!(country_features.len(), 1);
         let country_feature: &CountryFeature = &country_features[0];
-        assert_eq!(country_feature.iso3, "TST");
         assert_eq!(country_feature.name_en, "Testland");
         assert_eq!(country_feature.region_code, "testland");
         assert_eq!(country_feature.polygons.len(), 1);
@@ -318,7 +310,7 @@ pub(crate) mod tests {
             .unwrap();
 
         assert_eq!(country_feature_hits.len(), 1);
-        assert_eq!(country_feature_hits[0].iso3, "TST");
+        assert_eq!(country_feature_hits[0].region_code, "testland");
     }
 
     #[test]

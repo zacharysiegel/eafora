@@ -473,7 +473,6 @@ mod tests {
 
     fn framing_feature(polygons: Vec<Polygon>) -> CountryFeature {
         CountryFeature {
-            iso3: "TST".to_string(),
             name_en: "Testland".to_string(),
             region_code: "testland".to_string(),
             polygons,
