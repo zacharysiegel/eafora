@@ -365,10 +365,10 @@ mod wasm_tests {
 
         let shard: ShardValues = read_shard(bytes).unwrap();
 
-        assert_eq!(shard.value("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.6));
-        assert_eq!(shard.value("DEU", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
+        assert_eq!(shard.value("usa", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.6));
+        assert_eq!(shard.value("deu", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
         assert_eq!(shard.value_range(), Some((1.5, 1.7)));
-        assert_eq!(shard.value("XKX", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), None);
-        assert_eq!(shard.cell("USA", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap().source_code, "wb_wdi");
+        assert_eq!(shard.value("xkx", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), None);
+        assert_eq!(shard.cell("usa", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap().source_code, "wb_wdi");
     }
 }
