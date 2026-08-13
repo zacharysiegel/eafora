@@ -59,7 +59,7 @@ pub trait SettingsStore {
 
 /// A typed setting: its key and default, bundled so both live in exactly one place. Reading and
 /// writing go through here, the only path; there is no public raw byte or string accessor.
-pub struct Setting<K: SettingKey, T> {
+pub struct Setting<K, T> {
     key: K,
     default: T,
 }
