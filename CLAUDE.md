@@ -57,6 +57,10 @@ the index. Read the relevant doc before writing code in that area:
 
 - `docs/conventions/types.md` — Rust type naming (Model + Entity/Projection/Serial pairs,
   enum `Kind` suffix, `TryFrom<&str>` parsing, db.rs variable naming).
+- `docs/conventions/logging.md` — log message format (`<message>; [key=value ...]`).
+- `docs/conventions/shading.md` — WGSL matrix naming (`<source_space>_to_<destination_space>`).
+- `docs/conventions/conditional-compilation.md` — gate target/feature-specific code in one
+  `#[cfg]`-ed submodule (not per item), with a one-line WHY on each gate.
 
 These take precedence over Singularity's conventions where they diverge (per
 the doc's "Where Eafora diverges" notes). The constitution (`.specify/memory/constitution.md`)

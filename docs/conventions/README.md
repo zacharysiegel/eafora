@@ -9,6 +9,7 @@ These docs are the source of truth. Per-feature plan.md / tasks.md should refere
 - [`types.md`](types.md) — Type naming (Model + Entity/Projection/Serial pairs, `Kind` enum suffix, `TryFrom<&str>` parsing, conversion impl placement, db.rs variable-naming guidance).
 - [`logging.md`](logging.md) — Log message format: `<message>; [key=value ...]` for messages with structured data; prose-only messages stand alone.
 - [`shading.md`](shading.md) — WGSL/shader naming: transform matrices named `<source_space>_to_<destination_space>` (`object_to_world`, `view_to_clip`), never by pipeline role alone (`model_matrix`) or acronym (`mvp`).
+- [`conditional-compilation.md`](conditional-compilation.md) — gate a block of target/feature-specific items in one `#[cfg]`-ed submodule (`mod native`/`mod wasm`, `mod hydrate`/`mod ssr`) with the `#[cfg]` on the module and re-exports, not per item; one-line WHY on each gate.
 
 ## When to add a doc here
 
