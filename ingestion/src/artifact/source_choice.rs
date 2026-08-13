@@ -144,7 +144,7 @@ mod tests {
     fn make_candidate(data_source_kind: DataSourceKind, year: i32, value: f64) -> CandidateValue {
         CandidateValue {
             region_id: Uuid::from_u128(REGION_USA),
-            region_iso3: "USA".to_string(),
+            region_code: "usa".to_string(),
             statistic_kind: StatisticKind::Tfr,
             period: period_year(year),
             value,

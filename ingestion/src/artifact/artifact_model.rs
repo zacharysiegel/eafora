@@ -20,7 +20,7 @@ use crate::error::AppError;
 #[derive(Debug, Clone)]
 pub struct CandidateValue {
     pub region_id: Uuid,
-    pub region_iso3: String,
+    pub region_code: String,
     pub statistic_kind: StatisticKind,
     pub period: NaiveDatePeriod,
     pub value: f64,
@@ -33,7 +33,7 @@ pub struct CandidateValue {
 #[derive(Debug, Clone)]
 pub struct CandidateValueProjection {
     pub region_id: Uuid,
-    pub region_iso3: String,
+    pub region_code: String,
     pub statistic_code: String,
     pub period_start: NaiveDate,
     pub period_end: NaiveDate,
@@ -50,7 +50,7 @@ impl TryFrom<CandidateValueProjection> for CandidateValue {
     fn try_from(projection: CandidateValueProjection) -> Result<Self, Self::Error> {
         Ok(CandidateValue {
             region_id: projection.region_id,
-            region_iso3: projection.region_iso3,
+            region_code: projection.region_code,
             statistic_kind: StatisticKind::try_from(projection.statistic_code.as_str())?,
             period: NaiveDatePeriod {
                 start: projection.period_start,
@@ -65,8 +65,9 @@ impl TryFrom<CandidateValueProjection> for CandidateValue {
     }
 }
 
-/// Per-country geometry attributes read from `country`/`region`: iso3 (the map key), the English
-/// name, and the `region.code` slug the country maps to.
+/// Per-country attributes read from `country`/`region` for geometry writing: the `Country.iso3` (used
+/// to match a Natural Earth `ADM0_A3` feature to its seeded country), the English name, and the
+/// `region.code` slug written as the feature's join key.
 #[derive(Debug, Clone)]
 pub struct CountryMetadataProjection {
     pub iso3: String,
@@ -80,7 +81,7 @@ pub struct CountryMetadataProjection {
 #[derive(Debug, Clone)]
 pub struct ResolvedValue {
     pub region_id: Uuid,
-    pub region_iso3: String,
+    pub region_code: String,
     pub statistic_kind: StatisticKind,
     pub period: NaiveDatePeriod,
     pub value: f64,
@@ -94,7 +95,7 @@ impl ResolvedValue {
     pub fn from_candidate(candidate: &CandidateValue, license_shard_class: LicenseShardClass) -> Self {
         ResolvedValue {
             region_id: candidate.region_id,
-            region_iso3: candidate.region_iso3.clone(),
+            region_code: candidate.region_code.clone(),
             statistic_kind: candidate.statistic_kind,
             period: candidate.period,
             value: candidate.value,
