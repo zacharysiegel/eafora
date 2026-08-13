@@ -18,7 +18,6 @@ const NORMAL_EPSILON: f64 = 1e-12;
 /// thread can build it, or the producer can bake it into the artifact, without involving the renderer.
 #[derive(Debug, Clone)]
 pub struct CountryMesh {
-    pub iso3: String,
     pub region_code: String,
     pub vertices: Vec<ProjectedVertexAttributes>,
     /// One per item in `vertices`: the unit direction to push that vertex to inflate the country outward
@@ -31,7 +30,6 @@ pub struct CountryMesh {
 impl CountryMesh {
     fn from_feature(feature: &CountryFeature) -> Result<CountryMesh, AppError> {
         let mut mesh: CountryMesh = CountryMesh {
-            iso3: feature.iso3.clone(),
             region_code: feature.region_code.clone(),
             vertices: Vec::new(),
             outward_directions: Vec::new(),
@@ -305,7 +303,6 @@ mod tests {
     fn from_feature_projects_the_corners_in_ring_order() {
         let mesh: CountryMesh = testland_mesh();
 
-        assert_eq!(mesh.iso3, "TST");
         assert_eq!(mesh.region_code, "testland");
         assert_eq!(mesh.vertices.len(), TESTLAND_CORNERS.len());
 

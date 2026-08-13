@@ -80,7 +80,6 @@ struct CountedBuffer {
 }
 
 struct CountrySpan {
-    iso3: String,
     region_code: String,
     vertex_start: u32,
     vertex_count: u32,
@@ -451,7 +450,7 @@ impl Renderer {
         let transform: StatisticColorTransform = color::transform_for(frame_state.active_statistic);
 
         for span in &self.country_geometry.spans {
-            let value: Option<f64> = shard_values.value(&span.iso3, frame_state.active_period_start);
+            let value: Option<f64> = shard_values.value(&span.region_code, frame_state.active_period_start);
             let fill: Rgba = match value {
                 Some(value) => color::CHOROPLETH_SCALE.sample(transform.position(value, statistic_min, statistic_max)),
                 None => color::CHOROPLETH_SCALE.no_data(),
@@ -531,7 +530,6 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         fill_indices.extend(country_mesh.fill_indices.iter().map(|&index| vertex_start + index));
         boundary_indices.extend(country_mesh.boundary_indices.iter().map(|&index| vertex_start + index));
         spans.push(CountrySpan {
-            iso3: country_mesh.iso3.clone(),
             region_code: country_mesh.region_code.clone(),
             vertex_start,
             vertex_count: country_mesh.vertices.len() as u32,
