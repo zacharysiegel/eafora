@@ -31,6 +31,7 @@ base64 = { workspace = true }
 const_format = { workspace = true }
 geozero = { workspace = true }
 geo-types = { workspace = true }
+geo = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

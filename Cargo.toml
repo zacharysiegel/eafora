@@ -33,6 +33,7 @@ base64 = "0.22.*"
 const_format = "0.2.*"
 geozero = { version = "0.14.*", default-features = false, features = ["with-geo"] }
 geo-types = "0.7.*"
+geo = "0.29.*"
 tempfile = "3.27.*"
 wasm-bindgen-test = "0.3.*"
 web-sys = "0.3.*"

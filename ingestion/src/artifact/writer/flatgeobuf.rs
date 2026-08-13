@@ -22,6 +22,7 @@ use std::io::{BufWriter, Cursor};
 use std::path::{Path, PathBuf};
 
 use flatgeobuf::{ColumnType, FgbWriter, GeometryType};
+use geo::BooleanOps;
 use geozero::{ColumnValue, PropertyProcessor};
 use shapefile::dbase::FieldValue;
 use shapefile::{Reader, ShapeReader};
@@ -46,6 +47,13 @@ const COLUMN_REGION_CODE: Column = Column { index: 2, name: geometry::FEATURE_CO
 struct Column {
     index: usize,
     name: &'static str,
+}
+
+/// Geometry accumulated for one canonical country while grouping source features.
+struct GroupedGeometry {
+    polygons: Vec<geo_types::Polygon<f64>>,
+    /// Greater than one when several adjacent source features are folded into this one country.
+    source_feature_count: usize,
 }
 
 type ShapefileReader<'a> = Reader<Cursor<&'a [u8]>, Cursor<&'a [u8]>>;
@@ -79,7 +87,7 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     // two unrecognized territories Natural Earth ships as their own features (Somaliland, Northern
     // Cyprus) alias to their sovereign's ISO3, so they must merge into that country's feature rather than
     // producing a second feature sharing its region_code.
-    let mut polygons_by_iso3: BTreeMap<String, Vec<geo_types::Polygon<f64>>> = BTreeMap::new();
+    let mut geometry_by_iso3: BTreeMap<String, GroupedGeometry> = BTreeMap::new();
     for shape_and_record in reader.iter_shapes_and_records() {
         let (shape, record) = shape_and_record?;
 
@@ -96,16 +104,26 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
         }
 
         let geometry: geo_types::Geometry<f64> = geo_types::Geometry::try_from(shape)?;
-        polygons_by_iso3.entry(iso3).or_default().extend(polygons_of(geometry));
+        let grouped: &mut GroupedGeometry = geometry_by_iso3.entry(iso3)
+            .or_insert_with(|| GroupedGeometry { polygons: Vec::new(), source_feature_count: 0 });
+        grouped.polygons.extend(polygons_of(geometry));
+        grouped.source_feature_count += 1;
     }
 
-    for (iso3, polygons) in &polygons_by_iso3 {
+    for (iso3, grouped) in &geometry_by_iso3 {
         let metadata: &CountryMetadataProjection = iso3_to_metadata.get(iso3)
             .expect("iso3 was validated present when grouping");
-        let feature_geometry: geo_types::Geometry<f64> =
-            geo_types::Geometry::MultiPolygon(geo_types::MultiPolygon(polygons.clone()));
 
-        writer.add_feature_geom(feature_geometry, |feature| {
+        // A folded territory contributes a second, adjacent source feature; union the polygons so the
+        // region renders as one outline instead of two sharing an internal border. Single-source regions
+        // are emitted unchanged.
+        let feature_polygons: geo_types::MultiPolygon<f64> = if grouped.source_feature_count > 1 {
+            union_polygons(&grouped.polygons)
+        } else {
+            geo_types::MultiPolygon(grouped.polygons.clone())
+        };
+
+        writer.add_feature_geom(geo_types::Geometry::MultiPolygon(feature_polygons), |feature| {
             feature.property(COLUMN_ISO3.index, COLUMN_ISO3.name, &ColumnValue::String(iso3)).ok();
             feature.property(COLUMN_NAME_EN.index, COLUMN_NAME_EN.name, &ColumnValue::String(&metadata.name_en)).ok();
             feature.property(COLUMN_REGION_CODE.index, COLUMN_REGION_CODE.name, &ColumnValue::String(&metadata.region_code)).ok();
@@ -159,12 +177,23 @@ fn read_character_field(record: &shapefile::dbase::Record, field_name: &str) -> 
 }
 
 /// The constituent polygons of a feature's geometry, so features grouped under one canonical ISO3 can
-/// be concatenated into a single `MultiPolygon`. Admin-0 features are always polygonal; any other
-/// geometry contributes nothing.
+/// be concatenated into a single `MultiPolygon`. Region features are polygonal; any other geometry
+/// contributes nothing.
 fn polygons_of(geometry: geo_types::Geometry<f64>) -> Vec<geo_types::Polygon<f64>> {
     match geometry {
         geo_types::Geometry::Polygon(polygon) => vec![polygon],
         geo_types::Geometry::MultiPolygon(multi_polygon) => multi_polygon.0,
         _ => Vec::new(),
     }
+}
+
+/// Unions a region's polygons into one outline, merging the shared border where a folded territory
+/// abuts its sovereign. Expects a non-empty slice (a grouped region always has at least one polygon).
+fn union_polygons(polygons: &[geo_types::Polygon<f64>]) -> geo_types::MultiPolygon<f64> {
+    polygons.iter()
+        .skip(1)
+        .fold(
+            geo_types::MultiPolygon(vec![polygons[0].clone()]),
+            |accumulated, polygon| accumulated.union(polygon),
+        )
 }

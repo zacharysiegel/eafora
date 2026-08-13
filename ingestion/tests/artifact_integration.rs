@@ -375,6 +375,17 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
         "Cyprus must cover Northern Cyprus (Kyrenia) after the merge",
     );
 
+    // The fold dissolves the shared border rather than concatenating: Somalia+Somaliland (one contiguous
+    // landmass) and Cyprus+Northern Cyprus (one island) each collapse from two source polygons to one.
+    let polygon_count = |region_code: &str| -> usize {
+        country_features.iter()
+            .filter(|country_feature| country_feature.region_code == region_code)
+            .map(|country_feature| country_feature.polygons.len())
+            .sum()
+    };
+    assert_eq!(polygon_count("som"), 1, "Somalia and Somaliland must dissolve into one polygon");
+    assert_eq!(polygon_count("cyp"), 1, "Cyprus and Northern Cyprus must dissolve into one polygon");
+
     transaction.rollback().await.unwrap();
 }
 
