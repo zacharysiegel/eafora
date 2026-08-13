@@ -22,7 +22,6 @@ pub struct CountryFraming {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegionHit {
     pub region_code: RegionCode,
-    pub iso3: String,
     pub name_en: String,
     pub framing: CountryFraming,
 }
@@ -56,7 +55,6 @@ pub fn region_at_point(
 
     Some(RegionHit {
         region_code: RegionCode(hit_feature.region_code.clone()),
-        iso3: hit_feature.iso3.clone(),
         name_en: hit_feature.name_en.clone(),
         framing: country_framing(hit_feature),
     })
@@ -312,7 +310,6 @@ mod tests {
     fn assert_is_testland(result: Option<RegionHit>) {
         let hit: RegionHit = result.expect("a region under the cursor");
         assert_eq!(hit.region_code, RegionCode("testland".to_string()));
-        assert_eq!(hit.iso3, "TST");
         assert_eq!(hit.name_en, "Testland");
     }
 
