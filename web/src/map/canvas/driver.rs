@@ -20,6 +20,7 @@ use shared::sqlite::shard_db;
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
 
+use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
 use super::{RenderStatus, GlobalView, LegendView, SelectionView, ViewControls};
 
 thread_local! {
@@ -87,77 +88,6 @@ const ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN: f64 = 0.1;
 /// Canonical `region.code` of the World aggregate. World has no geometry, so it is never a hit-test result; the driver looks it up as the empty-state figure.
 const WORLD_REGION_CODE: &str = "world";
 
-/// A pointer in contact (a held mouse button or a touching finger), tracked by `pointerId` so pan and
-/// pinch can follow the right one across moves.
-#[derive(Debug, Clone, Copy)]
-struct PointerState {
-    pointer_id: i32,
-    position: SurfacePoint,
-}
-
-/// The in-progress pointer gesture. Each variant owns exactly the state its stage needs, so combinations
-/// like a press origin with no pointer down cannot arise. Only `Tap` selects on release; `Pan` and
-/// `Pinch` do not.
-#[derive(Debug, Clone, Copy)]
-enum Gesture {
-    Idle,
-    /// One pointer down, not yet past the tap threshold. `origin` is where it pressed, for that test.
-    Tap { pointer: PointerState, origin: SurfacePoint },
-    /// One pointer dragged past the threshold: panning.
-    Pan { pointer: PointerState },
-    /// Two pointers down: pinch-zoom. A third finger is ignored, not tracked.
-    Pinch { first: PointerState, second: PointerState },
-}
-
-/// Whether releasing a pointer completed a tap (so the caller selects) or ended a pan/pinch (so it does
-/// not).
-enum PointerRelease {
-    Tap,
-    NoSelect,
-}
-
-impl Gesture {
-    fn is_active(&self) -> bool {
-        !matches!(self, Gesture::Idle)
-    }
-
-    /// Transitions on a newly-pressed pointer: the first press is a tap candidate; a second turns the
-    /// gesture into a pinch; a third while pinching is ignored.
-    fn begin(&mut self, pointer_id: i32, position: SurfacePoint) {
-        let pointer: PointerState = PointerState { pointer_id, position };
-
-        *self = match *self {
-            Gesture::Idle => Gesture::Tap { pointer, origin: position },
-            Gesture::Tap { pointer: existing, .. } | Gesture::Pan { pointer: existing } => {
-                Gesture::Pinch { first: existing, second: pointer }
-            },
-            Gesture::Pinch { first, second } => Gesture::Pinch { first, second },
-        };
-    }
-
-    /// Transitions on a released or canceled pointer: a single-pointer gesture ends, a pinch collapses to
-    /// a pan of the remaining pointer (no jump, since that pointer keeps its position). Reports whether a
-    /// tap completed so the caller can decide to select; a pan or pinch reports `NoSelect`.
-    fn release(&mut self, pointer_id: i32) -> PointerRelease {
-        match *self {
-            Gesture::Tap { pointer, .. } if pointer.pointer_id == pointer_id => {
-                *self = Gesture::Idle;
-                PointerRelease::Tap
-            },
-            Gesture::Pan { pointer } if pointer.pointer_id == pointer_id => {
-                *self = Gesture::Idle;
-                PointerRelease::NoSelect
-            },
-            Gesture::Pinch { first, second } if first.pointer_id == pointer_id || second.pointer_id == pointer_id => {
-                let remaining: PointerState = if first.pointer_id == pointer_id { second } else { first };
-                *self = Gesture::Pan { pointer: remaining };
-                PointerRelease::NoSelect
-            },
-            _ => PointerRelease::NoSelect,
-        }
-    }
-}
-
 /// The result of hit-testing a pointer against the regions, compared to the previously known region.
 enum RegionChange {
     /// The pointer is over the same region as before, or still over none; nothing to update.
@@ -203,6 +133,8 @@ struct Driver {
     pointer_up_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
     pointer_cancel_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
     pointer_leave_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
+    context_menu_callback: Option<Closure<dyn FnMut(web_sys::Event)>>,
+    lost_pointer_capture_callback: Option<Closure<dyn FnMut(PointerEvent)>>,
     wheel_callback: Option<Closure<dyn FnMut(WheelEvent)>>,
 }
 
@@ -719,6 +651,8 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         pointer_up_callback: Some(install_pointer_up_listener(&canvas)),
         pointer_cancel_callback: Some(install_pointer_cancel_listener(&canvas)),
         pointer_leave_callback: Some(install_pointer_leave_listener(&canvas)),
+        context_menu_callback: Some(install_context_menu_listener(&canvas)),
+        lost_pointer_capture_callback: Some(install_lost_pointer_capture_listener(&canvas)),
         wheel_callback: Some(install_wheel_listener(&canvas)),
     };
 
@@ -930,6 +864,10 @@ fn surface_point_from_mouse_event(event: &MouseEvent) -> SurfacePoint {
 }
 
 fn handle_pointer_down(event: &PointerEvent) {
+    if !is_map_gesture_button(event.button()) {
+        return;
+    }
+
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let pointer_id: i32 = event.pointer_id();
 
@@ -957,6 +895,10 @@ fn handle_pointer_move(event: &PointerEvent) {
 }
 
 fn handle_pointer_up(event: &PointerEvent) {
+    if !is_map_gesture_button(event.button()) {
+        return;
+    }
+
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let pointer_id: i32 = event.pointer_id();
 
@@ -981,6 +923,18 @@ fn handle_pointer_cancel(event: &PointerEvent) {
 
 fn handle_pointer_leave() {
     with_driver(|driver| driver.clear_hover());
+}
+
+fn handle_context_menu(event: &web_sys::Event) {
+    event.prevent_default();
+
+    with_driver(|driver| driver.gesture.clear());
+}
+
+fn handle_lost_pointer_capture(event: &PointerEvent) {
+    let pointer_id: i32 = event.pointer_id();
+
+    with_driver(|driver| driver.cancel_pointer(pointer_id));
 }
 
 fn handle_wheel(event: &WheelEvent) {
@@ -1107,6 +1061,29 @@ fn install_pointer_leave_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnM
     let _ = canvas.add_event_listener_with_callback("pointerleave", pointer_leave_callback.as_ref().unchecked_ref());
 
     pointer_leave_callback
+}
+
+fn install_context_menu_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(web_sys::Event)> {
+    let context_menu_callback: Closure<dyn FnMut(web_sys::Event)> = Closure::new(move |event: web_sys::Event| {
+        handle_context_menu(&event);
+    });
+
+    let _ = canvas.add_event_listener_with_callback("contextmenu", context_menu_callback.as_ref().unchecked_ref());
+
+    context_menu_callback
+}
+
+fn install_lost_pointer_capture_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(PointerEvent)> {
+    let lost_pointer_capture_callback: Closure<dyn FnMut(PointerEvent)> = Closure::new(move |event: PointerEvent| {
+        handle_lost_pointer_capture(&event);
+    });
+
+    let _ = canvas.add_event_listener_with_callback(
+        "lostpointercapture",
+        lost_pointer_capture_callback.as_ref().unchecked_ref(),
+    );
+
+    lost_pointer_capture_callback
 }
 
 fn install_wheel_listener(canvas: &HtmlCanvasElement) -> Closure<dyn FnMut(WheelEvent)> {

@@ -1,5 +1,6 @@
 pub mod canvas;
-#[cfg(feature = "hydrate")]
+pub mod gesture;
+#[cfg(feature = "hydrate")] // ssr has no canvas listeners
 pub mod driver;
 
 pub use canvas::*;
