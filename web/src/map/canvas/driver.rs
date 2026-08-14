@@ -397,8 +397,8 @@ impl Driver {
         self.selection = selection_view.clone();
 
         match &selection_view {
-            Some(view) => log::info!("region selected [name={} region_code={} value={:?}]", view.name_en, view.region_code, view.value),
-            None => log::info!("region deselected"),
+            Some(view) => log::debug!("region selected [name={} region_code={} value={:?}]", view.name_en, view.region_code, view.value),
+            None => log::debug!("region deselected"),
         }
 
         Some(selection_view)
