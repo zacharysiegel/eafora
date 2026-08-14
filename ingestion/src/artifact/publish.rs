@@ -13,7 +13,7 @@ use shared::filesystem::{self, FileReference, Hashed};
 
 use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::{Artifacts, ArtifactVersion, BuildReport, StatisticShard};
-use crate::artifact::repository::ArtifactRepositoryKind;
+use crate::artifact::repository::{ArtifactRepositoryKind, LocalArtifactRepository};
 use crate::error::AppError;
 
 #[derive(Debug, Clone)]
@@ -64,6 +64,14 @@ pub async fn publish_artifacts(
     )
     .await?;
     log::info!("inserted artifact_version; [id={} version_label={}]", artifact_version.id, artifact_version.version_label);
+
+    repository.put_file(manifest::MANIFEST_LATEST_KEY, &build_report.artifacts.manifest.path, bundle::CONTENT_TYPE_MANIFEST).await?;
+    log::debug!("uploaded latest manifest; [key={}]", manifest::MANIFEST_LATEST_KEY);
+
+    if let ArtifactRepositoryKind::Local(local_repository) = repository {
+        let local_repository: &LocalArtifactRepository = local_repository;
+        local_repository.retain_newest_versions().await?;
+    }
 
     Ok(PublishReport {
         artifact_version,

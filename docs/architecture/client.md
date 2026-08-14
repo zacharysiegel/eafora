@@ -79,7 +79,6 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 > - Stand up the `core/` crate (workspace member) and move the manifest type into `core::artifact::manifest`, with `ingestion::artifact::writer::manifest` importing it. Currently the producer-side struct is local (`ingestion/src/artifact/writer/manifest.rs::ManifestSerializer`) and there is no `core/`. Sequenced before the first client implementation, since the client depends on `core/` existing.
 > - Rename the `data/` subdirectory to `statistics/` for symmetry with `geometry/` and to remove the ambiguity of "data" as a shard subtype name. Touches the `SUBDIR_DATA` constant and its references. Pre-dates the first client implementation, so no migration concern.
 > - `ingestion build` emits a `downsampled/` subtree per build (under `$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`) for the native-client embedded bundle, generated directly from the canonical store alongside the complete bundle.
-> - On every successful `ingestion publish`, copy the just-published manifest to the stable key `latest/manifest.json` on the destination (see §Discovery and live bundle resolution).
 > - Publish the discovery document at `https://eafora.org/discovery` (see §Discovery and live bundle resolution for the schema). Initially a committed static file under the web app's `static/` tree; regenerated via a small script when the contract changes.
 
 ### Discovery and live bundle resolution
@@ -160,7 +159,7 @@ Once the client has resolved `repository_base_url`, it fetches `<repository_base
 The "latest" determination is **server-side, sourced from the `artifact_version` table**:
 
 1. `ingestion publish` finishes — inserts a row in `artifact_version` (this already happens; see `ingestion/src/artifact/artifact_db.rs`).
-2. As a final publish step, the producer reads the latest row (`select * from artifact_version order by created desc limit 1`) and uploads a byte-for-byte copy of that version's `manifest.json` to the stable key `latest/manifest.json` on R2. (To be implemented as a small follow-up PR on the producer side, separate from the client-implementation work that consumes this pointer.)
+2. After that insert, `publish` writes a byte-for-byte copy of the just-published version's `manifest.json` to the stable key `latest/manifest.json` on the same destination. This is the last object uploaded; the versioned `{version}/manifest.json` is already on the destination.
 3. The stable manifest is short-cached at the CDN (`max-age=300`, matching the per-version manifest's cache policy); the per-version content-addressed shards it references are immutable and cache for a year.
 
 The DB is the source of truth for "latest"; R2 just hosts the resulting pointer. Clients never query Postgres (constitution: clients never call origin through v2). R2 listing is not used (no public listing on R2 anyway, and listing-as-discovery is fragile).
