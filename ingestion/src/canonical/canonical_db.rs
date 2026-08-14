@@ -1,9 +1,9 @@
 use sqlx::PgExecutor;
 
-use shared::canonical::canonical_model::{Country, DataSource, DataSourceKind, Statistic};
+use shared::canonical::canonical_model::{Country, DataSource, DataSourceKind, Region, Statistic};
 
 use crate::canonical::canonical_entity::{
-    CountryEntity, DataSourceEntity, SourceChoice, SourceChoiceEntity, StatisticEntity,
+    CountryEntity, DataSourceEntity, RegionEntity, SourceChoice, SourceChoiceEntity, StatisticEntity,
 };
 use crate::error::AppError;
 
@@ -23,6 +23,25 @@ pub async fn find_country_by_iso3<'e>(
     .fetch_optional(executor)
     .await?;
     Ok(country_entity.map(Country::from))
+}
+
+pub async fn find_region_by_code<'e>(
+    executor: impl PgExecutor<'e>,
+    code: &str,
+) -> Result<Option<Region>, AppError> {
+    let region_entity: Option<RegionEntity> = sqlx::query_as!(
+        RegionEntity,
+        r#"
+        select id, code, name_en, level, parent_region_id, m49_code, created, modified
+        from region
+        where code = $1
+        "#,
+        code,
+    )
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(region_entity.map(Region::from))
 }
 
 pub async fn find_statistic_by_code<'e>(

@@ -12,6 +12,7 @@ use uuid::Uuid;
 use ingestion::adapter::*;
 use shared::canonical::canonical_model::{DataSourceKind, SourceRevision};
 use ingestion::canonical::canonical_entity::StatisticValue;
+use ingestion::canonical::canonical_db;
 use ingestion::ingest;
 use ingestion::ingest::*;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;
@@ -303,4 +304,55 @@ async fn insert_publication(
     .execute(&mut **transaction)
     .await
     .expect("insert publication");
+}
+
+#[tokio::test]
+async fn find_region_by_code_resolves_seeded_world_region() {
+    let pool: PgPool = helpers::test_db::test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let region: shared::canonical::canonical_model::Region =
+        canonical_db::find_region_by_code(&mut *transaction, "world")
+            .await
+            .expect("find_region_by_code succeeds")
+            .expect("world region is seeded");
+
+    assert_eq!(region.code, "world");
+    assert_eq!(region.level, "world");
+    assert_eq!(region.m49_code.as_deref(), Some("001"));
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn normalize_maps_wld_to_world_region() {
+    let pool: PgPool = helpers::test_db::test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let world_region_id: Uuid = canonical_db::find_region_by_code(&mut *transaction, "world")
+        .await
+        .expect("find_region_by_code succeeds")
+        .expect("world region is seeded")
+        .id;
+
+    let parsed: Vec<ParsedWdiStatisticValue> = vec![ParsedWdiStatisticValue {
+        iso3: "WLD".to_string(),
+        year: 2024,
+        value: Some(2.24),
+    }];
+
+    let (normalized, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        world_bank_wdi_adapter::normalize(&mut *transaction, parsed)
+            .await
+            .expect("normalize succeeds");
+
+    assert_eq!(normalized.len(), 1);
+    assert!(warnings.is_empty());
+
+    let normalized_statistic_value: &NormalizedStatisticValue = &normalized[0];
+    assert_eq!(normalized_statistic_value.region_id, world_region_id);
+    assert_eq!(normalized_statistic_value.value, 2.24);
+    assert_eq!(normalized_statistic_value.period.start, NaiveDate::from_ymd_opt(2024, 1, 1).unwrap());
+
+    transaction.rollback().await.unwrap();
 }
