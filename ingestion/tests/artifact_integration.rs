@@ -462,3 +462,54 @@ async fn insert_statistic_value(
     .await
     .expect("insert statistic_value");
 }
+
+/// After Phase 0 keyed the shard by region.code via the region join, a supranational region with a
+/// value (the World aggregate) flows into the shard automatically, keyed 'world'. This guards that the
+/// world region is not silently dropped for lacking a country row.
+#[tokio::test]
+async fn build_artifacts_includes_world_region_when_it_has_values() {
+    let pool: PgPool = test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::WorldBankWDI).await;
+    let statistic_id: Uuid = get_statistic_id(&mut transaction, "tfr").await;
+    let world_region_id: Uuid = ingestion::canonical::canonical_db::find_region_by_code(&mut *transaction, "world")
+        .await
+        .expect("find_region_by_code succeeds")
+        .expect("world region is seeded")
+        .id;
+    let wb_published: DateTime<Utc> = "2024-12-31T00:00:00Z".parse().unwrap();
+    let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-12-12", wb_published).await;
+    insert_statistic_value(
+        &mut transaction,
+        world_region_id,
+        statistic_id,
+        data_source_id,
+        publication_id,
+        NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+        2.24,
+    ).await;
+
+    let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let options: BuildOptions = BuildOptions { test_offline: true };
+    let build: CoupledBuildReport =
+        artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-05-26-world", options)
+            .await
+            .expect("build_artifacts succeeds");
+    let build: BuildReport = build.complete;
+
+    let tfr_base_shard = &build.artifacts.shards[0];
+    let connection: Connection = Connection::open(&tfr_base_shard.file.path).unwrap();
+
+    let world_value: f64 = connection
+        .query_row(
+            "select value from statistic_value where region_code = 'world'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!((world_value - 2.24).abs() < f64::EPSILON);
+
+    transaction.rollback().await.unwrap();
+}
