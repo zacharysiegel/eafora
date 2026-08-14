@@ -68,13 +68,18 @@ pub fn MapCanvas() -> impl IntoView {
             let global: RwSignal<Option<GlobalView>> = expect_context();
             let view_controls: RwSignal<Option<ViewControls>> = expect_context();
             let legend: RwSignal<Option<LegendView>> = expect_context();
-            super::driver::start(canvas, super::driver::DriverSignals {
-                render_status,
-                selection_view: selection.write_only(),
-                global_view: global.write_only(),
-                view_controls: view_controls.write_only(),
-                legend: legend.write_only(),
-            });
+            let live_load_failed: RwSignal<bool> = expect_context();
+            super::driver::start(
+                canvas,
+                super::driver::DriverSignals {
+                    render_status,
+                    selection_view: selection.write_only(),
+                    global_view: global.write_only(),
+                    view_controls: view_controls.write_only(),
+                    legend: legend.write_only(),
+                    live_load_failed: live_load_failed.write_only(),
+                },
+            );
         }
     });
 

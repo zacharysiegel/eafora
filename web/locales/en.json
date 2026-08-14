@@ -31,5 +31,8 @@
         "open": "Settings",
         "close": "Close settings",
         "regions_expand_on_hover": "Regions expand on hover"
+    },
+    "live": {
+        "load_failed": "The latest data could not be loaded."
     }
 }

@@ -1,5 +1,6 @@
 use leptos::prelude::*;
 
+use crate::i18n::*;
 use crate::map::canvas::{GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
 use crate::map::controls::Controls;
 use crate::map::detail_panel::RegionDetailPanel;
@@ -20,6 +21,11 @@ pub fn MapView() -> impl IntoView {
     let global: RwSignal<Option<GlobalView>> = RwSignal::new(None);
     provide_context(global);
 
+    let live_load_failed: RwSignal<bool> = RwSignal::new(false);
+    provide_context(live_load_failed);
+
+    let i18n = use_i18n();
+
     view! {
         <main id="map-view">
             <MapCanvas />
@@ -27,6 +33,14 @@ pub fn MapView() -> impl IntoView {
             <Controls />
             <Legend />
             <SettingsModal />
+            {move || if live_load_failed.get() {
+                view! {
+                    <div class="map-live-banner panel" role="status">{t!(i18n, live.load_failed)}</div>
+                }
+                .into_any()
+            } else {
+                ().into_any()
+            }}
         </main>
     }
 }

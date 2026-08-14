@@ -12,6 +12,7 @@ use leptos::prelude::*;
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::{DataSourceKind, StatisticKind};
+use shared::license::DistributionContext;
 use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
@@ -19,6 +20,7 @@ use shared::sqlite::shard_db;
 
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
+use crate::live_resolve;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
 use super::{RenderStatus, GlobalView, LegendView, SelectionView, ViewControls};
@@ -579,13 +581,21 @@ pub struct DriverSignals {
     pub global_view: WriteSignal<Option<GlobalView>>,
     pub view_controls: WriteSignal<Option<ViewControls>>,
     pub legend: WriteSignal<Option<LegendView>>,
+    pub live_load_failed: WriteSignal<bool>,
 }
 
 pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
-    let DriverSignals { render_status, selection_view, global_view, view_controls, legend } = signals;
+    let DriverSignals { render_status, selection_view, global_view, view_controls, legend, live_load_failed } = signals;
 
     leptos::task::spawn_local(async move {
-        let status: RenderStatus = match set_up_driver(canvas, selection_view, global_view, view_controls, legend).await {
+        let status: RenderStatus = match set_up_driver(
+            canvas,
+            selection_view,
+            global_view,
+            view_controls,
+            legend,
+            live_load_failed,
+        ).await {
             Ok(()) => RenderStatus::Ready,
             Err(StartupError::DataUnavailable(error)) => {
                 log::error!("map data could not be loaded [error={error}]");
@@ -601,13 +611,26 @@ pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
     });
 }
 
-async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>, global_view: WriteSignal<Option<GlobalView>>, view_controls: WriteSignal<Option<ViewControls>>, legend: WriteSignal<Option<LegendView>>) -> Result<(), StartupError> {
+async fn set_up_driver(
+    canvas: HtmlCanvasElement,
+    selection_view: WriteSignal<Option<SelectionView>>,
+    global_view: WriteSignal<Option<GlobalView>>,
+    view_controls: WriteSignal<Option<ViewControls>>,
+    legend: WriteSignal<Option<LegendView>>,
+    live_load_failed: WriteSignal<bool>,
+) -> Result<(), StartupError> {
     let cache: OpfsArtifactCache = OpfsArtifactCache::create()
         .await
         .map_err(StartupError::BrowserUnsupported)?;
-    let bundle: Bundle = load::load_embedded_bundle(&cache)
-        .await
-        .map_err(StartupError::DataUnavailable)?;
+
+    let bundle: Bundle = match load::open_newest_cached_bundle(&cache).await {
+        Ok(Some(cached)) => cached,
+        Ok(None) => load::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?,
+        Err(error) => {
+            log::warn!("opening a cached bundle failed, falling back to embedded; [error={error}]");
+            load::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?
+        }
+    };
 
     if let Err(error) = cache.evict_old_versions().await {
         log::warn!("evicting old cached bundle versions failed [error={error}]");
@@ -659,6 +682,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
     let initial_controls: ViewControls = driver.view_controls();
     let initial_legend: LegendView = driver.legend_view();
     let initial_global: GlobalView = driver.resolve_global_view();
+    let live_bundle_sender: watch::Sender<Arc<Bundle>> = driver.bundle_sender.clone();
 
     DRIVER.with_borrow_mut(|driver_slot| {
         driver_slot.insert(driver).request_redraw();
@@ -668,7 +692,109 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
     legend.set(Some(initial_legend));
     global_view.set(Some(initial_global));
 
+    leptos::task::spawn_local(async move {
+        upgrade_to_live_bundle(
+            cache,
+            live_bundle_sender,
+            view_controls,
+            legend,
+            selection_view,
+            global_view,
+            live_load_failed,
+        )
+        .await;
+    });
+
     Ok(())
+}
+
+async fn upgrade_to_live_bundle(
+    cache: OpfsArtifactCache,
+    live_bundle_sender: watch::Sender<Arc<Bundle>>,
+    view_controls: WriteSignal<Option<ViewControls>>,
+    legend: WriteSignal<Option<LegendView>>,
+    selection_view: WriteSignal<Option<SelectionView>>,
+    global_view: WriteSignal<Option<GlobalView>>,
+    live_load_failed: WriteSignal<bool>,
+) {
+    let baked_base: String = match live_resolve::baked_repository_base_url() {
+        Ok(baked_base) => baked_base,
+        Err(error) => {
+            log::warn!("reading the baked repository base failed; [error={error}]");
+            live_load_failed.set(true);
+            return;
+        }
+    };
+
+    match load::load_live_after_discovery(&cache, &baked_base).await {
+        Ok(bundle) => apply_live_bundle(
+            live_bundle_sender,
+            bundle,
+            view_controls,
+            legend,
+            selection_view,
+            global_view,
+        ),
+        Err(error) => {
+            log::warn!("loading the live bundle failed; [error={error}]");
+            live_load_failed.set(true);
+        }
+    }
+}
+
+fn apply_live_bundle(
+    live_bundle_sender: watch::Sender<Arc<Bundle>>,
+    bundle: Bundle,
+    view_controls: WriteSignal<Option<ViewControls>>,
+    legend: WriteSignal<Option<LegendView>>,
+    selection_view: WriteSignal<Option<SelectionView>>,
+    global_view: WriteSignal<Option<GlobalView>>,
+) {
+    let current_bundle: Arc<Bundle> = live_bundle_sender.borrow().clone();
+    let already_showing: bool = current_bundle.manifest.version == bundle.manifest.version
+        && current_bundle.distribution_context == DistributionContext::FirstParty;
+
+    if already_showing {
+        return;
+    }
+
+    if let Err(error) = live_bundle_sender.send(Arc::new(bundle)) {
+        log::warn!("publishing the live bundle failed; [error={error}]");
+        return;
+    }
+
+    let published: Option<RepublishedViews> = DRIVER.with_borrow_mut(|driver_slot| {
+        let driver: &mut Driver = driver_slot.as_mut()?;
+
+        clamp_active_period(driver);
+
+        let views: RepublishedViews = driver.republish();
+        driver.request_redraw();
+
+        Some(views)
+    });
+
+    if let Some(views) = published {
+        view_controls.set(Some(views.view_controls));
+        legend.set(Some(views.legend));
+        selection_view.set(views.selection);
+        global_view.set(Some(views.global));
+    }
+}
+
+fn clamp_active_period(driver: &mut Driver) {
+    let Some((earliest, latest)) = driver
+        .read_active_shard()
+        .and_then(|shard_values| shard_values.period_range())
+    else {
+        return;
+    };
+
+    if driver.frame_state.active_period_start < earliest
+        || driver.frame_state.active_period_start > latest
+    {
+        driver.frame_state.active_period_start = latest;
+    }
 }
 
 /// Anchors the initial period to the reference year the embedded bundle ships (its single period).

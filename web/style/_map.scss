@@ -22,3 +22,14 @@
     max-width: 24rem;
     text-align: center;
 }
+
+.map-live-banner {
+    position: absolute;
+    top: var(--space-chrome-inset);
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 24rem;
+    padding: var(--space-sm) var(--space-md);
+    text-align: center;
+    pointer-events: none;
+}
