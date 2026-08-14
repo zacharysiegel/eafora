@@ -57,6 +57,10 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
     assert!(geometry_destination.exists(), "geometry at {:?} missing", geometry_destination);
     assert!(manifest_destination.exists(), "manifest at {:?} missing", manifest_destination);
 
+    let latest_destination: PathBuf = destination_dir.path().join(manifest::MANIFEST_LATEST_KEY);
+    assert!(latest_destination.exists());
+    assert_eq!(fs::read(&latest_destination).unwrap(), fs::read(&manifest_destination).unwrap());
+
     assert_eq!(publish_report.artifact_version.version_label, version_label);
 
     delete_artifact_version(&pool, &version_label).await;
@@ -84,6 +88,61 @@ async fn publish_artifacts_errors_when_version_label_already_published() {
     assert!(error.to_string().contains("already exists"), "expected duplicate-label error, got {}", error);
 
     delete_artifact_version(&pool, &version_label).await;
+}
+
+#[tokio::test]
+async fn publish_local_keeps_only_the_two_newest_version_directories() {
+    let pool: PgPool = test_pool().await;
+    let first_label: &str = "2026-06-01+keep";
+    let second_label: &str = "2026-06-10+keep";
+    let third_label: &str = "2026-06-22+keep";
+
+    delete_artifact_version(&pool, first_label).await;
+    delete_artifact_version(&pool, second_label).await;
+    delete_artifact_version(&pool, third_label).await;
+
+    let first_source_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let second_source_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let third_source_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let first_build_report: BuildReport = write_synthetic_bundle(first_source_dir.path(), first_label);
+    let second_build_report: BuildReport = write_synthetic_bundle(second_source_dir.path(), second_label);
+    let third_build_report: BuildReport = write_synthetic_bundle(third_source_dir.path(), third_label);
+
+    let destination_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let repository: ArtifactRepositoryKind = ArtifactRepositoryKind::Local(LocalArtifactRepository::new(
+        destination_dir.path().to_path_buf(),
+        "https://example.invalid/artifacts".to_string(),
+    ));
+
+    artifact::publish_artifacts(&pool, &first_build_report, &repository)
+        .await
+        .expect("first publish succeeds");
+    artifact::publish_artifacts(&pool, &second_build_report, &repository)
+        .await
+        .expect("second publish succeeds");
+    artifact::publish_artifacts(&pool, &third_build_report, &repository)
+        .await
+        .expect("third publish succeeds");
+
+    let latest_destination: PathBuf = destination_dir.path().join(manifest::MANIFEST_LATEST_KEY);
+    let third_manifest_destination: PathBuf = destination_dir
+        .path()
+        .join(format!("{}/{}", third_label, manifest::MANIFEST_FILENAME));
+    assert_eq!(
+        fs::read(&latest_destination).unwrap(),
+        fs::read(&third_manifest_destination).unwrap(),
+    );
+
+    let first_version_dir: PathBuf = destination_dir.path().join(first_label);
+    let second_version_dir: PathBuf = destination_dir.path().join(second_label);
+    let third_version_dir: PathBuf = destination_dir.path().join(third_label);
+    assert!(!first_version_dir.exists());
+    assert!(second_version_dir.exists());
+    assert!(third_version_dir.exists());
+
+    delete_artifact_version(&pool, first_label).await;
+    delete_artifact_version(&pool, second_label).await;
+    delete_artifact_version(&pool, third_label).await;
 }
 
 #[tokio::test]
