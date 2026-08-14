@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+use std::fs::FileType;
 use std::path::{Path, PathBuf};
 
 use tokio::fs;
@@ -25,13 +27,13 @@ impl LocalArtifactRepository {
         let mut read_dir: fs::ReadDir = fs::read_dir(&self.root).await?;
 
         while let Some(directory_entry) = read_dir.next_entry().await? {
-            let file_type: std::fs::FileType = directory_entry.file_type().await?;
+            let file_type: FileType = directory_entry.file_type().await?;
 
             if !file_type.is_dir() {
                 continue;
             }
 
-            let file_name: std::ffi::OsString = directory_entry.file_name();
+            let file_name: OsString = directory_entry.file_name();
             let directory_name: String = match file_name.into_string() {
                 Ok(directory_name) => directory_name,
                 Err(_) => {

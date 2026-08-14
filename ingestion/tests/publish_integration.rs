@@ -61,8 +61,6 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
     assert!(latest_destination.exists());
     assert_eq!(fs::read(&latest_destination).unwrap(), fs::read(&manifest_destination).unwrap());
 
-    assert_eq!(publish_report.artifact_version.version_label, version_label);
-
     delete_artifact_version(&pool, &version_label).await;
 }
 

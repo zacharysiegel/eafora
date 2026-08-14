@@ -1,6 +1,7 @@
-//! Manifest is uploaded last so a client that discovers a new manifest URL
-//! is guaranteed to find its referenced shards already present at the same
-//! repository.
+//! Versioned shards and geometry go up before `{version}/manifest.json`.
+//! `latest/manifest.json` is the last PUT, after the `artifact_version` insert,
+//! so a client that discovers the latest pointer is guaranteed to find that
+//! version's shards already present at the same repository.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,7 +14,7 @@ use shared::filesystem::{self, FileReference, Hashed};
 
 use crate::artifact::artifact_db;
 use crate::artifact::artifact_model::{Artifacts, ArtifactVersion, BuildReport, StatisticShard};
-use crate::artifact::repository::{ArtifactRepositoryKind, LocalArtifactRepository};
+use crate::artifact::repository::ArtifactRepositoryKind;
 use crate::error::AppError;
 
 #[derive(Debug, Clone)]
@@ -69,7 +70,6 @@ pub async fn publish_artifacts(
     log::debug!("uploaded latest manifest; [key={}]", manifest::MANIFEST_LATEST_KEY);
 
     if let ArtifactRepositoryKind::Local(local_repository) = repository {
-        let local_repository: &LocalArtifactRepository = local_repository;
         local_repository.retain_newest_versions().await?;
     }
 
