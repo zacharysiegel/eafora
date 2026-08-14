@@ -47,6 +47,8 @@ This project uses two complementary tool layers:
    debugging before fixing, code review, parallel-agent dispatch, worktree
    isolation). Layered on top of the Spec Kit flow.
 
+The web client (and later native clients) must run fully on this machine: discovery, the live artifact tree, and first-paint embedded files are same-origin or local-directory. Developing or verifying a feature must not require `eafora.org` or `repository.eafora.org` to be up.
+
 Project-wide research/positioning docs that don't fit the per-feature mold
 (product plan, data-source survey, architecture overview) go in `docs/`.
 
@@ -141,5 +143,5 @@ Notable items relevant here:
   afterward and update the plan doc with notes about the deviations.
 
 <!-- SPECKIT START -->
-Active plan: `specs/005-core-data/plan.md` (with `data-model.md`, `contracts/core-public-api.md`, `quickstart.md`). Spec: `specs/005-core-data/spec.md`. Branch: `005-core-data`. For additional context about technologies to be used, project structure, shell commands, and other important information, read these files first.
+Active plan: `specs/003-web-client/d-plan.md`. Spec: `specs/003-web-client/spec.md`. Branch: `d-plan`. For additional context about technologies to be used, project structure, shell commands, and other important information, read these files first.
 <!-- SPECKIT END -->
