@@ -52,13 +52,18 @@ pub async fn open_newest_cached_bundle(cache: &OpfsArtifactCache) -> Result<Opti
     let mut version_labels: Vec<String> = cache.list_versions().await?;
     version_labels.sort();
 
-    let Some(version_label) = version_labels.last() else {
-        return Ok(None);
-    };
+    for version_label in version_labels.into_iter().rev() {
+        match Bundle::open(cache, &version_label, DistributionContext::FirstParty).await {
+            Ok(bundle) => return Ok(Some(bundle)),
+            Err(error) => {
+                log::warn!(
+                    "opening a cached bundle failed, trying an older version; [version_label={version_label} error={error}]"
+                );
+            }
+        }
+    }
 
-    let bundle: Bundle = Bundle::open(cache, version_label, DistributionContext::FirstParty).await?;
-
-    Ok(Some(bundle))
+    Ok(None)
 }
 
 pub async fn load_live_bundle(cache: &OpfsArtifactCache, repository_base_url: &str) -> Result<Bundle, AppError> {
