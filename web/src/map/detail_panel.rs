@@ -15,7 +15,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
 
     move || {
         selection.get().map(|selection_view| {
-            let SelectionView { iso3: _, name_en, statistic, period_start, value, source } = selection_view;
+            let SelectionView { region_code: _, name_en, statistic, period_start, value, source } = selection_view;
 
             view! {
                 <aside class="panel detail-panel">

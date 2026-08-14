@@ -343,10 +343,10 @@ impl Driver {
             .ok()
     }
 
-    fn resolve_selection_view(&self, iso3: &str, name_en: &str) -> SelectionView {
+    fn resolve_selection_view(&self, region_code: &str, name_en: &str) -> SelectionView {
         let cell: Option<shard_db::CellValue> = self
             .read_active_shard()
-            .and_then(|shard_values| shard_values.cell(iso3, self.frame_state.active_period_start).cloned());
+            .and_then(|shard_values| shard_values.cell(region_code, self.frame_state.active_period_start).cloned());
 
         let value: Option<f64> = cell.as_ref().map(|cell| cell.value);
         let source: Option<DataSourceKind> = cell.as_ref().and_then(|cell| {
@@ -356,7 +356,7 @@ impl Driver {
         });
 
         SelectionView {
-            iso3: iso3.to_string(),
+            region_code: region_code.to_string(),
             name_en: name_en.to_string(),
             statistic: self.frame_state.active_statistic,
             period_start: self.frame_state.active_period_start,
@@ -393,11 +393,11 @@ impl Driver {
         self.request_redraw();
 
         let selection_view: Option<SelectionView> =
-            region_hit.map(|region_hit| self.resolve_selection_view(&region_hit.iso3, &region_hit.name_en));
+            region_hit.map(|region_hit| self.resolve_selection_view(&region_hit.region_code.0, &region_hit.name_en));
         self.selection = selection_view.clone();
 
         match &selection_view {
-            Some(view) => log::info!("region selected [name={} iso3={} value={:?}]", view.name_en, view.iso3, view.value),
+            Some(view) => log::info!("region selected [name={} region_code={} value={:?}]", view.name_en, view.region_code, view.value),
             None => log::info!("region deselected"),
         }
 
@@ -592,8 +592,8 @@ impl Driver {
         let identity: Option<(String, String)> = self
             .selection
             .as_ref()
-            .map(|selection| (selection.iso3.clone(), selection.name_en.clone()));
-        self.selection = identity.map(|(iso3, name_en)| self.resolve_selection_view(&iso3, &name_en));
+            .map(|selection| (selection.region_code.clone(), selection.name_en.clone()));
+        self.selection = identity.map(|(region_code, name_en)| self.resolve_selection_view(&region_code, &name_en));
 
         RepublishedViews {
             view_controls: self.view_controls(),

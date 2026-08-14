@@ -23,7 +23,7 @@ pub enum RenderStatus {
 /// Published by the driver so a consumer can render the selection without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectionView {
-    pub iso3: String,
+    pub region_code: String,
     pub name_en: String,
     pub statistic: StatisticKind,
     pub period_start: NaiveDate,
