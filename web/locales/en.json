@@ -8,7 +8,8 @@
     },
     "detail": {
         "no_data": "No data for this region.",
-        "source": "Source"
+        "source": "Source",
+        "world": "World"
     },
     "statistic": {
         "tfr": "Total fertility rate",
