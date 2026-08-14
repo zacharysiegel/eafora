@@ -18,7 +18,7 @@ use crate::error::AppError;
 use shared::artifact::manifest;
 use shared::filesystem::{self, FileReference, Hashed};
 
-const UNITED_STATES_ISO3: &str = "USA";
+const UNITED_STATES_REGION_CODE: &str = "usa";
 
 /// The subdirectories of a version directory holding the two bundle variants every build emits.
 /// `complete` carries all periods and sources and publishes to the CDN; `downsampled` is World Bank
@@ -188,7 +188,7 @@ fn downsample_to_reference_year(
 
     let reference_period_start: Option<NaiveDate> = world_bank_wdi_candidates
         .iter()
-        .filter(|candidate| candidate.region_iso3 == UNITED_STATES_ISO3)
+        .filter(|candidate| candidate.region_code == UNITED_STATES_REGION_CODE)
         .map(|candidate| candidate.period.start)
         .max();
     let Some(reference_period_start) = reference_period_start else {
@@ -249,10 +249,10 @@ mod tests {
     use uuid::Uuid;
     use shared::canonical::canonical_model::{DataStatus, LicenseClass, NaiveDatePeriod};
 
-    fn candidate_value(region_iso3: &str, data_source_kind: DataSourceKind, year: i32, value: f64) -> CandidateValue {
+    fn candidate_value(region_code: &str, data_source_kind: DataSourceKind, year: i32, value: f64) -> CandidateValue {
         CandidateValue {
             region_id: Uuid::now_v7(),
-            region_iso3: region_iso3.to_string(),
+            region_code: region_code.to_string(),
             statistic_kind: StatisticKind::try_from("tfr").unwrap(),
             period: NaiveDatePeriod {
                 start: NaiveDate::from_ymd_opt(year, 1, 1).unwrap(),
@@ -269,37 +269,37 @@ mod tests {
     #[test]
     fn downsample_to_reference_year_keeps_every_region_at_the_united_states_latest_period() {
         let candidates: Vec<CandidateValue> = vec![
-            candidate_value("USA", DataSourceKind::WorldBankWDI, 2021, 1.66),
-            candidate_value("USA", DataSourceKind::WorldBankWDI, 2023, 1.62),
-            candidate_value("DEU", DataSourceKind::WorldBankWDI, 2021, 1.58),
-            candidate_value("DEU", DataSourceKind::WorldBankWDI, 2023, 1.46),
-            candidate_value("FRA", DataSourceKind::WorldBankWDI, 2023, 1.79),
-            candidate_value("BRA", DataSourceKind::WorldBankWDI, 2021, 1.64),
+            candidate_value("usa", DataSourceKind::WorldBankWDI, 2021, 1.66),
+            candidate_value("usa", DataSourceKind::WorldBankWDI, 2023, 1.62),
+            candidate_value("deu", DataSourceKind::WorldBankWDI, 2021, 1.58),
+            candidate_value("deu", DataSourceKind::WorldBankWDI, 2023, 1.46),
+            candidate_value("fra", DataSourceKind::WorldBankWDI, 2023, 1.79),
+            candidate_value("bra", DataSourceKind::WorldBankWDI, 2021, 1.64),
         ];
 
         let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
 
         let reference_period_start: NaiveDate = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
         assert!(kept.iter().all(|value| value.period.start == reference_period_start));
-        assert!(kept.iter().any(|value| value.region_iso3 == "USA"));
-        assert!(kept.iter().any(|value| value.region_iso3 == "DEU"));
-        assert!(kept.iter().any(|value| value.region_iso3 == "FRA"));
-        assert!(!kept.iter().any(|value| value.region_iso3 == "BRA"));
+        assert!(kept.iter().any(|value| value.region_code == "usa"));
+        assert!(kept.iter().any(|value| value.region_code == "deu"));
+        assert!(kept.iter().any(|value| value.region_code == "fra"));
+        assert!(!kept.iter().any(|value| value.region_code == "bra"));
         assert_eq!(kept.len(), 3);
     }
 
     #[test]
     fn downsample_to_reference_year_excludes_sources_other_than_world_bank_wdi() {
         let candidates: Vec<CandidateValue> = vec![
-            candidate_value("USA", DataSourceKind::WorldBankWDI, 2023, 1.62),
-            candidate_value("USA", DataSourceKind::TestAlpha, 2025, 1.50),
-            candidate_value("DEU", DataSourceKind::TestAlpha, 2023, 1.46),
+            candidate_value("usa", DataSourceKind::WorldBankWDI, 2023, 1.62),
+            candidate_value("usa", DataSourceKind::TestAlpha, 2025, 1.50),
+            candidate_value("deu", DataSourceKind::TestAlpha, 2023, 1.46),
         ];
 
         let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
 
         assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].region_iso3, "USA");
+        assert_eq!(kept[0].region_code, "usa");
         assert_eq!(kept[0].data_source_kind, DataSourceKind::WorldBankWDI);
         assert_eq!(kept[0].period.start, NaiveDate::from_ymd_opt(2023, 1, 1).unwrap());
     }
@@ -307,7 +307,7 @@ mod tests {
     #[test]
     fn downsample_to_reference_year_yields_nothing_without_united_states_data() {
         let candidates: Vec<CandidateValue> = vec![
-            candidate_value("DEU", DataSourceKind::WorldBankWDI, 2023, 1.46),
+            candidate_value("deu", DataSourceKind::WorldBankWDI, 2023, 1.46),
         ];
 
         let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());

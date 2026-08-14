@@ -19,7 +19,7 @@ pub async fn read_candidate_values_for_statistic<'e>(
         r#"
         select
             statistic_value.region_id              as "region_id!",
-            country.iso3                           as "region_iso3!",
+            region.code                            as "region_code!",
             statistic.code                         as "statistic_code!",
             statistic_value.period_start           as "period_start!",
             statistic_value.period_end             as "period_end!",
@@ -29,7 +29,7 @@ pub async fn read_candidate_values_for_statistic<'e>(
             data_source_publication.revision_label as "data_source_revision!",
             data_source.license_class              as "license_class!"
         from statistic_value
-        join country on country.region_id = statistic_value.region_id
+        join region on region.id = statistic_value.region_id
         join statistic on statistic.id = statistic_value.statistic_id
         join data_source on data_source.id = statistic_value.data_source_id
         join data_source_publication on data_source_publication.id = statistic_value.data_source_publication_id

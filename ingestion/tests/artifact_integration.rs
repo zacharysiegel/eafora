@@ -113,7 +113,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     ) = connection
         .query_row(
             "select value, period_start, period_end, data_status, data_source_code, data_source_revision \
-             from statistic_value where region_iso3 = 'USA'",
+             from statistic_value where region_code = 'usa'",
             [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )
@@ -251,13 +251,13 @@ async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year
     assert_eq!(off_reference_count, 0);
 
     let deu_count: i64 = connection
-        .query_row("select count(*) from statistic_value where region_iso3 = 'DEU'", [], |row| row.get(0))
+        .query_row("select count(*) from statistic_value where region_code = 'deu'", [], |row| row.get(0))
         .unwrap();
     assert_eq!(deu_count, 0);
 
     let (usa_value, usa_period_end): (f64, String) = connection
         .query_row(
-            "select value, period_end from statistic_value where region_iso3 = 'USA'",
+            "select value, period_end from statistic_value where region_code = 'usa'",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )

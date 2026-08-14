@@ -1,5 +1,5 @@
 //! Schema mirrors the Postgres `statistic_value` shape but is denormalized
-//! for client-side reads: `region_iso3` is duplicated for human-readable
+//! for client-side reads: `region_code` is duplicated for human-readable
 //! queries, `region_id` is kept as a BLOB for the rare cross-shard joins,
 //! periods are stored as ISO-8601 strings so client SQL doesn't need
 //! date-function support.
@@ -102,7 +102,7 @@ fn insert_rows(connection: &mut Connection, values: &[&ResolvedValue]) -> Result
     let mut statement: rusqlite::Statement = transaction.prepare(formatcp!(
         "insert into {} ({}, {}, {}, {}, {}, {}, {}, {}) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         schema::TABLE_STATISTIC_VALUE,
-        schema::COL_REGION_ISO3,
+        schema::COL_REGION_CODE,
         schema::COL_REGION_ID,
         schema::COL_PERIOD_START,
         schema::COL_PERIOD_END,
@@ -114,7 +114,7 @@ fn insert_rows(connection: &mut Connection, values: &[&ResolvedValue]) -> Result
 
     for resolved_value in values {
         statement.execute((
-            &resolved_value.region_iso3,
+            &resolved_value.region_code,
             resolved_value.region_id.as_bytes().as_slice(),
             resolved_value.period.start.format(schema::PERIOD_DATE_FORMAT).to_string(),
             resolved_value.period.end.format(schema::PERIOD_DATE_FORMAT).to_string(),
@@ -139,13 +139,13 @@ mod tests {
     fn make_merged(
         statistic_kind: StatisticKind,
         license_shard_class: LicenseShardClass,
-        region_iso3: &str,
+        region_code: &str,
         year: i32,
         value: f64,
     ) -> ResolvedValue {
         ResolvedValue {
             region_id: Uuid::from_u128(year as u128),
-            region_iso3: region_iso3.to_string(),
+            region_code: region_code.to_string(),
             statistic_kind,
             period: NaiveDatePeriod::from_year(year).unwrap(),
             value,
@@ -160,10 +160,10 @@ mod tests {
     fn write_sqlite_shards_creates_one_file_per_statistic_per_license_class() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![
-            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66),
-            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "JPN", 2022, 1.30),
-            make_merged(StatisticKind::Tfr, LicenseShardClass::NonCommercial, "USA", 2022, 1.66),
-            make_merged(StatisticKind::TestAlpha, LicenseShardClass::Base, "USA", 2022, 1.85),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "jpn", 2022, 1.30),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::NonCommercial, "usa", 2022, 1.66),
+            make_merged(StatisticKind::TestAlpha, LicenseShardClass::Base, "usa", 2022, 1.85),
         ];
 
         let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
@@ -182,8 +182,8 @@ mod tests {
     fn write_sqlite_shards_writes_rows_with_expected_schema() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<ResolvedValue> = vec![
-            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66),
-            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "JPN", 2022, 1.30),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66),
+            make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "jpn", 2022, 1.30),
         ];
 
         let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
@@ -197,7 +197,7 @@ mod tests {
 
         let usa_value: f64 = connection
             .query_row(
-                "select value from statistic_value where region_iso3 = 'USA'",
+                "select value from statistic_value where region_code = 'usa'",
                 [],
                 |row| row.get(0),
             )
@@ -206,7 +206,7 @@ mod tests {
 
         let usa_period_start: String = connection
             .query_row(
-                "select period_start from statistic_value where region_iso3 = 'USA'",
+                "select period_start from statistic_value where region_code = 'usa'",
                 [],
                 |row| row.get(0),
             )
@@ -215,7 +215,7 @@ mod tests {
 
         let region_id_bytes: Vec<u8> = connection
             .query_row(
-                "select region_id from statistic_value where region_iso3 = 'USA'",
+                "select region_id from statistic_value where region_code = 'usa'",
                 [],
                 |row| row.get(0),
             )
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn write_sqlite_shards_index_is_present() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let merged: Vec<ResolvedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "USA", 2022, 1.66)];
+        let merged: Vec<ResolvedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66)];
 
         let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
@@ -247,7 +247,7 @@ mod tests {
         let merged: Vec<ResolvedValue> = vec![make_merged(
             StatisticKind::Tfr,
             LicenseShardClass::NonCommercial,
-            "USA",
+            "usa",
             2022,
             1.66,
         )];
@@ -282,7 +282,7 @@ mod tests {
         let merged: Vec<ResolvedValue> = vec![make_merged(
             StatisticKind::Tfr,
             LicenseShardClass::ShareAlike,
-            "USA",
+            "usa",
             2022,
             1.66,
         )];
