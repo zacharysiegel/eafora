@@ -11,6 +11,7 @@
     --space-sm:              0.5rem; // approx. 8px
     --space-md:              1rem; // approx. 16px, the default body unit
     --space-lg:              2rem; // approx. 32px
+    --space-chrome-inset:    calc(var(--space-md) * 1.25); // viewport-edge offset for map chrome; 25% larger than the body unit
 
     --font-sans:             "Inter", system-ui, -apple-system, sans-serif;
     --font-mono:             "IBM Plex Mono", ui-monospace, monospace;

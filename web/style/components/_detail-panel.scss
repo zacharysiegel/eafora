@@ -1,8 +1,8 @@
 // The top-left region-detail panel per docs/design/README.md.
 .detail-panel {
     position: absolute;
-    top: var(--space-md);
-    left: var(--space-md);
+    top: var(--space-chrome-inset);
+    left: var(--space-chrome-inset);
     width: 20rem; // approx. 320px
 }
 

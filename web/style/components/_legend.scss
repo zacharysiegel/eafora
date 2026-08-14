@@ -2,8 +2,8 @@
 // pointer-events pass through to the map beneath it.
 .legend {
     position: absolute;
-    bottom: var(--space-md);
-    left: var(--space-md);
+    bottom: var(--space-chrome-inset);
+    left: var(--space-chrome-inset);
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
