@@ -29,6 +29,18 @@ The script runs `ingestion build` when no build exists, then plain-copies
 `ingestion build`, hand-place a stub bundle (a `manifest.json`, one `geometry/*.fgb`, and one
 `data/tfr-base-*.sqlite`) under `./web/static/embedded_artifacts/` instead.
 
+## Publish the complete live tree
+
+After the embedded sync, publish the complete bundle into the gitignored local repository the wasm fetches as `/repository`:
+
+```sh
+cargo run -p ingestion -- publish local --build --root ./web/static/repository --public-base-url /repository
+```
+
+`--build` is global on `publish`. `--root` and `--public-base-url` are on `local`. Restart or refresh `cargo leptos watch` so `/repository/latest/manifest.json` exists. First paint is still the embedded (or OPFS-cached) bundle; the year scrubber gains periods after the live swap.
+
+A second publish of the same `version_label` is rejected by the `artifact_version` uniqueness check. Rebuild with a new label, or point `--root` at a fresh tree after deleting the `artifact_version` row, if you need to overwrite the local static files.
+
 ## Dev loop
 
 ```sh
