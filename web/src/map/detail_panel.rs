@@ -2,46 +2,63 @@ use chrono::Datelike;
 use leptos::prelude::*;
 use leptos_i18n::I18nContext;
 
-use shared::canonical::DataSourceKind;
+use shared::canonical::{DataSourceKind, StatisticKind};
 
 use crate::i18n::*;
-use crate::map::canvas::SelectionView;
+use crate::map::canvas::{GlobalView, SelectionView};
 use crate::map::labels;
 
 #[component]
 pub fn RegionDetailPanel() -> impl IntoView {
     let selection: RwSignal<Option<SelectionView>> = expect_context();
+    let global: RwSignal<Option<GlobalView>> = expect_context();
     let i18n = use_i18n();
 
-    move || {
-        selection.get().map(|selection_view| {
+    move || match selection.get() {
+        Some(selection_view) => {
             let SelectionView { region_code: _, name_en, statistic, period_start, value, source } = selection_view;
 
-            view! {
-                <aside class="panel detail-panel">
-                    <p class="detail-panel-region">{name_en}</p>
-                    <p class="detail-panel-statistic">
-                        {labels::statistic_label(i18n, statistic)}
-                        " · "
-                        {period_start.year().to_string()}
-                    </p>
-                    {match value {
-                        Some(value) => view! {
-                            <p class="detail-panel-value numeric">{format!("{value:.2}")}</p>
-                            <p class="detail-panel-unit">{labels::statistic_unit(i18n, statistic)}</p>
-                            {source.map(|source| view! {
-                                <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
-                            })}
-                        }
-                        .into_any(),
-                        None => view! {
-                            <p class="detail-panel-no-data">{t!(i18n, detail.no_data)}</p>
-                        }
-                        .into_any(),
-                    }}
-                </aside>
-            }
-        })
+            Some(detail_panel(i18n, name_en.into_any(), statistic, period_start.year(), value, source))
+        },
+        None => global.get().map(|global_view| {
+            let GlobalView { statistic, period_start, value, source } = global_view;
+
+            detail_panel(i18n, t!(i18n, detail.world).into_any(), statistic, period_start.year(), value, source)
+        }),
+    }
+}
+
+fn detail_panel(
+    i18n: I18nContext<Locale>,
+    region_label: AnyView,
+    statistic: StatisticKind,
+    year: i32,
+    value: Option<f64>,
+    source: Option<DataSourceKind>,
+) -> impl IntoView {
+    view! {
+        <aside class="panel detail-panel">
+            <p class="detail-panel-region">{region_label}</p>
+            <p class="detail-panel-statistic">
+                {labels::statistic_label(i18n, statistic)}
+                " · "
+                {year.to_string()}
+            </p>
+            {match value {
+                Some(value) => view! {
+                    <p class="detail-panel-value numeric">{format!("{value:.2}")}</p>
+                    <p class="detail-panel-unit">{labels::statistic_unit(i18n, statistic)}</p>
+                    {source.map(|source| view! {
+                        <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
+                    })}
+                }
+                .into_any(),
+                None => view! {
+                    <p class="detail-panel-no-data">{t!(i18n, detail.no_data)}</p>
+                }
+                .into_any(),
+            }}
+        </aside>
     }
 }
 
