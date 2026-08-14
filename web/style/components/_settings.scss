@@ -1,8 +1,8 @@
 // The bottom-right settings control: a square button replaced in place by a settings panel while open.
 .settings {
     position: absolute;
-    bottom: var(--space-lg);
-    right: var(--space-lg);
+    bottom: var(--space-md);
+    right: var(--space-md);
 }
 
 .settings-button {
