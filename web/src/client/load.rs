@@ -23,7 +23,7 @@ pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, A
     let manifest_bytes: Vec<u8> = fetch::fetch_bytes(&HttpRequest {
         method: HttpMethod::Get,
         url: manifest_url,
-        cache: HttpCacheMode::Reload,
+        cache_mode: HttpCacheMode::Reload,
     })
     .await?;
 
@@ -37,7 +37,7 @@ pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, A
         let file_bytes: Vec<u8> = fetch::fetch_bytes(&HttpRequest {
             method: HttpMethod::Get,
             url: file_url,
-            cache: HttpCacheMode::Default,
+            cache_mode: HttpCacheMode::Default,
         })
         .await?;
 

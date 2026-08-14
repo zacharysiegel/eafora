@@ -15,7 +15,7 @@ pub async fn fetch(request: &HttpRequest) -> Result<Response, AppError> {
     let init: RequestInit = RequestInit::new();
     init.set_method(request.method.as_str());
 
-    match request.cache {
+    match request.cache_mode {
         HttpCacheMode::Reload => init.set_cache(RequestCache::Reload),
         HttpCacheMode::Default => {}
     }
@@ -45,7 +45,7 @@ pub async fn fetch_discovery(discovery_url: &str) -> Result<Vec<u8>, AppError> {
     fetch_bytes(&HttpRequest {
         method: HttpMethod::Get,
         url: discovery_url.to_string(),
-        cache: HttpCacheMode::Reload,
+        cache_mode: HttpCacheMode::Reload,
     })
     .await
 }
@@ -57,7 +57,7 @@ pub async fn fetch_manifest(repository_base_url: &str) -> Result<Vec<u8>, AppErr
     fetch_bytes(&HttpRequest {
         method: HttpMethod::Get,
         url,
-        cache: HttpCacheMode::Reload,
+        cache_mode: HttpCacheMode::Reload,
     })
     .await
 }
@@ -73,7 +73,7 @@ pub async fn fetch_artifact_file(
     fetch_bytes(&HttpRequest {
         method: HttpMethod::Get,
         url,
-        cache: HttpCacheMode::Default,
+        cache_mode: HttpCacheMode::Default,
     })
     .await
 }

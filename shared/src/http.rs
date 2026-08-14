@@ -18,7 +18,7 @@ pub enum HttpCacheMode {
 pub struct HttpRequest {
     pub method: HttpMethod,
     pub url: String,
-    pub cache: HttpCacheMode,
+    pub cache_mode: HttpCacheMode,
 }
 
 pub struct Response {

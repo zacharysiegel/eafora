@@ -190,7 +190,7 @@ pub enum HttpCacheMode {
 pub struct HttpRequest {
     pub method: HttpMethod,
     pub url: String,
-    pub cache: HttpCacheMode,
+    pub cache_mode: HttpCacheMode,
 }
 ```
 
@@ -203,7 +203,7 @@ pub async fn fetch_discovery(discovery_url: &str) -> Result<Vec<u8>, AppError> {
     fetch_bytes(&HttpRequest {
         method: HttpMethod::Get,
         url: discovery_url.to_string(),
-        cache: HttpCacheMode::Reload,
+        cache_mode: HttpCacheMode::Reload,
     }).await
 }
 
@@ -213,7 +213,7 @@ pub async fn fetch_manifest(repository_base_url: &str) -> Result<Vec<u8>, AppErr
     fetch_bytes(&HttpRequest {
         method: HttpMethod::Get,
         url,
-        cache: HttpCacheMode::Reload,
+        cache_mode: HttpCacheMode::Reload,
     }).await
 }
 
@@ -223,7 +223,7 @@ pub async fn fetch_artifact_file(repository_base_url: &str, version_label: &str,
     fetch_bytes(&HttpRequest {
         method: HttpMethod::Get,
         url,
-        cache: HttpCacheMode::Default,
+        cache_mode: HttpCacheMode::Default,
     }).await
 }
 ```
@@ -439,3 +439,7 @@ Browser verification is required before calling D3 done.
 **d-plan** — Plan Phase D: live complete-bundle fetch, same-origin discovery, `latest/manifest.json` publish, and hot-swap.
 
 D1 / D2 / D3 descriptions are under each phase above.
+
+## Post-implementation notes
+
+- `HttpRequest.cache` was renamed to `cache_mode` so the field matches `HttpCacheMode`.
