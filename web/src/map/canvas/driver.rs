@@ -20,7 +20,7 @@ use shared::sqlite::shard_db;
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
 
-use super::{RenderStatus, LegendView, SelectionView, ViewControls};
+use super::{RenderStatus, GlobalView, LegendView, SelectionView, ViewControls};
 
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
@@ -83,6 +83,9 @@ const ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT: f64 = 8.0;
 /// hard against the pole-side clip edge, `Viewport::clamp_vertical_balanced` shrinks the opposite margin
 /// by the clipped amount, which would otherwise reach zero; this is the minimum it may shrink to.
 const ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN: f64 = 0.1;
+
+/// Canonical `region.code` of the World aggregate. World has no geometry, so it is never a hit-test result; the driver looks it up as the empty-state figure.
+const WORLD_REGION_CODE: &str = "world";
 
 /// A pointer in contact (a held mouse button or a touching finger), tracked by `pointerId` so pan and
 /// pinch can follow the right one across moves.
@@ -163,12 +166,13 @@ enum RegionChange {
     Changed(Option<RegionHit>),
 }
 
-/// What a statistic or period change republishes: fresh controls and legend extent, plus the
-/// re-resolved selection when a region is selected.
+/// What a statistic or period change republishes: fresh controls and legend extent, the
+/// re-resolved selection when a region is selected, and the World figure for the empty state.
 struct RepublishedViews {
     view_controls: ViewControls,
     legend: LegendView,
     selection: Option<SelectionView>,
+    global: GlobalView,
 }
 
 /// The render state the browser callbacks reach through the `DRIVER` thread-local, kept outside the
@@ -183,6 +187,7 @@ struct Driver {
     surface_dimensions: SurfaceDimensions,
     frame_state: FrameState,
     selection_view: WriteSignal<Option<SelectionView>>,
+    global_view: WriteSignal<Option<GlobalView>>,
     view_controls: WriteSignal<Option<ViewControls>>,
     legend: WriteSignal<Option<LegendView>>,
     selection: Option<SelectionView>,
@@ -343,11 +348,7 @@ impl Driver {
             .ok()
     }
 
-    fn resolve_selection_view(&self, region_code: &str, name_en: &str) -> SelectionView {
-        let cell: Option<shard_db::CellValue> = self
-            .read_active_shard()
-            .and_then(|shard_values| shard_values.cell(region_code, self.frame_state.active_period_start).cloned());
-
+    fn decode_cell(cell: Option<shard_db::CellValue>) -> (Option<f64>, Option<DataSourceKind>) {
         let value: Option<f64> = cell.as_ref().map(|cell| cell.value);
         let source: Option<DataSourceKind> = cell.as_ref().and_then(|cell| {
             DataSourceKind::try_from(cell.source_code.as_str())
@@ -355,9 +356,34 @@ impl Driver {
                 .ok()
         });
 
+        (value, source)
+    }
+
+    fn resolve_selection_view(&self, region_code: &str, name_en: &str) -> SelectionView {
+        let cell: Option<shard_db::CellValue> = self
+            .read_active_shard()
+            .and_then(|shard_values| shard_values.cell(region_code, self.frame_state.active_period_start).cloned());
+
+        let (value, source): (Option<f64>, Option<DataSourceKind>) = Self::decode_cell(cell);
+
         SelectionView {
             region_code: region_code.to_string(),
             name_en: name_en.to_string(),
+            statistic: self.frame_state.active_statistic,
+            period_start: self.frame_state.active_period_start,
+            value,
+            source,
+        }
+    }
+
+    fn resolve_global_view(&self) -> GlobalView {
+        let cell: Option<shard_db::CellValue> = self
+            .read_active_shard()
+            .and_then(|shard_values| shard_values.cell(WORLD_REGION_CODE, self.frame_state.active_period_start).cloned());
+
+        let (value, source): (Option<f64>, Option<DataSourceKind>) = Self::decode_cell(cell);
+
+        GlobalView {
             statistic: self.frame_state.active_statistic,
             period_start: self.frame_state.active_period_start,
             value,
@@ -599,6 +625,7 @@ impl Driver {
             view_controls: self.view_controls(),
             legend: self.legend_view(),
             selection: self.selection.clone(),
+            global: self.resolve_global_view(),
         }
     }
 }
@@ -617,15 +644,16 @@ enum StartupError {
 pub struct DriverSignals {
     pub render_status: RwSignal<RenderStatus>,
     pub selection_view: WriteSignal<Option<SelectionView>>,
+    pub global_view: WriteSignal<Option<GlobalView>>,
     pub view_controls: WriteSignal<Option<ViewControls>>,
     pub legend: WriteSignal<Option<LegendView>>,
 }
 
 pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
-    let DriverSignals { render_status, selection_view, view_controls, legend } = signals;
+    let DriverSignals { render_status, selection_view, global_view, view_controls, legend } = signals;
 
     leptos::task::spawn_local(async move {
-        let status: RenderStatus = match set_up_driver(canvas, selection_view, view_controls, legend).await {
+        let status: RenderStatus = match set_up_driver(canvas, selection_view, global_view, view_controls, legend).await {
             Ok(()) => RenderStatus::Ready,
             Err(StartupError::DataUnavailable(error)) => {
                 log::error!("map data could not be loaded [error={error}]");
@@ -641,7 +669,7 @@ pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
     });
 }
 
-async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>, view_controls: WriteSignal<Option<ViewControls>>, legend: WriteSignal<Option<LegendView>>) -> Result<(), StartupError> {
+async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Option<SelectionView>>, global_view: WriteSignal<Option<GlobalView>>, view_controls: WriteSignal<Option<ViewControls>>, legend: WriteSignal<Option<LegendView>>) -> Result<(), StartupError> {
     let cache: OpfsArtifactCache = OpfsArtifactCache::create()
         .await
         .map_err(StartupError::BrowserUnsupported)?;
@@ -675,6 +703,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
         surface_dimensions: SurfaceDimensions { width, height },
         frame_state,
         selection_view,
+        global_view,
         view_controls,
         legend,
         selection: None,
@@ -695,6 +724,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
 
     let initial_controls: ViewControls = driver.view_controls();
     let initial_legend: LegendView = driver.legend_view();
+    let initial_global: GlobalView = driver.resolve_global_view();
 
     DRIVER.with_borrow_mut(|driver_slot| {
         driver_slot.insert(driver).request_redraw();
@@ -702,6 +732,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, selection_view: WriteSignal<Op
 
     view_controls.set(Some(initial_controls));
     legend.set(Some(initial_legend));
+    global_view.set(Some(initial_global));
 
     Ok(())
 }
@@ -990,6 +1021,7 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
     struct PendingPublish {
         controls_signal: WriteSignal<Option<ViewControls>>,
         selection_signal: WriteSignal<Option<SelectionView>>,
+        global_signal: WriteSignal<Option<GlobalView>>,
         legend_signal: WriteSignal<Option<LegendView>>,
         views: RepublishedViews,
     }
@@ -1000,6 +1032,7 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
         Some(PendingPublish {
             controls_signal: driver.view_controls,
             selection_signal: driver.selection_view,
+            global_signal: driver.global_view,
             legend_signal: driver.legend,
             views,
         })
@@ -1009,6 +1042,7 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
     if let Some(pending) = pending {
         pending.controls_signal.set(Some(pending.views.view_controls));
         pending.selection_signal.set(pending.views.selection);
+        pending.global_signal.set(Some(pending.views.global));
         pending.legend_signal.set(Some(pending.views.legend));
     }
 }

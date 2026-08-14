@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::map::canvas::{LegendView, MapCanvas, SelectionView, ViewControls};
+use crate::map::canvas::{GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
 use crate::map::controls::Controls;
 use crate::map::detail_panel::RegionDetailPanel;
 use crate::map::legend::Legend;
@@ -16,6 +16,9 @@ pub fn MapView() -> impl IntoView {
 
     let legend: RwSignal<Option<LegendView>> = RwSignal::new(None);
     provide_context(legend);
+
+    let global: RwSignal<Option<GlobalView>> = RwSignal::new(None);
+    provide_context(global);
 
     view! {
         <main id="map-view">

@@ -31,6 +31,15 @@ pub struct SelectionView {
     pub source: Option<DataSourceKind>,
 }
 
+/// Published by the driver so a consumer can render the empty-state world figure without bundle access.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlobalView {
+    pub statistic: StatisticKind,
+    pub period_start: NaiveDate,
+    pub value: Option<f64>,
+    pub source: Option<DataSourceKind>,
+}
+
 /// Published by the driver so the controls render without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewControls {
@@ -56,11 +65,13 @@ pub fn MapCanvas() -> impl IntoView {
     Effect::new(move |_| {
         if let Some(canvas) = canvas_ref.get() {
             let selection: RwSignal<Option<SelectionView>> = expect_context();
+            let global: RwSignal<Option<GlobalView>> = expect_context();
             let view_controls: RwSignal<Option<ViewControls>> = expect_context();
             let legend: RwSignal<Option<LegendView>> = expect_context();
             super::driver::start(canvas, super::driver::DriverSignals {
                 render_status,
                 selection_view: selection.write_only(),
+                global_view: global.write_only(),
                 view_controls: view_controls.write_only(),
                 legend: legend.write_only(),
             });
