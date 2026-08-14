@@ -2174,3 +2174,11 @@ The feature has no wasm-vs-host divergence in its logic, so there is no `#[wasm_
 - `t_string!` macro name. Task 38 needs the "World" label as a value in one code path. The `AnyView` form in Task 38 Step 2 sidesteps the macro-name uncertainty entirely and is the recommended default; the `t_string!` form is listed only as the alternative. Confirm via the Step 2 grep before committing.
 
 - `ssr` build does not compile `driver.rs`. It is `#[cfg(feature = "hydrate")]`, so all driver changes (Tasks 37) are only type-checked by the wasm/hydrate `cargo check`. Always run the hydrate check for driver edits; the ssr check alone will pass even if `driver.rs` is broken. `canvas.rs`, `map.rs`, and `detail_panel.rs` are checked by both.
+
+## Deviations from this plan (Phase 2)
+
+- Task 36's unused `_global` context read was not landed as its own commit. `GlobalView`, the `MapView` context, and the driver wiring shipped together because the intermediate unused binding would not have compiled independently of Task 37's `DriverSignals` field once canvas.rs was wired.
+- Phase 0 left `region_code` on `SelectionView`. `republish` still re-resolves from `(selection.region_code, selection.name_en)` rather than the plan's `frame_state.selected_region` match. `resolve_selection_view` still writes `region_code`; the plan snippet omitted that field.
+- Task 38 uses an `AnyView` region label (`name_en.into_any()` / `t!(i18n, detail.world).into_any()`), the form this plan recommends when `t_string!` is unnecessary.
+- No `shared`-level world region-code constant exists after Phase 1 (only `ingestion`'s WDI adapter const). Task 37 defines `WORLD_REGION_CODE` in the web driver as planned.
+- Browser verification (2026-08-14): empty state renders "World" / TFR / 2024. The panel shows `detail.no_data` because the live `eafora` DB has a `world` region with zero `statistic_value` rows (the WDI re-ingest that stores `WLD` has not been run). Selecting Algeria replaced the World figure with that region's value and source; clicking empty ocean returned the World figure. The year scrubber's range is a single year (2024), so scrub republish of the World figure was not exercised. Console had only the pre-existing favicon 404.
