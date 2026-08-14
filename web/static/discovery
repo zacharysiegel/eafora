@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "repository_base_url": "/repository",
+  "minimum_client_version": "0.1.0",
+  "sunset": null
+}
