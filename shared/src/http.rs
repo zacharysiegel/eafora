@@ -10,9 +10,15 @@ impl HttpMethod {
     }
 }
 
+pub enum HttpCacheMode {
+    Default,
+    Reload,
+}
+
 pub struct HttpRequest {
     pub method: HttpMethod,
     pub url: String,
+    pub cache: HttpCacheMode,
 }
 
 pub struct Response {

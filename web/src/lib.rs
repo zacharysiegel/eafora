@@ -1,6 +1,7 @@
 include!(concat!(env!("OUT_DIR"), "/i18n/mod.rs"));
 
 pub mod app;
+pub mod live_resolve;
 pub mod map;
 
 // Browser-only runtime glue; the ssr build compiles none of it.

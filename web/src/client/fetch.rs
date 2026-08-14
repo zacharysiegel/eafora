@@ -1,8 +1,9 @@
 use js_sys::{ArrayBuffer, Promise, Uint8Array};
-use web_sys::{RequestInit, Window};
+use web_sys::{RequestCache, RequestInit, Window};
 
+use shared::artifact::manifest;
+use shared::http::{HttpCacheMode, HttpMethod, HttpRequest, Response};
 use shared::AppError;
-use shared::http::{HttpRequest, Response};
 
 use crate::client::js;
 
@@ -13,6 +14,11 @@ pub async fn fetch(request: &HttpRequest) -> Result<Response, AppError> {
 
     let init: RequestInit = RequestInit::new();
     init.set_method(request.method.as_str());
+
+    match request.cache {
+        HttpCacheMode::Reload => init.set_cache(RequestCache::Reload),
+        HttpCacheMode::Default => {}
+    }
 
     let fetch_promise: Promise = window.fetch_with_str_and_init(&request.url, &init);
     let response: web_sys::Response = js::await_and_cast(fetch_promise).await?;
@@ -33,4 +39,41 @@ pub async fn fetch_bytes(request: &HttpRequest) -> Result<Vec<u8>, AppError> {
     }
 
     Ok(response.bytes)
+}
+
+pub async fn fetch_discovery(discovery_url: &str) -> Result<Vec<u8>, AppError> {
+    fetch_bytes(&HttpRequest {
+        method: HttpMethod::Get,
+        url: discovery_url.to_string(),
+        cache: HttpCacheMode::Reload,
+    })
+    .await
+}
+
+pub async fn fetch_manifest(repository_base_url: &str) -> Result<Vec<u8>, AppError> {
+    let base: &str = repository_base_url.trim_end_matches('/');
+    let url: String = format!("{base}/{}", manifest::MANIFEST_LATEST_KEY);
+
+    fetch_bytes(&HttpRequest {
+        method: HttpMethod::Get,
+        url,
+        cache: HttpCacheMode::Reload,
+    })
+    .await
+}
+
+pub async fn fetch_artifact_file(
+    repository_base_url: &str,
+    version_label: &str,
+    relative_path: &str,
+) -> Result<Vec<u8>, AppError> {
+    let base: &str = repository_base_url.trim_end_matches('/');
+    let url: String = format!("{base}/{version_label}/{relative_path}");
+
+    fetch_bytes(&HttpRequest {
+        method: HttpMethod::Get,
+        url,
+        cache: HttpCacheMode::Default,
+    })
+    .await
 }
