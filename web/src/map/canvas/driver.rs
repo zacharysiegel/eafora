@@ -12,7 +12,6 @@ use leptos::prelude::*;
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::{DataSourceKind, StatisticKind};
-use shared::license::DistributionContext;
 use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
@@ -750,14 +749,6 @@ fn apply_live_bundle(
     selection_view: WriteSignal<Option<SelectionView>>,
     global_view: WriteSignal<Option<GlobalView>>,
 ) {
-    let current_bundle: Arc<Bundle> = live_bundle_sender.borrow().clone();
-    let already_showing: bool = current_bundle.manifest.version == bundle.manifest.version
-        && current_bundle.distribution_context == DistributionContext::FirstParty;
-
-    if already_showing {
-        return;
-    }
-
     if let Err(error) = live_bundle_sender.send(Arc::new(bundle)) {
         log::warn!("publishing the live bundle failed; [error={error}]");
         return;
