@@ -1,7 +1,7 @@
 include!(concat!(env!("OUT_DIR"), "/i18n/mod.rs"));
 
 pub mod app;
-pub mod deployment;
+pub mod distribution;
 pub mod live_resolve;
 pub mod map;
 

@@ -213,7 +213,7 @@ callers pass the default.
 `Bundle::open<C: ArtifactCache>(cache, version_label, distribution_context)` (`bundle.rs:44`) reads
 files from the cache and does not fetch. The loader (Phase C for embedded, Phase D for live) fetches
 the manifest + its referenced files, `cache.put`s them, then `Bundle::open(cache, version, distribution_context)`.
-The context is resolved once per session from the deployment (`deployment::resolve_distribution_context`)
+The context is resolved once per session from the deployment (`distribution::resolve_context`)
 and passed to every open; it is not derived from which bundle was loaded, since the onboard and live
 bundles are the same deployment. Same code path as the live bundle, pointed
 at the same-origin `embedded_artifacts/` directory.
