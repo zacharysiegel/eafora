@@ -13,7 +13,7 @@ use crate::math;
 /// only this.
 const GEOMETRY_SCALE: &str = "50m";
 
-/// FlatGeobuf layer name baked into the `.fgb` (the producer writes it; readers / QGIS see it).
+/// FlatGeobuf layer name written into the `.fgb` (the producer writes it; readers / QGIS see it).
 pub const GEOMETRY_LAYER_NAME: &str = formatcp!("world_{}_admin_0", GEOMETRY_SCALE);
 
 /// Filename stem the producer uses; final filename is `{stem}-{sha8}.fgb`.

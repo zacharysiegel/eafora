@@ -135,7 +135,7 @@ A future `ingestion delete <version-label> <kind>` subcommand will remove a publ
 - **SC-003**: For any artifact version `V`, the `manifest_url` recorded in `artifact_version` returns HTTP 200 from the CDN and the manifest's referenced shard URLs all return HTTP 200. ("`artifact_version` rows mean fetchable" invariant.)
 - **SC-004**: For any `version_label`, two consecutive `build` runs (no canonical changes between) produce SQLite shards with identical SHA-256 content hashes. (Determinism — the build is a pure function of canonical state.)
 - **SC-005**: The pure-function helpers (source-choice resolution, manifest serialization, SHA-256 hashing, version-label generation, repository url-for) achieve ≥90% line coverage in the test suite. DB and HTTP helpers are exercised by integration tests; their coverage is informational, not gating.
-- **SC-006**: An operator can answer "what was published at version V?" via the `artifact_version` row alone — without consulting external snapshots — by following `manifest_url` to the manifest and `data_source_revisions_jsonb` for the source revisions baked into that build.
+- **SC-006**: An operator can answer "what was published at version V?" via the `artifact_version` row alone — without consulting external snapshots — by following `manifest_url` to the manifest and `data_source_revisions_jsonb` for the source revisions recorded for that build.
 
 ## Assumptions
 

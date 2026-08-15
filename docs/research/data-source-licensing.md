@@ -438,7 +438,7 @@ no-endorsement boilerplate is the only obligation.
   only for one-off internal analysis by individual researchers.
 - **HFD / HMD raw input layer.** Carries original NSO terms.
 
-### Operational guardrails to bake in from day one
+### Operational guardrails to establish from day one
 
 1. **Track per-indicator provenance and licence in the data model**, not just
    per-source. WDI republishes UN WPP; HFD republishes NSO inputs; OWID

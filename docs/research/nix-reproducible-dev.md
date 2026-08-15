@@ -78,7 +78,7 @@ for a better answer than Docker would give us?
 3. Can `secr` be expressed as a Nix derivation, or do we keep `cargo install`
    for the owned CLI and only Nix-manage the third-party deps?
 4. macOS-only support is sufficient for v0.9. Linux dev would be a nice
-   side-effect but is not a goal. Confirm chosen approach doesn't bake in
+   side-effect but is not a goal. Confirm chosen approach doesn't hard-code
    anything Linux-specific that we'd later have to back out.
 5. CI implications: GitHub Actions has first-class Nix support
    (`cachix/install-nix-action`). If we adopt Nix, the same `flake.nix`

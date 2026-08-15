@@ -15,7 +15,7 @@ use crate::render::gpu_types::Vec2;
 const NORMAL_EPSILON: f64 = 1e-12;
 
 /// A country's GPU-ready geometry. It owns its data and holds no GPU handles, so it is `Send`: a worker
-/// thread can build it, or the producer can bake it into the artifact, without involving the renderer.
+/// thread can build it, or the producer can write it into the artifact, without involving the renderer.
 #[derive(Debug, Clone)]
 pub struct CountryMesh {
     pub region_code: String,

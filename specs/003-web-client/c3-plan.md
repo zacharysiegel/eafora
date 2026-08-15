@@ -82,7 +82,7 @@ Hit-testing must keep reading the unscaled source polygon — it runs on a separ
 
 **Per-country identity and boundary normals (FR-017's uniform-indexed-by-country).**
 
-- Bake two per-vertex attributes at mesh build, in a buffer alongside the static `positions`: `country_index: u32` (assigned in country build order) and `outward_normal: vec2<f32>` — the unit miter of the vertex's two adjacent edges, oriented from the ring's signed-area winding so it points *out* of the solid area, and *into* hole rings. The miter is unit length (no `1/cos` scaling), so a sharp cape rounds slightly rather than shooting a spike; no clamping needed.
+- Write two per-vertex attributes at mesh build, in a buffer alongside the static `positions`: `country_index: u32` (assigned in country build order) and `outward_normal: vec2<f32>` — the unit miter of the vertex's two adjacent edges, oriented from the ring's signed-area winding so it points *out* of the solid area, and *into* hole rings. The miter is unit length (no `1/cos` scaling), so a sharp cape rounds slightly rather than shooting a spike; no clamping needed.
 - A per-country **state uniform buffer**, `array<CountryState, COUNTRY_STATE_CAP>` indexed by `country_index`, each entry `{ lift_px: f32, outline_px: f32 }` padded to 16 bytes, rewritten each frame. Uniform, not storage, because the renderer supports a WebGL2 backend (`ForceGl`) which has no storage buffers. `COUNTRY_STATE_CAP = 512` (≥ the loaded country count; the upload errors if exceeded). The WGSL struct is padded to a full 16-byte stride: a bare-`f32` element is under-sized for a uniform array and reads misaligned on stricter WGSL validators (WebKit), rendering nothing highlighted.
 - `CountrySpan` gains `region_code` (to match `frame_state`'s `RegionCode` when writing state) and the country's **fill-index range** (to redraw just that country on top).
 
@@ -265,7 +265,7 @@ The exponential map makes zoom multiplicative and symmetric. `MAX_WHEEL_DELTA` c
 
 ### Flow to the GPU and hit-testing
 
-`draw` passes `self.viewport` to `draw_frame`; `write_viewport_uniform` re-reads the current surface size each frame, so a mutated viewport reaches the shader on the next scheduled frame with no extra wiring, and the four invariants keep `project_to_clip`, `emphasis_offset`, and `wrap_direction` correct. Hover and selection read the live `self.viewport`, so they resolve against the mutated view. DPR is baked into the backing-store size and the `SurfacePoint` and normalized away in `surface_to_projected`; the viewport math is entirely in projected radians and needs no DPR handling.
+`draw` passes `self.viewport` to `draw_frame`; `write_viewport_uniform` re-reads the current surface size each frame, so a mutated viewport reaches the shader on the next scheduled frame with no extra wiring, and the four invariants keep `project_to_clip`, `emphasis_offset`, and `wrap_direction` correct. Hover and selection read the live `self.viewport`, so they resolve against the mutated view. DPR is applied to the backing-store size and the `SurfacePoint` and normalized away in `surface_to_projected`; the viewport math is entirely in projected radians and needs no DPR handling.
 
 ### Constants (tunable in-browser)
 

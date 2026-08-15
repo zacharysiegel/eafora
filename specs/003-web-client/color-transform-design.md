@@ -119,7 +119,7 @@ It keeps reading `value_range()` — needed for `Linear`, harmless (unused) for 
 - Title = the active statistic's label (`labels::statistic_label`), not a generic "Legend".
 - No-data swatch unchanged.
 
-**Generalizable inflection caption.** The semantic caption under the inflection marker ("replacement" for TFR) is an *optional per-statistic label*, not baked into the legend:
+**Generalizable inflection caption.** The semantic caption under the inflection marker ("replacement" for TFR) is an *optional per-statistic label*, not hard-coded in the legend:
 
 ```rust
 // web/src/map/labels.rs
