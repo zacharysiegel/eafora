@@ -578,7 +578,7 @@ Concurrency cap: the loader in `core::artifact` holds a `tokio::sync::Semaphore`
 
 Retry: per `client.md` §Stage 3, on any HTTP error or hash mismatch, retry once after approx. 100 ms, doubling to approx. 400 ms on a second attempt. Implemented in the loader (in `core::artifact`); the fetch adapter just propagates errors.
 
-The `repository_base_url` is **not** baked into the binary as a hand-typed constant. It's resolved at runtime via the discovery URL flow defined in `client.md` §Discovery and live bundle resolution: the client fetches `https://eafora.org/discovery`, reads `repository_base_url` from the response, and uses that for every shard fetch. A baked-in fallback (populated at build time by a small script that reads the current discovery doc) handles the case where discovery itself fails. Web doesn't strictly need the indirection — every commit redeploys — but the contract is uniform across platforms; iOS and Android need it (binaries live on devices for months), and there's no cost to web following the same shape.
+The `repository_base_url` is **not** a hand-typed constant. It's resolved at runtime via the discovery URL flow defined in `client.md` §Discovery and live bundle resolution: the client fetches same-origin `/discovery`, reads `repository_base_url` from the response, and uses that for every shard fetch. A static fallback (the committed `web/static/discovery` file, included at compile time) handles the case where discovery itself fails. Web doesn't strictly need the runtime indirection — every commit redeploys — but the contract is uniform across platforms; iOS and Android need it (binaries live on devices for months), and there's no cost to web following the same shape.
 
 ## Deploy target: Cloudflare Workers Assets
 

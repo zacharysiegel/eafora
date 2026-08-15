@@ -11,7 +11,7 @@ This document covers everything between **a published artifact bundle on the CDN
 - SQLite-in-the-client: which engine, how the database is opened, how queries run.
 - FlatGeobuf reading: which reader, how features feed the renderer.
 - License-shard composition: how the client picks which shards to attach for its distribution context.
-- Embedded downsampled artifact: the "good enough for first paint and offline use" bundle — baked into native client binaries; shipped as a static asset alongside the wasm on web. Mechanism differs by platform; the bundle itself is the same.
+- Embedded downsampled artifact: the "good enough for first paint and offline use" bundle. Embedded in native client binaries; shipped as a static asset alongside the wasm on web. Mechanism differs by platform; the bundle itself is the same.
 - Cross-platform consistency: which decisions every client makes the same, which it doesn't.
 
 Map rendering details (projection, hit testing, zoom-to-country) are covered in `docs/architecture/overview.md`. Per-platform UI (Leptos components, SwiftUI views, Compose composables) is covered in the per-platform docs.
@@ -83,7 +83,7 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 
 ### Discovery and live bundle resolution
 
-A client holds (up to) two artifact bundles at any moment: an **embedded** one (the downsampled bundle baked into the binary on native, shipped as a static asset on web) and a **live** one (the latest CDN-published version; resolved at runtime). On every platform, the persistent on-device cache (OPFS on web; file system on iOS/Android) holds the most recently fetched live bundle, so returning users get instant first-paint regardless of platform. The embedded bundle is the additional baseline for first-ever-launch / cache-cleared / fresh-install scenarios — present on every platform, so every first-time user sees the map render before any live-bundle fetch resolves.
+A client holds (up to) two artifact bundles at any moment: an **embedded** one (the downsampled bundle embedded in the binary on native, shipped as a static asset on web) and a **live** one (the latest CDN-published version; resolved at runtime). On every platform, the persistent on-device cache (OPFS on web; file system on iOS/Android) holds the most recently fetched live bundle, so returning users get instant first-paint regardless of platform. The embedded bundle is the additional baseline for first-ever-launch / cache-cleared / fresh-install scenarios — present on every platform, so every first-time user sees the map render before any live-bundle fetch resolves.
 
 The embedded bundle on native serves two purposes: first-paint accelerant for first-ever-launch on the device, and the **offline-capable baseline** — a user who launches the app without connectivity and without a populated cache still sees a usable, if slightly stale, atlas. (Returning native users with a populated cache don't need the embedded bundle for first paint, but it's still there as the floor.) On web, the static-asset bundle serves only as the first-paint accelerant — there is no offline use case for the web client since the wasm itself ships from the same origin and is subject to the same connectivity constraints. The live bundle is the one the user is meant to see when online.
 
@@ -93,7 +93,7 @@ Pinned at client build time on every platform. The client's build script pulls t
 
 #### Discovery URL: the one forever-URL
 
-Clients commit to exactly one immutable URL: `https://eafora.org/discovery`. Everything else — including the repository base URL — is server-supplied at runtime. This indirection exists almost entirely for the native clients: web rebuilds and redeploys on every commit, so a baked-in URL would be a one-commit change to update, but iOS and Android binaries live on user devices for months or years, and a `repository.eafora.org` re-platform without runtime indirection would silently break every old install in the field. We keep the contract identical across platforms (web included) for simplicity; it costs web nothing.
+Clients commit to exactly one immutable URL: `https://eafora.org/discovery`. Everything else — including the repository base URL — is server-supplied at runtime. This indirection exists almost entirely for the native clients: web rebuilds and redeploys on every commit, so a static URL would be a one-commit change to update, but iOS and Android binaries live on user devices for months or years, and a `repository.eafora.org` re-platform without runtime indirection would silently break every old install in the field. We keep the contract identical across platforms (web included) for simplicity; it costs web nothing.
 
 The endpoint is `/discovery` with no extension. The content-type comes from the response header, not the path; an extension would prematurely couple the URL to a specific backing implementation (static file vs. Pages Function vs. someday-Worker) and we want freedom there.
 
@@ -108,7 +108,7 @@ The endpoint is `/discovery` with no extension. The content-type comes from the 
 }
 ```
 
-- `schema_version` lets the document's shape evolve. Clients reject documents whose `schema_version` they don't recognize, falling back to their baked-in defaults.
+- `schema_version` lets the document's shape evolve. Clients reject documents whose `schema_version` they don't recognize, falling back to their static defaults.
 - `repository_base_url` is where every shard URL is resolved against. The client never string-formats CDN paths; it joins `repository_base_url` + the manifest's per-entry `relative_path`.
 - `minimum_client_version` is the lowest client version this contract still supports. Clients older than this surface a "please update" banner. Through v1 this is informational; it becomes load-bearing when v2's live API lands and old clients genuinely lose features.
 - `sunset` is `null` in steady state. When non-null (RFC 3339 timestamp), clients surface a dismissible warning banner with the date; after the date passes, clients hard-error rather than continue against an end-of-life contract. Reserved for major contract changes that can't be made backward-compatible (R2 re-platform, manifest schema bump). This field ships in v1 deliberately: it has to exist in v1's schema to ever be usable for retiring v1 clients later; adding it under `schema_version: 2` would mean v1 clients don't know to look for it.
@@ -121,22 +121,22 @@ Cache headers on the discovery doc: `Cache-Control: public, max-age=3600`. A re-
 
 The document is physically hosted on the same Cloudflare Workers Assets deploy that serves the web app (`web/static/discovery`, deployed at `https://eafora.org/discovery`), because `eafora.org` is the obvious place for it and we already have a deploy serving that origin. The endpoint is platform-agnostic — every client fetches it at startup — but it ends up living in the web tree by convenience. See `client-web.md` §Deploy target for the deployment shape.
 
-##### Baked-in fallback
+##### Static fallback
 
-Clients also bake in the value of `repository_base_url` that was current at the moment they were built. This fallback is used **only** when the discovery fetch fails (offline, broken document, transient outage). It drifts from current truth over time, but it's the right behavior for "client can't reach discovery — use the last-known-good source." If both discovery and the manifest fetch under the fallback URL fail, the embedded bundle remains the floor, exactly as designed.
+Clients also keep a static `repository_base_url` from the committed discovery document at build time (web: `include_str!` of `web/static/discovery`). This fallback is used **only** when the discovery fetch fails (offline, broken document, transient outage). It drifts from current truth over time, but it's the right behavior for "client can't reach discovery — use the last-known-good source." If both discovery and the manifest fetch under the fallback URL fail, the embedded bundle remains the floor, exactly as designed.
 
-The fallback is read from the actual discovery document at client build time (a small script fetches `https://eafora.org/discovery` and writes the resulting `repository_base_url` into a build-time constant). No hand-typed strings; whatever the discovery doc says at build time becomes the binary's fallback.
+The fallback is the committed discovery file, not a hand-typed string and not a script that fetches `https://eafora.org/discovery`.
 
 ##### Speculative parallel fetch at startup
 
-The expected case is "the discovery URL still points at the baked-in repository URL." That's the steady state. To save a round trip in this expected case, the client fires the discovery fetch and the speculative manifest fetch (against the baked-in URL) **in parallel** at startup, then reconciles:
+The expected case is "the discovery URL still points at the static repository URL." That's the steady state. To save a round trip in this expected case, the client fires the discovery fetch and the speculative manifest fetch (against the static URL) **in parallel** at startup, then reconciles:
 
 1. Construct `Bundle` from the embedded bundle. Map renders. (No network.)
 2. Fire two requests in parallel:
    - The discovery fetch to `https://eafora.org/discovery`.
-   - The manifest fetch to `<baked_repository_base_url>/latest/manifest.json` (speculative).
+   - The manifest fetch to `<static_repository_base_url>/latest/manifest.json` (speculative).
 3. When discovery resolves:
-   - If its `repository_base_url` matches the baked URL → the speculative fetch is the one we wanted. Await it, verify, hot-swap.
+   - If its `repository_base_url` matches the static URL → the speculative fetch is the one we wanted. Await it, verify, hot-swap.
    - If it differs (re-platform happened) → cancel or discard the speculative fetch, issue a new manifest fetch against the discovered URL, await, verify, hot-swap.
 4. If discovery fails → use the speculative fetch's result. If it succeeded, hot-swap. If both fail, surface a UI banner; embedded bundle remains the floor.
 5. If discovery succeeds but the chosen `repository_base_url` 404s → surface the failure; same fallback.
@@ -147,7 +147,7 @@ One implementation note: the speculative fetch writes to the cache as soon as by
 
 Decision-tree summary:
 
-- Discovery says baked URL is still good → 1 round trip total (the speculative manifest fetch was the right one).
+- Discovery says static URL is still good → 1 round trip total (the speculative manifest fetch was the right one).
 - Discovery says use a new URL → 2 round trips, one wasted.
 - Discovery fails → 1 round trip (the speculative one we already had).
 - Both fail → embedded bundle is the floor.
@@ -308,7 +308,7 @@ The reader is initialized once per bundle load. Country features parse first, in
 
 Every client ships with the same downsampled bundle — a small subset of the live artifact that gives every first-time user (and every offline-capable device) an instant render. The bundle bytes are identical across platforms; only the **delivery mechanism** differs:
 
-- **Native** (iOS, Android): bytes baked into the app binary at build time. Available before any network or filesystem activity. Doubles as the offline-capable baseline when no cache and no network are present.
+- **Native** (iOS, Android): bytes embedded in the app binary at build time. Available before any network or filesystem activity. Doubles as the offline-capable baseline when no cache and no network are present.
 - **Web**: bytes shipped as a static asset alongside the wasm on Cloudflare Workers Assets. Fetched on first visit (HTTP-cached for return visits) before the live CDN bundle, so the first-ever visitor sees the map render at static-asset speed rather than waiting on a separate live-bundle fetch.
 
 The downsampled bundle is generated by `ingestion build`, which reads the canonical store directly (no CDN round trip) and writes a reduced artifact set to the `downsampled/` subtree of the build (`$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`, alongside the complete bundle at `.../complete/`). It does not touch any per-platform asset directory.
@@ -418,5 +418,5 @@ Live HTTP against the CDN is **not** part of automated tests; it's a manual smok
 
 - **wgpu / WebGPU fallback policy.** WebGPU is stable in Chromium and Safari 18.4+; Firefox is on WebGL2 via the wgpu downlevel backend. The capability detection happens inside `wgpu::Instance::request_adapter`, so the client doesn't need its own logic — but the *UI fallback* (do we render a coarser version under WebGL2, or do we render the same version with a perf-warning banner?) is per-platform UX work. Defer to `client-web.md`.
 - **Embedded-bundle build automation (native).** `ingestion build` now emits the downsampled subtree (`$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`) on every build alongside the complete bundle, and `scripts/sync-embedded-bundle.sh <destination-dir>` copies `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` into a client's asset directory (running `ingestion build` first if no build exists). Each native build script needs to invoke this sync step and copy the result into its own asset directory when native-client work begins.
-- **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are baked into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. **Trigger:** i18n lands (a second locale becomes a real deliverable).
+- **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are written into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. **Trigger:** i18n lands (a second locale becomes a real deliverable).
 

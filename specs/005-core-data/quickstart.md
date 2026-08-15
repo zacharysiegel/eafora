@@ -165,7 +165,7 @@ if let Some(sunset_timestamp) = &discovery.sunset {
 }
 ```
 
-If `schema_version != 1`, `parse_discovery_document` returns an `AppError` and the caller falls back to the baked-in `repository_base_url` constant.
+If `schema_version != 1`, `parse_discovery_document` returns an `AppError` and the caller falls back to the static `repository_base_url` constant.
 
 ## License-shard authorization
 

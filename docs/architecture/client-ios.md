@@ -27,7 +27,7 @@ From the constitution, `docs/architecture/overview.md`, `docs/architecture/clien
 - Async: Swift's `async`/`await` consumes UniFFI async functions; cancellation is one-way (Swift task cancellation does not propagate; Rust must self-cancel based on a polled flag if cancellation matters). (Overview §iOS client; §FFI design rules)
 - HTTP: `URLSession`. (Overview §iOS client; §FFI dividing line)
 - Cache: file system inside the app sandbox. (Overview §Client cache strategy)
-- Embedded bundle on native: bytes baked into the app binary at build time; loads synchronously before the first frame; doubles as the offline-capable baseline. (Client §Embedded downsampled artifact)
+- Embedded bundle on native: bytes embedded in the app binary at build time; loads synchronously before the first frame; doubles as the offline-capable baseline. (Client §Embedded downsampled artifact)
 - Web and iOS develop in parallel from v1, deliberately, to prevent the architecture from overfitting to the web platform's constraints. Android lags. The native apps double as personal-learning goals for the parallel game project; for funder pitches, only the web is the user-facing v1 deliverable. (Project memory)
 - Apple Developer Program: $99/year; App Store Connect API key for CI; TestFlight for testing; ~24–48 hour App Store review. (Overview §App store distribution)
 - Visual identity: sharp white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, only the zoom-to-country animation through v1. (`docs/design/README.md`)
@@ -431,13 +431,13 @@ Eviction policy from `client.md` §Cache eviction (keep current + most-recent pr
 
 ## Embedded bundle: app bundle Resources
 
-Per `client.md` §Embedded downsampled artifact, native clients ship the embedded bundle as bytes baked into the app binary at build time. On iOS:
+Per `client.md` §Embedded downsampled artifact, native clients ship the embedded bundle as bytes embedded in the app binary at build time. On iOS:
 
 - The downsampled output (`manifest.json` + `geometry/` + statistic shards) is copied into `ios/EaforaApp/Resources/embedded_artifacts/` by `scripts/sync-embedded-bundle.sh` (Run Script build phase 2; see §Build toolchain).
 - The "Copy Bundle Resources" build phase copies that directory into the `.app` bundle.
 - At app launch, `EmbeddedBundle.swift` locates the bundle root via `Bundle.main.url(forResource: "embedded_artifacts", withExtension: nil)`, reads the manifest, and constructs a `core::artifact::Bundle` synchronously **before the first frame is drawn**.
 - The renderer's `tokio::sync::watch::Sender<Arc<Bundle>>` is initialized with the embedded bundle. The map renders its first frame against the embedded data within milliseconds of process start.
-- In parallel, `EaforaApp.swift` kicks off the discovery + live-fetch flow defined in `client.md` §Discovery and live bundle resolution: fire the discovery fetch (`https://eafora.org/discovery`) and a speculative manifest fetch (against the baked-in `repository_base_url` fallback) concurrently; reconcile per `client.md`; persist any verified bytes to the file-system cache; publish the resulting `Arc<Bundle>` to the renderer's watch channel. If both fetches fail, the embedded bundle remains the floor.
+- In parallel, `EaforaApp.swift` kicks off the discovery + live-fetch flow defined in `client.md` §Discovery and live bundle resolution: fire the discovery fetch (`https://eafora.org/discovery`) and a speculative manifest fetch (against the static `repository_base_url` fallback) concurrently; reconcile per `client.md`; persist any verified bytes to the file-system cache; publish the resulting `Arc<Bundle>` to the renderer's watch channel. If both fetches fail, the embedded bundle remains the floor.
 - On hot-swap, the live-fetch task replaces the published bundle (per `client.md` §Bundle hot-swap); the next `setNeedsDisplay()` redraws the map against the new data.
 
 The embedded bundle is **also the offline-capable baseline**. A user opening Eafora without connectivity and without a populated cache still sees a usable, if slightly stale, atlas. Updates to the embedded bundle ride app updates: the user installs a new app build (whose `ingestion build --downsampled` output captured a newer baseline), and the floor advances.
@@ -671,7 +671,7 @@ Concurrency cap: `URLSession.shared` defaults are reasonable for the per-platfor
 
 Retry: per `client.md` §Stage 3, the loader inside `core::artifact` owns the retry loop (approx. 100 ms / 400 ms backoff). The fetch adapter just propagates errors.
 
-`repositoryBaseURL` is resolved at runtime via the discovery URL flow defined in `client.md` §Discovery and live bundle resolution: the app fetches `https://eafora.org/discovery`, reads `repository_base_url` from the response, and uses that for every shard fetch. A baked-in fallback (populated at build time by a small script that reads the current discovery doc and writes the value into a generated Swift constant) handles the case where discovery itself fails. The indirection earns its keep on iOS specifically — TestFlight and App Store installs live on devices for months or years, and an R2 re-platform without the discovery indirection would silently break every install in the field on the next launch.
+`repositoryBaseURL` is resolved at runtime via the discovery URL flow defined in `client.md` §Discovery and live bundle resolution: the app fetches `https://eafora.org/discovery`, reads `repository_base_url` from the response, and uses that for every shard fetch. A static fallback (populated at build time from the committed discovery document and written into a generated Swift constant) handles the case where discovery itself fails. The indirection earns its keep on iOS specifically — TestFlight and App Store installs live on devices for months or years, and an R2 re-platform without the discovery indirection would silently break every install in the field on the next launch.
 
 For local development, override the discovery URL itself (point it at a local web server serving a development discovery document) rather than overriding `repositoryBaseURL` directly. Keeps the production code path identical to dev; one less divergence to debug.
 
@@ -727,7 +727,7 @@ xcodebuild -exportArchive \
 
 CI does not retain `.xcarchive`s. They're produced as a byproduct of `xcodebuild archive`, immediately consumed by the upload step, and discarded.
 
-The recovery path for crash-report symbolication months after a build shipped is `git checkout <revision> && xcodebuild archive`, where `<revision>` comes from the `EaforaRevision` value baked into the binary's `Info.plist` (per §Build version provenance). The user's crash report carries the revision; we check out the matching source state; we rebuild; the rebuilt archive's `.dSYM` UUIDs match the original (assuming our build is deterministic enough — pinned Xcode + Rust toolchains, standard release profile, `panic = "abort"` workspace-wide). Symbolication proceeds normally.
+The recovery path for crash-report symbolication months after a build shipped is `git checkout <revision> && xcodebuild archive`, where `<revision>` comes from the `EaforaRevision` value recorded in the binary's `Info.plist` (per §Build version provenance). The user's crash report carries the revision; we check out the matching source state; we rebuild; the rebuilt archive's `.dSYM` UUIDs match the original (assuming our build is deterministic enough — pinned Xcode + Rust toolchains, standard release profile, `panic = "abort"` workspace-wide). Symbolication proceeds normally.
 
 The git-revision-in-binary plumbing is what makes archive retention unnecessary. Without it, we'd have to retain archives because there'd be no way to know which source state to check out for a given user-reported crash. With it, the archive becomes recoverable from source, so storing it is redundant.
 

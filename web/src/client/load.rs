@@ -72,9 +72,9 @@ pub async fn load_live_bundle(cache: &OpfsArtifactCache, repository_base_url: &s
     open_fetched_live_bundle(cache, repository_base_url, &manifest_bytes).await
 }
 
-pub async fn load_live_after_discovery(cache: &OpfsArtifactCache, baked_base: &str) -> Result<Bundle, AppError> {
+pub async fn load_live_after_discovery(cache: &OpfsArtifactCache, static_base: &str) -> Result<Bundle, AppError> {
     let discovery_bytes_result: Result<Vec<u8>, AppError> = fetch::fetch_discovery(live_resolve::DISCOVERY_PATH).await;
-    let speculative_manifest_result: Result<Vec<u8>, AppError> = fetch::fetch_manifest(baked_base).await;
+    let speculative_manifest_result: Result<Vec<u8>, AppError> = fetch::fetch_manifest(static_base).await;
 
     let parsed_discovery: Result<DiscoveryDocument, AppError> = match discovery_bytes_result {
         Ok(discovery_bytes) => artifact::parse_discovery_document(&discovery_bytes),
@@ -82,13 +82,13 @@ pub async fn load_live_after_discovery(cache: &OpfsArtifactCache, baked_base: &s
     };
 
     let authoritative_base: AuthoritativeBase =
-        live_resolve::authoritative_repository_base(baked_base, parsed_discovery);
+        live_resolve::authoritative_repository_base(static_base, parsed_discovery);
 
     let (repository_base_url, manifest_bytes): (String, Vec<u8>) = match authoritative_base {
-        AuthoritativeBase::Baked => {
+        AuthoritativeBase::Static => {
             let manifest_bytes: Vec<u8> = speculative_manifest_result?;
 
-            (baked_base.to_string(), manifest_bytes)
+            (static_base.to_string(), manifest_bytes)
         }
         AuthoritativeBase::Discovered(other) => {
             let _: Result<Vec<u8>, AppError> = speculative_manifest_result;

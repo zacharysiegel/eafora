@@ -65,7 +65,7 @@ Single-threaded WASM; wgpu resources are thread-bound; `Renderer` has `&mut self
 Orchestrates first paint and the background upgrade. Not a persisted entity — a startup async flow.
 
 1. **Embedded first paint**: fetch the embedded manifest from `static/embedded_artifacts/`, `cache.put` its files, `Bundle::open(cache, embedded_version, DistributionContext::Embedded)`, publish on `BUNDLE_TX`. This is the same fetch→cache→open path as the live bundle, pointed at the same origin.
-2. **Speculative parallel fetch** (P3): the discovery fetch (`/discovery`) and a speculative manifest fetch against the baked-in `repository_base_url` fire concurrently; reconcile per `client.md` §Speculative parallel fetch (use speculative result when discovery fails or agrees; discard + refetch when discovery reports a different base URL).
+2. **Speculative parallel fetch** (P3): the discovery fetch (`/discovery`) and a speculative manifest fetch against the static `repository_base_url` fire concurrently; reconcile per `client.md` §Speculative parallel fetch (use speculative result when discovery fails or agrees; discard + refetch when discovery reports a different base URL).
 3. **Verify + cache + hot-swap**: each fetched file is `verify_sha256`'d against the manifest entry, `cache.put`, and once complete `Bundle::open` produces the live `Arc<Bundle>`, published on `BUNDLE_TX`. Concurrency cap 6 (FR-026).
 4. **Returning visit**: if OPFS already holds a current live bundle, open it first as the floor (skip embedded), then run the latest-revision check in the background.
 

@@ -20,7 +20,7 @@ Affected repositories: this monorepo only (`/Users/singularity/eafora`).
 - The application must run locally with only this machine's data. No production, staging, or shared test server on the happy path.
 - The page always fetches same-origin `/discovery`. On `eafora.org` that is the production discovery URL; on `cargo leptos watch` it is `web/static/discovery`. The wasm does not fetch `https://eafora.org/discovery`.
 - Committed discovery has `repository_base_url: "/repository"`. Flipping that field to `https://repository.eafora.org` is a later deploy-time edit, not a prerequisite for D.
-- Baked fallback is `include_str!` of the committed discovery file at compile time, not a script that hits the apex.
+- Static fallback is `include_str!` of the committed discovery file at compile time, not a script that hits the apex.
 - Local live tree is more static files, not an object-storage emulator. `LocalArtifactRepository::put_file` is `create_dir_all` plus `fs::copy`.
 - `ingestion publish` (local and `cloudflare-r2`) writes `latest/manifest.json` after the versioned manifest. That step was specified and never implemented.
 - `publish local` keeps the two newest version directories under `--root` plus `latest/manifest.json`. R2 is not pruned.
@@ -37,7 +37,7 @@ Affected repositories: this monorepo only (`/Users/singularity/eafora`).
 ## File map
 
 - Create: `web/static/discovery`
-- Create: `web/src/live_resolve.rs` (always compiled; host-testable reconcile + baked document)
+- Create: `web/src/live_resolve.rs` (always compiled; host-testable reconcile + static document)
 - Modify: `ingestion/src/artifact/publish.rs` (latest pointer; dispatch local retain)
 - Modify: `ingestion/src/artifact/repository/local_artifact_repository.rs` (retain two newest version directories)
 - Modify: `ingestion/src/artifact/repository/artifact_repository.rs` (forward retain if the trait needs it; prefer an inherent function on `LocalArtifactRepository` called from `publish_artifacts` when the destination is `Local`)
@@ -237,30 +237,30 @@ use shared::artifact::{DiscoveryDocument, parse_discovery_document};
 use shared::AppError;
 
 pub const DISCOVERY_PATH: &str = "/discovery";
-pub const BAKED_DISCOVERY_JSON: &str = include_str!("../static/discovery");
+pub const STATIC_DISCOVERY_JSON: &str = include_str!("../static/discovery");
 
-pub fn baked_discovery_document() -> Result<DiscoveryDocument, AppError> {
-    parse_discovery_document(BAKED_DISCOVERY_JSON.as_bytes())
+pub fn static_discovery_document() -> Result<DiscoveryDocument, AppError> {
+    parse_discovery_document(STATIC_DISCOVERY_JSON.as_bytes())
 }
 
-pub fn baked_repository_base_url() -> Result<String, AppError> {
-    Ok(baked_discovery_document()?.repository_base_url)
+pub fn static_repository_base_url() -> Result<String, AppError> {
+    Ok(static_discovery_document()?.repository_base_url)
 }
 
 /// Picks the repository base after the parallel discovery fetch.
 /// Speculative errors stay silent until this returns.
 pub enum AuthoritativeBase {
-    Baked,
+    Static,
     Discovered(String),
 }
 
 pub fn authoritative_repository_base(
-    baked_base: &str,
+    static_base: &str,
     discovery: Result<DiscoveryDocument, AppError>,
 ) -> AuthoritativeBase {
     match discovery {
-        Err(_) => AuthoritativeBase::Baked,
-        Ok(document) if document.repository_base_url == baked_base => AuthoritativeBase::Baked,
+        Err(_) => AuthoritativeBase::Static,
+        Ok(document) if document.repository_base_url == static_base => AuthoritativeBase::Static,
         Ok(document) => AuthoritativeBase::Discovered(document.repository_base_url),
     }
 }
@@ -268,9 +268,9 @@ pub fn authoritative_repository_base(
 
 Host tests in the same file (`#[cfg(test)]`):
 
-- `baked_discovery_document_parses_committed_file`
-- `authoritative_repository_base_uses_baked_when_discovery_fails`
-- `authoritative_repository_base_uses_baked_when_discovery_matches`
+- `static_discovery_document_parses_committed_file`
+- `authoritative_repository_base_uses_static_when_discovery_fails`
+- `authoritative_repository_base_uses_static_when_discovery_matches`
 - `authoritative_repository_base_uses_discovered_when_base_differs`
 
 - [ ] **Step 5:** `cargo test -p web --features ssr live_resolve`. Expected: PASS. `cargo check -p web --lib --no-default-features --features hydrate --target wasm32-unknown-unknown`. Expected: PASS.
@@ -328,9 +328,9 @@ pub async fn load_live_bundle(
 
 Extract the per-file fetch+verify+put so the semaphore wraps one file, not the whole bundle.
 
-- [ ] **Step 3:** Add `load_live_after_discovery(cache, baked_base) -> Result<Bundle, AppError>` that:
+- [ ] **Step 3:** Add `load_live_after_discovery(cache, static_base) -> Result<Bundle, AppError>` that:
 
-  1. Starts `fetch_discovery(DISCOVERY_PATH)` and `fetch_manifest(baked_base)` together (`futures` join, or spawn two tasks and join). The web crate already has tokio sync; use `futures_util::future::join` if that crate is already in the graph, otherwise two sequential awaits only if join is not already a dependency. Prefer join. Check `Cargo.lock` before adding a crate; `wasm_bindgen_futures` plus a local `join` helper is enough if no join crate is present:
+  1. Starts `fetch_discovery(DISCOVERY_PATH)` and `fetch_manifest(static_base)` together (`futures` join, or spawn two tasks and join). The web crate already has tokio sync; use `futures_util::future::join` if that crate is already in the graph, otherwise two sequential awaits only if join is not already a dependency. Prefer join. Check `Cargo.lock` before adding a crate; `wasm_bindgen_futures` plus a local `join` helper is enough if no join crate is present:
 
 ```rust
 async fn join2<A, B>(left: A, right: B) -> (A::Output, B::Output)
@@ -344,8 +344,8 @@ where
 
   `tokio::join!` needs the `macros` feature. Do not add it only for this. Write a two-future poll helper in `live_resolve.rs` or await discovery first then manifest if join is heavy. Preferred: `wasm_bindgen_futures::JsFuture` is already sequential-friendly; fire both by starting both Promises in `fetch` (they start on call) and awaiting both results. Call both `fetch_*` functions so their `window.fetch` runs before either body is awaited: start discovery, start speculative, then await both.
 
-  2. `authoritative_repository_base(baked_base, parsed_discovery)`.
-  3. If `Baked`, parse the speculative manifest bytes (surface that error now). If speculative failed, return that error.
+  2. `authoritative_repository_base(static_base, parsed_discovery)`.
+  3. If `Static`, parse the speculative manifest bytes (surface that error now). If speculative failed, return that error.
   4. If `Discovered(other)`, ignore speculative errors, `fetch_manifest(&other)` and use that base for files.
   5. Fetch remaining files against the chosen base, verify, put, open.
 
@@ -375,7 +375,7 @@ Then `evict_old_versions` as today.
 
 - [ ] **Step 2:** After the driver is in the `DRIVER` slot and the initial chrome signals are set, spawn a local task that:
 
-  1. Reads `baked_repository_base_url()`.
+  1. Reads `static_repository_base_url()`.
   2. Calls `load_live_after_discovery`.
   3. On success: `bundle_sender.send(Arc::new(bundle))` (the sender is cloneable; clone it into the task before moving the driver). Then `DRIVER.with_borrow_mut` to clamp `active_period_start` to the new shard's range if the current year is absent, republish `ViewControls` / `LegendView` / `GlobalView` / selection view, `request_redraw`.
   4. On failure: log, set a `live_load_failed` signal so the shell shows the banner. The painted bundle stays.
@@ -443,3 +443,4 @@ D1 / D2 / D3 descriptions are under each phase above.
 ## Post-implementation notes
 
 - `HttpRequest.cache` was renamed to `cache_mode` so the field matches `HttpCacheMode`.
+- The compile-time discovery fallback is named static (`AuthoritativeBase::Static`, `static_repository_base_url`), not baked. Embedded stays the first-paint onboard bundle.

@@ -716,16 +716,16 @@ async fn upgrade_to_live_bundle(
     global_view: WriteSignal<Option<GlobalView>>,
     live_load_failed: WriteSignal<bool>,
 ) {
-    let baked_base: String = match live_resolve::baked_repository_base_url() {
-        Ok(baked_base) => baked_base,
+    let static_base: String = match live_resolve::static_repository_base_url() {
+        Ok(static_base) => static_base,
         Err(error) => {
-            log::warn!("reading the baked repository base failed; [error={error}]");
+            log::warn!("reading the static repository base failed; [error={error}]");
             live_load_failed.set(true);
             return;
         }
     };
 
-    match load::load_live_after_discovery(&cache, &baked_base).await {
+    match load::load_live_after_discovery(&cache, &static_base).await {
         Ok(bundle) => apply_live_bundle(
             live_bundle_sender,
             bundle,

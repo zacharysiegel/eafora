@@ -386,7 +386,7 @@ pub struct DataSource {
 These stay in ingestion entirely (not just Entity-stays-Model-moves; nothing about them crosses into `shared/`):
 
 - **`StatisticValue` + `StatisticValueEntity`**: consumer-side `statistic_value` reads happen against SQLite shards with a different column set (`region_iso3 text` not `region_id uuid`; no `superseded`; no FK references). The Postgres-shaped `StatisticValue` Model isn't the right consumer type; consumers query the shard directly.
-- **`SourceChoice` + `SourceChoiceEntity`**: producer-only merge configuration. Baked into shards at build time; consumers see only the resulting `statistic_value` rows.
+- **`SourceChoice` + `SourceChoiceEntity`**: producer-only merge configuration. Written into shards at build time; consumers see only the resulting `statistic_value` rows.
 - **`ArtifactVersion` + `ArtifactVersionEntity`**: producer-only publish bookkeeping. The `latest/manifest.json` discovery flow exposes `version_label` + `manifest_url` indirectly (via the manifest's URL), but consumers don't read the Postgres row directly.
 
 ## Module: `shared::artifact::manifest`
