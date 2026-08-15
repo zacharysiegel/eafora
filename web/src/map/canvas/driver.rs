@@ -631,6 +631,16 @@ async fn set_up_driver(
         }
     };
 
+    log::info!(
+        "first paint bundle opened; [version_label={} distribution_context={:?} periods={:?}]",
+        bundle.manifest.version,
+        bundle.distribution_context,
+        bundle
+            .shard_for(StatisticKind::Tfr)
+            .and_then(|shard_bytes| shard_db::read_shard(shard_bytes).ok())
+            .and_then(|shard_values| shard_values.period_range()),
+    );
+
     if let Err(error) = cache.evict_old_versions().await {
         log::warn!("evicting old cached bundle versions failed [error={error}]");
     }
@@ -681,6 +691,12 @@ async fn set_up_driver(
     let initial_controls: ViewControls = driver.view_controls();
     let initial_legend: LegendView = driver.legend_view();
     let initial_global: GlobalView = driver.resolve_global_view();
+    log::debug!(
+        "initial global figure resolved; [period_start={} value={:?} source={:?}]",
+        initial_global.period_start,
+        initial_global.value,
+        initial_global.source,
+    );
     let live_bundle_sender: watch::Sender<Arc<Bundle>> = driver.bundle_sender.clone();
 
     DRIVER.with_borrow_mut(|driver_slot| {
