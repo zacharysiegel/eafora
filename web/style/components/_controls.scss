@@ -6,6 +6,12 @@
     flex-direction: column;
     gap: var(--space-md);
     width: 18rem;
+
+    /* The scrubber thumb's diameter, and the height reserved above the rail for the floating year. Declared
+    here so the thumb rules, the bound labels, and the year's horizontal offset all derive from one value;
+    the offset is a CSS calc, so nothing outside this file needs to know the geometry. */
+    --scrubber-thumb-size: 14px;
+    --scrubber-value-row-height: 1.35rem;
 }
 
 .controls-field {
@@ -40,6 +46,35 @@
     outline-offset: -1px;
 }
 
+// The scrubber's row: the range's endpoints flank the rail, which reserves a row above itself for the
+// year that tracks the thumb. Tops align and the bounds carry the same reserved row, so a bound's text
+// centers on the rail's 1px line.
+.controls-scrubber-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-sm);
+}
+
+.controls-scrubber-track {
+    position: relative;
+    flex: 1;
+    padding-top: var(--scrubber-value-row-height);
+}
+
+.controls-bound {
+    display: flex;
+    align-items: center;
+    height: calc(var(--scrubber-value-row-height) + 24px);
+    padding-top: var(--scrubber-value-row-height);
+    font-size: var(--type-size-bound);
+    color: var(--color-ink-muted);
+}
+
+// The value already reads the endpoint, so the endpoint recedes rather than stating it twice.
+.controls-bound.equals-active {
+    color: var(--color-rule);
+}
+
 // A 1px line under a 24px-tall click band, so the thumb is easy to grab.
 .controls-scrubber {
     width: 100%;
@@ -64,17 +99,17 @@
 .controls-scrubber::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 14px;
-    height: 14px;
-    margin-top: 5px; // center the 14px thumb in the 24px track
+    width: var(--scrubber-thumb-size);
+    height: var(--scrubber-thumb-size);
+    margin-top: 5px; // center the thumb in the 24px track
     border-radius: 50%;
     background: var(--color-accent-active);
     border: var(--border-active);
 }
 
 .controls-scrubber::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
+    width: var(--scrubber-thumb-size);
+    height: var(--scrubber-thumb-size);
     border-radius: 50%;
     background: var(--color-accent-active);
     border: var(--border-active);
@@ -92,10 +127,20 @@
     height: 18px;
 }
 
+// Tracks the thumb. `--thumb-proportion` is the active year's position within the range, set inline by the
+// component, so the geometry stays here as a calc and the component supplies only the proportion. A range
+// input's thumb centre travels from half a thumb in to half a thumb short of the end, which is what the
+// two thumb-size terms account for.
 .controls-year {
-    align-self: flex-end;
+    position: absolute;
+    top: 0;
+    left: calc(
+        var(--scrubber-thumb-size) / 2 +
+        var(--thumb-proportion) * (100% - var(--scrubber-thumb-size))
+    );
+    transform: translateX(-50%);
     width: 4.5ch;
-    text-align: right;
+    text-align: center;
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: textfield;
@@ -103,7 +148,7 @@
     border: none;
     border-bottom: var(--border-ink);
     border-radius: 0;
-    padding: var(--space-xs) 0;
+    padding: 0;
 }
 
 .controls-year::-webkit-inner-spin-button,
