@@ -66,39 +66,56 @@ pub async fn open_newest_cached_bundle(cache: &OpfsArtifactCache) -> Result<Opti
     Ok(None)
 }
 
-pub async fn load_live_bundle(cache: &OpfsArtifactCache, repository_base_url: &str) -> Result<Bundle, AppError> {
-    let manifest_bytes: Vec<u8> = fetch::fetch_manifest(repository_base_url).await?;
+pub async fn load_live_after_discovery(cache: &OpfsArtifactCache, static_base: &str) -> Result<Bundle, AppError> {
+    let resolved_repository: ResolvedRepository = resolve_repository(static_base).await?;
 
-    open_fetched_live_bundle(cache, repository_base_url, &manifest_bytes).await
+    open_fetched_live_bundle(cache, &resolved_repository.base_url, &resolved_repository.manifest_bytes).await
 }
 
-pub async fn load_live_after_discovery(cache: &OpfsArtifactCache, static_base: &str) -> Result<Bundle, AppError> {
-    let discovery_bytes_result: Result<Vec<u8>, AppError> = fetch::fetch_discovery(live_resolve::DISCOVERY_PATH).await;
-    let speculative_manifest_result: Result<Vec<u8>, AppError> = fetch::fetch_manifest(static_base).await;
+/// The repository base the live bundle is fetched from. Its `latest/manifest.json` bytes travel with it
+/// because resolution already fetched them; fetching them again would cost a redundant round trip.
+struct ResolvedRepository {
+    base_url: String,
+    manifest_bytes: Vec<u8>,
+}
 
-    let parsed_discovery: Result<DiscoveryDocument, AppError> = match discovery_bytes_result {
-        Ok(discovery_bytes) => artifact::parse_discovery_document(&discovery_bytes),
-        Err(error) => Err(error),
-    };
+/// Reconciles the discovery document against the static base. The static base's manifest is requested
+/// concurrently with discovery, so the common case (discovery agrees with the static base, or discovery is
+/// unavailable) resolves in one round trip; a discovery document naming a different base discards that
+/// response and pays a second.
+async fn resolve_repository(static_base: &str) -> Result<ResolvedRepository, AppError> {
+    let (discovery_bytes_result, speculative_manifest_result): (Result<Vec<u8>, AppError>, Result<Vec<u8>, AppError>) =
+        tokio::join!(
+            fetch::fetch_discovery(live_resolve::DISCOVERY_PATH),
+            fetch::fetch_manifest(static_base),
+        );
 
+    let parsed_discovery: Result<DiscoveryDocument, AppError> = discovery_bytes_result
+        .and_then(|discovery_bytes| artifact::parse_discovery_document(&discovery_bytes))
+        .inspect_err(|error| {
+            log::warn!("discovery unavailable, falling back to the static repository base; [error={error}]")
+        });
     let authoritative_base: AuthoritativeBase =
         live_resolve::authoritative_repository_base(static_base, parsed_discovery);
 
-    let (repository_base_url, manifest_bytes): (String, Vec<u8>) = match authoritative_base {
+    match authoritative_base {
         AuthoritativeBase::Static => {
             let manifest_bytes: Vec<u8> = speculative_manifest_result?;
 
-            (static_base.to_string(), manifest_bytes)
+            Ok(ResolvedRepository {
+                base_url: static_base.to_string(),
+                manifest_bytes,
+            })
         }
-        AuthoritativeBase::Discovered(other) => {
-            let _: Result<Vec<u8>, AppError> = speculative_manifest_result;
-            let manifest_bytes: Vec<u8> = fetch::fetch_manifest(&other).await?;
+        AuthoritativeBase::Discovered(discovered_base) => {
+            let manifest_bytes: Vec<u8> = fetch::fetch_manifest(&discovered_base).await?;
 
-            (other, manifest_bytes)
+            Ok(ResolvedRepository {
+                base_url: discovered_base,
+                manifest_bytes,
+            })
         }
-    };
-
-    open_fetched_live_bundle(cache, &repository_base_url, &manifest_bytes).await
+    }
 }
 
 async fn open_fetched_live_bundle(

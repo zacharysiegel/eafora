@@ -72,6 +72,7 @@ hydrate = [
     "dep:console_log",
     "dep:console_error_panic_hook",
     "tokio/sync",
+    "tokio/macros",
 ]
 ssr = [
     "leptos/ssr",
