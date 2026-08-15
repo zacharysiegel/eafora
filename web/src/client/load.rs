@@ -228,6 +228,10 @@ async fn fetch_and_cache_artifact_file(
     relative_path: &str,
     sha256: &str,
 ) -> Result<(), AppError> {
+    if is_already_cached(cache, version_label, relative_path, sha256).await {
+        return Ok(());
+    }
+
     let _permit: SemaphorePermit<'_> = semaphore
         .acquire()
         .await
@@ -239,6 +243,31 @@ async fn fetch_and_cache_artifact_file(
     cache.put(version_label, relative_path, &file_bytes).await?;
 
     Ok(())
+}
+
+/// Whether the cache already holds this file with the hash the manifest declares. Checked before the
+/// semaphore, since a local read should not queue behind in-flight downloads. A read failure or a hash
+/// mismatch answers false, which re-fetches and so repairs a truncated or corrupted entry.
+async fn is_already_cached(
+    cache: &OpfsArtifactCache,
+    version_label: &str,
+    relative_path: &str,
+    sha256: &str,
+) -> bool {
+    let cached_bytes: Option<Vec<u8>> = cache
+        .get(version_label, relative_path)
+        .await
+        .map_err(|error| {
+            log::warn!("reading a cached artifact file failed; [relative_path={relative_path} error={error}]")
+        })
+        .ok()
+        .flatten();
+
+    let Some(cached_bytes) = cached_bytes else {
+        return false;
+    };
+
+    filesystem::verify_sha256(&cached_bytes, sha256).is_ok()
 }
 
 /// Exercised in the browser: the ordering these cover is a property of real OPFS reads, since the
