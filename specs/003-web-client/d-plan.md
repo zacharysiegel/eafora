@@ -16,7 +16,7 @@ Affected repositories: this monorepo only (`/Users/singularity/eafora`).
 
 ## Decisions locked
 
-- First paint stays the downsampled tree at `/embedded_artifacts` (`DistributionContext::Embedded`). Live is the complete bundle (every year).
+- First paint stays the downsampled tree at `/embedded_artifacts`. Live is the complete bundle (every year).
 - The application must run locally with only this machine's data. No production, staging, or shared test server on the happy path.
 - The page always fetches same-origin `/discovery`. On `eafora.org` that is the production discovery URL; on `cargo leptos watch` it is `web/static/discovery`. The wasm does not fetch `https://eafora.org/discovery`.
 - Committed discovery has `repository_base_url: "/repository"`. Flipping that field to `https://repository.eafora.org` is a later deploy-time edit, not a prerequisite for D.
@@ -25,7 +25,7 @@ Affected repositories: this monorepo only (`/Users/singularity/eafora`).
 - `ingestion publish` (local and `cloudflare-r2`) writes `latest/manifest.json` after the versioned manifest. That step was specified and never implemented.
 - `publish local` keeps the two newest version directories under `--root` plus `latest/manifest.json`. R2 is not pruned.
 - Complete and downsampled share a `version_label`. Live `cache.put` overwrites that version's `manifest.json` in OPFS. Leftover downsampled shard files sit until the version is evicted. No second cache namespace.
-- Returning visit: if OPFS already has a version, first paint opens the newest one (`DistributionContext::FirstParty`) and skips the embedded HTTP fetch. Discovery and `latest` still run in the background.
+- Returning visit: if OPFS already has a version, first paint opens the newest one and skips the embedded HTTP fetch. Discovery and `latest` still run in the background.
 - Discovery and `latest/manifest.json` fetch with `cache: "reload"`. Content-hashed shard and geometry URLs keep the default HTTP cache.
 - Concurrent live file fetches are capped at 6 in the web loader. `shared` has no loader semaphore.
 - Periodic refetch on focus / visibility is still unspecified in `docs/architecture/client.md`. Out of D.
@@ -448,3 +448,5 @@ D1 / D2 / D3 descriptions are under each phase above.
 - The loader entry point is `load_live_bundle(cache, static_base)`, not `load_live_after_discovery`. Discovery runs concurrently inside it, so an "after discovery" name described an ordering that does not exist, and the name matched no sibling (`load_embedded_bundle`, `open_newest_cached_bundle`). The earlier `load_live_bundle(cache, repository_base_url)` that took an already-resolved base was deleted unused; a future refetch-on-focus can reintroduce it when it has a caller.
 - Repository resolution is extracted to `resolve_repository` returning a `ResolvedRepository`, so the entry point reads as resolve-then-load at one level of abstraction. The manifest bytes travel with the resolved base because resolution already fetched them.
 - The discovery failure behind the static-base fallback is logged (`log::warn!`) at the call site. `authoritative_repository_base` stays pure so it remains host-testable; previously that error was discarded with no record on the expected fallback path.
+- Live artifact files the cache already holds at the manifest's hash are not re-fetched. Previously a returning visit re-downloaded and re-wrote every file.
+- `DistributionContext` describes where the client is deployed, not which bundle it loaded. The two meanings of "embedded" (this plan's onboard bundle, and Eafora running inside another party's site) had been tied together: `load_embedded_bundle` opened its bundle under the third-party context, restricting first paint to `Base` shards for no licensing reason, while the live and cached paths hardcoded first party. The variant is now `ThirdParty`, the context is resolved once per session by `license_resolve::get_distribution_context`, and every `Bundle::open` receives that one value. Detecting an actual third-party host is still unimplemented, so the resolver always answers `FirstParty`.

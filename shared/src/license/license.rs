@@ -1,9 +1,14 @@
 use crate::canonical::canonical_model::LicenseShardClass;
 
+/// Where an Eafora client is being served from, which decides how much of the licensed data it may show.
+/// This is a property of the deployment, not of which artifact bundle happens to be loaded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DistributionContext {
+    /// Eafora serving its own site.
     FirstParty,
-    Embedded,
+    /// Eafora running inside another party's site, where share-alike and non-commercial terms forbid
+    /// redistributing the data.
+    ThirdParty,
 }
 
 impl DistributionContext {
@@ -17,7 +22,7 @@ impl DistributionContext {
                 LicenseShardClass::ShareAlike,
                 LicenseShardClass::NonCommercial,
             ],
-            DistributionContext::Embedded => &[
+            DistributionContext::ThirdParty => &[
                 LicenseShardClass::Base,
             ],
         }
@@ -37,9 +42,9 @@ mod tests {
     }
 
     #[test]
-    fn distribution_context_embedded_authorizes_base_only() {
+    fn distribution_context_third_party_authorizes_base_only() {
         assert_eq!(
-            DistributionContext::Embedded.authorized_classes(),
+            DistributionContext::ThirdParty.authorized_classes(),
             &[LicenseShardClass::Base],
         );
     }

@@ -745,7 +745,7 @@ impl DistributionContext {
                 LicenseShardClass::NonCommercial,
                 LicenseShardClass::ShareAlike,
             ],
-            DistributionContext::Embedded => &[
+            DistributionContext::ThirdParty => &[
                 LicenseShardClass::Base,
             ],
         }

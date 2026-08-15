@@ -179,10 +179,10 @@ let context: DistributionContext = DistributionContext::FirstParty;
 let authorized: &'static [LicenseShardClass] = context.authorized_classes();
 // authorized == &[LicenseShardClass::Base, LicenseShardClass::NonCommercial, LicenseShardClass::ShareAlike]
 
-// Or for an embedded third-party widget:
-let embedded_context: DistributionContext = DistributionContext::Embedded;
-let embedded_authorized: &'static [LicenseShardClass] = embedded_context.authorized_classes();
-// embedded_authorized == &[LicenseShardClass::Base]
+// Or for Eafora running inside a third party's site:
+let third_party_context: DistributionContext = DistributionContext::ThirdParty;
+let third_party_authorized: &'static [LicenseShardClass] = third_party_context.authorized_classes();
+// third_party_authorized == &[LicenseShardClass::Base]
 ```
 
 `Bundle::open` consults this when filtering which license shards to load into memory; you typically don't need to call `authorized_classes` directly unless you're inspecting authorization outside the bundle-open flow (e.g. for UI that says "this widget is restricted to base-license data").

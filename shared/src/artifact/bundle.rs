@@ -192,7 +192,7 @@ mod tests {
     async fn bundle_open_skips_unauthorized_shards() {
         let cache: MockArtifactCache = seeded_mock().await;
 
-        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::Embedded).await.unwrap();
+        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::ThirdParty).await.unwrap();
 
         assert_eq!(bundle.shard_bytes.len(), 1);
         assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
@@ -202,7 +202,7 @@ mod tests {
     async fn shard_for_returns_the_first_authorized_shard() {
         let cache: MockArtifactCache = seeded_mock().await;
 
-        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::Embedded).await.unwrap();
+        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::ThirdParty).await.unwrap();
 
         assert_eq!(
             bundle.shard_for(StatisticKind::Tfr).map(|shard_bytes| shard_bytes.as_slice()),

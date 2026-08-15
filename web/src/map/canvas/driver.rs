@@ -12,6 +12,7 @@ use leptos::prelude::*;
 use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::{DataSourceKind, StatisticKind};
+use shared::license::DistributionContext;
 use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
@@ -19,6 +20,7 @@ use shared::sqlite::shard_db;
 
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
+use crate::license_resolve;
 use crate::live_resolve;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
@@ -622,12 +624,18 @@ async fn set_up_driver(
         .await
         .map_err(StartupError::BrowserUnsupported)?;
 
-    let bundle: Bundle = match load::open_newest_cached_bundle(&cache).await {
+    let distribution_context: DistributionContext = license_resolve::get_distribution_context();
+
+    let bundle: Bundle = match load::open_newest_cached_bundle(&cache, distribution_context).await {
         Ok(Some(cached)) => cached,
-        Ok(None) => load::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?,
+        Ok(None) => load::load_embedded_bundle(&cache, distribution_context)
+            .await
+            .map_err(StartupError::DataUnavailable)?,
         Err(error) => {
             log::warn!("opening a cached bundle failed, falling back to embedded; [error={error}]");
-            load::load_embedded_bundle(&cache).await.map_err(StartupError::DataUnavailable)?
+            load::load_embedded_bundle(&cache, distribution_context)
+                .await
+                .map_err(StartupError::DataUnavailable)?
         }
     };
 
@@ -710,6 +718,7 @@ async fn set_up_driver(
     leptos::task::spawn_local(async move {
         upgrade_to_live_bundle(
             cache,
+            distribution_context,
             live_bundle_sender,
             view_controls,
             legend,
@@ -725,6 +734,7 @@ async fn set_up_driver(
 
 async fn upgrade_to_live_bundle(
     cache: OpfsArtifactCache,
+    distribution_context: DistributionContext,
     live_bundle_sender: watch::Sender<Arc<Bundle>>,
     view_controls: WriteSignal<Option<ViewControls>>,
     legend: WriteSignal<Option<LegendView>>,
@@ -741,7 +751,7 @@ async fn upgrade_to_live_bundle(
         }
     };
 
-    match load::load_live_bundle(&cache, &static_base).await {
+    match load::load_live_bundle(&cache, &static_base, distribution_context).await {
         Ok(bundle) => apply_live_bundle(
             live_bundle_sender,
             bundle,

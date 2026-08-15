@@ -271,7 +271,7 @@ The web platform does **not** use OPFS, sql.js, or wa-sqlite. Reasoning:
 
 The bundle's `statistics` map is keyed `statistic-code → license-shard-class → shard entry` (nested, not tupled). A single statistic can expose multiple license shards in v2+; v1 ships only `base` per statistic.
 
-The client identifies its **distribution context** at startup (eafora.org-first-party, embedded, etc.) and looks up the *authorized class set* — the subset of license classes its context is permitted to access. For v1 every context authorizes `base` and there is nothing else to choose between; the mechanism is exercised trivially.
+The client identifies its **distribution context** at startup (serving eafora.org itself, or running inside a third party's site) and looks up the *authorized class set* — the subset of license classes its context is permitted to access. The context is a property of where the client is deployed, never of which artifact bundle it happens to have loaded. For v1 every context authorizes `base` and there is nothing else to choose between; the mechanism is exercised trivially.
 
 Per statistic, the client opens an in-memory SQLite database and `ATTACH DATABASE` of every authorized shard for that statistic. Queries union across attached databases as a SQLite-native operation. The slice is written in the alphabetical order of license-class names (matches the manifest's serialization order), so the resulting `sqlite_master` is deterministic without a runtime sort — useful for debugging.
 
@@ -286,7 +286,7 @@ impl DistributionContext {
                 LicenseShardClass::NonCommercial,
                 LicenseShardClass::ShareAlike,
             ],
-            DistributionContext::Embedded => &[
+            DistributionContext::ThirdParty => &[
                 LicenseShardClass::Base,
             ],
         }

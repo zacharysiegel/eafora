@@ -140,7 +140,7 @@ Single workspace, Rust monorepo. New crate at `shared/`; modifications under `in
 
 **Goal**: `DistributionContext` enum + `authorized_classes()` returning the static slice per `client.md` §Attaching license shards. Independent of US5 but US5 consumes it.
 
-**Independent test criteria**: `DistributionContext::FirstParty.authorized_classes() == &[Base, NonCommercial, ShareAlike]`; `DistributionContext::Embedded.authorized_classes() == &[Base]`; adding a hypothetical new `LicenseShardClass` variant breaks compilation in `authorized_classes()` (per spec FR-022; verifiable by attempting the addition during implementation as a sanity check, not by a runtime test).
+**Independent test criteria**: `DistributionContext::FirstParty.authorized_classes() == &[Base, NonCommercial, ShareAlike]`; `DistributionContext::ThirdParty.authorized_classes() == &[Base]`; adding a hypothetical new `LicenseShardClass` variant breaks compilation in `authorized_classes()` (per spec FR-022; verifiable by attempting the addition during implementation as a sanity check, not by a runtime test).
 
 - [x] T032 [P] [US6] Create `/Users/singularity/eafora/shared/src/license/mod.rs` with `pub mod license; pub use license::*;`.
 - [x] T033 [Tests-first] [US6] Write unit tests in `/Users/singularity/eafora/shared/src/license/license.rs::#[cfg(test)] mod tests`: `distribution_context_first_party_authorizes_all_classes`, `distribution_context_embedded_authorizes_base_only`. (No runtime test for the compile-error-on-new-variant property; that's a compile-time guarantee enforced by the `match` having no wildcard arm.)

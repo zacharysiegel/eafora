@@ -26,7 +26,10 @@ struct ResolvedRepository {
     manifest_bytes: Vec<u8>,
 }
 
-pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, AppError> {
+pub async fn load_embedded_bundle(
+    cache: &OpfsArtifactCache,
+    distribution_context: DistributionContext,
+) -> Result<Bundle, AppError> {
     let manifest_url: String = format!("{EMBEDDED_BASE_URL}/{}", manifest::MANIFEST_FILENAME);
 
     let manifest_bytes: Vec<u8> = fetch::fetch_bytes(&HttpRequest {
@@ -54,12 +57,15 @@ pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, A
         cache.put(&manifest.version, &entry.relative_path, &file_bytes).await?;
     }
 
-    Bundle::open(cache, &manifest.version, DistributionContext::Embedded).await
+    Bundle::open(cache, &manifest.version, distribution_context).await
 }
 
-pub async fn open_newest_cached_bundle(cache: &OpfsArtifactCache) -> Result<Option<Bundle>, AppError> {
+pub async fn open_newest_cached_bundle(
+    cache: &OpfsArtifactCache,
+    distribution_context: DistributionContext,
+) -> Result<Option<Bundle>, AppError> {
     for version_label in version_labels_newest_first(cache).await? {
-        match Bundle::open(cache, &version_label, DistributionContext::FirstParty).await {
+        match Bundle::open(cache, &version_label, distribution_context).await {
             Ok(bundle) => return Ok(Some(bundle)),
             Err(error) => {
                 log::warn!(
@@ -118,10 +124,20 @@ async fn read_cached_artifact_created(cache: &OpfsArtifactCache, version_label: 
     Some(manifest.artifact_created)
 }
 
-pub async fn load_live_bundle(cache: &OpfsArtifactCache, static_base: &str) -> Result<Bundle, AppError> {
+pub async fn load_live_bundle(
+    cache: &OpfsArtifactCache,
+    static_base: &str,
+    distribution_context: DistributionContext,
+) -> Result<Bundle, AppError> {
     let resolved_repository: ResolvedRepository = resolve_repository(static_base).await?;
 
-    open_fetched_live_bundle(cache, &resolved_repository.base_url, &resolved_repository.manifest_bytes).await
+    open_fetched_live_bundle(
+        cache,
+        &resolved_repository.base_url,
+        &resolved_repository.manifest_bytes,
+        distribution_context,
+    )
+    .await
 }
 
 /// Reconciles the discovery document against the static base. The static base's manifest is requested
@@ -167,6 +183,7 @@ async fn open_fetched_live_bundle(
     cache: &OpfsArtifactCache,
     repository_base_url: &str,
     manifest_bytes: &[u8],
+    distribution_context: DistributionContext,
 ) -> Result<Bundle, AppError> {
     let manifest: Manifest = manifest::parse_manifest(manifest_bytes)?;
 
@@ -174,7 +191,7 @@ async fn open_fetched_live_bundle(
 
     cache.put(&manifest.version, manifest::MANIFEST_FILENAME, manifest_bytes).await?;
 
-    Bundle::open(cache, &manifest.version, DistributionContext::FirstParty).await
+    Bundle::open(cache, &manifest.version, distribution_context).await
 }
 
 async fn put_live_files(repository_base_url: &str, manifest: &Manifest) -> Result<(), AppError> {
