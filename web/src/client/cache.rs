@@ -11,7 +11,6 @@ use shared::artifact::ArtifactCache;
 use crate::client::{js, opfs};
 
 const ARTIFACTS_DIRECTORY: &str = "artifacts";
-const VERSIONS_KEPT: usize = 2;
 
 /// The browser implementation of [`ArtifactCache`], backed by the Origin Private File System. A
 /// zero-sized, stateless type: it resolves `navigator.storage.getDirectory()` on every call and caches
@@ -38,19 +37,16 @@ impl OpfsArtifactCache {
         Ok(OpfsArtifactCache)
     }
 
-    /// Deletes all but the two most recent version subtrees under `artifacts/`. `version_label` is
-    /// `YYYY-MM-DD+<surname>`, which sorts chronologically under lexicographic ordering, so the two
-    /// highest strings are the two newest bundles. Called once at startup.
-    pub async fn evict_old_versions(&self) -> Result<(), AppError> {
-        let mut version_labels: Vec<String> = self.list_versions().await?;
-        version_labels.sort();
+    /// Deletes every cached version outside `kept_version_labels`. Which versions are worth keeping is the
+    /// caller's policy; ordering them requires reading each manifest, which this layer does not parse.
+    pub async fn evict_all_except(&self, kept_version_labels: &[String]) -> Result<(), AppError> {
+        let version_labels: Vec<String> = self.list_versions().await?;
 
-        if version_labels.len() <= VERSIONS_KEPT {
-            return Ok(());
-        }
+        for version_label in version_labels {
+            if kept_version_labels.contains(&version_label) {
+                continue;
+            }
 
-        let evict_count: usize = version_labels.len() - VERSIONS_KEPT;
-        for version_label in version_labels.into_iter().take(evict_count) {
             self.delete_version(&version_label).await?;
         }
 
@@ -205,19 +201,5 @@ mod tests {
         let bytes: Option<Vec<u8>> = cache.get("2026-06-22+absent", "manifest.json").await.unwrap();
 
         assert_eq!(bytes, None);
-    }
-
-    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
-    async fn evict_old_versions_keeps_the_two_most_recent() {
-        let cache: OpfsArtifactCache = OpfsArtifactCache::create().await.unwrap();
-        for version_label in ["2026-06-01+evict-a", "2026-06-10+evict-b", "2026-06-22+evict-c"] {
-            cache.put(version_label, "manifest.json", b"x").await.unwrap();
-        }
-
-        cache.evict_old_versions().await.unwrap();
-
-        assert_eq!(cache.get("2026-06-01+evict-a", "manifest.json").await.unwrap(), None);
-        assert_eq!(cache.get("2026-06-10+evict-b", "manifest.json").await.unwrap().as_deref(), Some(b"x".as_slice()));
-        assert_eq!(cache.get("2026-06-22+evict-c", "manifest.json").await.unwrap().as_deref(), Some(b"x".as_slice()));
     }
 }

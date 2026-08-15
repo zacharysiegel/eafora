@@ -88,12 +88,15 @@ async fn publish_artifacts_errors_when_version_label_already_published() {
     delete_artifact_version(&pool, &version_label).await;
 }
 
+/// The labels share a date and their surnames sort against publish order, so retention can only keep the
+/// right two by reading `artifact_created`: lexicographically `zulu` is the highest of the three, yet it is
+/// published first and so is the oldest artifact.
 #[tokio::test]
 async fn publish_local_keeps_only_the_two_newest_version_directories() {
     let pool: PgPool = test_pool().await;
-    let first_label: &str = "2026-06-01+keep";
-    let second_label: &str = "2026-06-10+keep";
-    let third_label: &str = "2026-06-22+keep";
+    let first_label: &str = "2026-06-01+zulu";
+    let second_label: &str = "2026-06-01+alpha";
+    let third_label: &str = "2026-06-01+bravo";
 
     delete_artifact_version(&pool, first_label).await;
     delete_artifact_version(&pool, second_label).await;

@@ -641,7 +641,7 @@ async fn set_up_driver(
             .and_then(|shard_values| shard_values.period_range()),
     );
 
-    if let Err(error) = cache.evict_old_versions().await {
+    if let Err(error) = load::evict_stale_versions(&cache).await {
         log::warn!("evicting old cached bundle versions failed [error={error}]");
     }
 

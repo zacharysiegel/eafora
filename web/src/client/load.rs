@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use shared::artifact::{self, manifest, ArtifactCache, Bundle, DiscoveryDocument, Manifest, ManifestEntry};
 use shared::filesystem;
 use shared::http::{HttpCacheMode, HttpMethod, HttpRequest};
@@ -16,6 +17,7 @@ use crate::live_resolve::{self, AuthoritativeBase};
 
 const EMBEDDED_BASE_URL: &str = "/embedded_artifacts";
 const LIVE_FETCH_PARALLELISM: usize = 6;
+const VERSIONS_KEPT: usize = 2;
 
 /// The repository base the live bundle is fetched from. Its `latest/manifest.json` bytes travel with it
 /// because resolution already fetched them; fetching them again would cost a redundant round trip.
@@ -56,10 +58,7 @@ pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, A
 }
 
 pub async fn open_newest_cached_bundle(cache: &OpfsArtifactCache) -> Result<Option<Bundle>, AppError> {
-    let mut version_labels: Vec<String> = cache.list_versions().await?;
-    version_labels.sort();
-
-    for version_label in version_labels.into_iter().rev() {
+    for version_label in version_labels_newest_first(cache).await? {
         match Bundle::open(cache, &version_label, DistributionContext::FirstParty).await {
             Ok(bundle) => return Ok(Some(bundle)),
             Err(error) => {
@@ -71,6 +70,52 @@ pub async fn open_newest_cached_bundle(cache: &OpfsArtifactCache) -> Result<Opti
     }
 
     Ok(None)
+}
+
+/// Deletes every cached version past the `VERSIONS_KEPT` newest.
+pub async fn evict_stale_versions(cache: &OpfsArtifactCache) -> Result<(), AppError> {
+    let kept_version_labels: Vec<String> =
+        version_labels_newest_first(cache).await?.into_iter().take(VERSIONS_KEPT).collect();
+
+    cache.evict_all_except(&kept_version_labels).await
+}
+
+/// Cached version labels, newest artifact first. The order comes from each version's `artifact_created`
+/// rather than from comparing labels: `YYYY-MM-DD+<surname>` orders chronologically only across differing
+/// dates, and two builds sharing a date fall back to comparing arbitrary surnames. A version whose
+/// manifest cannot be read sorts last, so it is opened last and evicted first.
+async fn version_labels_newest_first(cache: &OpfsArtifactCache) -> Result<Vec<String>, AppError> {
+    let version_labels: Vec<String> = cache.list_versions().await?;
+    let mut labels_by_creation: Vec<(Option<DateTime<Utc>>, String)> = Vec::with_capacity(version_labels.len());
+
+    for version_label in version_labels {
+        let artifact_created: Option<DateTime<Utc>> = read_cached_artifact_created(cache, &version_label).await;
+
+        labels_by_creation.push((artifact_created, version_label));
+    }
+
+    labels_by_creation.sort_by(|(left_created, _), (right_created, _)| right_created.cmp(left_created));
+
+    Ok(labels_by_creation.into_iter().map(|(_, version_label)| version_label).collect())
+}
+
+/// `None` when the version's manifest is absent or unparseable. A damaged version is unorderable rather
+/// than fatal, so it cannot stop the others from being opened or evicted.
+async fn read_cached_artifact_created(cache: &OpfsArtifactCache, version_label: &str) -> Option<DateTime<Utc>> {
+    let manifest_bytes: Option<Vec<u8>> = cache
+        .get(version_label, manifest::MANIFEST_FILENAME)
+        .await
+        .map_err(|error| {
+            log::warn!("reading a cached manifest failed; [version_label={version_label} error={error}]")
+        })
+        .ok()?;
+    let manifest: Manifest = manifest::parse_manifest(&manifest_bytes?)
+        .map_err(|error| {
+            log::warn!("parsing a cached manifest failed; [version_label={version_label} error={error}]")
+        })
+        .ok()?;
+
+    Some(manifest.artifact_created)
 }
 
 pub async fn load_live_bundle(cache: &OpfsArtifactCache, static_base: &str) -> Result<Bundle, AppError> {
@@ -194,4 +239,90 @@ async fn fetch_and_cache_artifact_file(
     cache.put(version_label, relative_path, &file_bytes).await?;
 
     Ok(())
+}
+
+/// Exercised in the browser: the ordering these cover is a property of real OPFS reads, since the
+/// version list and each manifest come back through `FileSystemDirectoryHandle`.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A parseable manifest carrying no files, so a test can seed a version whose only meaningful
+    /// content is its `artifact_created`.
+    fn manifest_json(version_label: &str, artifact_created: &str) -> Vec<u8> {
+        format!(
+            r#"{{
+                "manifest_schema_version": 1,
+                "version": "{version_label}",
+                "artifact_created": "{artifact_created}",
+                "geometry": {{
+                    "relative_path": "geometry/world.fgb",
+                    "size_bytes": 1,
+                    "sha256": "{}"
+                }},
+                "statistics": {{}},
+                "source_revisions": {{}}
+            }}"#,
+            "ab".repeat(32),
+        )
+        .into_bytes()
+    }
+
+    /// The labels here are the shape that broke the previous lexicographic ordering: same date, and the
+    /// surname of the older artifact sorts above the newer one.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    async fn version_labels_newest_first_orders_same_date_labels_by_artifact_created() {
+        let cache: OpfsArtifactCache = OpfsArtifactCache::create().await.unwrap();
+        let newer_label: &str = "2026-08-14+macdiarmid";
+        let older_label: &str = "2026-08-14+yeats";
+
+        cache
+            .put(older_label, manifest::MANIFEST_FILENAME, &manifest_json(older_label, "2026-08-14T01:00:00Z"))
+            .await
+            .unwrap();
+        cache
+            .put(newer_label, manifest::MANIFEST_FILENAME, &manifest_json(newer_label, "2026-08-14T02:00:00Z"))
+            .await
+            .unwrap();
+
+        let ordered_version_labels: Vec<String> = version_labels_newest_first(&cache).await.unwrap();
+
+        let newer_position: usize = ordered_version_labels.iter().position(|label| label == newer_label).unwrap();
+        let older_position: usize = ordered_version_labels.iter().position(|label| label == older_label).unwrap();
+        assert!(newer_position < older_position);
+
+        cache.delete_version(newer_label).await.unwrap();
+        cache.delete_version(older_label).await.unwrap();
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    async fn evict_stale_versions_keeps_the_newest_by_artifact_created() {
+        let cache: OpfsArtifactCache = OpfsArtifactCache::create().await.unwrap();
+        let evicted_label: &str = "2026-07-01+zulu";
+        let kept_labels: [&str; 2] = ["2026-07-02+alpha", "2026-07-03+bravo"];
+
+        cache
+            .put(evicted_label, manifest::MANIFEST_FILENAME, &manifest_json(evicted_label, "2026-07-01T00:00:00Z"))
+            .await
+            .unwrap();
+        for (index, kept_label) in kept_labels.iter().enumerate() {
+            let artifact_created: String = format!("2026-07-0{}T00:00:00Z", index + 2);
+
+            cache
+                .put(kept_label, manifest::MANIFEST_FILENAME, &manifest_json(kept_label, &artifact_created))
+                .await
+                .unwrap();
+        }
+
+        evict_stale_versions(&cache).await.unwrap();
+
+        assert_eq!(cache.get(evicted_label, manifest::MANIFEST_FILENAME).await.unwrap(), None);
+        for kept_label in kept_labels {
+            assert!(cache.get(kept_label, manifest::MANIFEST_FILENAME).await.unwrap().is_some());
+        }
+
+        for kept_label in kept_labels {
+            cache.delete_version(kept_label).await.unwrap();
+        }
+    }
 }
