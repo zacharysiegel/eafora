@@ -17,6 +17,13 @@ use crate::live_resolve::{self, AuthoritativeBase};
 const EMBEDDED_BASE_URL: &str = "/embedded_artifacts";
 const LIVE_FETCH_PARALLELISM: usize = 6;
 
+/// The repository base the live bundle is fetched from. Its `latest/manifest.json` bytes travel with it
+/// because resolution already fetched them; fetching them again would cost a redundant round trip.
+struct ResolvedRepository {
+    base_url: String,
+    manifest_bytes: Vec<u8>,
+}
+
 pub async fn load_embedded_bundle(cache: &OpfsArtifactCache) -> Result<Bundle, AppError> {
     let manifest_url: String = format!("{EMBEDDED_BASE_URL}/{}", manifest::MANIFEST_FILENAME);
 
@@ -66,17 +73,10 @@ pub async fn open_newest_cached_bundle(cache: &OpfsArtifactCache) -> Result<Opti
     Ok(None)
 }
 
-pub async fn load_live_after_discovery(cache: &OpfsArtifactCache, static_base: &str) -> Result<Bundle, AppError> {
+pub async fn load_live_bundle(cache: &OpfsArtifactCache, static_base: &str) -> Result<Bundle, AppError> {
     let resolved_repository: ResolvedRepository = resolve_repository(static_base).await?;
 
     open_fetched_live_bundle(cache, &resolved_repository.base_url, &resolved_repository.manifest_bytes).await
-}
-
-/// The repository base the live bundle is fetched from. Its `latest/manifest.json` bytes travel with it
-/// because resolution already fetched them; fetching them again would cost a redundant round trip.
-struct ResolvedRepository {
-    base_url: String,
-    manifest_bytes: Vec<u8>,
 }
 
 /// Reconciles the discovery document against the static base. The static base's manifest is requested

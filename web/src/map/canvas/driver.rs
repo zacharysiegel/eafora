@@ -725,7 +725,7 @@ async fn upgrade_to_live_bundle(
         }
     };
 
-    match load::load_live_after_discovery(&cache, &static_base).await {
+    match load::load_live_bundle(&cache, &static_base).await {
         Ok(bundle) => apply_live_bundle(
             live_bundle_sender,
             bundle,
