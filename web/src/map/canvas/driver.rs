@@ -20,7 +20,7 @@ use shared::sqlite::shard_db;
 
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
-use crate::license_resolve;
+use crate::deployment;
 use crate::live_resolve;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
@@ -624,7 +624,7 @@ async fn set_up_driver(
         .await
         .map_err(StartupError::BrowserUnsupported)?;
 
-    let distribution_context: DistributionContext = license_resolve::get_distribution_context();
+    let distribution_context: DistributionContext = deployment::resolve_distribution_context();
 
     let bundle: Bundle = match load::open_newest_cached_bundle(&cache, distribution_context).await {
         Ok(Some(cached)) => cached,
