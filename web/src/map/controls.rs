@@ -7,6 +7,10 @@ use crate::i18n::*;
 use crate::map::canvas::ViewControls;
 use crate::map::labels;
 
+/// Ties the `YEAR` label to the editable year, which the range input cannot also claim; the range carries
+/// its own `aria-label` instead. One controls panel exists, so a fixed id is unambiguous.
+const YEAR_INPUT_ID: &str = "controls-year-input";
+
 #[component]
 pub fn Controls() -> impl IntoView {
     let view_controls: RwSignal<Option<ViewControls>> = expect_context();
@@ -49,36 +53,43 @@ pub fn Controls() -> impl IntoView {
                         let thumb_proportion: f64 = thumb_proportion(active_year, earliest_year, latest_year);
 
                         view! {
-                            <label class="controls-field">
-                                <span class="controls-label">{t!(i18n, scrubber.label)}</span>
+                            <div class="controls-field">
+                                <label class="controls-label" for=YEAR_INPUT_ID>{t!(i18n, scrubber.label)}</label>
                                 <div class="controls-scrubber-row">
                                     {bound_label(earliest_year, active_year)}
                                     <div class="controls-scrubber-track">
                                         <input
-                                            class="controls-year numeric"
-                                            style=format!("--thumb-proportion: {thumb_proportion}")
-                                            type="number"
-                                            min=earliest_year
-                                            max=latest_year
-                                            value=active_year
-                                            on:change=move |event| apply_year(&event_target_value(&event))
-                                        />
-                                        <input
                                             class="controls-scrubber"
                                             class:grabbing=move || grabbing.get()
                                             type="range"
+                                            aria-label=move || t_string!(i18n, scrubber.label)
                                             min=earliest_year
                                             max=latest_year
                                             value=active_year
+                                            // Patching min / max re-runs the browser's value sanitization, which
+                                            // clamps a dirty value against the momentarily-default bounds; the
+                                            // property has to be re-asserted or the thumb snaps to the minimum.
+                                            prop:value=active_year
                                             on:input=move |event| apply_year(&event_target_value(&event))
                                             on:pointerdown=move |_| grabbing.set(true)
                                             on:pointerup=move |_| grabbing.set(false)
                                             on:pointercancel=move |_| grabbing.set(false)
                                         />
+                                        <input
+                                            class="controls-year numeric"
+                                            id=YEAR_INPUT_ID
+                                            style=format!("--thumb-proportion: {thumb_proportion}")
+                                            type="number"
+                                            min=earliest_year
+                                            max=latest_year
+                                            value=active_year
+                                            prop:value=active_year
+                                            on:change=move |event| apply_year(&event_target_value(&event))
+                                        />
                                     </div>
                                     {bound_label(latest_year, active_year)}
                                 </div>
-                            </label>
+                            </div>
                         }
                     })}
                 </aside>
@@ -88,10 +99,15 @@ pub fn Controls() -> impl IntoView {
 }
 
 /// One endpoint of the scrubber's range. Rendered greyed when the active year already reads it, so the same
-/// number is not stated twice.
+/// number is not stated twice. Hidden from assistive technology, which already gets the range from the
+/// slider's own minimum and maximum.
 fn bound_label(bound_year: i32, active_year: i32) -> impl IntoView {
     view! {
-        <span class="controls-bound numeric" class:equals-active=move || bound_year == active_year>
+        <span
+            class="controls-bound numeric"
+            class:equals-active=move || bound_year == active_year
+            aria-hidden="true"
+        >
             {bound_year.to_string()}
         </span>
     }
