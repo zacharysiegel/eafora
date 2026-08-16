@@ -17,98 +17,118 @@ pub fn Controls() -> impl IntoView {
     let i18n = use_i18n();
     let grabbing: RwSignal<bool> = RwSignal::new(false);
 
-    move || {
-        view_controls.get().map(|controls| {
-            let ViewControls { active_statistic, available_statistics, active_period_start, period_range } = controls;
+    /* Every attribute reads its own `Memo` so a publish patches only what changed. Re-rendering the
+    elements instead strips and re-adds each attribute, and a range input whose `type` is removed rebuilds
+    its shadow slider, destroying the pointer capture an in-progress drag depends on. `Memo` notifies only
+    on inequality, so the wrapper closures below re-run when a range appears or disappears, never on a
+    year change. */
+    let has_controls: Memo<bool> = Memo::new(move |_| view_controls.get().is_some());
+    let available_statistics: Memo<Vec<StatisticKind>> = Memo::new(move |_| {
+        view_controls
+            .get()
+            .map(|controls| controls.available_statistics)
+            .unwrap_or_default()
+    });
+    let active_statistic: Memo<Option<StatisticKind>> =
+        Memo::new(move |_| view_controls.get().map(|controls| controls.active_statistic));
+    let period_range: Memo<Option<(NaiveDate, NaiveDate)>> =
+        Memo::new(move |_| view_controls.get().and_then(|controls| controls.period_range));
+    let has_period_range: Memo<bool> = Memo::new(move |_| period_range.get().is_some());
+    let earliest_year: Memo<Option<i32>> =
+        Memo::new(move |_| period_range.get().map(|(earliest, _latest)| earliest.year()));
+    let latest_year: Memo<Option<i32>> =
+        Memo::new(move |_| period_range.get().map(|(_earliest, latest)| latest.year()));
+    let active_year: Memo<Option<i32>> =
+        Memo::new(move |_| view_controls.get().map(|controls| controls.active_period_start.year()));
+    let thumb_offset: Memo<f64> = Memo::new(move |_| {
+        match (active_year.get(), earliest_year.get(), latest_year.get()) {
+            (Some(active), Some(earliest), Some(latest)) => thumb_proportion(active, earliest, latest),
+            _ => 0.0,
+        }
+    });
 
-            view! {
-                <aside class="panel controls">
-                    <label class="controls-field">
-                        <span class="controls-label">{t!(i18n, statistic.picker_label)}</span>
-                        <select
-                            class="controls-picker"
-                            on:change=move |event| {
-                                if let Ok(statistic) = StatisticKind::try_from(event_target_value(&event).as_str()) {
-                                    dispatch_statistic(statistic);
-                                }
+    view! {
+        {move || has_controls.get().then(|| view! {
+            <aside class="panel controls">
+                <label class="controls-field">
+                    <span class="controls-label">{t!(i18n, statistic.picker_label)}</span>
+                    <select
+                        class="controls-picker"
+                        on:change=move |event| {
+                            if let Ok(statistic) = StatisticKind::try_from(event_target_value(&event).as_str()) {
+                                dispatch_statistic(statistic);
                             }
-                        >
-                            {available_statistics
-                                .into_iter()
-                                .map(|statistic| {
-                                    let is_active: bool = statistic == active_statistic;
-                                    view! {
-                                        <option value=statistic.code() selected=is_active>
-                                            {labels::statistic_label(i18n, statistic)}
-                                        </option>
-                                    }
-                                })
-                                .collect_view()}
-                        </select>
-                    </label>
-                    {period_range.map(|(earliest, latest)| {
-                        let earliest_year: i32 = earliest.year();
-                        let latest_year: i32 = latest.year();
-                        let active_year: i32 = active_period_start.year();
-                        let thumb_proportion: f64 = thumb_proportion(active_year, earliest_year, latest_year);
-
-                        view! {
-                            <div class="controls-field">
-                                <label class="controls-label" for=YEAR_INPUT_ID>{t!(i18n, scrubber.label)}</label>
-                                <div class="controls-scrubber-row">
-                                    {bound_label(earliest_year, active_year)}
-                                    <div class="controls-scrubber-track">
-                                        <input
-                                            class="controls-scrubber"
-                                            class:grabbing=move || grabbing.get()
-                                            type="range"
-                                            aria-label=move || t_string!(i18n, scrubber.label)
-                                            min=earliest_year
-                                            max=latest_year
-                                            value=active_year
-                                            // Patching min / max re-runs the browser's value sanitization, which
-                                            // clamps a dirty value against the momentarily-default bounds; the
-                                            // property has to be re-asserted or the thumb snaps to the minimum.
-                                            prop:value=active_year
-                                            on:input=move |event| apply_year(&event_target_value(&event))
-                                            on:pointerdown=move |_| grabbing.set(true)
-                                            on:pointerup=move |_| grabbing.set(false)
-                                            on:pointercancel=move |_| grabbing.set(false)
-                                        />
-                                        <input
-                                            class="controls-year numeric"
-                                            id=YEAR_INPUT_ID
-                                            style=format!("--thumb-proportion: {thumb_proportion}")
-                                            type="number"
-                                            min=earliest_year
-                                            max=latest_year
-                                            value=active_year
-                                            prop:value=active_year
-                                            on:change=move |event| apply_year(&event_target_value(&event))
-                                        />
-                                    </div>
-                                    {bound_label(latest_year, active_year)}
-                                </div>
-                            </div>
                         }
-                    })}
-                </aside>
-            }
-        })
+                    >
+                        {move || available_statistics
+                            .get()
+                            .into_iter()
+                            .map(|statistic| view! {
+                                <option
+                                    value=statistic.code()
+                                    selected=move || active_statistic.get() == Some(statistic)
+                                >
+                                    {labels::statistic_label(i18n, statistic)}
+                                </option>
+                            })
+                            .collect_view()}
+                    </select>
+                </label>
+                {move || has_period_range.get().then(|| view! {
+                    <div class="controls-field">
+                        <label class="controls-label" for=YEAR_INPUT_ID>{t!(i18n, scrubber.label)}</label>
+                        <div class="controls-scrubber-row">
+                            {bound_label(earliest_year, active_year)}
+                            <div class="controls-scrubber-track">
+                                <input
+                                    class="controls-scrubber"
+                                    class:grabbing=move || grabbing.get()
+                                    type="range"
+                                    aria-label=move || t_string!(i18n, scrubber.label)
+                                    min=move || earliest_year.get()
+                                    max=move || latest_year.get()
+                                    value=move || active_year.get()
+                                    prop:value=move || active_year.get()
+                                    on:input=move |event| apply_year(&event_target_value(&event))
+                                    on:pointerdown=move |_| grabbing.set(true)
+                                    on:pointerup=move |_| grabbing.set(false)
+                                    on:pointercancel=move |_| grabbing.set(false)
+                                    // A release outside the input leaves no pointerup here, so the enlarged
+                                    // thumb would stay enlarged; losing capture ends the grab either way.
+                                    on:lostpointercapture=move |_| grabbing.set(false)
+                                />
+                                <input
+                                    class="controls-year numeric"
+                                    id=YEAR_INPUT_ID
+                                    style=move || format!("--thumb-proportion: {}", thumb_offset.get())
+                                    type="number"
+                                    min=move || earliest_year.get()
+                                    max=move || latest_year.get()
+                                    value=move || active_year.get()
+                                    prop:value=move || active_year.get()
+                                    on:change=move |event| apply_year(&event_target_value(&event))
+                                />
+                            </div>
+                            {bound_label(latest_year, active_year)}
+                        </div>
+                    </div>
+                })}
+            </aside>
+        })}
     }
 }
 
 /// One endpoint of the scrubber's range. Rendered greyed when the active year already reads it, so the same
 /// number is not stated twice. Hidden from assistive technology, which already gets the range from the
 /// slider's own minimum and maximum.
-fn bound_label(bound_year: i32, active_year: i32) -> impl IntoView {
+fn bound_label(bound_year: Memo<Option<i32>>, active_year: Memo<Option<i32>>) -> impl IntoView {
     view! {
         <span
             class="controls-bound numeric"
-            class:equals-active=move || bound_year == active_year
+            class:equals-active=move || bound_year.get().is_some() && bound_year.get() == active_year.get()
             aria-hidden="true"
         >
-            {bound_year.to_string()}
+            {move || bound_year.get().map(|year| year.to_string())}
         </span>
     }
 }

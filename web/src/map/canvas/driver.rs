@@ -1026,8 +1026,15 @@ fn handle_pointer_move(event: &PointerEvent) {
     let surface_point: SurfacePoint = surface_point_from_mouse_event(event);
     let pointer_id: i32 = event.pointer_id();
     let is_mouse: bool = event.pointer_type() == "mouse";
+    let holds_no_button: bool = event.buttons() == 0;
 
     with_driver(|driver| {
+        if is_mouse && holds_no_button {
+            // A mouse with nothing held cannot be mid-gesture, so a release that never arrived (delivered
+            // to another element, or swallowed) cannot leave a gesture latched and hover switched off.
+            driver.gesture.clear();
+        }
+
         if driver.gesture.is_active() {
             driver.apply_pointer_move(pointer_id, surface_point);
         } else if is_mouse {
