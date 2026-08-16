@@ -9,6 +9,7 @@ use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 use crate::filesystem;
 use crate::license::DistributionContext;
+use crate::sqlite::shard_db::{self, ShardValues};
 
 /// Content-Type the producer sets when uploading each artifact-bundle file kind; the CDN edge,
 /// the browser HTTP cache, and Accept-header negotiation depend on them.
@@ -28,15 +29,14 @@ pub struct StatisticShardKey {
     pub license_shard_class: LicenseShardClass,
 }
 
-/// A fully-loaded artifact bundle: pure parsed data, `Send + Sync`. It holds no
-/// SQLite connection (a consumer opens its own against `shard_bytes`), so
+/// A fully-loaded artifact bundle: pure parsed data, `Send + Sync`, holding no SQLite connection, so
 /// `Arc<Bundle>` crosses the hot-swap watch channel cleanly.
 pub struct Bundle {
     pub manifest: Manifest,
     pub geometry: GeometryLayer,
-    /// Raw bytes of every license shard this `distribution_context` is authorized to
-    /// access (unauthorized shards are never loaded). Keyed by `(statistic_kind, license_shard_class)`.
-    pub shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>>,
+    /// Every license shard this `distribution_context` is authorized to access (unauthorized shards
+    /// are never read). Private so no consumer can bypass `shard_values_for`'s license precedence.
+    shard_values: BTreeMap<StatisticShardKey, ShardValues>,
     pub distribution_context: DistributionContext,
 }
 
@@ -53,7 +53,7 @@ impl Bundle {
         filesystem::verify_sha256(&geometry_bytes, &manifest.geometry.sha256)?;
         let geometry: GeometryLayer = geometry::parse_geometry_layer(geometry_bytes)?;
 
-        let mut shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>> = BTreeMap::new();
+        let mut shard_values: BTreeMap<StatisticShardKey, ShardValues> = BTreeMap::new();
         let authorized_classes: &[LicenseShardClass] = distribution_context.authorized_classes();
         for (statistic_kind, license_shard_map) in &manifest.statistics {
             for (license_shard_class, entry) in license_shard_map {
@@ -61,34 +61,36 @@ impl Bundle {
                     continue;
                 }
 
-                let bytes: Vec<u8> = get_required(cache, version_label, &entry.relative_path).await?;
-                filesystem::verify_sha256(&bytes, &entry.sha256)?;
+                let shard_bytes: Vec<u8> = get_required(cache, version_label, &entry.relative_path).await?;
+                filesystem::verify_sha256(&shard_bytes, &entry.sha256)?;
+
+                let statistic_shard_values: ShardValues = shard_db::read_shard(&shard_bytes)?;
 
                 let key: StatisticShardKey = StatisticShardKey {
                     statistic_kind: *statistic_kind,
                     license_shard_class: *license_shard_class,
                 };
-                shard_bytes.insert(key, bytes);
+                shard_values.insert(key, statistic_shard_values);
             }
         }
 
         Ok(Bundle {
             manifest,
             geometry,
-            shard_bytes,
+            shard_values,
             distribution_context,
         })
     }
 
-    /// The shard bytes whose values color the map for `statistic_kind`: the first authorized license
-    /// class that ships a shard for it. Provisional policy shared by the renderer and the selection
-    /// resolver; refining it to the source-choice rules is future work.
-    pub fn shard_for(&self, statistic_kind: StatisticKind) -> Option<&Vec<u8>> {
+    /// The values that color the map for `statistic_kind`: the first authorized license class that
+    /// ships a shard for it. Provisional policy shared by the renderer and the selection resolver;
+    /// refining it to the source-choice rules is future work.
+    pub fn shard_values_for(&self, statistic_kind: StatisticKind) -> Option<&ShardValues> {
         self.distribution_context
             .authorized_classes()
             .iter()
             .find_map(|license_shard_class| {
-                self.shard_bytes.get(&StatisticShardKey {
+                self.shard_values.get(&StatisticShardKey {
                     statistic_kind,
                     license_shard_class: *license_shard_class,
                 })
@@ -108,6 +110,8 @@ async fn get_required(cache: &impl ArtifactCache, version_label: &str, relative_
 mod tests {
     use super::*;
 
+    use chrono::NaiveDate;
+
     use crate::artifact::cache::tests::MockArtifactCache;
     use crate::artifact::geometry::tests::one_feature_fgb_bytes;
     use crate::artifact::manifest::ManifestEntry;
@@ -116,6 +120,13 @@ mod tests {
     const GEOMETRY_PATH: &str = "geometry/world.fgb";
     const BASE_SHARD_PATH: &str = "data/tfr-base.sqlite";
     const NONCOMMERCIAL_SHARD_PATH: &str = "data/tfr-noncommercial.sqlite";
+
+    /// The committed shard the native `shard_db::tests::dump_sample_shard` produced. Read as bytes
+    /// rather than rebuilt, because building one needs rusqlite and these tests also compile for
+    /// wasm32.
+    fn sample_shard_bytes() -> Vec<u8> {
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/tfr-sample.sqlite")).to_vec()
+    }
 
     fn entry(relative_path: &str, bytes: &[u8]) -> ManifestEntry {
         ManifestEntry {
@@ -149,8 +160,8 @@ mod tests {
     /// Seed a mock cache with a valid manifest + geometry + Base and NonCommercial Tfr shards.
     async fn seeded_mock() -> MockArtifactCache {
         let geometry_bytes: Vec<u8> = one_feature_fgb_bytes();
-        let base_shard: Vec<u8> = b"tfr-base-shard-bytes".to_vec();
-        let noncommercial_shard: Vec<u8> = b"tfr-noncommercial-shard-bytes".to_vec();
+        let base_shard: Vec<u8> = sample_shard_bytes();
+        let noncommercial_shard: Vec<u8> = sample_shard_bytes();
 
         let statistics = tfr_statistic(&entry(BASE_SHARD_PATH, &base_shard), &entry(NONCOMMERCIAL_SHARD_PATH, &noncommercial_shard));
         let manifest: Manifest = build_manifest(entry(GEOMETRY_PATH, &geometry_bytes), statistics);
@@ -172,9 +183,39 @@ mod tests {
         let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await.unwrap();
 
         assert_eq!(bundle.manifest.version, VERSION);
-        assert_eq!(bundle.shard_bytes.len(), 2);
-        assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
-        assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::NonCommercial }));
+        assert_eq!(bundle.shard_values.len(), 2);
+        assert!(bundle.shard_values.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
+        assert!(bundle.shard_values.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::NonCommercial }));
+    }
+
+    #[tokio::test]
+    async fn bundle_open_eagerly_parses_shards() {
+        let cache: MockArtifactCache = seeded_mock().await;
+
+        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await.unwrap();
+
+        let shard_values: &ShardValues = bundle.shard_values_for(StatisticKind::Tfr).unwrap();
+        assert_eq!(shard_values.value("usa", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.6));
+        assert_eq!(shard_values.value_range(), Some((1.5, 1.7)));
+    }
+
+    #[tokio::test]
+    async fn bundle_open_rejects_an_unparseable_shard() {
+        let geometry_bytes: Vec<u8> = one_feature_fgb_bytes();
+        let base_shard: Vec<u8> = b"not a sqlite database".to_vec();
+
+        let statistics = tfr_statistic(&entry(BASE_SHARD_PATH, &base_shard), &entry(NONCOMMERCIAL_SHARD_PATH, &base_shard));
+        let manifest: Manifest = build_manifest(entry(GEOMETRY_PATH, &geometry_bytes), statistics);
+
+        let cache: MockArtifactCache = MockArtifactCache::new();
+        cache.insert(VERSION, manifest::MANIFEST_FILENAME, serde_json::to_vec(&manifest).unwrap()).await;
+        cache.insert(VERSION, GEOMETRY_PATH, geometry_bytes).await;
+        cache.insert(VERSION, BASE_SHARD_PATH, base_shard.clone()).await;
+        cache.insert(VERSION, NONCOMMERCIAL_SHARD_PATH, base_shard).await;
+
+        let result: Result<Bundle, AppError> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
+
+        assert!(result.is_err());
     }
 
     #[tokio::test]
@@ -194,20 +235,23 @@ mod tests {
 
         let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::ThirdParty).await.unwrap();
 
-        assert_eq!(bundle.shard_bytes.len(), 1);
-        assert!(bundle.shard_bytes.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
+        assert_eq!(bundle.shard_values.len(), 1);
+        assert!(bundle.shard_values.contains_key(&StatisticShardKey { statistic_kind: StatisticKind::Tfr, license_shard_class: LicenseShardClass::Base }));
     }
 
     #[tokio::test]
-    async fn shard_for_returns_the_first_authorized_shard() {
+    async fn shard_values_for_returns_the_first_authorized_shard() {
         let cache: MockArtifactCache = seeded_mock().await;
 
-        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::ThirdParty).await.unwrap();
+        let bundle: Bundle = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await.unwrap();
 
-        assert_eq!(
-            bundle.shard_for(StatisticKind::Tfr).map(|shard_bytes| shard_bytes.as_slice()),
-            Some(b"tfr-base-shard-bytes".as_slice()),
-        );
+        let base_key: StatisticShardKey = StatisticShardKey {
+            statistic_kind: StatisticKind::Tfr,
+            license_shard_class: LicenseShardClass::Base,
+        };
+        let selected: &ShardValues = bundle.shard_values_for(StatisticKind::Tfr).unwrap();
+
+        assert!(std::ptr::eq(selected, bundle.shard_values.get(&base_key).unwrap()));
     }
 
     #[tokio::test]

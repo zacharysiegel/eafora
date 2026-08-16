@@ -1,5 +1,5 @@
 //! Load a statistic shard's bytes into an in-memory `(region, period_start) -> cell` map with its
-//! min/max value range precomputed.
+//! value and period ranges precomputed.
 //!
 //! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
 //! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::ro_memory_vfs`. Each is
@@ -16,13 +16,15 @@ pub struct CellValue {
     pub source_revision: String,
 }
 
-/// The values of one statistic shard, keyed by `region.code` and period start, with the min/max
-/// value range precomputed.
+/// The values of one statistic shard, keyed by `region.code` and period start, with the value and
+/// period ranges precomputed.
 #[derive(Debug, Clone)]
 pub struct ShardValues {
     by_region: HashMap<String, HashMap<NaiveDate, CellValue>>,
     min: f64,
     max: f64,
+    earliest_period_start: NaiveDate,
+    latest_period_start: NaiveDate,
 }
 
 impl ShardValues {
@@ -43,16 +45,11 @@ impl ShardValues {
     }
 
     pub fn period_range(&self) -> Option<(NaiveDate, NaiveDate)> {
-        let mut period_starts = self
-            .by_region
-            .values()
-            .flat_map(|values_by_period| values_by_period.keys().copied());
+        if self.by_region.is_empty() {
+            return None;
+        }
 
-        let first: NaiveDate = period_starts.next()?;
-
-        Some(period_starts.fold((first, first), |(min, max), period_start| {
-            (min.min(period_start), max.max(period_start))
-        }))
+        Some((self.earliest_period_start, self.latest_period_start))
     }
 }
 
@@ -104,6 +101,8 @@ mod native {
         let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
         let mut min: f64 = f64::INFINITY;
         let mut max: f64 = f64::NEG_INFINITY;
+        let mut earliest_period_start: NaiveDate = NaiveDate::MAX;
+        let mut latest_period_start: NaiveDate = NaiveDate::MIN;
 
         for row in row_iter {
             let (region_code, period_start, value, source_code, source_revision): (String, String, f64, String, String) = row?;
@@ -114,9 +113,11 @@ mod native {
             by_region.entry(region_code).or_default().insert(period_start, cell);
             min = min.min(value);
             max = max.max(value);
+            earliest_period_start = earliest_period_start.min(period_start);
+            latest_period_start = latest_period_start.max(period_start);
         }
 
-        Ok(ShardValues { by_region, min, max })
+        Ok(ShardValues { by_region, min, max, earliest_period_start, latest_period_start })
     }
 
     /// Open a read-only `Connection` over the shard's in-memory bytes. rusqlite's `deserialize` takes a
@@ -223,6 +224,8 @@ mod wasm {
         let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
         let mut min: f64 = f64::INFINITY;
         let mut max: f64 = f64::NEG_INFINITY;
+        let mut earliest_period_start: NaiveDate = NaiveDate::MAX;
+        let mut latest_period_start: NaiveDate = NaiveDate::MIN;
 
         loop {
             let step_res: std::os::raw::c_int = unsafe { sqlite_wasm_rs::sqlite3_step(statement.handle) };
@@ -239,6 +242,8 @@ mod wasm {
                 by_region.entry(region_code).or_default().insert(period_start, cell);
                 min = min.min(value);
                 max = max.max(value);
+                earliest_period_start = earliest_period_start.min(period_start);
+                latest_period_start = latest_period_start.max(period_start);
             } else if step_res == sqlite_wasm_rs::SQLITE_DONE {
                 break;
             } else {
@@ -247,7 +252,7 @@ mod wasm {
             }
         }
 
-        Ok(ShardValues { by_region, min, max })
+        Ok(ShardValues { by_region, min, max, earliest_period_start, latest_period_start })
     }
 }
 

@@ -23,7 +23,7 @@ use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAt
 use crate::map::pipeline::{self, RenderPipelines};
 use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
-use crate::sqlite::shard_db::{self, ShardValues};
+use crate::sqlite::shard_db::ShardValues;
 
 // the native attach path takes a raw window handle; the web attaches from a canvas.
 #[cfg(not(target_arch = "wasm32"))]
@@ -225,7 +225,7 @@ impl Renderer {
 
     pub fn draw_frame(&mut self, viewport: Viewport, frame_state: &FrameState) -> Result<(), AppError> {
         let bundle: Arc<Bundle> = self.bundle_receiver.borrow_and_update().clone();
-        self.refresh_fill_colors(&bundle, frame_state)?;
+        self.refresh_fill_colors(&bundle, frame_state);
 
         let Some(surface_texture) = self.acquire_surface_texture()? else {
             return Ok(());
@@ -414,7 +414,7 @@ impl Renderer {
     /// Rewrites the fill-color buffer in place only when its inputs (active statistic, period, or the
     /// bundle) have changed since the last frame. A pan, zoom, or hover leaves them untouched, so the
     /// buffer keeps whatever was last uploaded.
-    fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) -> Result<(), AppError> {
+    fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) {
         let key: FillColorKey = FillColorKey {
             statistic_kind: frame_state.active_statistic,
             period_start: frame_state.active_period_start,
@@ -424,27 +424,27 @@ impl Renderer {
         let is_current: bool = self.fill_colors.key.as_ref()
             .is_some_and(|current| current.matches(&key));
         if is_current {
-            return Ok(());
+            return;
         }
 
-        let fill_vertices: Vec<FillVertexAttributes> = self.compute_fill_colors(bundle, frame_state)?;
+        let fill_vertices: Vec<FillVertexAttributes> = self.compute_fill_colors(bundle, frame_state);
         self.queue.write_buffer(&self.fill_colors.buffer, 0, bytemuck::cast_slice(&fill_vertices));
         self.fill_colors.key = Some(key);
-
-        Ok(())
     }
 
-    fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Result<Vec<FillVertexAttributes>, AppError> {
+    fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Vec<FillVertexAttributes> {
         let no_data_fill: FillVertexAttributes = color::CHOROPLETH_SCALE.no_data().to_gpu();
         let mut fill_vertices: Vec<FillVertexAttributes> = vec![no_data_fill; self.country_geometry.positions.count as usize];
 
-        let Some(shard_bytes) = bundle.shard_for(frame_state.active_statistic) else {
-            return Ok(fill_vertices);
+        let active_shard_values: Option<&ShardValues> = bundle.shard_values_for(frame_state.active_statistic);
+        let Some(shard_values) = active_shard_values
+        else {
+            return fill_vertices;
         };
 
-        let shard_values: ShardValues = shard_db::read_shard(shard_bytes)?;
-        let Some((statistic_min, statistic_max)) = shard_values.value_range() else {
-            return Ok(fill_vertices);
+        let Some((statistic_min, statistic_max)) = shard_values.value_range()
+        else {
+            return fill_vertices;
         };
 
         let transform: StatisticColorTransform = color::transform_for(frame_state.active_statistic);
@@ -461,7 +461,7 @@ impl Renderer {
             }
         }
 
-        Ok(fill_vertices)
+        fill_vertices
     }
 }
 

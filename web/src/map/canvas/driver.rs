@@ -16,7 +16,7 @@ use shared::license::DistributionContext;
 use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
-use shared::sqlite::shard_db;
+use shared::sqlite::shard_db::{CellValue, ShardValues};
 
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
@@ -272,32 +272,33 @@ impl Driver {
         hit_test::region_at_point(&bundle.geometry, self.viewport, self.surface_dimensions, surface_point)
     }
 
-    /// Reads the shard the map colors from (the active statistic's first authorized license class),
-    /// logging and dropping a read failure so the caller degrades to "no data" rather than propagating.
-    fn read_active_shard(&self) -> Option<shard_db::ShardValues> {
-        let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
-        let shard_bytes: &Vec<u8> = bundle.shard_for(self.frame_state.active_statistic)?;
-
-        shard_db::read_shard(shard_bytes)
-            .map_err(|error| log::error!("reading the shard for the active statistic failed [statistic={:?} error={error}]", self.frame_state.active_statistic))
-            .ok()
+    /// The published bundle. Every handler takes it once and threads it down, so two reads within one
+    /// event cannot straddle a hot-swap and mix values from two bundles.
+    fn current_bundle(&self) -> Arc<Bundle> {
+        self.bundle_sender.borrow().clone()
     }
 
-    fn decode_cell(cell: Option<shard_db::CellValue>) -> (Option<f64>, Option<DataSourceKind>) {
-        let value: Option<f64> = cell.as_ref().map(|cell| cell.value);
-        let source: Option<DataSourceKind> = cell.as_ref().and_then(|cell| {
+    /// The values the map colors from: the active statistic's first authorized license class. `None`
+    /// when the bundle ships no shard for that statistic, so the caller degrades to "no data".
+    fn active_shard_values<'bundle>(&self, bundle: &'bundle Bundle) -> Option<&'bundle ShardValues> {
+        bundle.shard_values_for(self.frame_state.active_statistic)
+    }
+
+    fn decode_cell(cell: Option<&CellValue>) -> (Option<f64>, Option<DataSourceKind>) {
+        let value: Option<f64> = cell.map(|cell| cell.value);
+        let source: Option<DataSourceKind> = cell.and_then(|cell| {
             DataSourceKind::try_from(cell.source_code.as_str())
-                .map_err(|error| log::warn!("shard cell has an unrecognized data source [code={} error={error}]", cell.source_code))
+                .map_err(|error| log::warn!("shard cell has an unrecognized data source; [code={} error={error}]", cell.source_code))
                 .ok()
         });
 
         (value, source)
     }
 
-    fn resolve_selection_view(&self, region_code: &str, name_en: &str) -> SelectionView {
-        let cell: Option<shard_db::CellValue> = self
-            .read_active_shard()
-            .and_then(|shard_values| shard_values.cell(region_code, self.frame_state.active_period_start).cloned());
+    fn resolve_selection_view(&self, bundle: &Bundle, region_code: &str, name_en: &str) -> SelectionView {
+        let cell: Option<&CellValue> = self
+            .active_shard_values(bundle)
+            .and_then(|shard_values| shard_values.cell(region_code, self.frame_state.active_period_start));
 
         let (value, source): (Option<f64>, Option<DataSourceKind>) = Self::decode_cell(cell);
 
@@ -311,10 +312,10 @@ impl Driver {
         }
     }
 
-    fn resolve_global_view(&self) -> GlobalView {
-        let cell: Option<shard_db::CellValue> = self
-            .read_active_shard()
-            .and_then(|shard_values| shard_values.cell(WORLD_REGION_CODE, self.frame_state.active_period_start).cloned());
+    fn resolve_global_view(&self, bundle: &Bundle) -> GlobalView {
+        let cell: Option<&CellValue> = self
+            .active_shard_values(bundle)
+            .and_then(|shard_values| shard_values.cell(WORLD_REGION_CODE, self.frame_state.active_period_start));
 
         let (value, source): (Option<f64>, Option<DataSourceKind>) = Self::decode_cell(cell);
 
@@ -353,8 +354,9 @@ impl Driver {
         self.frame_state.selected_region = region_code;
         self.request_redraw();
 
+        let bundle: Arc<Bundle> = self.current_bundle();
         let selection_view: Option<SelectionView> =
-            region_hit.map(|region_hit| self.resolve_selection_view(&region_hit.region_code.0, &region_hit.name_en));
+            region_hit.map(|region_hit| self.resolve_selection_view(&bundle, &region_hit.region_code.0, &region_hit.name_en));
         self.selection = selection_view.clone();
 
         match &selection_view {
@@ -489,12 +491,11 @@ impl Driver {
         self.request_redraw();
     }
 
-    fn view_controls(&self) -> ViewControls {
-        let bundle: Arc<Bundle> = self.bundle_sender.borrow().clone();
+    fn view_controls(&self, bundle: &Bundle) -> ViewControls {
         let available_statistics: Vec<StatisticKind> = bundle.manifest.statistics.keys().copied().collect();
 
         let period_range: Option<(NaiveDate, NaiveDate)> =
-            self.read_active_shard().and_then(|shard_values| shard_values.period_range());
+            self.active_shard_values(bundle).and_then(|shard_values| shard_values.period_range());
 
         ViewControls {
             active_statistic: self.frame_state.active_statistic,
@@ -504,8 +505,8 @@ impl Driver {
         }
     }
 
-    fn legend_view(&self) -> LegendView {
-        let value_range: Option<(f64, f64)> = self.read_active_shard()
+    fn legend_view(&self, bundle: &Bundle) -> LegendView {
+        let value_range: Option<(f64, f64)> = self.active_shard_values(bundle)
             .and_then(|shard_values| shard_values.value_range());
 
         LegendView {
@@ -522,7 +523,9 @@ impl Driver {
         self.frame_state.active_statistic = statistic;
         self.request_redraw();
 
-        Some(self.republish())
+        let bundle: Arc<Bundle> = self.current_bundle();
+
+        Some(self.republish(&bundle))
     }
 
     fn scrub_to_period(&mut self, period_start: NaiveDate) -> Option<RepublishedViews> {
@@ -533,7 +536,9 @@ impl Driver {
         self.frame_state.active_period_start = period_start;
         self.request_redraw();
 
-        Some(self.republish())
+        let bundle: Arc<Bundle> = self.current_bundle();
+
+        Some(self.republish(&bundle))
     }
 
     /// Toggles the hovered-region lift (the "regions expand on hover" setting). Redraws only on a change;
@@ -549,18 +554,18 @@ impl Driver {
 
     /// Re-resolves the retained selection against the current frame state and bundles it with fresh
     /// controls, so a statistic or period change refreshes both the detail panel and the controls.
-    fn republish(&mut self) -> RepublishedViews {
+    fn republish(&mut self, bundle: &Bundle) -> RepublishedViews {
         let identity: Option<(String, String)> = self
             .selection
             .as_ref()
             .map(|selection| (selection.region_code.clone(), selection.name_en.clone()));
-        self.selection = identity.map(|(region_code, name_en)| self.resolve_selection_view(&region_code, &name_en));
+        self.selection = identity.map(|(region_code, name_en)| self.resolve_selection_view(bundle, &region_code, &name_en));
 
         RepublishedViews {
-            view_controls: self.view_controls(),
-            legend: self.legend_view(),
+            view_controls: self.view_controls(bundle),
+            legend: self.legend_view(bundle),
             selection: self.selection.clone(),
-            global: self.resolve_global_view(),
+            global: self.resolve_global_view(bundle),
         }
     }
 }
@@ -644,8 +649,7 @@ async fn set_up_driver(
         bundle.manifest.version,
         bundle.distribution_context,
         bundle
-            .shard_for(StatisticKind::Tfr)
-            .and_then(|shard_bytes| shard_db::read_shard(shard_bytes).ok())
+            .shard_values_for(StatisticKind::Tfr)
             .and_then(|shard_values| shard_values.period_range()),
     );
 
@@ -696,9 +700,10 @@ async fn set_up_driver(
         wheel_callback: Some(install_wheel_listener(&canvas)),
     };
 
-    let initial_controls: ViewControls = driver.view_controls();
-    let initial_legend: LegendView = driver.legend_view();
-    let initial_global: GlobalView = driver.resolve_global_view();
+    let published_bundle: Arc<Bundle> = driver.current_bundle();
+    let initial_controls: ViewControls = driver.view_controls(&published_bundle);
+    let initial_legend: LegendView = driver.legend_view(&published_bundle);
+    let initial_global: GlobalView = driver.resolve_global_view(&published_bundle);
     log::debug!(
         "initial global figure resolved; [period_start={} value={:?} source={:?}]",
         initial_global.period_start,
@@ -783,9 +788,10 @@ fn apply_live_bundle(
     let published: Option<RepublishedViews> = DRIVER.with_borrow_mut(|driver_slot| {
         let driver: &mut Driver = driver_slot.as_mut()?;
 
-        clamp_active_period(driver);
+        let bundle: Arc<Bundle> = driver.current_bundle();
+        clamp_active_period(driver, &bundle);
 
-        let views: RepublishedViews = driver.republish();
+        let views: RepublishedViews = driver.republish(&bundle);
         driver.request_redraw();
 
         Some(views)
@@ -799,9 +805,9 @@ fn apply_live_bundle(
     }
 }
 
-fn clamp_active_period(driver: &mut Driver) {
+fn clamp_active_period(driver: &mut Driver, bundle: &Bundle) {
     let Some((earliest, latest)) = driver
-        .read_active_shard()
+        .active_shard_values(bundle)
         .and_then(|shard_values| shard_values.period_range())
     else {
         return;
@@ -831,14 +837,11 @@ fn initial_frame_state(bundle: &Bundle) -> FrameState {
     }
 }
 
-/// The latest `period_start` in the shard the renderer would color from: the first authorized license
-/// class that ships a shard for the statistic, matching `select_shard`'s policy so the seeded period and
-/// the colored shard never disagree.
+/// The latest `period_start` in the shard the renderer would color from, taken through
+/// `Bundle::shard_values_for` so the seeded period and the colored shard never disagree about which
+/// license class won.
 fn latest_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
-    let shard_bytes: &Vec<u8> = bundle.shard_for(statistic)?;
-    let shard_values: shard_db::ShardValues = shard_db::read_shard(shard_bytes)
-        .map_err(|error| log::error!("reading the shard to seed the initial period failed [statistic={statistic:?} error={error}]"))
-        .ok()?;
+    let shard_values: &ShardValues = bundle.shard_values_for(statistic)?;
 
     shard_values.period_range().map(|(_earliest, latest)| latest)
 }
