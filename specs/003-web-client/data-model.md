@@ -15,7 +15,7 @@ All confirmed against source on `master`.
   - `async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError>`
   - `async fn list_versions(&self) -> Result<Vec<String>, AppError>`
   - `async fn delete_version(&self, version_label: &str) -> Result<(), AppError>`
-- `shared::artifact::Bundle` (`artifact/bundle.rs:34`) — `{ manifest, geometry: GeometryLayer, shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>>, distribution_context }`. `Send + Sync`; holds no SQLite connection.
+- `shared::artifact::Bundle` (`artifact/bundle.rs:34`) — `{ manifest, geometry: GeometryLayer, shard_values (private), distribution_context }`. `Send + Sync`; holds no SQLite connection. Each authorized shard is parsed into a `ShardValues` once during `Bundle::open`; consumers read it through `shard_values_for(statistic)` rather than parsing bytes themselves.
   - `async fn open<C: ArtifactCache>(cache: &C, version_label: &str, distribution_context: DistributionContext) -> Result<Bundle, AppError>` — reads files from the cache (does NOT fetch), verifies each against the manifest's SHA-256, loads only authorized shard classes.
 - `shared::artifact::Manifest` + `manifest::parse_manifest(&[u8]) -> Result<Manifest, AppError>` (`manifest.rs:39`, synchronous) + `manifest::MANIFEST_FILENAME`.
 - `shared::artifact::DiscoveryDocument` + `parse_discovery_document(&[u8]) -> Result<DiscoveryDocument, AppError>` (`artifact/discovery.rs:14,21`) — `{ schema_version: u32, repository_base_url: String, minimum_client_version: String, sunset: Option<String> }`. Reuse; do not redefine in `web/`.

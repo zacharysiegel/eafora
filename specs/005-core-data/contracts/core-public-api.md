@@ -58,6 +58,7 @@ Library crate: the contract is the public Rust API surface (types, traits, funct
 | `BoundingBox`                                                     | `shared::artifact::geometry`      | type     | new       |
 | `Bundle`                                                          | `shared::artifact::bundle`        | type     | new       |
 | `Bundle::open(version_label: &str, cache: &C, distribution_context: DistributionContext) -> Result<Bundle, AppError>` (async, generic `C: ArtifactCache`) | `shared::artifact::bundle` | function | new |
+| `Bundle::shard_values_for(statistic_kind: StatisticKind) -> Option<&ShardValues>` (`ShardValues` from `shared::sqlite::shard_db`) | `shared::artifact::bundle` | function | new |
 | `StatisticShardKey`                                               | `shared::artifact::bundle`        | type     | locked    |
 | `DistributionContext`                                             | `shared::license::license`        | type     | new       |
 | `DistributionContext::authorized_classes() -> &'static [LicenseShardClass]` | `shared::license::license` | function | new |
@@ -107,10 +108,13 @@ Per spec FR-024 + FR-025, the following tests are themselves part of the public-
 | `verify_sha256_rejects_mismatched_hash`                   | Mismatched input returns `AppError` containing both 8-hex prefixes.     | host    |
 | `distribution_context_first_party_authorizes_all_classes` | `FirstParty.authorized_classes() == &[Base, NonCommercial, ShareAlike]`. | host    |
 | `distribution_context_embedded_authorizes_base_only`      | `Embedded.authorized_classes() == &[Base]`.                              | host    |
-| `bundle_open_round_trip_against_mock_cache`               | Populated `MockArtifactCache` → `Bundle::open` succeeds; bundle's `shard_bytes` matches the manifest entries. | host |
+| `bundle_open_round_trip_against_mock_cache`               | Populated `MockArtifactCache` → `Bundle::open` succeeds; the bundle holds a parsed shard for every manifest entry the distribution context authorizes. | host |
+| `bundle_open_eagerly_parses_shards`                       | `Bundle::open` parses each authorized shard once; `shard_values_for` returns values and a value range without re-reading bytes. | host |
+| `bundle_open_rejects_an_unparseable_shard`                | A manifest entry whose bytes are not a readable Eafora shard → `Bundle::open` returns `AppError`. | host |
 | `bundle_open_rejects_missing_manifest`                    | `cache.get(version, "manifest.json")` returns `Ok(None)` → `AppError`.   | host    |
 | `bundle_open_rejects_sha256_mismatch`                     | Shard bytes don't match SHA-256 → `AppError` naming the mismatched entry.| host    |
-| `bundle_open_skips_unauthorized_shards`                   | `Embedded` context → only `Base` shards in `bundle.shard_bytes`.        | host    |
+| `bundle_open_skips_unauthorized_shards`                   | `Embedded` context → only `Base` shards are read and parsed.             | host    |
+| `shard_values_for_returns_the_first_authorized_shard`     | `shard_values_for` resolves to the highest-precedence authorized license class's shard. | host |
 | `bundle_open_eagerly_parses_geometry`                     | Bundle's `geometry` is constructed; iteration returns features.   | host    |
 | `bundle_is_send_sync`                                     | Compile-time assertion: `Arc<Bundle>: Send + Sync` (via `fn assert_send_sync<T: Send + Sync>() {}`). | host |
 | `shard_schema_ddl_creates_expected_tables_and_index`      | Execute `shard_schema_ddl()` against an in-memory rusqlite Connection; assert `statistic_value`, `shard_key` tables exist with the expected columns; assert `statistic_value_by_region` index exists. | host |

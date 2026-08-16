@@ -39,6 +39,7 @@ use tokio::sync::Mutex;
 
 use shared::artifact::cache::ArtifactCache;
 use shared::artifact::{Bundle, MANIFEST_FILENAME};
+use shared::canonical::canonical_model::StatisticKind;
 use shared::license::DistributionContext;
 use shared::AppError;
 
@@ -108,7 +109,7 @@ async fn my_consumer_test() {
     // Assert against the parsed bundle:
     assert_eq!(bundle.manifest.manifest_schema_version, 1);
     assert_eq!(bundle.manifest.version, "2026-06-22+ada");
-    assert!(!bundle.shard_bytes.is_empty());
+    assert!(bundle.shard_values_for(StatisticKind::Tfr).is_some());
 }
 ```
 
@@ -202,40 +203,43 @@ verify_sha256(&bytes, expected_hex).expect("hash matches");
 
 On mismatch, the `AppError` message contains both `expected_hex` (first 8 hex chars) and the actual hash (first 8 hex chars) so the error log identifies what failed.
 
-## Open a SQLite connection against bundle shard bytes (from 006-core-renderer)
+## Read a statistic shard's values from the bundle
 
-When 006's renderer needs to query a statistic shard:
+When a consumer (the renderer's choropleth pass, the web client's canvas driver, a detail panel) needs a statistic's values:
 
 ```rust
-use shared::canonical::canonical_model::{StatisticKind, LicenseShardClass};
-use shared::artifact::bundle::{Bundle, StatisticShardKey};
-use shared::sqlite::vfs::open_connection_from_bytes;
+use chrono::NaiveDate;
+use shared::artifact::bundle::Bundle;
+use shared::canonical::canonical_model::StatisticKind;
+use shared::sqlite::shard_db::{CellValue, ShardValues};
 
 let bundle: &Bundle = /* from the watch channel */;
-let key: StatisticShardKey = StatisticShardKey {
-    statistic_kind: StatisticKind::Tfr,
-    license_shard_class: LicenseShardClass::Base,
+
+// `shard_values_for` picks the first license class the distribution context is
+// authorized for that ships a shard for this statistic, so callers never name a
+// LicenseShardClass themselves.
+let active_shard_values: Option<&ShardValues> = bundle.shard_values_for(StatisticKind::Tfr);
+let Some(shard_values) = active_shard_values
+else {
+    return;  // this bundle ships no shard for the statistic; degrade to "no data"
 };
-let shard_bytes: Vec<u8> = bundle.shard_bytes.get(&key)
-    .expect("shard authorized by distribution context")
-    .clone();   // clone because the connection takes ownership
 
-let connection: rusqlite::Connection = open_connection_from_bytes("tfr_base", shard_bytes)
-    .expect("connection opens against the bytes");
+let period_start: NaiveDate = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
 
-// Query the shard:
-let mut stmt: rusqlite::Statement = connection.prepare(
-    "SELECT value FROM statistic_value WHERE region_iso3 = ?1 AND period_start = ?2"
-).expect("prepare succeeds");
-// ... etc.
+let value: Option<f64> = shard_values.value("usa", period_start);
+let cell: Option<&CellValue> = shard_values.cell("usa", period_start);   // value + source_code + source_revision
+let value_range: Option<(f64, f64)> = shard_values.value_range();        // choropleth scale endpoints
+let period_range: Option<(NaiveDate, NaiveDate)> = shard_values.period_range();  // year-scrubber bounds
 ```
 
-The `open_connection_from_bytes` function has the same signature on both targets; the wasm32 implementation goes through `shared::sqlite::vfs::register_vec_u8_vfs` machinery internally, while the non-wasm32 implementation goes through rusqlite's `Connection::deserialize` API. Consumers don't see the difference.
+Every accessor is an in-memory map or field read: `Bundle::open` already ran the shard's rows through `shared::sqlite::shard_db::read_shard` once, so nothing here touches SQLite and nothing allocates a connection. `value_range` and `period_range` are precomputed at open time and return in constant time, which is what lets a per-frame or per-scrub-event caller poll them freely.
+
+Consumers do NOT open their own SQLite connection over shard bytes. `Bundle` retained the raw bytes for exactly that purpose originally, and nothing ever used them; meanwhile the on-demand `read_shard` calls cost a measured 289ms of synchronous main-thread work per year-scrub event (4 to 5 full re-parses of a 14,073-row shard). The parse moved into `Bundle::open`, the bytes are dropped once parsed, and `read_shard` now has one caller in the workspace. If a future consumer genuinely needs SQL against a shard (an arbitrary aggregate `ShardValues` cannot answer), the shape to add is a new query function inside `shared::sqlite`, not a byte accessor on `Bundle`.
 
 ## Common pitfalls
 
 1. **Don't pass `shared::artifact::cache::ArtifactCache` by trait object across an FFI boundary.** UniFFI doesn't support trait objects. iOS's `FileSystemArtifactCache.swift` wraps the trait at the Swift layer; the Rust UniFFI surface takes a concrete type.
-2. **Don't construct `Bundle` directly — always go through `Bundle::open`.** The fields are public for read access only (the watch channel exposes `Receiver::borrow` which gives `&Bundle`); construction requires the validation steps `Bundle::open` performs (SHA-256, license filtering, geometry parsing).
+2. **Don't construct `Bundle` directly — always go through `Bundle::open`.** The public fields are for read access (the watch channel exposes `Receiver::borrow` which gives `&Bundle`), and `shard_values` is private, so the compiler enforces this: construction requires the validation steps `Bundle::open` performs (SHA-256, license filtering, shard parsing, geometry parsing).
 3. **Don't expect `Bundle::open` to fetch.** It only reads through the cache. The platform shell is responsible for ensuring the cache has the bytes the requested `version_label` references (via the speculative parallel fetch at startup in `client.md` §Speculative parallel fetch).
 4. **Don't downstream-define your own `AppError` type if you can reach for `shared::AppError`.** The `From` impls in `shared::error` cover most parser failure modes; only add new conversions in your crate's own error layer.
 5. **Don't store `&Bundle` across an `.await`.** The `watch::Receiver::borrow_and_update` guard holds a read lock; await-while-borrowed risks the reader-writer-deadlock path (in single-threaded WASM it just hangs; in multi-threaded tokio it deadlocks). Pattern: clone the `Arc<Bundle>` out of the borrow guard, drop the guard, then await against the clone.

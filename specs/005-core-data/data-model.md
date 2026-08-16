@@ -670,11 +670,12 @@ Per spec FR-018 + §Clarifications Q1+Q2 (no SQLite Connection; `Send + Sync`; e
 pub struct Bundle {
     pub manifest: Manifest,
     pub geometry: GeometryLayer,
-    /// Authorized license shards' raw bytes; the renderer opens its own
-    /// `rusqlite::Connection` against these on construction + hot-swap.
+    /// Every license shard this `distribution_context` is authorized to access
+    /// (unauthorized shards are never read). Private so no consumer can bypass
+    /// `shard_values_for`'s license precedence.
     /// Keyed by `(statistic_kind, license_shard_class)`.
     /// BTreeMap (not HashMap) for deterministic iteration order in tests.
-    pub shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>>,
+    shard_values: BTreeMap<StatisticShardKey, ShardValues>,
     pub distribution_context: DistributionContext,
 }
 
@@ -685,10 +686,12 @@ pub struct StatisticShardKey {
 }
 ```
 
+**Reversal** (code is canonical over this doc): the shard field was originally `pub shard_bytes: BTreeMap<StatisticShardKey, Vec<u8>>`, holding each authorized shard's raw bytes so a consumer could open its own `rusqlite::Connection` over them on construction and on hot-swap. That decision is reversed. No consumer ever opened its own connection, and re-parsing on every read cost a measured 289ms of synchronous main-thread work per year-scrub event (4 to 5 full re-parses of a 14,073-row shard). `Bundle::open` now reads each authorized shard exactly once, keeps the resulting `ShardValues` from `shared::sqlite::shard_db`, and discards the bytes; the field is private and reached only through `shard_values_for`, which costs 0 to 1ms per event.
+
 `Bundle: Send + Sync`. Every field is `Send + Sync`:
 - `Manifest` derives serde; field types are all `Send + Sync`.
 - `GeometryLayer` owns a `Vec<u8>` (the geometry file bytes); its query functions open transient readers and return owned data, so the value itself is plain `Send + Sync` data.
-- `BTreeMap<K, Vec<u8>>` is `Send + Sync` trivially.
+- `ShardValues` owns maps of `String` / `NaiveDate` / `f64` values and holds no connection, so `BTreeMap<K, ShardValues>` is `Send + Sync` trivially.
 - `DistributionContext` is `Copy`.
 
 `StatisticShardKey` moves from `ingestion/src/artifact/artifact_model.rs` to `shared/`; ingestion migrates its call sites to `shared::artifact::bundle::StatisticShardKey` directly (no re-export). The producer side already uses it in the manifest serializer.
@@ -698,16 +701,17 @@ pub struct StatisticShardKey {
 ```rust
 /// Open a complete artifact bundle for `version_label` by reading every file
 /// through the supplied cache. Validates every shard's SHA-256, eagerly parses
-/// the geometry into a GeometryLayer, loads byte buffers for every license
-/// shard this distribution context is authorized to access (per
-/// DistributionContext::authorized_classes); unauthorized shards are NOT loaded
-/// into memory.
+/// the geometry into a GeometryLayer, and reads every license shard this
+/// distribution context is authorized to access (per
+/// DistributionContext::authorized_classes) into a ShardValues; unauthorized
+/// shards are NOT read.
 ///
 /// Returns `Err(AppError)` if:
 /// - The manifest is missing from the cache (`cache.get(version_label, "manifest.json")` returns `Ok(None)`).
 /// - The manifest fails `parse_manifest` (unknown schema_version, malformed sha256, path traversal, etc.).
 /// - Any referenced shard is missing from the cache.
 /// - Any referenced shard's SHA-256 doesn't match the manifest's recorded value.
+/// - Any referenced shard fails `shard_db::read_shard` (not a readable Eafora shard).
 /// - The geometry fails `parse_geometry_layer`.
 impl Bundle {
     pub async fn open<C: ArtifactCache>(
@@ -715,6 +719,10 @@ impl Bundle {
         cache: &C,
         distribution_context: DistributionContext,
     ) -> Result<Bundle, AppError>;
+
+    /// The values that color the map for `statistic_kind`: the first authorized
+    /// license class that ships a shard for it.
+    pub fn shard_values_for(&self, statistic_kind: StatisticKind) -> Option<&ShardValues>;
 }
 ```
 
@@ -757,7 +765,7 @@ Per FR-022: no wildcard arm in the `match`; adding a new `LicenseShardClass` var
 
 ## Module: `shared::sqlite::vfs`
 
-**DEFERRED to 006-core-renderer** (not implemented in 005). `sqlite-wasm-rs` 0.4.x is raw libsqlite3 C bindings with no `Connection` type, so the cross-target `Connection` typedef below cannot exist — the bridge must be a real wrapper (native `rusqlite::Connection::deserialize` behind the `serialize` feature; wasm32 raw `sqlite3_*` FFI) behind one facade, whose method surface is defined by the renderer's queries (006). `Bundle` opens no connection (carries bytes), so 005 doesn't need it; `shared/src/sqlite/mod.rs` declares only `pub mod schema;`. The sketch below is retained as 006's starting point.
+**DEFERRED to 006-core-renderer** (not implemented in 005). `sqlite-wasm-rs` 0.4.x is raw libsqlite3 C bindings with no `Connection` type, so the cross-target `Connection` typedef below cannot exist — the bridge must be a real wrapper (native `rusqlite::Connection::deserialize` behind the `serialize` feature; wasm32 raw `sqlite3_*` FFI) behind one facade, whose method surface is defined by the renderer's queries (006). `Bundle` opened no connection and carried bytes at 005's implementation time, so 005 didn't need it; `shared/src/sqlite/mod.rs` declared only `pub mod schema;`. The sketch below is retained as 006's starting point. It has since been superseded by `shared::sqlite::shard_db::read_shard`, which is the one cross-target entry point: it opens a transient read-only connection over a shard's in-memory bytes (native through rusqlite's `deserialize`, wasm32 through the `shared::sqlite::ro_memory_vfs` facade), reads every row into a `ShardValues`, and closes it. `Bundle::open` is its only caller in the workspace.
 
 Per spec FR-020 + plan.md §Topic 2 (revised 2026-06-22 after empirical wasm32 build failure). Wraps two underlying SQLite libraries — `rusqlite` on non-wasm32 targets, `sqlite-wasm-rs` on wasm32 — behind a unified `Connection` typedef and a single `open_connection_from_bytes` entry point.
 
