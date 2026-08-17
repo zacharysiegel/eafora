@@ -45,6 +45,7 @@ earcutr = "0.5.*"
 # web client (Leptos/WASM); consumed by the web/ crate
 leptos = "0.8.*"
 leptos_router = "0.8.*"
+leptos_meta = "0.8.*"
 leptos_axum = "0.8.*"
 axum = "0.8.*"
 leptos_i18n = "0.6.*"
