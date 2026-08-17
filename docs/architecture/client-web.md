@@ -269,7 +269,7 @@ The `prerender_params` closure returns a `StaticParamsMap` of every `(code → r
 Mechanically, the deploy runs:
 
 ```sh
-./scripts/build/deploy-site.sh    # build-site.sh, then `wrangler deploy` uploading target/site/
+./scripts/build/deploy-site.sh --build    # build-site.sh, verify, then `wrangler deploy` of target/site/
 ```
 
 The server binary lands at `./target/release/web` (cargo-leptos only writes it under `target/server/` when `bin-target-dir` is set, which this project does not set). `build-site.sh` runs it in place, because the render reads the content-hash file from the directory holding the binary.

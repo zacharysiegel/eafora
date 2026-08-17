@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 
-# Deploys the site to Cloudflare Workers Assets.
+# Deploys the site tree in target/site to Cloudflare Workers Assets.
 #
 # Usage:
-#   ./scripts/build/deploy-site.sh [--dry-run]
+#   ./scripts/build/deploy-site.sh [--build] [--precompress] [--dry-run]
+# e.g.
+#   ./scripts/build/deploy-site.sh --build
+#   ./scripts/build/deploy-site.sh --dry-run
 #
-# Wraps the build rather than documenting it beside the deploy command, because web/static/_headers serves
-# /pkg/* as immutable for a year. That is only safe for the content-hashed filenames build-site.sh
-# produces, so a hand-run build followed by `wrangler deploy` would pin stale assets.
+# Deploys whatever is already in target/site; pass --build to produce it first. Either way the tree is
+# verified before anything is uploaded, since web/static/_headers serves /pkg/* as immutable for a year
+# and that is only correct for the content-hashed filenames a full build produces.
 
 set -euo pipefail
 
@@ -15,22 +18,44 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly WEB_DIR="${REPO_ROOT}/web"
 
+RUN_BUILD=false
+RUN_PRECOMPRESS=false
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --build)
+            RUN_BUILD=true
+            shift
+            ;;
+        # Off by default: it is unconfirmed that Workers Assets serves an uploaded .br sibling through
+        # content negotiation, and if it does not, each sibling is uploaded as its own asset instead.
+        --precompress)
+            RUN_PRECOMPRESS=true
+            shift
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
             ;;
         *)
-            echo "usage: $0 [--dry-run]" >&2
+            echo "usage: $0 [--build] [--precompress] [--dry-run]" >&2
             exit 64
             ;;
     esac
 done
 
-"${SCRIPT_DIR}/build-site.sh"
+if [[ "$RUN_BUILD" == true ]]; then
+    "${SCRIPT_DIR}/build-site.sh"
+    printf '\n'
+fi
+
+"${SCRIPT_DIR}/verify-site-tree.sh"
+
+if [[ "$RUN_PRECOMPRESS" == true ]]; then
+    printf '\n'
+    "${SCRIPT_DIR}/precompress-site.sh"
+fi
 
 printf '\ndeploying\n'
 cd "$WEB_DIR"

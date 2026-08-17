@@ -80,14 +80,14 @@ Every script resolves its own paths, so none of them care about the current dire
 ## Deploy
 
 ```sh
-./scripts/build/deploy-site.sh
+./scripts/build/deploy-site.sh --build
 ```
 
 ```sh
 ./scripts/build/deploy-site.sh --dry-run
 ```
 
-Pure static asset serving from Cloudflare Workers Assets (`web/wrangler.toml` has `[assets] directory`, no `main`, no Worker). The script builds first rather than leaving that to the operator, because `web/static/_headers` serves `/pkg/*` as immutable for a year and that is only safe for the content-hashed filenames the build produces.
+Pure static asset serving from Cloudflare Workers Assets (`web/wrangler.toml` has `[assets] directory`, no `main`, no Worker). The script deploys whatever is already in `target/site`; `--build` produces it first and `--precompress` writes `.br` siblings before uploading. Either way it runs `./scripts/build/verify-site-tree.sh`, which refuses a tree with no shell document, a shell reference missing from disk, or a `/pkg/` reference whose name carries no content hash, since `_headers` serves that path as immutable for a year.
 
 The first deploy needs `npx wrangler login` once, which opens a browser. The apex-domain routing to `eafora.org` is configured in the Cloudflare dashboard, outside the codebase.
 

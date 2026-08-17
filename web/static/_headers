@@ -21,9 +21,9 @@
   Cache-Control: public, max-age=3600
 
 /pkg/*
-  # Immutable is only correct because the deploy builds with LEPTOS_HASH_FILES=true, which puts a content
-  # hash in every filename here, so a rebuild changes the URL. Deploy through ./scripts/build/deploy-site.sh,
-  # which sets it; a hand-run build without it would pin stale assets for a year.
+  # Immutable is only correct while every filename here carries a content hash, so that a rebuild changes
+  # the URL. ./scripts/build/verify-site-tree.sh refuses to deploy a tree whose shell references a
+  # stable-named asset, since that would pin this build's asset in caches for a year.
   Cache-Control: public, max-age=31536000, immutable
 
 /embedded_artifacts/geometry/*
