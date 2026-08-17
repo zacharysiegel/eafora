@@ -4,6 +4,7 @@ pub mod app;
 pub mod distribution;
 pub mod live_resolve;
 pub mod map;
+pub mod version_rank;
 
 // Browser-only runtime glue; the ssr build compiles none of it.
 #[cfg(feature = "hydrate")]

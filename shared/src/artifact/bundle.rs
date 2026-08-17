@@ -114,7 +114,7 @@ mod tests {
 
     use crate::artifact::cache::tests::MockArtifactCache;
     use crate::artifact::geometry::tests::one_feature_fgb_bytes;
-    use crate::artifact::manifest::ManifestEntry;
+    use crate::artifact::manifest::{BundleVariant, ManifestEntry};
 
     const VERSION: &str = "2026-05-18+test";
     const GEOMETRY_PATH: &str = "geometry/world.fgb";
@@ -150,6 +150,7 @@ mod tests {
         Manifest {
             manifest_schema_version: manifest::MANIFEST_SCHEMA_VERSION,
             version: VERSION.to_string(),
+            variant: BundleVariant::Complete,
             artifact_created: "2026-05-18T03:00:00Z".parse().unwrap(),
             geometry,
             statistics,

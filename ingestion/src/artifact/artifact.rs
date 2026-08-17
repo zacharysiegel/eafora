@@ -15,7 +15,7 @@ use crate::canonical::canonical_db;
 use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::canonical::canonical_entity::SourceChoice;
 use crate::error::AppError;
-use shared::artifact::manifest;
+use shared::artifact::manifest::{self, BundleVariant};
 use shared::filesystem::{self, FileReference, Hashed};
 
 const UNITED_STATES_REGION_CODE: &str = "usa";
@@ -33,14 +33,6 @@ pub struct BuildOptions {
     pub test_offline: bool,
 }
 
-/// Selects which resolution a variant's shards use: `Complete` runs the editorial source choice
-/// across every period; `Downsampled` collapses to the reference year via `downsample_to_reference_year`.
-#[derive(Debug, Clone, Copy)]
-enum ShardVariant {
-    Complete,
-    Downsampled,
-}
-
 pub async fn build_artifacts(
     connection: &mut PgConnection,
     version_dir: &Path,
@@ -56,7 +48,7 @@ pub async fn build_artifacts(
     let complete: BuildReport = build_bundle_variant(
         connection,
         &version_dir.join(SUBDIR_COMPLETE),
-        ShardVariant::Complete,
+        BundleVariant::Complete,
         &source_choices,
         statistic_kinds.clone(),
         version_label,
@@ -67,7 +59,7 @@ pub async fn build_artifacts(
     let downsampled: BuildReport = build_bundle_variant(
         connection,
         &version_dir.join(SUBDIR_DOWNSAMPLED),
-        ShardVariant::Downsampled,
+        BundleVariant::Downsampled,
         &source_choices,
         statistic_kinds,
         version_label,
@@ -91,7 +83,7 @@ pub async fn build_artifacts(
 async fn build_bundle_variant(
     connection: &mut PgConnection,
     variant_dir: &Path,
-    variant: ShardVariant,
+    variant: BundleVariant,
     source_choices: &[SourceChoice],
     statistic_kinds: BTreeSet<StatisticKind>,
     version_label: &str,
@@ -111,7 +103,7 @@ async fn build_bundle_variant(
     let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
         artifact_db::read_latest_revisions(&mut *connection, &data_sources).await?;
     let manifest: Hashed<FileReference> =
-        manifest_writer::write_manifest(&shards, &geometry, version_label, &data_source_revisions, variant_dir)?;
+        manifest_writer::write_manifest(&shards, &geometry, version_label, variant, &data_source_revisions, variant_dir)?;
 
     Ok(BuildReport {
         artifact_dir: variant_dir.to_path_buf(),
@@ -130,7 +122,7 @@ async fn create_statistic_shards(
     variant_dir: &Path,
     source_choices: &[SourceChoice],
     statistic_kinds: BTreeSet<StatisticKind>,
-    variant: ShardVariant,
+    variant: BundleVariant,
 ) -> Result<(Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>), AppError> {
     let mut shards: Vec<StatisticShard<Hashed<FileReference>>> = Vec::new();
     let mut data_sources: BTreeSet<DataSourceKind> = BTreeSet::new();
@@ -147,8 +139,8 @@ async fn create_statistic_shards(
         }
 
         let resolved: Vec<ResolvedValue> = match variant {
-            ShardVariant::Complete => source_choice::resolve_candidates(candidates, source_choices)?,
-            ShardVariant::Downsampled => downsample_to_reference_year(candidates, kind),
+            BundleVariant::Complete => source_choice::resolve_candidates(candidates, source_choices)?,
+            BundleVariant::Downsampled => downsample_to_reference_year(candidates, kind),
         };
         if resolved.is_empty() {
             continue;

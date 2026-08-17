@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::artifact::schema_version;
-use crate::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
+use crate::canonical::canonical_model::{impl_code_serde, DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
 
 pub const MANIFEST_FILENAME: &str = "manifest.json";
@@ -17,10 +17,50 @@ pub const SUBDIR_DATA: &str = "data";
 /// `<repository_base_url>/<MANIFEST_LATEST_KEY>` at startup.
 pub const MANIFEST_LATEST_KEY: &str = "latest/manifest.json";
 
+/// Which resolution a bundle carries. `Complete` has every period and every authorized source and is what
+/// the CDN serves; `Downsampled` collapses to the reference year and is the onboard bundle clients embed
+/// for first paint. A consumer holding both must never prefer the downsampled one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BundleVariant {
+    Complete,
+    Downsampled,
+}
+
+impl BundleVariant {
+    pub fn code(self) -> &'static str {
+        match self {
+            BundleVariant::Complete => "complete",
+            BundleVariant::Downsampled => "downsampled",
+        }
+    }
+}
+
+impl TryFrom<&str> for BundleVariant {
+    type Error = AppError;
+
+    fn try_from(code: &str) -> Result<BundleVariant, AppError> {
+        match code {
+            "complete" => Ok(BundleVariant::Complete),
+            "downsampled" => Ok(BundleVariant::Downsampled),
+            other => Err(AppError::from(format!("unknown bundle variant {other:?}"))),
+        }
+    }
+}
+
+impl_code_serde!(BundleVariant, code);
+
+/// Bundles published before the manifest carried a variant are complete: the downsampled tree has only
+/// ever been embedded in a client, never published for a consumer to cache.
+fn variant_when_absent() -> BundleVariant {
+    BundleVariant::Complete
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub manifest_schema_version: u32,
     pub version: String,
+    #[serde(default = "variant_when_absent")]
+    pub variant: BundleVariant,
     pub artifact_created: DateTime<Utc>,
     pub geometry: ManifestEntry,
     pub statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>>,

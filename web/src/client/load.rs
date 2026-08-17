@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use shared::artifact::{self, manifest, ArtifactCache, Bundle, DiscoveryDocument, Manifest, ManifestEntry};
 use shared::filesystem;
 use shared::http::{HttpCacheMode, HttpMethod, HttpRequest};
@@ -14,6 +13,7 @@ use tokio::sync::{AcquireError, Semaphore, SemaphorePermit};
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::fetch;
 use crate::live_resolve::{self, AuthoritativeBase};
+use crate::version_rank::{self, CachedVersionRank};
 
 const EMBEDDED_BASE_URL: &str = "/embedded_artifacts";
 const LIVE_FETCH_PARALLELISM: usize = 6;
@@ -86,28 +86,29 @@ pub async fn evict_stale_versions(cache: &OpfsArtifactCache) -> Result<(), AppEr
     cache.evict_all_except(&kept_version_labels).await
 }
 
-/// Cached version labels, newest artifact first. The order comes from each version's `artifact_created`
-/// rather than from comparing labels: `YYYY-MM-DD+<surname>` orders chronologically only across differing
-/// dates, and two builds sharing a date fall back to comparing arbitrary surnames. A version whose
-/// manifest cannot be read sorts last, so it is opened last and evicted first.
+/// Cached version labels, best first. The rank comes from each version's manifest rather than from
+/// comparing labels: `YYYY-MM-DD+<surname>` orders chronologically only across differing dates, and two
+/// builds sharing a date fall back to comparing arbitrary surnames. A version whose manifest cannot be read
+/// ranks last, so it is opened last and evicted first.
 async fn version_labels_newest_first(cache: &OpfsArtifactCache) -> Result<Vec<String>, AppError> {
     let version_labels: Vec<String> = cache.list_versions().await?;
-    let mut labels_by_creation: Vec<(Option<DateTime<Utc>>, String)> = Vec::with_capacity(version_labels.len());
+    let mut ranked_labels: Vec<(CachedVersionRank, String)> = Vec::with_capacity(version_labels.len());
 
     for version_label in version_labels {
-        let artifact_created: Option<DateTime<Utc>> = read_cached_artifact_created(cache, &version_label).await;
+        let manifest: Option<Manifest> = read_cached_manifest(cache, &version_label).await;
+        let rank: CachedVersionRank = version_rank::rank_cached_version(manifest.as_ref());
 
-        labels_by_creation.push((artifact_created, version_label));
+        ranked_labels.push((rank, version_label));
     }
 
-    labels_by_creation.sort_by(|(left_created, _), (right_created, _)| right_created.cmp(left_created));
+    ranked_labels.sort_by(|(left_rank, _), (right_rank, _)| right_rank.cmp(left_rank));
 
-    Ok(labels_by_creation.into_iter().map(|(_, version_label)| version_label).collect())
+    Ok(ranked_labels.into_iter().map(|(_rank, version_label)| version_label).collect())
 }
 
-/// `None` when the version's manifest is absent or unparseable. A damaged version is unorderable rather
+/// `None` when the version's manifest is absent or unparseable. A damaged version is unrankable rather
 /// than fatal, so it cannot stop the others from being opened or evicted.
-async fn read_cached_artifact_created(cache: &OpfsArtifactCache, version_label: &str) -> Option<DateTime<Utc>> {
+async fn read_cached_manifest(cache: &OpfsArtifactCache, version_label: &str) -> Option<Manifest> {
     let manifest_bytes: Option<Vec<u8>> = cache
         .get(version_label, manifest::MANIFEST_FILENAME)
         .await
@@ -115,13 +116,12 @@ async fn read_cached_artifact_created(cache: &OpfsArtifactCache, version_label: 
             log::warn!("reading a cached manifest failed; [version_label={version_label} error={error}]")
         })
         .ok()?;
-    let manifest: Manifest = manifest::parse_manifest(&manifest_bytes?)
+
+    manifest::parse_manifest(&manifest_bytes?)
         .map_err(|error| {
             log::warn!("parsing a cached manifest failed; [version_label={version_label} error={error}]")
         })
-        .ok()?;
-
-    Some(manifest.artifact_created)
+        .ok()
 }
 
 pub async fn load_live_bundle(

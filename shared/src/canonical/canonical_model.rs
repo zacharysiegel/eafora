@@ -24,6 +24,8 @@ macro_rules! impl_code_serde {
     };
 }
 
+pub(crate) use impl_code_serde;
+
 pub struct Region {
     pub id: Uuid,
     pub code: String,

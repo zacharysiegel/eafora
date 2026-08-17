@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 
-use shared::artifact::manifest::{self, Manifest, ManifestEntry};
+use shared::artifact::manifest::{self, BundleVariant, Manifest, ManifestEntry};
 use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use shared::filesystem::{FileReference, Hashed};
 
@@ -18,11 +18,12 @@ pub fn write_manifest(
     shards: &[StatisticShard<Hashed<FileReference>>],
     geometry: &Hashed<FileReference>,
     version_label: &str,
+    variant: BundleVariant,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
     artifact_dir: &Path,
 ) -> Result<Hashed<FileReference>, AppError> {
     let artifact_created: DateTime<Utc> = Utc::now();
-    let json: String = build_manifest_json(shards, geometry, version_label, &artifact_created, data_source_revisions)?;
+    let json: String = build_manifest_json(shards, geometry, version_label, variant, &artifact_created, data_source_revisions)?;
 
     let path: PathBuf = artifact_dir.join(manifest::MANIFEST_FILENAME);
     fs::write(&path, &json)?;
@@ -36,6 +37,7 @@ fn build_manifest_json(
     shards: &[StatisticShard<Hashed<FileReference>>],
     geometry: &Hashed<FileReference>,
     version_label: &str,
+    variant: BundleVariant,
     artifact_created: &DateTime<Utc>,
     data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
 ) -> Result<String, AppError> {
@@ -61,6 +63,7 @@ fn build_manifest_json(
     let manifest: Manifest = Manifest {
         manifest_schema_version: manifest::MANIFEST_SCHEMA_VERSION,
         version: version_label.to_string(),
+        variant,
         artifact_created: *artifact_created,
         geometry: geometry_entry,
         statistics,
@@ -140,13 +143,28 @@ mod tests {
         (shards, geometry)
     }
 
+    /// The consumer ranks a cached bundle by this field, so a variant that never reaches the JSON would
+    /// silently let a downsampled bundle be treated as complete.
+    #[test]
+    fn build_manifest_json_records_the_bundle_variant() {
+        let (shards, geometry) = make_pre_manifest_artifacts();
+        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+        let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
+
+        let complete: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
+        let downsampled: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Downsampled, &artifact_created, &data_source_revisions).unwrap();
+
+        assert!(complete.contains("\"variant\": \"complete\""));
+        assert!(downsampled.contains("\"variant\": \"downsampled\""));
+    }
+
     #[test]
     fn build_manifest_json_includes_schema_version() {
         let (shards, geometry) = make_pre_manifest_artifacts();
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
 
         assert!(json.contains("\"manifest_schema_version\": 1"));
     }
@@ -159,7 +177,7 @@ mod tests {
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
 
         let tfr_position: usize = json.find("\"tfr\"").expect("tfr present");
         let test_alpha_position: usize = json.find("\"_test_alpha\"").expect("_test_alpha present");
@@ -172,7 +190,7 @@ mod tests {
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
 
         let base_position: usize = json.find("\"base\"").expect("base present");
         let noncommercial_position: usize = json.find("\"noncommercial\"").expect("noncommercial present");
@@ -185,7 +203,7 @@ mod tests {
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
 
         assert!(json.contains(&format!("\"relative_path\": \"{}/world-50m-ab12cd34.fgb\"", manifest::SUBDIR_GEOMETRY)));
         assert!(json.contains(&format!("\"relative_path\": \"{}/tfr-base-ef561234.sqlite\"", manifest::SUBDIR_DATA)));
@@ -200,8 +218,8 @@ mod tests {
         ]);
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json_one: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
-        let json_two: String = build_manifest_json(&shards, &geometry, "2026-05-18", &artifact_created, &data_source_revisions).unwrap();
+        let json_one: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
+        let json_two: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
 
         assert_eq!(json_one, json_two);
     }
@@ -213,7 +231,7 @@ mod tests {
         let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
 
         let manifest: Hashed<FileReference> =
-            write_manifest(&shards, &geometry, "2026-05-18", &data_source_revisions, temp_dir.path()).unwrap();
+            write_manifest(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &data_source_revisions, temp_dir.path()).unwrap();
 
         assert!(manifest.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&manifest.path).unwrap();
