@@ -32,7 +32,7 @@ third-party crates (owner-approved 2026-07-13): `leptos 0.8.*`, `leptos_i18n 0.6
 `console_error_panic_hook 0.1.*`. Already transitively present (become direct deps): `wasm-bindgen 0.2.*`,
 `wasm-bindgen-futures 0.4.*`, `web-sys 0.3.*`, `js-sys 0.3.*`, `log 0.4.*`. Build tooling
 (owner-approved): `cargo-leptos 0.3.*`, `wasm-opt 4.*` (Binaryen, via cargo-leptos `wasm-opt-args`),
-`brotli 5.*` (CLI, precompression).
+`brotli 5.*` (CLI, used by the perf-budget report to compute sizes; it writes no compressed file).
 
 **Storage**: OPFS (Origin Private File System) via `OpfsArtifactCache`; the static-asset embedded
 bundle under `web/static/embedded_artifacts/` (gitignored, rebuilt each CI run); the live CDN bundle
@@ -147,7 +147,6 @@ docs/design/stub-desktop.html     # accent colors #e60019/#0030d4 -> #d50000/#00
 
 # NEW — build/deploy scripts (Phase E, except sync which pairs with 0b)
 scripts/build/sync-embedded-bundle.sh   # cp -R $EAFORA_ARTIFACTS_DIR/latest/downsampled/* into web/static/embedded_artifacts/
-scripts/build/precompress-site.sh       # brotli -q 11 --keep over target/site/
 scripts/build/measure-site-budget.sh    # artifact-byte report vs 2 MB / 8 MB caps; always exits 0
 ```
 
@@ -271,7 +270,7 @@ Two independent prerequisite PRs off `master`, then a linear stack for the web f
 - **Phase D — fetch + discovery + speculative fetch + hot-swap** (stacks on C). FR-025..030, 041.
   Adds `BUNDLE_TX` publishing; the renderer's `borrow_and_update` read path (`renderer.rs:188`) already
   consumes it. Closes P3.
-- **Phase E — perf-budget + precompress + deploy config** (stacks on A; `sync` needs Phase 0b).
+- **Phase E — perf-budget + static shell export + deploy config** (stacks on A; `sync` needs Phase 0b). Precompression was in this phase's scope and was withdrawn; see spec FR-005.
   FR-004, 005, 006, 032, 033, 034, 043. Closes P4.
 
 ### Deferred to C2: viewport aspect ratio

@@ -3,7 +3,7 @@
 # Deploys the site tree in target/site to Cloudflare Workers Assets.
 #
 # Usage:
-#   ./scripts/build/deploy-site.sh [--build] [--precompress] [--dry-run]
+#   ./scripts/build/deploy-site.sh [--build] [--dry-run]
 # e.g.
 #   ./scripts/build/deploy-site.sh --build
 #   ./scripts/build/deploy-site.sh --dry-run
@@ -19,7 +19,6 @@ readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly WEB_DIR="${REPO_ROOT}/web"
 
 RUN_BUILD=false
-RUN_PRECOMPRESS=false
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
@@ -28,18 +27,12 @@ while [[ $# -gt 0 ]]; do
             RUN_BUILD=true
             shift
             ;;
-        # Off by default: it is unconfirmed that Workers Assets serves an uploaded .br sibling through
-        # content negotiation, and if it does not, each sibling is uploaded as its own asset instead.
-        --precompress)
-            RUN_PRECOMPRESS=true
-            shift
-            ;;
         --dry-run)
             DRY_RUN=true
             shift
             ;;
         *)
-            echo "usage: $0 [--build] [--precompress] [--dry-run]" >&2
+            echo "usage: $0 [--build] [--dry-run]" >&2
             exit 64
             ;;
     esac
@@ -51,11 +44,6 @@ if [[ "$RUN_BUILD" == true ]]; then
 fi
 
 "${SCRIPT_DIR}/verify-site-tree.sh"
-
-if [[ "$RUN_PRECOMPRESS" == true ]]; then
-    printf '\n'
-    "${SCRIPT_DIR}/precompress-site.sh"
-fi
 
 printf '\ndeploying\n'
 cd "$WEB_DIR"

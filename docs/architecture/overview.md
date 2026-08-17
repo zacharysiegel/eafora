@@ -401,7 +401,7 @@ Comparison (concrete numbers approximate; see §Things to verify):
 | GitHub Releases | $0 | no edge caching, rate limits | Acceptable for v1 only |
 | Netlify / Vercel | $0 free tier; ~$11/mo Pro | bundled in plans | Nice for the web app static files; not the right shape for binary artifacts |
 
-**Recommendation**: **Cloudflare R2** for the artifacts. The zero-egress model is decisive; the operational story is simple (S3-compatible API, public buckets); it scales from v1 to v2 to v3 without re-platforming. The web app's static files (Leptos build output) ride on Cloudflare Workers Assets from the same account — a thin pass-through Worker plus an asset bundle; serves precompressed brotli-q11 siblings.
+**Recommendation**: **Cloudflare R2** for the artifacts. The zero-egress model is decisive; the operational story is simple (S3-compatible API, public buckets); it scales from v1 to v2 to v3 without re-platforming. The web app's static files (Leptos build output) ride on Cloudflare Workers Assets from the same account, as an asset bundle with no Worker script. It compresses text-like responses at the edge and ignores uploaded precompressed siblings, per `client-web.md` §Compression.
 
 ### Artifact format
 

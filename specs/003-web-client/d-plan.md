@@ -426,7 +426,7 @@ Browser verification is required before calling D3 done.
 
 ## Out of scope
 
-- Phase E: wrangler, production `_headers`, perf-budget, precompress.
+- Phase E: wrangler, production `_headers`, perf-budget, static shell export. Precompression was dropped; a probe deploy showed Workers Assets does not serve uploaded `.br` siblings (spec FR-005).
 - Changing committed `repository_base_url` to `https://repository.eafora.org`.
 - R2 CORS and a real `publish cloudflare-r2` from this machine (D1 makes that publish write `latest/manifest.json` when someone runs it).
 - Periodic live refetch on focus / visibility.

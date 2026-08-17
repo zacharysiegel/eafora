@@ -134,11 +134,14 @@ cargo-leptos owns the binary rather than the machine: it looks for `wasm-opt` on
 
 ### Compression
 
-**Under revision; do not rely on this section.** It has claimed that the build uploads a `.br` sibling per compressible asset and that Workers Assets negotiates it against `Accept-Encoding`, the way nginx's `brotli_static` does. A source-level review of wrangler and Cloudflare's asset worker found no support for that: uploaded siblings appear to be treated as ordinary assets, each served at its own URL with no `Content-Encoding`, while the edge applies its own compression to the original. Nothing in Cloudflare's static-asset, headers, routing, or direct-upload documentation describes serving user-uploaded precompressed files.
+We upload no precompressed files. Workers Assets does not negotiate them, and uploading them is worse than pointless. Measured against a real Workers Assets deploy:
 
-If that holds, precompressing is not merely inert but harmful, since it doubles the uploaded asset count and publishes URLs that hand a browser raw brotli bytes. A probe deploy settles it empirically; the resolution belongs in the same change that either keeps or deletes `scripts/build/precompress-site.sh`.
+- A request carrying `Accept-Encoding: br`, for a file with a `.br` sibling uploaded beside it, returned the plain file at full size with no `Content-Encoding`.
+- The sibling was itself served as an ordinary asset at its own URL, with neither `Content-Type` nor `Content-Encoding`, so anything fetching it receives undecodable bytes.
 
-A `scripts/build/precompress-site.sh` helper iterates `target/site/`, runs `brotli -q 11 --keep` on each eligible file (`.wasm`, `.js`, `.css`, `.html`, `.json`, `.fgb`, `.sqlite`), and exits non-zero on failure. Filtering is by extension; already-compressed types (`.png`, `.jpg`, `.woff2`) are skipped. Invoked as the final step of `cargo leptos build --release`, before the Workers Assets upload.
+The consequence for the perf budget is larger than the compression question itself. Cloudflare compresses a response only when its content type is on a fixed list, and that list holds no generic binary type: no `application/octet-stream`, no `application/vnd.sqlite3`, no catch-all. A 1.5 MB FlatGeobuf file, far above any size threshold, came back with all 1,576,240 bytes and no `Content-Encoding`. So the geometry and the statistic shards transfer whole even though they compress by 3.4x and 13x, and `scripts/build/measure-site-budget.sh` counts them at full size for that reason.
+
+Claiming that saving means compressing the artifacts in the producer and decompressing them in `shared`, which would cover the R2-served live bundle and the native clients too. Tracked in `docs/backlog.md`.
 
 The compression gap between Workers Assets's automatic q4–q5 and our shipped q11 is real for the WASM bundle and the embedded artifacts (both compress well; both are perf-budget-relevant). Worth the extra build step.
 
@@ -601,7 +604,7 @@ The deploy target is Cloudflare Workers Assets, served from `eafora.org` (the ap
 
 Workers Assets is Cloudflare's successor to Pages for static-site deploys, and is the platform Cloudflare's own migration guide points new projects at. That, rather than any single feature, is the reason to prefer it.
 
-The rationale previously given here was user-uploaded precompressed-asset support, citing [workers-sdk #11089](https://github.com/cloudflare/workers-sdk/issues/11089). That citation does not support it: the issue is a feature request stating that Workers Assets does no compression of uploaded siblings at all, and it was closed because an unrelated edge-compression incident was resolved. Both platforms compress at the edge with settings we do not control, so on compression the two look equivalent. See §Compression.
+The rationale previously given here was user-uploaded precompressed-asset support, citing [workers-sdk #11089](https://github.com/cloudflare/workers-sdk/issues/11089). That was wrong twice over: the issue is a feature request stating Workers Assets does no such thing, and a probe deploy confirmed it does not (see §Compression). Compression is not a differentiator between the two platforms.
 
 Other differences are minor: same edge network, same TLS, same domain wiring, same custom-domain support, same configuration shape for cache headers (via `_headers`). For our use case the migration is mechanical.
 
