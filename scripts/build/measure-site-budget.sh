@@ -239,7 +239,8 @@ function print_total_line {
 
     if [[ "$total_bytes" -gt "$cap_bytes" ]]; then
         cap_suffix="  *** OVER CAP ***"
-        OVER_CAP_LABELS="${OVER_CAP_LABELS}${label} "
+        # Newline-delimited: these labels contain spaces, so a space-delimited list would split mid-label.
+        OVER_CAP_LABELS="${OVER_CAP_LABELS}${label%:}"$'\n'
     elif [[ $((total_bytes * 100)) -ge $((cap_bytes * NEAR_CAP_PERCENT)) ]]; then
         cap_suffix="  near cap"
     fi
@@ -459,9 +460,14 @@ fi
 echo ""
 
 if [[ -n "$OVER_CAP_LABELS" ]]; then
-    for over_cap_label in $OVER_CAP_LABELS; do
-        echo "WARNING: ${over_cap_label%:} is over its cap."
-    done
+    while IFS= read -r over_cap_label; do
+        if [[ -z "$over_cap_label" ]]; then
+            continue
+        fi
+
+        echo "WARNING: $over_cap_label is over its cap."
+    done <<< "$OVER_CAP_LABELS"
+
     echo "The caps are targets to be read by a person, so this is a warning and never a build failure."
     echo ""
 fi
