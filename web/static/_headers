@@ -1,0 +1,39 @@
+# Response headers for the Cloudflare Workers Assets deploy. The edge reads this file out of the deployed
+# asset directory and applies its rules to asset responses. Wrangler always excludes /_headers from the
+# uploaded assets, so it is never served and needs no .assetsignore entry.
+#
+# Matching is on request path, at most one `*` per rule, and `*` spans `/`. Where several rules match one
+# request, the first rule to name a header sets it and every later rule naming it is comma-appended onto
+# the value, so no two rules below name Cache-Control for the same path.
+#
+# Every response already carries `Cache-Control: public, max-age=0, must-revalidate`, a strong ETag over
+# the file bytes, and a Content-Type looked up from the extension. Anything with no rule here keeps all
+# three, which is what index.html and embedded_artifacts/manifest.json need: stable names whose bytes
+# change every build, revalidated against the ETag.
+#
+# That extension lookup has no entry for `.fgb`, none for `.sqlite`, and returns nothing at all for a name
+# with no extension. Those upload with no Content-Type header whatsoever, so the rules below state it.
+
+/discovery
+  # Extensionless, so the edge would send no Content-Type. One hour bounds how long a client keeps using
+  # a superseded repository base after this document is redeployed.
+  Content-Type: application/json
+  Cache-Control: public, max-age=3600
+
+/pkg/*
+  # Immutable is only correct because the deploy builds with LEPTOS_HASH_FILES=true, which puts a content
+  # hash in every filename here, so a rebuild changes the URL. Deploy through ./scripts/build/deploy-site.sh,
+  # which sets it; a hand-run build without it would pin stale assets for a year.
+  Cache-Control: public, max-age=31536000, immutable
+
+/embedded_artifacts/geometry/*
+  # FlatGeobuf has no registered media type. Scoped to this subdirectory rather than all of
+  # embedded_artifacts because these filenames carry the SHA-256 the manifest verifies, while the
+  # manifest's own name is stable.
+  Content-Type: application/octet-stream
+  Cache-Control: public, max-age=31536000, immutable
+
+/embedded_artifacts/data/*
+  # Content-hashed filenames as above. application/vnd.sqlite3 is the registered type for a SQLite 3 file.
+  Content-Type: application/vnd.sqlite3
+  Cache-Control: public, max-age=31536000, immutable

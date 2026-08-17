@@ -1,0 +1,14 @@
+# Cloudflare Workers Assets deploy. No `main` and no Worker script: the edge serves matching assets
+# without one, and Cloudflare requires `main` only when a script has to run. `compatibility_date` is
+# required regardless; wrangler refuses to publish without it.
+name = "eafora-web"
+compatibility_date = "2026-08-17"
+
+[assets]
+# Resolved relative to this file rather than the invocation directory.
+directory = "../target/site"
+
+# `not_found_handling` is deliberately unset, so Cloudflare's default applies and an unmatched path gets
+# a bodyless 404. "single-page-application" would answer every unmatched path with index.html at 200,
+# which would hand the artifact loader an HTML document in place of the shard it asked for instead of the
+# 404 it reports; "404-page" needs a 404.html the build does not produce.

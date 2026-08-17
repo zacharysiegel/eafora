@@ -336,10 +336,12 @@ The embedded bundle is regenerated and re-bundled into client artifacts **on eve
 
 ### Web first-paint perf budget
 
-Web first paint serves wasm + the static-asset bundle together; together they're the price of "instant atlas render" on a fresh visit. Caps to enforce in the web build:
+Web first paint serves wasm + the static-asset bundle together; together they're the price of "instant atlas render" on a fresh visit. Targets for the web build:
 
-- **2 MB total compressed at first paint** — wasm bundle + static-asset embedded bundle + page shell. CI fails if the deployed total exceeds it.
+- **2 MB total compressed at first paint** — wasm bundle + static-asset embedded bundle + page shell.
 - **3 MB total compressed at second paint** — once the live CDN bundle has loaded in the background.
+
+These are targets, not gates: an overage produces a loud warning in the perf-budget report and never fails a build. Deciding whether the bytes are worth it is a judgment call for a person, not a threshold a pipeline can make.
 
 Expected sizes against the 2 MB ceiling: wasm approx. 600 KB brotli (per overview §Web client; `wasm-opt -O4`), static-asset bundle approx. 700 KB–1 MB brotli (FlatGeobuf and SQLite both compress well), page shell <50 KB — totals approx. 1.4–1.7 MB with comfortable headroom.
 

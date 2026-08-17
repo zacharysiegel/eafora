@@ -8,13 +8,10 @@ for copy/paste. Paths are relative to the repo root unless noted.
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install cargo-leptos --locked --version '^0.3'
-cargo install wasm-opt --locked
-brew install brotli
+brew install brotli jq
 ```
 
-`wasm-opt` is downloaded and invoked by cargo-leptos on release builds; `brotli` is invoked by
-`./scripts/build/precompress-site.sh` and `./scripts/build/measure-site-budget.sh`. Both are build-host tools, not
-workspace deps.
+`brotli` and `jq` are invoked by the build scripts under `./scripts/build/`, and are build-host tools rather than workspace deps. `wasm-opt` is deliberately not installed here: cargo-leptos downloads and caches the binaryen version it pins on the first release build, which keeps the optimizer tied to the toolchain. That first build needs network access to `github.com` and its release-asset host.
 
 ## Populate the embedded bundle
 
@@ -64,33 +61,35 @@ cd web && wasm-pack test --headless --chrome
 Cross-platform logic (manifest parse, SHA-256, license authorization, hit-test, projection) is tested
 once in `shared` with host `cargo test` and is not re-run here.
 
-## Release build, precompress, and measure the budget
+## Build the deployable tree and measure the budget
 
 ```sh
-./scripts/build/measure-site-budget.sh
+./scripts/build/build-site.sh
 ```
 
 ```sh
-./scripts/build/precompress-site.sh
+./scripts/build/measure-site-budget.sh --no-build
 ```
 
-Both run from the repo root and resolve their own paths, so neither cares about the current directory.
-`measure-site-budget.sh` runs `cargo leptos build --release` itself and prints the first-paint and
-second-paint totals against the 2 MB / 3 MB caps, appending ` near cap` to any total over approx. 90% of
-its cap; it always exits 0 (the cap is a target, surfaced to reviewers, not a build gate). Pass
-`--no-build` to report on the tree already in `target/site/` instead of rebuilding. Run
-`precompress-site.sh` after it, since a build clears the site root: the script writes `.br` siblings for
-the compressible asset types under `target/site/`.
+Every script resolves its own paths, so none of them care about the current directory.
+
+`build-site.sh` runs `cargo leptos build --release` and then `web export-shell`, in that order, because a build empties the site root and the shell document has to survive it. It also sets `LEPTOS_HASH_FILES=true`, which gives the assets content-hashed filenames so the deploy can serve them as immutable. That setting lives here rather than in `web/Cargo.toml` on purpose: cargo-leptos only re-hashes on a full build, so under `cargo leptos watch` an incremental rebuild would write unhashed files while the page still asked for the previous build's hashed names, and the browser would silently load stale wasm.
+
+`measure-site-budget.sh` prints the first-paint and second-paint totals against the 2 MB / 3 MB targets. It marks a total at or above 90% of its target ` near cap` and one over it `*** OVER CAP ***` with a warning line, and it always exits 0: the targets are for a person to weigh, not a gate. Anything it cannot pin down (a missing shell document, or two `.wasm` files where a visitor fetches one) is reported as unmeasured rather than as a smaller number. With no arguments it runs `build-site.sh` first; `--no-build` reports on whatever is already in `target/site/`, which may be a debug build.
 
 ## Deploy
 
 ```sh
-cd web && wrangler deploy
+./scripts/build/deploy-site.sh
 ```
 
-Pure static asset serving from Cloudflare Workers Assets (`wrangler.toml` has `[assets] directory`,
-no `main`, no Worker). The apex-domain routing to `eafora.org` is configured in the Cloudflare
-dashboard, outside the codebase.
+```sh
+./scripts/build/deploy-site.sh --dry-run
+```
+
+Pure static asset serving from Cloudflare Workers Assets (`web/wrangler.toml` has `[assets] directory`, no `main`, no Worker). The script builds first rather than leaving that to the operator, because `web/static/_headers` serves `/pkg/*` as immutable for a year and that is only safe for the content-hashed filenames the build produces.
+
+The first deploy needs `npx wrangler login` once, which opens a browser. The apex-domain routing to `eafora.org` is configured in the Cloudflare dashboard, outside the codebase.
 
 ## Common pitfalls
 

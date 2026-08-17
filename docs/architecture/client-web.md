@@ -51,7 +51,7 @@ eafora/
 │   │   └── robots.txt
 │   └── src/
 │       ├── lib.rs              # crate root; declares `app` + the cfg-gated `client` module; both SSR and client-side builds compile this
-│       ├── main.rs             # SSR-build entrypoint: calls static_routes.generate() and exits
+│       ├── main.rs             # the ssr binary: dev server, or `export-shell` to write index.html
 │       ├── error.rs            # `cache: ...` and `fetch: ...` AppError prefixes documented here
 │       ├── app.rs              # root App component + <Routes> tree; both the SSR build and the client-side build compile this
 │       ├── about.rs            # SSG'd About page (per design.md §Naming and the About page)
@@ -111,7 +111,9 @@ lib-profile-release  = "wasm-release"
 
 The `style-file` entry points at one entrypoint; that file `@use`s the partials under `style/` (see §CSS architecture). The `assets-dir` is verbatim-copied to `target/site/`, which is what gets uploaded to Cloudflare Workers Assets.
 
-The SSR build is what writes the static HTML for `/region/<region.code>` and `/about` (see §Routing and SSG). The client-side build is the browser-side WASM that takes over on `/` (the map view) and on any region page if v2+ ever adds client-side interactivity to those pages.
+The SSR build produces one binary with two jobs. Run with no argument it is the dev server (`cargo leptos watch`). Run as `web export-shell` it renders `/` once and writes `target/site/index.html`, which is the document the static deploy serves for the map route; production runs no server. It is also what will write the static HTML for `/region/<region.code>` and `/about` when those land (see §Routing and SSG). The client-side build is the browser-side WASM that takes over on `/` (the map view) and on any region page if v2+ ever adds client-side interactivity to those pages.
+
+Ordering is load-bearing: `cargo leptos build` empties the site root before it writes, so the shell has to be exported after the build, never before. `./scripts/build/build-site.sh` runs the two in that order.
 
 ### `wasm-opt`
 
@@ -128,9 +130,13 @@ strip     = true
 
 The `wasm-opt -O4` flag itself is passed through cargo-leptos's `wasm-opt-args` setting (resolve the exact key against the cargo-leptos version pinned in the workspace). Expected post-`-O4` size: approx. 600 KB brotli (per overview §Web client), against the perf-budget breakdown in §Perf-budget enforcement below.
 
+cargo-leptos owns the binary rather than the machine: it looks for `wasm-opt` on `PATH` and, finding none, downloads the binaryen release it pins and caches it. That keeps the optimizer version tied to the toolchain instead of to whatever a package manager currently ships, so it is deliberately not listed as a system dependency. The first release build on a machine therefore needs network access to `github.com` and its release-asset host.
+
 ### Compression
 
-The build runs `brotli -q 11` over every compressible asset under `target/site/` and uploads both the original and the `.br` sibling. Workers Assets serves the `.br` file when the client's `Accept-Encoding` includes `br` and the original otherwise — same `.br`-sibling pattern as nginx's `brotli_static`. Quality 11 is the maximum; the runtime can't compress at that quality on the fly (too slow), so precompressing ourselves is the only way to ship q11 to clients.
+**Under revision; do not rely on this section.** It has claimed that the build uploads a `.br` sibling per compressible asset and that Workers Assets negotiates it against `Accept-Encoding`, the way nginx's `brotli_static` does. A source-level review of wrangler and Cloudflare's asset worker found no support for that: uploaded siblings appear to be treated as ordinary assets, each served at its own URL with no `Content-Encoding`, while the edge applies its own compression to the original. Nothing in Cloudflare's static-asset, headers, routing, or direct-upload documentation describes serving user-uploaded precompressed files.
+
+If that holds, precompressing is not merely inert but harmful, since it doubles the uploaded asset count and publishes URLs that hand a browser raw brotli bytes. A probe deploy settles it empirically; the resolution belongs in the same change that either keeps or deletes `scripts/build/precompress-site.sh`.
 
 A `scripts/build/precompress-site.sh` helper iterates `target/site/`, runs `brotli -q 11 --keep` on each eligible file (`.wasm`, `.js`, `.css`, `.html`, `.json`, `.fgb`, `.sqlite`), and exits non-zero on failure. Filtering is by extension; already-compressed types (`.png`, `.jpg`, `.woff2`) are skipped. Invoked as the final step of `cargo leptos build --release`, before the Workers Assets upload.
 
@@ -253,15 +259,15 @@ The `prerender_params` closure returns a `StaticParamsMap` of every `(code → r
 
 `/about` has no params, so the empty `StaticRoute::new()` renders a single HTML file.
 
-Mechanically, CI runs:
+Mechanically, the deploy runs:
 
 ```sh
-cargo leptos build --release       # builds both the SSR binary and the client-side WASM
-./target/server/release/web        # invokes static_routes.generate(); writes to target/site/
-# then upload target/site/ to Cloudflare Workers Assets via wrangler deploy
+./scripts/build/deploy-site.sh    # build-site.sh, then `wrangler deploy` uploading target/site/
 ```
 
-The SSR binary's `main` only calls `static_routes.generate()` and exits; we intentionally skip the `axum::serve(...)` step from Leptos's standard SSR pattern (we have no live origin to serve; the deploy target is purely static). This is a slightly unusual usage of `static_routes` — Leptos's documented deploy story assumes the SSR binary keeps running for regeneration and dynamic routes — but the API supports it cleanly. If a future Leptos release deprecates this pattern, the fallback is the original custom-prerender approach (a small Rust binary that calls the view functions directly); low-cost migration.
+The server binary lands at `./target/release/web` (cargo-leptos only writes it under `target/server/` when `bin-target-dir` is set, which this project does not set). `build-site.sh` runs it in place, because the render reads the content-hash file from the directory holding the binary.
+
+The binary serves in dev and exports on demand, rather than being an SSG-only pass-through: the `axum::serve(...)` step from Leptos's standard SSR pattern is what makes `cargo leptos watch` work, while production deploys the exported files and starts no server. When the SSG routes land they can either extend the export or declare `SsrMode::Static` and call `static_routes.generate()`; note that a route declared `SsrMode::Static` is served from a generated file in dev too, and an incremental watch rebuild does not regenerate it, so the dev server would keep serving a stale document.
 
 ## Rendering: wgpu surface acquisition
 
@@ -586,7 +592,9 @@ The deploy target is Cloudflare Workers Assets, served from `eafora.org` (the ap
 
 ### Why Workers Assets instead of Cloudflare Pages
 
-Workers Assets is Cloudflare's successor to Pages for static-site deploys. The deciding feature for us is **user-uploaded precompressed-asset support** (added late 2025; see [workers-sdk #11089](https://github.com/cloudflare/workers-sdk/issues/11089)): we ship `.wasm.br`, `.js.br`, etc. alongside the originals, and the runtime serves the `.br` to clients whose `Accept-Encoding` includes `br`. Pages doesn't honor user-uploaded `.br` files; it does its own on-the-fly compression at lower quality, which we can't override. Quality 11 vs. quality 4–5 is a meaningful saving on a WASM bundle.
+Workers Assets is Cloudflare's successor to Pages for static-site deploys, and is the platform Cloudflare's own migration guide points new projects at. That, rather than any single feature, is the reason to prefer it.
+
+The rationale previously given here was user-uploaded precompressed-asset support, citing [workers-sdk #11089](https://github.com/cloudflare/workers-sdk/issues/11089). That citation does not support it: the issue is a feature request stating that Workers Assets does no compression of uploaded siblings at all, and it was closed because an unrelated edge-compression incident was resolved. Both platforms compress at the edge with settings we do not control, so on compression the two look equivalent. See §Compression.
 
 Other differences are minor: same edge network, same TLS, same domain wiring, same custom-domain support, same configuration shape for cache headers (via `_headers`). For our use case the migration is mechanical.
 

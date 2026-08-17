@@ -41,4 +41,24 @@ fi
 printf '\nwriting the shell document\n'
 "$SERVER_BINARY" export-shell
 
-printf '\nthe deployable tree is at %s\n' "${REPO_ROOT}/target/site"
+# A reference the tree cannot satisfy would deploy as a 404 for the wasm or the stylesheet, which reads as
+# a blank page rather than as a build failure. Cheap to catch here instead.
+printf '\nchecking the shell references files that exist\n'
+SITE_DIR="${REPO_ROOT}/target/site"
+REFERENCE_COUNT=0
+
+while IFS= read -r referenced_path; do
+    if [[ ! -f "${SITE_DIR}${referenced_path}" ]]; then
+        fail "the shell references ${referenced_path}, which is not in ${SITE_DIR}"
+    fi
+
+    REFERENCE_COUNT=$((REFERENCE_COUNT + 1))
+done < <(grep -o '/pkg/[A-Za-z0-9._-]*' "${SITE_DIR}/index.html" | sort -u)
+
+if [[ "$REFERENCE_COUNT" -eq 0 ]]; then
+    fail "the shell references no /pkg/ assets, so it would load nothing"
+fi
+
+printf '  %d referenced assets are present\n' "$REFERENCE_COUNT"
+
+printf '\nthe deployable tree is at %s\n' "$SITE_DIR"
