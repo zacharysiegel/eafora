@@ -6,9 +6,9 @@
 # embedded artifact bundle. Second paint adds the live-bundle files the client fetches on its first online
 # connection: the geometry shard and every statistic shard the live manifest lists.
 #
-# Sizes are measured by compressing each file with brotli -q 11 here, not by reading any .br sibling. A
-# sibling may have been written at a lower quality by a different tool, and reporting it under a q11 label
-# would misstate the number; compressing to stdout also leaves the tree untouched.
+# Sizes are brotli -q 11 computed here and streamed to stdout, which leaves the tree untouched. This is a
+# stated approximation of transfer size rather than a measurement of it: the CDN compresses responses with
+# its own settings, which we neither control nor can read from a built tree.
 #
 # The targets are targets, not contracts, so no measurement outcome reaches the exit code: an overage, a
 # failed build, and a tree missing the files to measure all print their verdict and exit zero. Only the two
@@ -22,15 +22,17 @@
 #   ./scripts/build/measure-site-budget.sh --no-build
 #
 # Behavior:
-#   1. Runs `cargo leptos build --release` first unless --no-build is passed. The build's own output goes
-#      to stderr so stdout carries only the report. With --no-build the report describes whatever is in the
-#      tree, which may be the debug build a running `cargo leptos watch` left there.
+#   1. Runs ./scripts/build/build-site.sh first unless --no-build is passed, so the tree measured is a
+#      release build with its shell document. That output goes to stderr so stdout carries only the report.
+#      With --no-build the report describes whatever is in the tree, which may be a debug build.
 #   2. Reads the site root and the pkg subdirectory from web/Cargo.toml so no path constant is duplicated.
 #   3. Resolves the live bundle the way the client does: the repository base the built discovery document
 #      names, then that base's latest/manifest.json, then the version that manifest names.
 #   4. Reports any total whose parts the tree cannot supply as unmeasured, never as a smaller number, and
-#      explains each gap under Notes.
-#   5. Appends " near cap" to a totals line at or above 90% of its cap.
+#      explains each gap under Notes. A component matching more than one file is a gap too, since which
+#      file a visitor fetches is then unknown.
+#   5. Marks a totals line at or above 90% of its cap " near cap", and one over its cap "*** OVER CAP ***"
+#      followed by a warning line.
 
 set -euo pipefail
 
@@ -40,6 +42,7 @@ readonly NEAR_CAP_PERCENT=90
 readonly UNMEASURED_VALUE="n/a"
 readonly EMBEDDED_SUBDIR="embedded_artifacts"
 readonly DISCOVERY_FILENAME="discovery"
+readonly SHELL_DOCUMENT_NAME="index.html"
 readonly LATEST_MANIFEST_RELATIVE_PATH="latest/manifest.json"
 
 function required_program {
@@ -111,9 +114,10 @@ SITE_DIR="$REPO_ROOT/$(get_leptos_metadata_value "site-root")"
 PKG_DIR="$SITE_DIR/$(get_leptos_metadata_value "site-pkg-dir")"
 EMBEDDED_DIR="$SITE_DIR/$EMBEDDED_SUBDIR"
 DISCOVERY_PATH="$SITE_DIR/$DISCOVERY_FILENAME"
+SHELL_PATH="$SITE_DIR/$SHELL_DOCUMENT_NAME"
 
 if [[ "$RUN_BUILD" -eq 1 ]]; then
-    (cd "$REPO_ROOT/web" && cargo leptos build --release) 1>&2
+    "$REPO_ROOT/scripts/build/build-site.sh" 1>&2
 fi
 
 if [[ ! -d "$PKG_DIR" ]]; then
@@ -200,10 +204,13 @@ function print_total_line {
     local total_bytes="$2"
     local cap_bytes="$3"
     local percent_of_cap=$(((total_bytes * 100 + cap_bytes / 2) / cap_bytes))
-    local near_cap_suffix=""
+    local cap_suffix=""
 
-    if [[ $((total_bytes * 100)) -ge $((cap_bytes * NEAR_CAP_PERCENT)) ]]; then
-        near_cap_suffix="  near cap"
+    if [[ "$total_bytes" -gt "$cap_bytes" ]]; then
+        cap_suffix="  *** OVER CAP ***"
+        OVER_CAP_LABELS="${OVER_CAP_LABELS}${label} "
+    elif [[ $((total_bytes * 100)) -ge $((cap_bytes * NEAR_CAP_PERCENT)) ]]; then
+        cap_suffix="  near cap"
     fi
 
     printf '%-14s%s / %s  (%d%%)%s\n' \
@@ -211,7 +218,7 @@ function print_total_line {
         "$(format_megabytes "$total_bytes")" \
         "$(format_megabytes "$cap_bytes")" \
         "$percent_of_cap" \
-        "$near_cap_suffix"
+        "$cap_suffix"
 }
 
 function print_unmeasured_total_line {
@@ -227,10 +234,64 @@ function print_component_line {
     printf '  %-18s %9s\n' "$label" "$value"
 }
 
-WASM_BYTES="$(find "$PKG_DIR" -type f -name '*.wasm' -print0 | sum_brotli_size_of_stream)"
-JS_SHIM_BYTES="$(find "$PKG_DIR" -type f -name '*.js' -print0 | sum_brotli_size_of_stream)"
-CSS_BYTES="$(find "$PKG_DIR" -type f -name '*.css' -print0 | sum_brotli_size_of_stream)"
-HTML_BYTES="$(find "$SITE_DIR" -type f -name '*.html' -print0 | sum_brotli_size_of_stream)"
+OVER_CAP_LABELS=""
+FIRST_PAINT_UNAVAILABLE_REASON=""
+
+function note_first_paint_gap {
+    local reason="$1"
+
+    if [[ -z "$FIRST_PAINT_UNAVAILABLE_REASON" ]]; then
+        FIRST_PAINT_UNAVAILABLE_REASON="$reason"
+    fi
+}
+
+# Sets MEASURED_COMPONENT_BYTES to the size of the single file a visitor fetches for this component, or
+# records why it cannot be measured and leaves it 0. Two matches is as unmeasurable as none: with
+# content-hashed names a leftover copy from an earlier build would be summed in as bytes nobody downloads.
+# Assigns to globals rather than echoing a value because a command substitution would run it in a subshell,
+# where the recorded reason would be discarded.
+function measure_single_pkg_file {
+    local label="$1"
+    local name_glob="$2"
+    local match_count
+    match_count="$(find "$PKG_DIR" -type f -name "$name_glob" | wc -l | tr -d ' ')"
+
+    MEASURED_COMPONENT_BYTES=0
+    MEASURED_COMPONENT_DISPLAY="$UNMEASURED_VALUE"
+
+    if [[ "$match_count" -eq 0 ]]; then
+        note_first_paint_gap "$(to_repo_relative_path "$PKG_DIR") holds no $label"
+        return 0
+    fi
+
+    if [[ "$match_count" -gt 1 ]]; then
+        note_first_paint_gap "$(to_repo_relative_path "$PKG_DIR") holds $match_count files matching $name_glob, so the $label a visitor fetches is ambiguous; ./scripts/build/build-site.sh empties the site root first"
+        return 0
+    fi
+
+    MEASURED_COMPONENT_BYTES="$(brotli -q 11 -c "$(find "$PKG_DIR" -type f -name "$name_glob")" | wc -c | tr -d ' ')"
+    MEASURED_COMPONENT_DISPLAY="$(format_size "$MEASURED_COMPONENT_BYTES")"
+}
+
+measure_single_pkg_file "wasm bundle" '*.wasm'
+WASM_BYTES="$MEASURED_COMPONENT_BYTES"
+WASM_DISPLAY="$MEASURED_COMPONENT_DISPLAY"
+
+measure_single_pkg_file "js shim" '*.js'
+JS_SHIM_BYTES="$MEASURED_COMPONENT_BYTES"
+JS_SHIM_DISPLAY="$MEASURED_COMPONENT_DISPLAY"
+
+measure_single_pkg_file "stylesheet" '*.css'
+CSS_BYTES="$MEASURED_COMPONENT_BYTES"
+CSS_DISPLAY="$MEASURED_COMPONENT_DISPLAY"
+
+HTML_BYTES=0
+
+if [[ -f "$SHELL_PATH" ]]; then
+    HTML_BYTES="$(brotli -q 11 -c "$SHELL_PATH" | wc -c | tr -d ' ')"
+else
+    note_first_paint_gap "the site tree has no shell document at $(to_repo_relative_path "$SHELL_PATH"); run ./scripts/build/build-site.sh, which writes it after the build"
+fi
 
 EMBEDDED_BYTES=0
 EMBEDDED_UNAVAILABLE_REASON=""
@@ -239,6 +300,7 @@ if [[ -d "$EMBEDDED_DIR" ]]; then
     EMBEDDED_BYTES="$(sum_brotli_size_of_fetched_files_in "$EMBEDDED_DIR")"
 else
     EMBEDDED_UNAVAILABLE_REASON="$(to_repo_relative_path "$EMBEDDED_DIR") is absent; run scripts/build/sync-embedded-bundle.sh ./web/static/$EMBEDDED_SUBDIR before the build"
+    note_first_paint_gap "$EMBEDDED_UNAVAILABLE_REASON"
 fi
 
 FIRST_PAINT_BYTES=$((WASM_BYTES + JS_SHIM_BYTES + CSS_BYTES + HTML_BYTES + EMBEDDED_BYTES))
@@ -302,16 +364,21 @@ function measure_live_bundle {
 }
 measure_live_bundle
 
-if [[ -n "$EMBEDDED_UNAVAILABLE_REASON" ]]; then
+if [[ -n "$FIRST_PAINT_UNAVAILABLE_REASON" ]]; then
     print_unmeasured_total_line "First paint:"
 else
     print_total_line "First paint:" "$FIRST_PAINT_BYTES" "$FIRST_PAINT_CAP_BYTES"
 fi
 
-print_component_line "wasm" "$(format_size "$WASM_BYTES")"
-print_component_line "js shim" "$(format_size "$JS_SHIM_BYTES")"
-print_component_line "css" "$(format_size "$CSS_BYTES")"
-print_component_line "html shell" "$(format_size "$HTML_BYTES")"
+print_component_line "wasm" "$WASM_DISPLAY"
+print_component_line "js shim" "$JS_SHIM_DISPLAY"
+print_component_line "css" "$CSS_DISPLAY"
+
+if [[ -f "$SHELL_PATH" ]]; then
+    print_component_line "html shell" "$(format_size "$HTML_BYTES")"
+else
+    print_component_line "html shell" "$UNMEASURED_VALUE"
+fi
 
 if [[ -n "$EMBEDDED_UNAVAILABLE_REASON" ]]; then
     print_component_line "embedded artifacts" "$UNMEASURED_VALUE"
@@ -321,7 +388,7 @@ fi
 
 echo ""
 
-if [[ -n "$EMBEDDED_UNAVAILABLE_REASON" || -n "$LIVE_UNAVAILABLE_REASON" ]]; then
+if [[ -n "$FIRST_PAINT_UNAVAILABLE_REASON" || -n "$LIVE_UNAVAILABLE_REASON" ]]; then
     print_unmeasured_total_line "Second paint:"
 else
     print_total_line "Second paint:" "$((FIRST_PAINT_BYTES + LIVE_GEOMETRY_BYTES + LIVE_SHARD_BYTES))" "$SECOND_PAINT_CAP_BYTES"
@@ -336,15 +403,19 @@ else
 fi
 
 echo ""
-echo "Notes:"
 
-if [[ "$HTML_BYTES" -eq 0 ]]; then
-    echo "  - The site tree holds no HTML. Leptos renders the page shell from web/src/app.rs per request,"
-    echo "    and this build writes no static shell, so the shell's bytes are missing from both totals."
+if [[ -n "$OVER_CAP_LABELS" ]]; then
+    for over_cap_label in $OVER_CAP_LABELS; do
+        echo "WARNING: ${over_cap_label%:} is over its cap."
+    done
+    echo "The caps are targets to be read by a person, so this is a warning and never a build failure."
+    echo ""
 fi
 
-if [[ -n "$EMBEDDED_UNAVAILABLE_REASON" ]]; then
-    echo "  - First paint is unmeasured: $EMBEDDED_UNAVAILABLE_REASON."
+echo "Notes:"
+
+if [[ -n "$FIRST_PAINT_UNAVAILABLE_REASON" ]]; then
+    echo "  - First paint is unmeasured: $FIRST_PAINT_UNAVAILABLE_REASON."
 fi
 
 if [[ -n "$LIVE_UNAVAILABLE_REASON" ]]; then

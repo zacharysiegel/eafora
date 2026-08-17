@@ -13,6 +13,8 @@
 #                                                                         checked-out branch)
 #   ./scripts/git/pr-integrate.sh <branch> --from <former-parent-branch>     (for a stacked branch
 #                                                                         whose parent already merged)
+#   ./scripts/git/pr-integrate.sh <branch> --skip-budget                     (skip the perf-budget
+#                                                                         report, which builds a release)
 #
 # Behavior:
 #   1. Validate: working tree is clean; <branch> exists locally and on origin.
@@ -20,18 +22,24 @@
 #   3. Update branch atop latest master:
 #        non-stacked: `git checkout <branch> && git rebase master`
 #        stacked:     `git checkout <branch> && git rebase --onto master <former-parent> <branch>`
-#   4. Force-push branch (`git push --force-with-lease`).
-#   5. Fast-forward master to branch tip via `git rebase <branch>` (consistent
+#   4. Report the perf budget when the branch touched web/ or shared/, standing in for the hosted CI
+#      check that does not exist yet. The report never fails the integration.
+#   5. Force-push branch (`git push --force-with-lease`).
+#   6. Fast-forward master to branch tip via `git rebase <branch>` (consistent
 #      with the rebase-family preference; equivalent to `merge --ff-only`).
-#   6. Push master (`git push origin master`).
-#   7. Run `./scripts/git/cleanup-merged.sh <branch>` to delete the branch from
+#   7. Push master (`git push origin master`).
+#   8. Run `./scripts/git/cleanup-merged.sh <branch>` to delete the branch from
 #      origin, locally, and prune.
 
 set -euo pipefail
 
+# Paths whose contents end up in the deployed site, so a change to them moves the perf budget.
+readonly BUDGET_RELEVANT_PATH_PATTERN='^(web/|shared/|Cargo\.lock$|Cargo\.toml$)'
+
 BRANCH=""
 FROM_BRANCH=""
 USE_CURRENT_BRANCH=false
+RUN_BUDGET_REPORT=true
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -48,8 +56,12 @@ while [[ $# -gt 0 ]]; do
             USE_CURRENT_BRANCH=true
             shift
             ;;
+        --skip-budget)
+            RUN_BUDGET_REPORT=false
+            shift
+            ;;
         -h|--help)
-            grep '^#' "$0" | sed 's|^# \{0,1\}||'
+            awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
             exit 0
             ;;
         -*)
@@ -128,6 +140,25 @@ if [[ -n "$FROM_BRANCH" ]]; then
     git rebase --onto master "$FROM_BRANCH" "$BRANCH"
 else
     git rebase master
+fi
+
+# There is no hosted CI to run this, so it runs at the one point every change passes through.
+# TODO: move to a CI workflow, posting the report as a PR comment, once hosted CI exists.
+function report_site_budget {
+    local changed_paths
+    changed_paths="$(git diff --name-only "master..$BRANCH")"
+
+    if ! printf '%s\n' "$changed_paths" | grep -Eq "$BUDGET_RELEVANT_PATH_PATTERN"; then
+        echo "    nothing that affects the site changed; skipping"
+        return 0
+    fi
+
+    "$(dirname "$0")/../build/measure-site-budget.sh"
+}
+
+if [[ "$RUN_BUDGET_REPORT" == true ]]; then
+    echo ">>> Reporting the perf budget"
+    report_site_budget
 fi
 
 echo ">>> Force-pushing rebased '$BRANCH'"

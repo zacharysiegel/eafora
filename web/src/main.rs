@@ -23,6 +23,7 @@ mod server {
     use web::app::{shell, App};
 
     const EXPORT_SHELL_ARGUMENT: &str = "export-shell";
+    const HASH_FILES_VARIABLE: &str = "LEPTOS_HASH_FILES";
     const SHELL_ROUTE_PATH: &str = "/";
     const SHELL_DOCUMENT_NAME: &str = "index.html";
     const UNRECOGNIZED_ARGUMENT_EXIT_CODE: i32 = 2;
@@ -132,11 +133,31 @@ mod server {
         let configuration_result = get_configuration(Some(MANIFEST_PATH));
 
         match configuration_result {
-            Ok(configuration) => configuration.leptos_options,
+            Ok(configuration) => apply_hash_files_override(configuration.leptos_options),
             Err(error) => exit_with_message(&format!(
                 "could not read the leptos settings; [path={MANIFEST_PATH} error={error}]",
             )),
         }
+    }
+
+    /* Hashed filenames are a deploy-time choice rather than a manifest setting, because cargo-leptos
+       only re-hashes on a full build: under `watch`, an incremental rebuild writes the unhashed names
+       and leaves the hash file naming the previous build, so the page would load stale assets. The
+       build that hashes sets this variable, and cargo-leptos itself layers the same variable over the
+       manifest, so both processes agree on the filenames. */
+    fn apply_hash_files_override(mut leptos_options: LeptosOptions) -> LeptosOptions {
+        let declared_hash_files: Result<String, env::VarError> = env::var(HASH_FILES_VARIABLE);
+
+        if let Ok(declared_hash_files) = declared_hash_files {
+            match declared_hash_files.parse::<bool>() {
+                Ok(hash_files) => leptos_options.hash_files = hash_files,
+                Err(error) => exit_with_message(&format!(
+                    "could not read the hashed-filenames setting; [{HASH_FILES_VARIABLE}={declared_hash_files} error={error}]",
+                )),
+            }
+        }
+
+        leptos_options
     }
 
     fn resolve_site_root(leptos_options: &LeptosOptions) -> PathBuf {

@@ -102,5 +102,3 @@ lib-features = ["hydrate"]
 bin-default-features = false
 lib-default-features = false
 lib-profile-release = "wasm-release"
-# Content-hashed asset filenames let the deploy serve /pkg/* as immutable, since a rebuild changes the name.
-hash-files = true
