@@ -12,8 +12,9 @@ cargo install wasm-opt --locked
 brew install brotli
 ```
 
-`wasm-opt` is invoked by cargo-leptos on release builds via `[package.metadata.leptos] wasm-opt-args`;
-`brotli` is invoked by `./scripts/precompress-site.sh`. Both are build-host tools, not workspace deps.
+`wasm-opt` is downloaded and invoked by cargo-leptos on release builds; `brotli` is invoked by
+`./scripts/precompress-site.sh` and `./scripts/measure-site-budget.sh`. Both are build-host tools, not
+workspace deps.
 
 ## Populate the embedded bundle
 
@@ -66,16 +67,20 @@ once in `shared` with host `cargo test` and is not re-run here.
 ## Release build, precompress, and measure the budget
 
 ```sh
-cd web && cargo leptos build --release
-./scripts/precompress-site.sh
 ./scripts/measure-site-budget.sh
 ```
 
-`precompress-site.sh` writes `.br` siblings for the compressible asset types under `target/site/`.
-`measure-site-budget.sh` prints the first-paint and second-paint totals against the 2 MB / 3 MB caps
-and appends ` near cap` to any total over approx. 90% of its cap; it always exits 0 (the cap is a
-target, surfaced to reviewers, not a build gate). CI runs it on every PR and posts the output as a
-comment.
+```sh
+./scripts/precompress-site.sh
+```
+
+Both run from the repo root and resolve their own paths, so neither cares about the current directory.
+`measure-site-budget.sh` runs `cargo leptos build --release` itself and prints the first-paint and
+second-paint totals against the 2 MB / 3 MB caps, appending ` near cap` to any total over approx. 90% of
+its cap; it always exits 0 (the cap is a target, surfaced to reviewers, not a build gate). Pass
+`--no-build` to report on the tree already in `target/site/` instead of rebuilding. Run
+`precompress-site.sh` after it, since a build clears the site root: the script writes `.br` siblings for
+the compressible asset types under `target/site/`.
 
 ## Deploy
 
