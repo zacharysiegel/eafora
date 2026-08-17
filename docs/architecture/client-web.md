@@ -162,6 +162,7 @@ First paint:  1.63 MB / 2.00 MB  (82%)
   embedded bundle      1.63 MB
 
 Second paint: 5.34 MB / 8.00 MB  (67%)
+  embedded bundle      1.63 MB
   + geometry           1.58 MB
   + statistic shards   2.13 MB
 

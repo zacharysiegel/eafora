@@ -429,6 +429,14 @@ else
     print_total_line "Second paint:" "$((FIRST_PAINT_BYTES + LIVE_GEOMETRY_BYTES + LIVE_SHARD_BYTES))" "$SECOND_PAINT_CAP_BYTES"
 fi
 
+# Repeats the embedded bundle, which the client has already fetched by this point, so the components sum
+# to the printed total instead of leaving the reader to carry it over from first paint.
+if [[ -n "$EMBEDDED_UNAVAILABLE_REASON" ]]; then
+    print_component_line "embedded bundle" "$UNMEASURED_VALUE"
+else
+    print_component_line "embedded bundle" "$(format_size "$EMBEDDED_BYTES")"
+fi
+
 if [[ -n "$LIVE_UNAVAILABLE_REASON" ]]; then
     print_component_line "+ geometry" "$UNMEASURED_VALUE"
     print_component_line "+ statistic shards" "$UNMEASURED_VALUE"
