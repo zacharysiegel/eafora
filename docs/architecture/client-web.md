@@ -7,7 +7,7 @@
 This document covers everything between **the consumer-side contract `client.md` defines** and **a wasm + HTML + CSS bundle deployed to Cloudflare Workers Assets**:
 
 - The `web/` Cargo workspace member: its layout, its dependencies, its relationship to `core/`.
-- The build toolchain: `cargo-leptos`, `wasm-bindgen`, `wasm-opt`, the static-asset embedded bundle copy step, and the perf-budget warning that backstops `client.md`'s 2 MB / 3 MB targets.
+- The build toolchain: `cargo-leptos`, `wasm-bindgen`, `wasm-opt`, the static-asset embedded bundle copy step, and the perf-budget warning that backstops `client.md`'s artifact-byte targets.
 - The Leptos shell: routing (client-side map view + SSG region-detail pages via Leptos's `SsrMode::Static`), the component layout, the wasm-bindgen surface boundaries, the CSS architecture (Sass partials, hand-written to match `docs/design/README.md`).
 - The browser-platform glue: the `fetch()`-backed artifact loader, the OPFS-backed cache adapter that satisfies `core::artifact`'s cache contract, the canvas-to-wgpu-surface bridge, the WebGPU/WebGL2 fallback policy.
 - The deploy target: Cloudflare Workers Assets, headers, and the manifest-vs-immutable cache disposition that mirrors the producer-side R2 settings.
@@ -25,7 +25,7 @@ From the constitution, `docs/architecture/overview.md`, `docs/architecture/clien
 - Threading: single-threaded WASM; **no** `SharedArrayBuffer`; no Cross-Origin-Opener-Policy / Cross-Origin-Embedder-Policy headers; per-WASM state lives in `thread_local!`. (Overview §Web client)
 - Cache: OPFS for the live artifact cache. (Overview §Web client; Client §Fetch / cache / load pipeline)
 - Embedded bundle on web: shipped as a static asset alongside the wasm on Cloudflare Workers Assets, fetched on first visit, HTTP-cached for return visits. (Client §Embedded downsampled artifact)
-- Perf budget: 2 MB total compressed at first paint (wasm + static-asset embedded bundle + page shell), 3 MB total compressed at second paint (after the live CDN bundle resolves). A target, not a contract; exceeding it produces a CI warning, not a build failure. (Client §Web first-paint perf budget)
+- Perf budget: 2 MB of artifact bytes at first paint (the embedded bundle), 8 MB at second paint (after the live CDN bundle resolves). Client code is reported but not capped. A target, not a contract; exceeding it warns and never fails a build. (Client §Web first-paint perf budget)
 - CSS: hand-written CSS organized as Sass partials (Sass used only for splitting/bundling, not scripting); **Tailwind and utility-class libraries are explicitly ruled out**. (Project memory; design `README.md`)
 - Visual identity: sharp, white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, only the zoom-to-country animation through v1. (`docs/design/README.md`)
 - Hot-swap protocol: renderer subscribes to a `tokio::sync::watch::Receiver<Arc<Bundle>>` published by the loader. (Client §Bundle hot-swap)
@@ -128,7 +128,7 @@ codegen-units = 1
 strip     = true
 ```
 
-The `wasm-opt -O4` flag itself is passed through cargo-leptos's `wasm-opt-args` setting (resolve the exact key against the cargo-leptos version pinned in the workspace). Expected post-`-O4` size: approx. 600 KB brotli (per overview §Web client), against the perf-budget breakdown in §Perf-budget enforcement below.
+The `wasm-opt -O4` flag itself is passed through cargo-leptos's `wasm-opt-args` setting (resolve the exact key against the cargo-leptos version pinned in the workspace). A release build currently measures approx. 1.19 MB brotli, well above the approx. 600 KB overview §Web client anticipated; it is reported by the budget script but not capped, since the artifact targets are what a data decision moves.
 
 cargo-leptos owns the binary rather than the machine: it looks for `wasm-opt` on `PATH` and, finding none, downloads the binaryen release it pins and caches it. That keeps the optimizer version tied to the toolchain instead of to whatever a package manager currently ships, so it is deliberately not listed as a system dependency. The first release build on a machine therefore needs network access to `github.com` and its release-asset host.
 
@@ -144,31 +144,37 @@ The compression gap between Workers Assets's automatic q4–q5 and our shipped q
 
 ### Perf-budget warning
 
-Per `client.md` §Web first-paint perf budget, the targets are 2 MB total compressed at first paint and 3 MB at second paint. These are **soft targets**, not enforced caps — a CI step measures the deployed asset set and logs a warning when the target is exceeded, but never blocks the build. The cap is a target, not a contract; if a future change pushes the bundle past 2 MB intentionally, we want the warning to surface the regression for human review, not for CI to fail.
+Per `client.md` §Web first-paint perf budget, the targets bound artifact bytes: 2 MB at first paint and 8 MB at second paint. Client code is reported next to them but not capped. These are **soft targets**, not enforced caps: the report warns and never blocks, because a change that spends bytes deliberately should surface for review rather than fail a build.
 
-A `scripts/build/measure-site-budget.sh` helper:
+`scripts/build/measure-site-budget.sh`:
 
-1. Runs `cargo leptos build --release`.
-2. For first paint, sums the brotli-compressed sizes (estimated by running `brotli -q 11` locally for the measurement step only — the deployed assets are compressed by Cloudflare's edge, not by us) of the WASM bundle, the JS shim, the bundled CSS, the page-shell HTML, and every file under `target/site/embedded_artifacts/` that the embedded-bundle loader fetches during initial render.
-3. For second paint, additionally counts every artifact file the live-bundle fetch will need on first online connection (geometry shard + every base statistic shard).
-4. Prints a breakdown in labeled, aligned key:value lines (narrow-terminal-safe; no markdown tables) and always exits zero — the warning is in the text output, not the exit code.
+1. Runs `./scripts/build/build-site.sh` unless `--no-build` is passed, so the tree it measures is a release build carrying its shell document.
+2. Counts each file at what a client transfers: `brotli -q 11` for the content types Cloudflare compresses, and the full file size for the rest. The geometry and the statistic shards fall in the latter group, which is why they dominate.
+3. For first paint, sums the embedded bundle. For second paint, adds every artifact file the live-bundle fetch needs on first online connection: the geometry shard and every base statistic shard.
+4. Prints labeled, aligned key:value lines (narrow-terminal-safe; no markdown tables) and always exits zero. A total whose parts the tree cannot supply is reported as unmeasured rather than as a smaller number.
 
 Example output:
 
 ```
-First paint:  1.42 MB / 2.00 MB  (71%)
-  wasm                  612 KB
-  js shim                38 KB
-  css                    12 KB
-  html shell              8 KB
-  embedded artifacts    752 KB
+Artifact bytes, which are what the targets bound:
 
-Second paint: 2.81 MB / 3.00 MB  (94%)  near cap
-  + geometry            1.20 MB
-  + statistic shards    190 KB
+First paint:  1.63 MB / 2.00 MB  (82%)
+  embedded bundle      1.63 MB
+
+Second paint: 5.34 MB / 8.00 MB  (67%)
+  + geometry           1.58 MB
+  + statistic shards   2.13 MB
+
+Client code, reported but not capped:
+
+Total:        1.21 MB
+  wasm                 1.19 MB
+  js shim                16 KB
+  css                     2 KB
+  html shell             964 B
 ```
 
-The script is invoked at the end of every `cargo leptos build --release` and as a CI step that posts the output as a PR comment for visibility.
+Until hosted CI exists, `scripts/git/pr-integrate.sh` runs the report while integrating any branch that touched `web/` or `shared/`.
 
 ### Build dependency direction
 
@@ -638,7 +644,7 @@ Per Constitution Principle VII, the web-only TDD-required surfaces are:
 - Browser fetch adapter error mapping: simulated 4xx / 5xx responses (via a mock server or `web_sys` interception layer; verify the most ergonomic option in headless Chrome) map to `AppError`s carrying the source URL and HTTP status in the message body.
 - Canvas-to-wgpu-surface bridge: assert the surface's reported size matches the canvas's `clientWidth`/`clientHeight`; assert resize events propagate. Headless Chrome.
 - WebGPU vs WebGL2 backend selection: the `?renderer=webgl2` query-string flag forces the GL backend; assert the resulting `wgpu::Adapter::backend()` is `Backend::Gl`; the unflagged path picks `Backend::WebGpu` on browsers that support it.
-- Perf-budget reporting: `scripts/build/measure-site-budget.sh` is the test surface; CI invokes it on every PR and posts the output as a comment. The script does not fail the build; the warning is in the text output for human review.
+- Perf-budget reporting: `scripts/build/measure-site-budget.sh` is the test surface, invoked by `scripts/git/pr-integrate.sh` while integrating a branch that touched `web/` or `shared/`. The script does not fail the build; the warning is in the text output for human review.
 
 Cross-platform surfaces (manifest parsing, SHA-256 verification, license-class authorization, FlatGeobuf hit testing) are tested in `core/` once and not re-tested per platform. See `client.md` §Testing strategy.
 

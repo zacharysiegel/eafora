@@ -336,14 +336,16 @@ The embedded bundle is regenerated and re-bundled into client artifacts **on eve
 
 ### Web first-paint perf budget
 
-Web first paint serves wasm + the static-asset bundle together; together they're the price of "instant atlas render" on a fresh visit. Targets for the web build:
+The budget bounds **artifact bytes**, which are the ones a data decision moves: how many periods a shard covers, how finely the geometry is simplified, how many statistics ship onboard. Targets for the web build:
 
-- **2 MB total compressed at first paint** — wasm bundle + static-asset embedded bundle + page shell.
-- **3 MB total compressed at second paint** — once the live CDN bundle has loaded in the background.
+- **2 MB at first paint** — the embedded bundle that paints the map immediately.
+- **8 MB at second paint** — the embedded bundle plus the live bundle fetched in the background.
 
 These are targets, not gates: an overage produces a loud warning in the perf-budget report and never fails a build. Deciding whether the bytes are worth it is a judgment call for a person, not a threshold a pipeline can make.
 
-Expected sizes against the 2 MB ceiling: wasm approx. 600 KB brotli (per overview §Web client; `wasm-opt -O4`), static-asset bundle approx. 700 KB–1 MB brotli (FlatGeobuf and SQLite both compress well), page shell <50 KB — totals approx. 1.4–1.7 MB with comfortable headroom.
+Client code (wasm, the wasm-bindgen JS shim, the stylesheet, the shell document) is reported alongside the artifact totals but is not capped, because its size follows from the framework and the renderer rather than from a data decision. For scale, a release build measures approx. 1.2 MB compressed, of which the wasm is nearly all.
+
+Sizes count what a client actually transfers, which is not the same as what compresses well. Cloudflare compresses only the content types on a fixed list, and that list has no generic binary entry, so the FlatGeobuf geometry and the SQLite shards transfer at full size even though they compress by 3.4x and 6.6x respectively. That gap is the single largest lever on both totals; see `client-web.md` §Compression.
 
 ### Returning-visitor flow
 

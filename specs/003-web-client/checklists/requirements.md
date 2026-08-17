@@ -59,7 +59,7 @@
 
 - [x] User scenarios cover primary flows
 
-> P1 = first-paint render against the embedded bundle (the deliverable that closes the `client-web.md` §Follow-up work item). P2 = OPFS cache adapter persistence (the verifiable surface the live-fetch path is built on). P3 = discovery + speculative parallel fetch + hot-swap (the full live path; testable against a same-origin stub before the producer side stands up the real CDN). P4 = perf-budget report (the warning surface that protects the 2 MB / 3 MB caps).
+> P1 = first-paint render against the embedded bundle (the deliverable that closes the `client-web.md` §Follow-up work item). P2 = OPFS cache adapter persistence (the verifiable surface the live-fetch path is built on). P3 = discovery + speculative parallel fetch + hot-swap (the full live path; testable against a same-origin stub before the producer side stands up the real CDN). P4 = perf-budget report (the warning surface that protects the 2 MB / 8 MB artifact-byte caps).
 
 - [x] Feature meets measurable outcomes defined in Success Criteria
 

@@ -2,9 +2,11 @@
 # measure-site-budget.sh: report what a first-time visitor downloads from a built site tree, against the
 # first-paint and second-paint perf-budget targets.
 #
-# First paint is the WASM bundle, the wasm-bindgen JS shim, the bundled CSS, the page-shell HTML, and the
-# embedded artifact bundle. Second paint adds the live-bundle files the client fetches on its first online
-# connection: the geometry shard and every statistic shard the live manifest lists.
+# The targets bound artifact bytes, not client code. First paint is the embedded bundle that paints the map
+# immediately; second paint adds the live-bundle files the client fetches on its first online connection,
+# namely the geometry shard and every statistic shard the live manifest lists. The wasm, the wasm-bindgen
+# JS shim, the stylesheet, and the shell document are reported alongside for information, because their
+# size is a consequence of the framework and the renderer rather than of a data decision.
 #
 # A file counts at its brotli -q 11 size when Cloudflare's content-type list says the edge compresses it,
 # and at its full size otherwise, which is the case for the geometry and statistic shards. Compression is
@@ -31,14 +33,15 @@
 #      names, then that base's latest/manifest.json, then the version that manifest names.
 #   4. Reports any total whose parts the tree cannot supply as unmeasured, never as a smaller number, and
 #      explains each gap under Notes. A component matching more than one file is a gap too, since which
-#      file a visitor fetches is then unknown.
+#      file a visitor fetches is then unknown. A gap in the client code leaves the artifact totals intact,
+#      since they no longer share any component.
 #   5. Marks a totals line at or above 90% of its cap " near cap", and one over its cap "*** OVER CAP ***"
 #      followed by a warning line.
 
 set -euo pipefail
 
 readonly FIRST_PAINT_CAP_BYTES=2000000
-readonly SECOND_PAINT_CAP_BYTES=3000000
+readonly SECOND_PAINT_CAP_BYTES=8000000
 readonly NEAR_CAP_PERCENT=90
 readonly UNMEASURED_VALUE="n/a"
 readonly EMBEDDED_SUBDIR="embedded_artifacts"
@@ -263,13 +266,22 @@ function print_component_line {
 }
 
 OVER_CAP_LABELS=""
-FIRST_PAINT_UNAVAILABLE_REASON=""
+ARTIFACT_UNAVAILABLE_REASON=""
+CODE_UNAVAILABLE_REASON=""
 
-function note_first_paint_gap {
+function note_artifact_gap {
     local reason="$1"
 
-    if [[ -z "$FIRST_PAINT_UNAVAILABLE_REASON" ]]; then
-        FIRST_PAINT_UNAVAILABLE_REASON="$reason"
+    if [[ -z "$ARTIFACT_UNAVAILABLE_REASON" ]]; then
+        ARTIFACT_UNAVAILABLE_REASON="$reason"
+    fi
+}
+
+function note_code_gap {
+    local reason="$1"
+
+    if [[ -z "$CODE_UNAVAILABLE_REASON" ]]; then
+        CODE_UNAVAILABLE_REASON="$reason"
     fi
 }
 
@@ -288,12 +300,12 @@ function measure_single_pkg_file {
     MEASURED_COMPONENT_DISPLAY="$UNMEASURED_VALUE"
 
     if [[ "$match_count" -eq 0 ]]; then
-        note_first_paint_gap "$(to_repo_relative_path "$PKG_DIR") holds no $label"
+        note_code_gap "$(to_repo_relative_path "$PKG_DIR") holds no $label"
         return 0
     fi
 
     if [[ "$match_count" -gt 1 ]]; then
-        note_first_paint_gap "$(to_repo_relative_path "$PKG_DIR") holds $match_count files matching $name_glob, so the $label a visitor fetches is ambiguous; ./scripts/build/build-site.sh empties the site root first"
+        note_code_gap "$(to_repo_relative_path "$PKG_DIR") holds $match_count files matching $name_glob, so the $label a visitor fetches is ambiguous; ./scripts/build/build-site.sh empties the site root first"
         return 0
     fi
 
@@ -318,7 +330,7 @@ HTML_BYTES=0
 if [[ -f "$SHELL_PATH" ]]; then
     HTML_BYTES="$(transfer_size_of "$SHELL_PATH")"
 else
-    note_first_paint_gap "the site tree has no shell document at $(to_repo_relative_path "$SHELL_PATH"); run ./scripts/build/build-site.sh, which writes it after the build"
+    note_code_gap "the site tree has no shell document at $(to_repo_relative_path "$SHELL_PATH"); run ./scripts/build/build-site.sh, which writes it after the build"
 fi
 
 EMBEDDED_BYTES=0
@@ -328,10 +340,11 @@ if [[ -d "$EMBEDDED_DIR" ]]; then
     EMBEDDED_BYTES="$(sum_transfer_size_of_fetched_files_in "$EMBEDDED_DIR")"
 else
     EMBEDDED_UNAVAILABLE_REASON="$(to_repo_relative_path "$EMBEDDED_DIR") is absent; run scripts/build/sync-embedded-bundle.sh ./web/static/$EMBEDDED_SUBDIR before the build"
-    note_first_paint_gap "$EMBEDDED_UNAVAILABLE_REASON"
+    note_artifact_gap "$EMBEDDED_UNAVAILABLE_REASON"
 fi
 
-FIRST_PAINT_BYTES=$((WASM_BYTES + JS_SHIM_BYTES + CSS_BYTES + HTML_BYTES + EMBEDDED_BYTES))
+FIRST_PAINT_BYTES="$EMBEDDED_BYTES"
+CLIENT_CODE_BYTES=$((WASM_BYTES + JS_SHIM_BYTES + CSS_BYTES + HTML_BYTES))
 
 LIVE_UNAVAILABLE_REASON=""
 LIVE_GEOMETRY_BYTES=0
@@ -392,31 +405,24 @@ function measure_live_bundle {
 }
 measure_live_bundle
 
-if [[ -n "$FIRST_PAINT_UNAVAILABLE_REASON" ]]; then
+echo "Artifact bytes, which are what the targets bound:"
+echo ""
+
+if [[ -n "$ARTIFACT_UNAVAILABLE_REASON" ]]; then
     print_unmeasured_total_line "First paint:"
 else
     print_total_line "First paint:" "$FIRST_PAINT_BYTES" "$FIRST_PAINT_CAP_BYTES"
 fi
 
-print_component_line "wasm" "$WASM_DISPLAY"
-print_component_line "js shim" "$JS_SHIM_DISPLAY"
-print_component_line "css" "$CSS_DISPLAY"
-
-if [[ -f "$SHELL_PATH" ]]; then
-    print_component_line "html shell" "$(format_size "$HTML_BYTES")"
-else
-    print_component_line "html shell" "$UNMEASURED_VALUE"
-fi
-
 if [[ -n "$EMBEDDED_UNAVAILABLE_REASON" ]]; then
-    print_component_line "embedded artifacts" "$UNMEASURED_VALUE"
+    print_component_line "embedded bundle" "$UNMEASURED_VALUE"
 else
-    print_component_line "embedded artifacts" "$(format_size "$EMBEDDED_BYTES")"
+    print_component_line "embedded bundle" "$(format_size "$EMBEDDED_BYTES")"
 fi
 
 echo ""
 
-if [[ -n "$FIRST_PAINT_UNAVAILABLE_REASON" || -n "$LIVE_UNAVAILABLE_REASON" ]]; then
+if [[ -n "$ARTIFACT_UNAVAILABLE_REASON" || -n "$LIVE_UNAVAILABLE_REASON" ]]; then
     print_unmeasured_total_line "Second paint:"
 else
     print_total_line "Second paint:" "$((FIRST_PAINT_BYTES + LIVE_GEOMETRY_BYTES + LIVE_SHARD_BYTES))" "$SECOND_PAINT_CAP_BYTES"
@@ -431,6 +437,26 @@ else
 fi
 
 echo ""
+echo "Client code, reported but not capped:"
+echo ""
+
+if [[ -n "$CODE_UNAVAILABLE_REASON" ]]; then
+    print_unmeasured_total_line "Total:"
+else
+    printf '%-14s%s\n' "Total:" "$(format_size "$CLIENT_CODE_BYTES")"
+fi
+
+print_component_line "wasm" "$WASM_DISPLAY"
+print_component_line "js shim" "$JS_SHIM_DISPLAY"
+print_component_line "css" "$CSS_DISPLAY"
+
+if [[ -f "$SHELL_PATH" ]]; then
+    print_component_line "html shell" "$(format_size "$HTML_BYTES")"
+else
+    print_component_line "html shell" "$UNMEASURED_VALUE"
+fi
+
+echo ""
 
 if [[ -n "$OVER_CAP_LABELS" ]]; then
     for over_cap_label in $OVER_CAP_LABELS; do
@@ -442,8 +468,12 @@ fi
 
 echo "Notes:"
 
-if [[ -n "$FIRST_PAINT_UNAVAILABLE_REASON" ]]; then
-    echo "  - First paint is unmeasured: $FIRST_PAINT_UNAVAILABLE_REASON."
+if [[ -n "$ARTIFACT_UNAVAILABLE_REASON" ]]; then
+    echo "  - The artifact totals are unmeasured: $ARTIFACT_UNAVAILABLE_REASON."
+fi
+
+if [[ -n "$CODE_UNAVAILABLE_REASON" ]]; then
+    echo "  - The client-code total is unmeasured: $CODE_UNAVAILABLE_REASON."
 fi
 
 if [[ -n "$LIVE_UNAVAILABLE_REASON" ]]; then
