@@ -3,10 +3,7 @@ use chrono::{DateTime, Utc};
 use shared::artifact::manifest::BundleVariant;
 use shared::artifact::Manifest;
 
-/// How a cached version ranks for first paint. Ordering is derived: a complete bundle outranks a
-/// downsampled one, and within a variant the newer artifact wins. Ordering on `artifact_created` alone
-/// would let a freshly built onboard bundle outrank an older complete one, since an onboard artifact is
-/// stamped when the client is built and a complete one when it is published.
+/// Sort key for a cached version.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CachedVersionRank {
     is_complete: bool,
