@@ -14,6 +14,10 @@ pub mod version_rank;
 #[cfg(feature = "hydrate")]
 pub mod client;
 
+// The dev server and the static shell export; neither exists in a browser.
+#[cfg(feature = "ssr")]
+pub mod server;
+
 // In wasm32 test builds, run the #[wasm_bindgen_test] cases in a headless browser.
 #[cfg(all(test, target_arch = "wasm32"))]
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);

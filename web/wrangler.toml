@@ -11,4 +11,6 @@ directory = "../target/site"
 # `not_found_handling` is deliberately unset, so Cloudflare's default applies and an unmatched path gets
 # a bodyless 404. "single-page-application" would answer every unmatched path with index.html at 200,
 # which would hand the artifact loader an HTML document in place of the shard it asked for instead of the
-# 404 it reports; "404-page" needs a 404.html the build does not produce.
+# 404 it reports.
+# TODO: produce a 404.html in the build and switch this to "404-page", so a person who mistypes a URL
+# gets a styled page rather than an empty response. Tracked in docs/backlog.md under Infrastructure / ops.
