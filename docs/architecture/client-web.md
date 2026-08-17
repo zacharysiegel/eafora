@@ -132,7 +132,7 @@ The `wasm-opt -O4` flag itself is passed through cargo-leptos's `wasm-opt-args` 
 
 The build runs `brotli -q 11` over every compressible asset under `target/site/` and uploads both the original and the `.br` sibling. Workers Assets serves the `.br` file when the client's `Accept-Encoding` includes `br` and the original otherwise — same `.br`-sibling pattern as nginx's `brotli_static`. Quality 11 is the maximum; the runtime can't compress at that quality on the fly (too slow), so precompressing ourselves is the only way to ship q11 to clients.
 
-A `scripts/precompress-site.sh` helper iterates `target/site/`, runs `brotli -q 11 --keep` on each eligible file (`.wasm`, `.js`, `.css`, `.html`, `.json`, `.fgb`, `.sqlite`), and exits non-zero on failure. Filtering is by extension; already-compressed types (`.png`, `.jpg`, `.woff2`) are skipped. Invoked as the final step of `cargo leptos build --release`, before the Workers Assets upload.
+A `scripts/build/precompress-site.sh` helper iterates `target/site/`, runs `brotli -q 11 --keep` on each eligible file (`.wasm`, `.js`, `.css`, `.html`, `.json`, `.fgb`, `.sqlite`), and exits non-zero on failure. Filtering is by extension; already-compressed types (`.png`, `.jpg`, `.woff2`) are skipped. Invoked as the final step of `cargo leptos build --release`, before the Workers Assets upload.
 
 The compression gap between Workers Assets's automatic q4–q5 and our shipped q11 is real for the WASM bundle and the embedded artifacts (both compress well; both are perf-budget-relevant). Worth the extra build step.
 
@@ -140,7 +140,7 @@ The compression gap between Workers Assets's automatic q4–q5 and our shipped q
 
 Per `client.md` §Web first-paint perf budget, the targets are 2 MB total compressed at first paint and 3 MB at second paint. These are **soft targets**, not enforced caps — a CI step measures the deployed asset set and logs a warning when the target is exceeded, but never blocks the build. The cap is a target, not a contract; if a future change pushes the bundle past 2 MB intentionally, we want the warning to surface the regression for human review, not for CI to fail.
 
-A `scripts/measure-site-budget.sh` helper:
+A `scripts/build/measure-site-budget.sh` helper:
 
 1. Runs `cargo leptos build --release`.
 2. For first paint, sums the brotli-compressed sizes (estimated by running `brotli -q 11` locally for the measurement step only — the deployed assets are compressed by Cloudflare's edge, not by us) of the WASM bundle, the JS shim, the bundled CSS, the page-shell HTML, and every file under `target/site/embedded_artifacts/` that the embedded-bundle loader fetches during initial render.
@@ -169,7 +169,7 @@ The script is invoked at the end of every `cargo leptos build --release` and as 
 The static-asset embedded bundle is copied into `web/static/embedded_artifacts/` at the start of the build, **pulled** from the producer's downsampled output. The dependency is:
 
 1. The producer (running on the Mac mini through v1; see overview §Ingestion) periodically runs `ingestion build` (no flag; a follow-up PR on the producer side, see `client.md` §Decisions still open), which emits the `downsampled/` subtree alongside `complete/` under `$EAFORA_ARTIFACTS_DIR/<version-label>/` and updates the `$EAFORA_ARTIFACTS_DIR/latest` pointer.
-2. The web build's first step runs `scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts/`. The script copies `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` into the destination with `cp -R` (invoking `ingestion build` first if no build exists). The producer's output location is configured via `EAFORA_ARTIFACTS_DIR`.
+2. The web build's first step runs `scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts/`. The script copies `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` into the destination with `cp -R` (invoking `ingestion build` first if no build exists). The producer's output location is configured via `EAFORA_ARTIFACTS_DIR`.
 3. `cargo leptos build` then proceeds normally; `web/static/` is verbatim-copied into `target/site/`.
 
 Plain copy (not symlink, not hard link, not `rsync`) on both web and iOS. The bundle is a few MB through v2; the duplication is irrelevant; the simplicity of "one shell-command shape, both platforms, no edge cases around symlink resolution or filesystem-boundary fallback" wins.
@@ -630,7 +630,7 @@ Per Constitution Principle VII, the web-only TDD-required surfaces are:
 - Browser fetch adapter error mapping: simulated 4xx / 5xx responses (via a mock server or `web_sys` interception layer; verify the most ergonomic option in headless Chrome) map to `AppError`s carrying the source URL and HTTP status in the message body.
 - Canvas-to-wgpu-surface bridge: assert the surface's reported size matches the canvas's `clientWidth`/`clientHeight`; assert resize events propagate. Headless Chrome.
 - WebGPU vs WebGL2 backend selection: the `?renderer=webgl2` query-string flag forces the GL backend; assert the resulting `wgpu::Adapter::backend()` is `Backend::Gl`; the unflagged path picks `Backend::WebGpu` on browsers that support it.
-- Perf-budget reporting: `scripts/measure-site-budget.sh` is the test surface; CI invokes it on every PR and posts the output as a comment. The script does not fail the build; the warning is in the text output for human review.
+- Perf-budget reporting: `scripts/build/measure-site-budget.sh` is the test surface; CI invokes it on every PR and posts the output as a comment. The script does not fail the build; the warning is in the text output for human review.
 
 Cross-platform surfaces (manifest parsing, SHA-256 verification, license-class authorization, FlatGeobuf hit testing) are tested in `core/` once and not re-tested per platform. See `client.md` §Testing strategy.
 

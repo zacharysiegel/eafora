@@ -13,7 +13,7 @@ brew install brotli
 ```
 
 `wasm-opt` is downloaded and invoked by cargo-leptos on release builds; `brotli` is invoked by
-`./scripts/precompress-site.sh` and `./scripts/measure-site-budget.sh`. Both are build-host tools, not
+`./scripts/build/precompress-site.sh` and `./scripts/build/measure-site-budget.sh`. Both are build-host tools, not
 workspace deps.
 
 ## Populate the embedded bundle
@@ -22,7 +22,7 @@ The map cannot render without a bundle. `web/static/embedded_artifacts/` is giti
 locally:
 
 ```sh
-./scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts/
+./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts/
 ```
 
 The script runs `ingestion build` when no build exists, then plain-copies
@@ -67,11 +67,11 @@ once in `shared` with host `cargo test` and is not re-run here.
 ## Release build, precompress, and measure the budget
 
 ```sh
-./scripts/measure-site-budget.sh
+./scripts/build/measure-site-budget.sh
 ```
 
 ```sh
-./scripts/precompress-site.sh
+./scripts/build/precompress-site.sh
 ```
 
 Both run from the repo root and resolve their own paths, so neither cares about the current directory.

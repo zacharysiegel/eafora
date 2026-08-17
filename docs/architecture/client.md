@@ -322,7 +322,7 @@ Total embedded bundle: approx. 1.5–1.7 MB through v2. Matching the live bundle
 
 Revisit when v2+ subnational geometry lands (would push the geometry portion well past the current 1.5 MB) or when current-year-across-all-statistics stops fitting comfortably in single-digit MB.
 
-Each client's build pipeline pulls the latest downsampled bundle from `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies it into its own asset directory (via `scripts/sync-embedded-bundle.sh <destination-dir>`, which runs `ingestion build` first if no build exists yet):
+Each client's build pipeline pulls the latest downsampled bundle from `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies it into its own asset directory (via `scripts/build/sync-embedded-bundle.sh <destination-dir>`, which runs `ingestion build` first if no build exists yet):
 
 - iOS: bundle build script reads from `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies into `ios/EaforaApp/Resources/embedded_artifacts/` as part of the Xcode build.
 - Android: Gradle task reads from `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies into `android/app/src/main/assets/embedded_artifacts/` as part of the Android build.
@@ -417,6 +417,6 @@ Live HTTP against the CDN is **not** part of automated tests; it's a manual smok
 ## Decisions still open
 
 - **wgpu / WebGPU fallback policy.** WebGPU is stable in Chromium and Safari 18.4+; Firefox is on WebGL2 via the wgpu downlevel backend. The capability detection happens inside `wgpu::Instance::request_adapter`, so the client doesn't need its own logic — but the *UI fallback* (do we render a coarser version under WebGL2, or do we render the same version with a perf-warning banner?) is per-platform UX work. Defer to `client-web.md`.
-- **Embedded-bundle build automation (native).** `ingestion build` now emits the downsampled subtree (`$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`) on every build alongside the complete bundle, and `scripts/sync-embedded-bundle.sh <destination-dir>` copies `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` into a client's asset directory (running `ingestion build` first if no build exists). Each native build script needs to invoke this sync step and copy the result into its own asset directory when native-client work begins.
+- **Embedded-bundle build automation (native).** `ingestion build` now emits the downsampled subtree (`$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`) on every build alongside the complete bundle, and `scripts/build/sync-embedded-bundle.sh <destination-dir>` copies `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` into a client's asset directory (running `ingestion build` first if no build exists). Each native build script needs to invoke this sync step and copy the result into its own asset directory when native-client work begins.
 - **Translation table location.** Per overview §FFI, country / statistic / source-attribution display names are written into the SQLite at build time, sourced from ISO 3166 + per-language overrides. v1 is English-only; the hooks need to exist for v2+. Whether the translation table is a separate SQLite shard or rolled into each statistic shard is open. **Trigger:** i18n lands (a second locale becomes a real deliverable).
 

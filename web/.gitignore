@@ -1,4 +1,4 @@
-# The downsampled embedded bundle is synced in by scripts/sync-embedded-bundle.sh and rebuilt each CI
+# The downsampled embedded bundle is synced in by scripts/build/sync-embedded-bundle.sh and rebuilt each CI
 # run (see specs/003-web-client/plan.md, FR-004); it is not checked in.
 /static/embedded_artifacts/
 /static/repository/

@@ -4,7 +4,7 @@
 # root. See docs/system-dependencies.md for the toolchain.
 #
 # Extra arguments are forwarded to wasm-pack, e.g.:
-#   ./scripts/test-wasm.sh -- parse_manifest    (filter to matching tests)
+#   ./scripts/test/test-wasm.sh -- parse_manifest    (filter to matching tests)
 
 set -euo pipefail
 

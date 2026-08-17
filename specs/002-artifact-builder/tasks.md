@@ -91,7 +91,7 @@ PR B introduces the destination-agnostic `ArtifactRepository` trait and three im
 - [ ] T040 Run `cargo llvm-cov -p ingestion` and verify the pure-function helpers (`apply_source_priority`, `collect_data_source_versions`, manifest writer, content hashing) achieve ≥90% line coverage per SC-005.
 - [ ] T041 [P] Live timing of `build + publish --destination=cloudflare-r2` end-to-end against the v1 canonical store; verify SC-002 (<60s).
 - [ ] T042 [P] If implementation surfaced any divergence from `docs/architecture/ingestion.md` §Artifact builder or §Cloudflare R2 upload, propose an architecture amendment in a follow-up. Specifically expected: the architecture currently talks about `upload_artifacts_to_cloudflare_r2`; the as-built `publish_artifacts<S: ArtifactRepository>(repository: &S, ...)` lives in the same doc with the trait abstraction added, plus the new `delete_artifact` flow.
-- [ ] T039 [P] Run `./scripts/cleanup-merged.sh` after PRs A, B, C all integrate.
+- [ ] T039 [P] Run `./scripts/git/cleanup-merged.sh` after PRs A, B, C all integrate.
 
 ---
 

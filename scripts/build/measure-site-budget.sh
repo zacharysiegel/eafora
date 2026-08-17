@@ -16,10 +16,10 @@
 # unrecognized argument, and a missing program.
 #
 # Usage:
-#   ./scripts/measure-site-budget.sh [--no-build]
+#   ./scripts/build/measure-site-budget.sh [--no-build]
 # e.g.
-#   ./scripts/measure-site-budget.sh
-#   ./scripts/measure-site-budget.sh --no-build
+#   ./scripts/build/measure-site-budget.sh
+#   ./scripts/build/measure-site-budget.sh --no-build
 #
 # Behavior:
 #   1. Runs `cargo leptos build --release` first unless --no-build is passed. The build's own output goes
@@ -87,7 +87,7 @@ function exit_zero_after_reporting_failure {
 }
 trap exit_zero_after_reporting_failure EXIT
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 function get_leptos_metadata_value {
     local key_name="$1"
@@ -238,7 +238,7 @@ EMBEDDED_UNAVAILABLE_REASON=""
 if [[ -d "$EMBEDDED_DIR" ]]; then
     EMBEDDED_BYTES="$(sum_brotli_size_of_fetched_files_in "$EMBEDDED_DIR")"
 else
-    EMBEDDED_UNAVAILABLE_REASON="$(to_repo_relative_path "$EMBEDDED_DIR") is absent; run scripts/sync-embedded-bundle.sh ./web/static/$EMBEDDED_SUBDIR before the build"
+    EMBEDDED_UNAVAILABLE_REASON="$(to_repo_relative_path "$EMBEDDED_DIR") is absent; run scripts/build/sync-embedded-bundle.sh ./web/static/$EMBEDDED_SUBDIR before the build"
 fi
 
 FIRST_PAINT_BYTES=$((WASM_BYTES + JS_SHIM_BYTES + CSS_BYTES + HTML_BYTES + EMBEDDED_BYTES))

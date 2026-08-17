@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/pr-integrate.sh — integrate a feature branch into master via the manual
+# scripts/git/pr-integrate.sh — integrate a feature branch into master via the manual
 # rebase flow that preserves `>>> branch: <name>` marker commits. Named "integrate"
 # rather than "merge" because it rebases (not merges) the branch onto master.
 #
@@ -8,10 +8,10 @@
 # sequence per Governance §Git workflow §Merge strategy.
 #
 # Usage:
-#   ./scripts/pr-integrate.sh <branch>
-#   ./scripts/pr-integrate.sh --current                                   (use the currently
+#   ./scripts/git/pr-integrate.sh <branch>
+#   ./scripts/git/pr-integrate.sh --current                                   (use the currently
 #                                                                         checked-out branch)
-#   ./scripts/pr-integrate.sh <branch> --from <former-parent-branch>     (for a stacked branch
+#   ./scripts/git/pr-integrate.sh <branch> --from <former-parent-branch>     (for a stacked branch
 #                                                                         whose parent already merged)
 #
 # Behavior:
@@ -24,7 +24,7 @@
 #   5. Fast-forward master to branch tip via `git rebase <branch>` (consistent
 #      with the rebase-family preference; equivalent to `merge --ff-only`).
 #   6. Push master (`git push origin master`).
-#   7. Run `./scripts/cleanup-merged.sh <branch>` to delete the branch from
+#   7. Run `./scripts/git/cleanup-merged.sh <branch>` to delete the branch from
 #      origin, locally, and prune.
 
 set -euo pipefail

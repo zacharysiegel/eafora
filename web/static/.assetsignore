@@ -1,11 +1,5 @@
-# Paths that cargo-leptos copies into the site tree but that must not reach a deploy. Patterns are
-# gitignore-style and resolve against the uploaded asset directory, which is the site root.
-#
-# repository/ holds the live bundle tree that `ingestion publish local` writes so `cargo leptos watch`
-# can serve it same-origin at /repository during development. Production fetches the live bundle from
-# repository.eafora.org instead, so uploading a developer's local publish output would ship stale
-# artifacts to visitors and cost tens of megabytes per deploy.
-/repository/
+# Same format as .gitignore; wrangler skips matching files when uploading.
 
-# Finder metadata. No client ever requests it.
+# Local publish output the dev server serves at /repository.
+/repository/
 .DS_Store

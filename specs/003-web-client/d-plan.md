@@ -71,7 +71,7 @@ R2 and dry destinations do not prune. Dry still receives a `put_file` for the la
 
 ### Task 1: create the branch
 
-- [ ] **Step 1:** From a clean `d-plan` head: `./scripts/branch-init.sh publish-latest-pointer`
+- [ ] **Step 1:** From a clean `d-plan` head: `./scripts/git/branch-init.sh publish-latest-pointer`
 
 ### Task 2: failing tests for the latest pointer and local retain
 
@@ -142,7 +142,7 @@ No live loader yet. This slice makes the documents and the fetch surface exist a
 
 ### Task 4: create the branch
 
-- [ ] **Step 1:** `./scripts/branch-init.sh web-discovery-fetch`
+- [ ] **Step 1:** `./scripts/git/branch-init.sh web-discovery-fetch`
 
 ### Task 5: committed discovery + gitignore
 
@@ -289,7 +289,7 @@ Branch: `web-live-loader` off `web-discovery-fetch`.
 
 ### Task 7: create the branch
 
-- [ ] **Step 1:** `./scripts/branch-init.sh web-live-loader`
+- [ ] **Step 1:** `./scripts/git/branch-init.sh web-live-loader`
 
 ### Task 8: load a bundle from cache or from a repository base
 
@@ -414,7 +414,7 @@ cargo run -p ingestion -- publish local --build --root ./web/static/repository -
 
 After D3, on this machine:
 
-1. `./scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts/`
+1. `./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts/`
 2. `cargo run -p ingestion -- publish local --build --root ./web/static/repository --public-base-url /repository` (confirm flags in source). A second publish of the same `version_label` is rejected by the existing `artifact_version` uniqueness check; rebuild with a new label, or point `--root` at a fresh tree after deleting the `artifact_version` row, if you need to overwrite the local static files.
 3. `cd web && cargo leptos watch`
 4. Open the printed URL. Confirm first paint. Confirm the year scrubber expands after the live load. Confirm a reload with OPFS populated does not wait on `/embedded_artifacts` for first paint (Network panel).

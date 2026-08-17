@@ -11,9 +11,9 @@
 # standalone tree the client build embeds verbatim.
 #
 # Usage:
-#   ./scripts/sync-embedded-bundle.sh <destination-dir>
+#   ./scripts/build/sync-embedded-bundle.sh <destination-dir>
 # e.g.
-#   ./scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts
+#   ./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts
 
 set -euo pipefail
 
@@ -23,7 +23,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 DESTINATION="$1"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # EAFORA_ARTIFACTS_DIR comes from the environment or the repo .env (the same variable `ingestion build` reads).
 if [[ -z "${EAFORA_ARTIFACTS_DIR:-}" && -f "$REPO_ROOT/.env" ]]; then

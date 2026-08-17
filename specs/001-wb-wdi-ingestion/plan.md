@@ -141,7 +141,7 @@ Developer setup, in order:
 
 1. **Postgres**: `./setup.sh` (per `docs/architecture/ingestion.md` §Postgres hosting) installs Postgres via Homebrew and launches it via launchd; creates the `eafora` database. If Postgres is already running on 5432, the script errors out — see the architecture doc for the override path.
 2. **Migrations**: `./dbmate.sh up` applies schema + seed migrations to `eafora` and regenerates `ingestion/db/schema.sql`.
-3. **Test database**: `./scripts/setup-test-db.sh` creates `eafora_test` and applies the same migrations.
+3. **Test database**: `./scripts/db/setup-test-db.sh` creates `eafora_test` and applies the same migrations.
 4. **Build**: `cargo build -p ingestion`.
 5. **Run a manual ingestion**: `cargo run -p ingestion -- source wb_wdi`. Reads `DATABASE_URL` from `.env` (which `setup.sh` generated), hits the WB API, populates `statistic_value`. Logs the IngestReport.
 6. **Run tests**: `cargo test -p ingestion`. Unit tests are pure-function; integration tests use the test DB.

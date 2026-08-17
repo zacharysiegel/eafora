@@ -43,7 +43,7 @@ crate's integration tests and for running the ingestion pipeline.
   Homebrew and runs it as a launchd service. Manual: `brew install postgresql@18`
   (macOS) or your distro's `postgresql` package (Linux).
 - PostgreSQL client tools — `createdb`, `dropdb`, `psql`. Ship with the server
-  package; used by `setup.sh` and `scripts/setup-test-db.sh`.
+  package; used by `setup.sh` and `scripts/db/setup-test-db.sh`.
 - `dbmate` — the migration runner; applies `ingestion/db/migrations`. Install
   with `brew install dbmate` (or see https://github.com/amacneil/dbmate).
 - `secr` — the secret-management CLI the owner maintains. `setup.sh` uses it
@@ -77,15 +77,15 @@ needs a package manifest, not the workspace root) and forwards extra arguments t
 `wasm-pack`:
 
 ```sh
-./scripts/test-wasm.sh
+./scripts/test/test-wasm.sh
 ```
 
 It is equivalent to `cd shared && wasm-pack test --headless --chrome`.
 
 ## Contribution workflow
 
-- `git` — version control; the `scripts/branch-init.sh` and
-  `scripts/pr-integrate.sh` flows wrap it.
+- `git` — version control; the `scripts/git/branch-init.sh` and
+  `scripts/git/pr-integrate.sh` flows wrap it.
 - `gh` — the GitHub CLI, used to open PRs (`gh pr create`). Install via
   https://cli.github.com.
 
@@ -113,9 +113,9 @@ Spec Kit.
 - Building does not require a database: the committed `.sqlx` offline cache
   satisfies `sqlx`'s compile-time query checks (`cargo build` / `cargo check`
   work offline). Running `ingestion`'s integration tests does require a database
-  (`scripts/setup-test-db.sh` provisions `eafora_test`).
+  (`scripts/db/setup-test-db.sh` provisions `eafora_test`).
 - Routine verification commands: `cargo test --workspace` (host) and
-  `./scripts/test-wasm.sh` (wasm32).
+  `./scripts/test/test-wasm.sh` (wasm32).
 - A Nix-based reproducible dev environment is under consideration; see
   `docs/research/nix-reproducible-dev.md`. It would subsume most of this list,
   but is not yet adopted.

@@ -24,7 +24,7 @@ Affected repositories: this is a single monorepo (`/Users/singularity/eafora`); 
 Verification commands used throughout:
 - Non-render `shared`: `cargo test -p shared` (schema, geometry non-render, bundle).
 - Render-gated `shared`: `cargo test -p shared --features render` (renderer, country_mesh, hit_test, shard_db).
-- Ingestion: `cargo test -p ingestion` (needs `eafora_test`; run `./scripts/setup-test-db.sh` once first).
+- Ingestion: `cargo test -p ingestion` (needs `eafora_test`; run `./scripts/db/setup-test-db.sh` once first).
 - Web wasm build: `cargo check -p web --lib --no-default-features --features hydrate --target wasm32-unknown-unknown`.
 - Web ssr build: `cargo check -p web --no-default-features --features ssr`.
 
@@ -35,7 +35,7 @@ Verification commands used throughout:
 
 - [ ] **Step 1: Create the branch off `global-figure` with the empty marker commit.** From the repo root, base Phase 0 on the planning branch (which holds the design doc and this plan):
   ```sh
-  git -C /Users/singularity/eafora checkout global-figure && ./scripts/branch-init.sh unify-region-key-on-region-code
+  git -C /Users/singularity/eafora checkout global-figure && ./scripts/git/branch-init.sh unify-region-key-on-region-code
   ```
   `branch-init.sh` refuses if the working tree is dirty, creates `unify-region-key-on-region-code` from `global-figure`, adds the empty `>>> branch: unify-region-key-on-region-code` commit, and pushes with `-u`. Expected: the script prints the branch creation and push, and `git log --oneline -1` shows the marker subject.
 
@@ -295,9 +295,9 @@ Verification commands used throughout:
 
 - [ ] **Step 3: Verify the wasm test compiles and runs against the new sample.** This is the one genuinely target-divergent surface (raw-FFI query through the read-only VFS), so it runs under the browser harness:
   ```sh
-  ./scripts/test-wasm.sh
+  ./scripts/test/test-wasm.sh
   ```
-  Expected: `read_shard_reads_committed_sample_through_the_vfs` PASSES. If `test-wasm.sh` takes other arguments, inspect it first (`sed -n '1,40p' scripts/test-wasm.sh`); the required run is the `shared` package's `wasm_tests`.
+  Expected: `read_shard_reads_committed_sample_through_the_vfs` PASSES. If `test-wasm.sh` takes other arguments, inspect it first (`sed -n '1,40p' scripts/test/test-wasm.sh`); the required run is the `shared` package's `wasm_tests`.
 
 - [ ] **Step 4: Commit.**
   ```sh
@@ -780,7 +780,7 @@ The `iso3`-overuse audit (grep confirmed) shows `CountryFeature.iso3` is consume
 
 - [ ] **Step 4: Regenerate the sqlx offline cache for the changed query.** The `read_candidate_values_for_statistic` query is a `sqlx::query_as!` whose type-checked plan is cached in `.sqlx/`. After changing its columns and join, regenerate the cache (requires a reachable dev database per `.env`):
   ```sh
-  ./scripts/dbmate.sh up
+  ./scripts/db/dbmate.sh up
   ```
   `dbmate.sh` runs the migrations then `cargo sqlx prepare --workspace`, which rewrites the cached JSON (the `region_iso3`-carrying `.sqlx/query-f4ac....json` is replaced or superseded). Expected: dbmate reports "up to date" (Phase 0 adds no migration) and prints "Regenerating sqlx caches" with a successful `cargo sqlx prepare`. If `dbmate.sh` errors on the migration step but the cache is the only need, run `cargo sqlx prepare --workspace` directly against a live `DATABASE_URL`.
 
@@ -1030,7 +1030,7 @@ The `iso3`-overuse audit (grep confirmed) shows `CountryFeature.iso3` is consume
   ```
   then:
   ```sh
-  ./scripts/sync-embedded-bundle.sh ./web/static/embedded_artifacts
+  ./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts
   ```
   Expected: `ingestion build` writes a new version's `downsampled/` bundle keyed on `region.code`, and `sync-embedded-bundle.sh` copies it into the web static tree. Commit the resynced bundle:
   ```sh
@@ -1052,7 +1052,7 @@ The `iso3`-overuse audit (grep confirmed) shows `CountryFeature.iso3` is consume
 
 - **`cargo test -p shard` does not exist.** The prompt lists "Non-render shared: `cargo test -p shard`", but the crate is named `shared` (see `shared/src/...` and `cargo test -p shared` used throughout the existing scripts/tests). I used `cargo test -p shared` (no `--features render`) for the non-render subset and `cargo test -p shared --features render` for the render-gated modules. Confirm there is no separate `shard` crate; if there is, the non-render run should target it.
 - **Task ordering vs. per-task compilation.** The rename spans `schema.rs` (Task 2) before its consumers (`shard_db.rs` Task 3, `sqlite.rs` Task 10). After Task 2 the `shared` crate under `--features render` and the `ingestion` crate will not compile until Tasks 3 and 10 land, so the intermediate "run this one test by name" steps may fail to compile rather than run. I noted this inline (Task 2 Step 5, Task 8 Step 5). If strict red-green-per-step is required, an alternative is to change the constant and all its consumers within a single task; I kept them split to match the "small focused commits, one file-area per commit" convention, at the cost of a few non-compiling intermediate points. Confirm the preferred trade-off.
-- **`.sqlx` cache regeneration needs a live database.** Task 9 Step 4 depends on a reachable dev DB per `.env` (`./scripts/dbmate.sh` sources `.env` and runs `cargo sqlx prepare --workspace`). If the environment has no DB, the changed `read_candidate_values_for_statistic` query will fail `cargo build`/`cargo test -p ingestion` with a stale-cache error. The owner must run this against their Mac mini Postgres.
+- **`.sqlx` cache regeneration needs a live database.** Task 9 Step 4 depends on a reachable dev DB per `.env` (`./scripts/db/dbmate.sh` sources `.env` and runs `cargo sqlx prepare --workspace`). If the environment has no DB, the changed `read_candidate_values_for_statistic` query will fail `cargo build`/`cargo test -p ingestion` with a stale-cache error. The owner must run this against their Mac mini Postgres.
 - **`RegionCode` inner-field access `.0`.** The driver passes `region_hit.region_code.0` (Task 11). `RegionCode(pub String)` (in `frame_state.rs`) exposes the inner `String` as a public tuple field, so `.0` is valid; if a future change makes it private, an accessor would be needed. Verified `pub struct RegionCode(pub String);`.
 - **Embedded-artifact regeneration is owner-run and network-dependent.** Task 12 Step 3 cannot run in this environment (fetches Natural Earth + World Bank). Until it runs, the committed embedded bundle is stale and the web client would find no values (every region reads "no data"). The PR must not merge before the resync commit lands. The exact `ingestion build` subcommand name should be verified against the ingestion CLI (`cargo run -p ingestion -- --help`); I assumed `build`.
 
@@ -1072,7 +1072,7 @@ Repositories affected: this repository only (the `eafora` monorepo). No client-r
 - [ ] **Step 1: Create the stacked branch off Phase 0 with the marker commit.** With the Phase 0 branch checked out and the working tree clean, run:
 
   ```sh
-  ./scripts/branch-init.sh world-region-ingest
+  ./scripts/git/branch-init.sh world-region-ingest
   ```
 
   This creates `world-region-ingest` from the current HEAD (the Phase 0 tip), makes the empty `>>> branch: world-region-ingest` commit, and pushes with upstream tracking.
@@ -1101,7 +1101,7 @@ Repositories affected: this repository only (the `eafora` monorepo). No client-r
 - [ ] **Step 3: Apply the migration to the dev database and regenerate the sqlx cache.** No `region.level` CHECK constraint exists (the initial schema declares `level text not null` only), so `'world'` is accepted. Run:
 
   ```sh
-  ./scripts/dbmate.sh up
+  ./scripts/db/dbmate.sh up
   ```
 
   Expected: dbmate reports `Applying: 20260813120000_seed_world_region.sql`, rewrites `ingestion/db/schema.sql`, and the trailing `cargo sqlx prepare --workspace` succeeds. Confirm the row exists:
@@ -1115,7 +1115,7 @@ Repositories affected: this repository only (the `eafora` monorepo). No client-r
 - [ ] **Step 4: Apply the migration to the test database.** Rebuild `eafora_test` from clean so integration tests see the world region:
 
   ```sh
-  ./scripts/setup-test-db.sh
+  ./scripts/db/setup-test-db.sh
   ```
 
   Expected: it drops/recreates `eafora_test` and applies all migrations through `20260813120000_seed_world_region` without error.
@@ -1534,7 +1534,7 @@ This task adds no production code: after Phase 0, the shard-build query in `arti
 - [ ] **Step 1: Create the stacked branch off Phase 1.** With the Phase 1 branch (`world-region-ingest`) checked out and the working tree clean, run:
 
   ```sh
-  ./scripts/branch-init.sh world-figure-web
+  ./scripts/git/branch-init.sh world-figure-web
   ```
 
   This creates `world-figure-web` from the current HEAD (the Phase 1 tip), makes the empty `>>> branch: world-figure-web` commit, and pushes with upstream tracking.

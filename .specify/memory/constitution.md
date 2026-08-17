@@ -4,12 +4,12 @@ SYNC IMPACT REPORT
 Version: 1.4.0 → 1.4.1 (PATCH — tightens the Git workflow §PR description clause: drops the "(c) a brief test plan" requirement and reframes the clause around release-notes-style prose. The test-plan requirement contradicted the owner's standing instruction that PR descriptions are release notes, not chat — verification belongs in the conversation that produced the PR, not in the permanent PR record. No principle added, removed, or redefined; this is a wording tightening of an existing governance subsection.)
 Earlier amendments:
   - 1.0.0 (2026-05-21): initial ratification (8 principles + governance: license, versioning, boundary recognition, app code language, git workflow, tooling discipline, amendments, compliance review)
-  - 1.1.0 (2026-05-21): added Git workflow §Branch cleanup; registered scripts/cleanup-merged.sh
+  - 1.1.0 (2026-05-21): added Git workflow §Branch cleanup; registered scripts/git/cleanup-merged.sh
   - 1.2.0 (2026-05-23): replaced Git workflow §Merge strategy clause to mandate local rebase + push (GitHub UI rebase-merge drops empty commits and would lose the marker convention); registered scripts/pr-merge.sh
   - 1.3.0 (2026-05-23): terminology rename, the user-facing concept previously called an "indicator" is now called a "statistic" throughout the constitution. Publisher-side terminology (World Development Indicators, etc.) is unchanged because it's quoted publisher language, not Eafora's voice.
   - 1.3.1 (2026-05-23): clarification — removed "semantic Q&A" from Principle VI's v3+ live-API examples list (the binding rule was unchanged).
   - 1.3.2 (2026-05-23): PMTiles → FlatGeobuf in Principle VI; rewrote Branch-marker explanatory paragraph for the rebase-based merge flow + `git log --grep` discovery; propagated PMTiles → FlatGeobuf to overview line 29.
-  - 1.3.3 (2026-05-27): Postgres runtime moved to Homebrew + launchd (Singularity deviation); scripts/pr-merge.sh → scripts/pr-integrate.sh.
+  - 1.3.3 (2026-05-27): Postgres runtime moved to Homebrew + launchd (Singularity deviation); scripts/pr-merge.sh → scripts/git/pr-integrate.sh.
   - 1.4.0 (2026-05-31): added Principle IV §Convention specs, pulling per-topic operational rule docs (`docs/conventions/`) under the constitution's umbrella; the Constitution Check gate reaches applicable convention docs in addition to the constitution itself.
 Current principles (unchanged in 1.4.1):
   - I. Educational neutrality (NON-NEGOTIABLE)
@@ -150,9 +150,9 @@ Eafora's git workflow is opinionated. Every rule in this section MUST be followe
 >>> branch: <branch-name>
 ```
 
-This marker compensates for the rebase-based merge flow (`scripts/pr-integrate.sh`, see §Merge strategy below), which linearizes branch commits onto `master` and would otherwise erase PR boundaries from `master`'s history. To find markers in any history view, use `git log --grep '>>> branch:'` (or `git log --all --grep '>>> branch:' --oneline` for a cross-branch listing). This finds markers whether they landed as standalone commits (canonical merge path) or as bullets in a squashed commit body (UI fallback path).
+This marker compensates for the rebase-based merge flow (`scripts/git/pr-integrate.sh`, see §Merge strategy below), which linearizes branch commits onto `master` and would otherwise erase PR boundaries from `master`'s history. To find markers in any history view, use `git log --grep '>>> branch:'` (or `git log --all --grep '>>> branch:' --oneline` for a cross-branch listing). This finds markers whether they landed as standalone commits (canonical merge path) or as bullets in a squashed commit body (UI fallback path).
 
-The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` from the repo root. The script creates the branch, places the canonical empty commit, and pushes with upstream tracking. Manual creation of marker commits is permitted only when the script is unavailable (e.g. detached environments).
+The marker MUST be created by running `./scripts/git/branch-init.sh <branch-name>` from the repo root. The script creates the branch, places the canonical empty commit, and pushes with upstream tracking. Manual creation of marker commits is permitted only when the script is unavailable (e.g. detached environments).
 
 **Commit cadence.** Commits MUST be small and frequent — one per meaningful checkpoint. Phased work MUST NOT accumulate uncommitted changes across phases.
 
@@ -172,11 +172,11 @@ The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` f
 
 **Stacked PRs.** When branches are stacked, the PR for each phase targets its parent branch, not `master`. After the parent merges, GitHub will retarget the child PR to `master` automatically.
 
-**Merge strategy.** PRs MUST be merged into `master` via a local rebase followed by `git push origin master`. The GitHub UI's "rebase and merge" button MUST NOT be used: it drops empty commits when replaying them onto master, which destroys the `>>> branch: <name>` marker convention. Verified 2026-05-23: GitHub strips empty commits regardless of repository settings. The canonical command sequence is encapsulated in `scripts/pr-integrate.sh` (see Tooling discipline §Currently registered scripts), which uses `git rebase` consistently (not `git merge --ff-only`) per owner preference. For stacked branches, `git rebase --onto` is the right tool — `pr-integrate.sh --from <former-parent>` handles it. The result is a linear master history that preserves every PR's marker commit.
+**Merge strategy.** PRs MUST be merged into `master` via a local rebase followed by `git push origin master`. The GitHub UI's "rebase and merge" button MUST NOT be used: it drops empty commits when replaying them onto master, which destroys the `>>> branch: <name>` marker convention. Verified 2026-05-23: GitHub strips empty commits regardless of repository settings. The canonical command sequence is encapsulated in `scripts/git/pr-integrate.sh` (see Tooling discipline §Currently registered scripts), which uses `git rebase` consistently (not `git merge --ff-only`) per owner preference. For stacked branches, `git rebase --onto` is the right tool — `pr-integrate.sh --from <former-parent>` handles it. The result is a linear master history that preserves every PR's marker commit.
 
 **Force-push policy.** Force-pushes to feature branches MUST use `--force-with-lease` (never plain `--force`) to avoid clobbering remote updates. Force-pushes to `master` are forbidden except for the owner's manual workflow corrections.
 
-**Branch cleanup.** When a PR has been merged into `master`, the corresponding branch MUST be deleted both from origin and locally, and stale remote-tracking refs MUST be pruned. Use `./scripts/cleanup-merged.sh <branch-name>...` (see Tooling discipline §Currently registered scripts) which handles the full sequence. Stale local branches accumulating in `git branch` and stale tracking refs accumulating in `git branch -r` are forbidden — they degrade the signal of `git log --all` and the branch-marker search. Cleanup is per-PR, not batched.
+**Branch cleanup.** When a PR has been merged into `master`, the corresponding branch MUST be deleted both from origin and locally, and stale remote-tracking refs MUST be pruned. Use `./scripts/git/cleanup-merged.sh <branch-name>...` (see Tooling discipline §Currently registered scripts) which handles the full sequence. Stale local branches accumulating in `git branch` and stale tracking refs accumulating in `git branch -r` are forbidden — they degrade the signal of `git log --all` and the branch-marker search. Cleanup is per-PR, not batched.
 
 **No `--amend` for cleanups.** When a commit is wrong or incomplete, add a new commit. Do not amend a published commit unless the owner explicitly requests it.
 
@@ -191,9 +191,9 @@ The marker MUST be created by running `./scripts/branch-init.sh <branch-name>` f
 **Dogfood new scripts.** A newly written script MUST be exercised on the current task before it is considered complete. The first usage validates that it works.
 
 **Reference scripts from the constitution or relevant spec.** When a script implements a convention, the convention's section in this document MUST name the script. Currently registered scripts:
-- `scripts/branch-init.sh` — creates a new branch from current HEAD with the canonical marker commit and pushes with upstream tracking. (See Git workflow §Branch marker.)
-- `scripts/cleanup-merged.sh` — deletes named branches from origin and locally, then prunes stale remote-tracking refs. Used after a PR has been merged into master. (See Git workflow §Branch cleanup.)
-- `scripts/pr-integrate.sh` — integrates a feature branch into master via the canonical rebase-and-push sequence (preserves marker commits, calls cleanup-merged.sh at the end). Supports stacked branches via `--onto`. Named "integrate" rather than "merge" because the operation rebases the branch onto master, not a true git merge. (See Git workflow §Merge strategy.)
+- `scripts/git/branch-init.sh` — creates a new branch from current HEAD with the canonical marker commit and pushes with upstream tracking. (See Git workflow §Branch marker.)
+- `scripts/git/cleanup-merged.sh` — deletes named branches from origin and locally, then prunes stale remote-tracking refs. Used after a PR has been merged into master. (See Git workflow §Branch cleanup.)
+- `scripts/git/pr-integrate.sh` — integrates a feature branch into master via the canonical rebase-and-push sequence (preserves marker commits, calls cleanup-merged.sh at the end). Supports stacked branches via `--onto`. Named "integrate" rather than "merge" because the operation rebases the branch onto master, not a true git merge. (See Git workflow §Merge strategy.)
 
 **Third-party dependencies.** Adding a new third-party Rust crate, build tool, linter, test framework, CI service, or comparable tooling MUST be discussed with the owner before the dependency is committed. Defaults are inherited from Singularity (see §IV).
 

@@ -12,7 +12,7 @@ This feature is a backend ingestion CLI; the spec's three "user stories" (P1 sch
 
 - [ ] T001 [P] [Setup] Initialize Cargo workspace at the repo root: `Cargo.toml` with `[workspace]` block and `members = ["ingestion"]`. Add `rustfmt.toml` (`max_width = 120`, `chain_width = 100`, `edition = "2024"`) per Constitution IV.
 - [ ] T002 [Setup] Create `ingestion/Cargo.toml` with deps per plan §Technical Context: tokio, sqlx, reqwest, serde, serde_json, chrono, uuid, clap, log, env_logger, dotenvy, secr, minimer.
-- [ ] T003 [P] [Setup] Add `scripts/setup-test-db.sh` per plan §Test harness design — drops + recreates `eafora_test`, applies migrations via dbmate.
+- [ ] T003 [P] [Setup] Add `scripts/db/setup-test-db.sh` per plan §Test harness design — drops + recreates `eafora_test`, applies migrations via dbmate.
 
 ## Phase 2: Foundational
 
@@ -23,7 +23,7 @@ Blocks all subsequent phases.
 - [ ] T004 [Foundational] Write `ingestion/db/migrations/<timestamp>_create_initial_schema.sql` — all seven tables (region, country, statistic, data_source, data_source_publication, statistic_value, artifact_version) with: inline NOT NULL / DEFAULT / FK / UNIQUE constraints; the partial unique index `statistic_value_current_per_source` for the `superseded is null` invariant; all `comment on column ...` statements per the architecture doc.
 - [ ] T005 [Foundational] Write `ingestion/db/migrations/<timestamp>_seed_initial_data.sql` — UN M49 hierarchy (5 regions, 17 subregions, 7 intermediate regions); ISO 3166 country-level region rows + their country extension rows (approximately 200 entries); the `tfr` row in statistic; the `wb_wdi` row in data_source.
 - [ ] T006 [Foundational] Apply migrations to `eafora`: `./dbmate.sh up && ./dbmate.sh dump`. Verify `ingestion/db/schema.sql` regenerates and reflects all 7 tables + indexes + comments.
-- [ ] T007 [P] [Foundational] Apply same migrations to `eafora_test` via `./scripts/setup-test-db.sh`.
+- [ ] T007 [P] [Foundational] Apply same migrations to `eafora_test` via `./scripts/db/setup-test-db.sh`.
 
 ### Application scaffolding
 
@@ -120,7 +120,7 @@ All tasks in this phase contribute to **[US1, US2, US3]** — the adapter is the
 - [ ] T039 [P] [Polish] Measure line coverage on `parse_response` and `normalize` (`cargo llvm-cov` or equivalent); add tests until ≥90% per spec SC-005.
 - [ ] T040 [P] [Polish] Manual run against the live WB WDI API (one shot, on dev machine) — verify the IngestReport's totals match plausibility (approximately 13,000 rows, near-zero warnings). Validates spec SC-001 and SC-006 (sub-5-second runtime).
 - [ ] T041 [Polish] If implementation surfaced any divergence from `docs/architecture/ingestion.md`'s adapter contract, propose an architecture amendment in a follow-up PR (per Constitution: amend the architecture, don't deviate silently).
-- [ ] T042 [Polish] Run `./scripts/cleanup-merged.sh` once this branch + the spec/plan branches are merged into master.
+- [ ] T042 [Polish] Run `./scripts/git/cleanup-merged.sh` once this branch + the spec/plan branches are merged into master.
 
 ---
 

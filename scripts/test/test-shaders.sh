@@ -6,7 +6,7 @@
 # does not run in the ordinary `cargo test` sweep.
 #
 # Extra arguments are forwarded to libtest, e.g.:
-#   ./scripts/test-shaders.sh --nocapture
+#   ./scripts/test/test-shaders.sh --nocapture
 
 set -euo pipefail
 

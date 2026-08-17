@@ -146,9 +146,9 @@ ingestion/src/artifact/...        # build orchestration emits complete/ and down
 docs/design/stub-desktop.html     # accent colors #e60019/#0030d4 -> #d50000/#0050ff (palette A canonical)
 
 # NEW — build/deploy scripts (Phase E, except sync which pairs with 0b)
-scripts/sync-embedded-bundle.sh   # cp -R $EAFORA_ARTIFACTS_DIR/latest/downsampled/* into web/static/embedded_artifacts/
-scripts/precompress-site.sh       # brotli -q 11 --keep over target/site/
-scripts/measure-site-budget.sh    # perf-budget report vs 2 MB / 3 MB caps; always exits 0
+scripts/build/sync-embedded-bundle.sh   # cp -R $EAFORA_ARTIFACTS_DIR/latest/downsampled/* into web/static/embedded_artifacts/
+scripts/build/precompress-site.sh       # brotli -q 11 --keep over target/site/
+scripts/build/measure-site-budget.sh    # perf-budget report vs 2 MB / 3 MB caps; always exits 0
 ```
 
 **Structure decision**: single `web/` workspace member (added to the root `[workspace]` members

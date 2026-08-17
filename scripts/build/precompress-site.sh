@@ -11,10 +11,10 @@
 # filter, so it compresses already-compressed types too.
 #
 # Usage:
-#   ./scripts/precompress-site.sh [<site-dir>]
+#   ./scripts/build/precompress-site.sh [<site-dir>]
 # e.g.
-#   ./scripts/precompress-site.sh
-#   ./scripts/precompress-site.sh ./target/site
+#   ./scripts/build/precompress-site.sh
+#   ./scripts/build/precompress-site.sh ./target/site
 #
 # Behavior:
 #   1. <site-dir> defaults to <repo-root>/target/site.
@@ -39,7 +39,7 @@ if [[ $# -gt 1 ]]; then
     exit 64
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SITE_DIR="${1:-$REPO_ROOT/target/site}"
 
 if [[ ! -d "$SITE_DIR" ]]; then
