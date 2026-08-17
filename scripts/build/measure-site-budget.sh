@@ -6,9 +6,10 @@
 # embedded artifact bundle. Second paint adds the live-bundle files the client fetches on its first online
 # connection: the geometry shard and every statistic shard the live manifest lists.
 #
-# Sizes are brotli -q 11 computed here and streamed to stdout, which leaves the tree untouched. This is a
-# stated approximation of transfer size rather than a measurement of it: the CDN compresses responses with
-# its own settings, which we neither control nor can read from a built tree.
+# A file counts at its brotli -q 11 size when Cloudflare's content-type list says the edge compresses it,
+# and at its full size otherwise, which is the case for the geometry and statistic shards. Compression is
+# computed here and streamed to stdout, leaving the tree untouched. Still an approximation: the edge picks
+# its own algorithm and quality per plan, which we cannot read from a built tree.
 #
 # The targets are targets, not contracts, so no measurement outcome reaches the exit code: an overage, a
 # failed build, and a tree missing the files to measure all print their verdict and exit zero. Only the two
@@ -125,18 +126,45 @@ if [[ ! -d "$PKG_DIR" ]]; then
     exit 0
 fi
 
-function sum_brotli_size_of_stream {
+# Cloudflare compresses a response only when its content type is on a fixed list, so a file whose type is
+# absent from that list transfers at full size however well it would have compressed. Keyed on extension
+# because the extension is what decides the type, with the extensionless discovery document covered by the
+# Content-Type web/static/_headers assigns it.
+function is_compressed_in_transit {
+    local file_path="$1"
+
+    case "$file_path" in
+        *.wasm|*.js|*.css|*.html|*.json|*/"$DISCOVERY_FILENAME")
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+function transfer_size_of {
+    local file_path="$1"
+
+    if is_compressed_in_transit "$file_path"; then
+        brotli -q 11 -c "$file_path" | wc -c | tr -d ' '
+    else
+        wc -c < "$file_path" | tr -d ' '
+    fi
+}
+
+function sum_transfer_size_of_stream {
     local total_bytes=0
     local file_path
 
     while IFS= read -r -d '' file_path; do
-        total_bytes=$((total_bytes + $(brotli -q 11 -c "$file_path" | wc -c)))
+        total_bytes=$((total_bytes + $(transfer_size_of "$file_path")))
     done
 
     echo "$total_bytes"
 }
 
-function sum_brotli_size_of_relative_paths {
+function sum_transfer_size_of_relative_paths {
     local base_dir="$1"
     local total_bytes=0
     local relative_path
@@ -146,7 +174,7 @@ function sum_brotli_size_of_relative_paths {
             continue
         fi
 
-        total_bytes=$((total_bytes + $(brotli -q 11 -c "$base_dir/$relative_path" | wc -c)))
+        total_bytes=$((total_bytes + $(transfer_size_of "$base_dir/$relative_path")))
     done
 
     echo "$total_bytes"
@@ -171,10 +199,10 @@ function find_first_absent_relative_path {
 }
 
 # A .br or .gz sibling is the same bytes measured twice, and .DS_Store is Finder metadata no client fetches.
-function sum_brotli_size_of_fetched_files_in {
+function sum_transfer_size_of_fetched_files_in {
     local directory="$1"
 
-    find "$directory" -type f ! -name '*.br' ! -name '*.gz' ! -name '.DS_Store' -print0 | sum_brotli_size_of_stream
+    find "$directory" -type f ! -name '*.br' ! -name '*.gz' ! -name '.DS_Store' -print0 | sum_transfer_size_of_stream
 }
 
 # Megabytes are decimal so the printed components sum to the printed total: 612 KB + 38 KB + ... reads as
@@ -269,7 +297,7 @@ function measure_single_pkg_file {
         return 0
     fi
 
-    MEASURED_COMPONENT_BYTES="$(brotli -q 11 -c "$(find "$PKG_DIR" -type f -name "$name_glob")" | wc -c | tr -d ' ')"
+    MEASURED_COMPONENT_BYTES="$(transfer_size_of "$(find "$PKG_DIR" -type f -name "$name_glob")")"
     MEASURED_COMPONENT_DISPLAY="$(format_size "$MEASURED_COMPONENT_BYTES")"
 }
 
@@ -288,7 +316,7 @@ CSS_DISPLAY="$MEASURED_COMPONENT_DISPLAY"
 HTML_BYTES=0
 
 if [[ -f "$SHELL_PATH" ]]; then
-    HTML_BYTES="$(brotli -q 11 -c "$SHELL_PATH" | wc -c | tr -d ' ')"
+    HTML_BYTES="$(transfer_size_of "$SHELL_PATH")"
 else
     note_first_paint_gap "the site tree has no shell document at $(to_repo_relative_path "$SHELL_PATH"); run ./scripts/build/build-site.sh, which writes it after the build"
 fi
@@ -297,7 +325,7 @@ EMBEDDED_BYTES=0
 EMBEDDED_UNAVAILABLE_REASON=""
 
 if [[ -d "$EMBEDDED_DIR" ]]; then
-    EMBEDDED_BYTES="$(sum_brotli_size_of_fetched_files_in "$EMBEDDED_DIR")"
+    EMBEDDED_BYTES="$(sum_transfer_size_of_fetched_files_in "$EMBEDDED_DIR")"
 else
     EMBEDDED_UNAVAILABLE_REASON="$(to_repo_relative_path "$EMBEDDED_DIR") is absent; run scripts/build/sync-embedded-bundle.sh ./web/static/$EMBEDDED_SUBDIR before the build"
     note_first_paint_gap "$EMBEDDED_UNAVAILABLE_REASON"
@@ -358,9 +386,9 @@ function measure_live_bundle {
         return 0
     fi
 
-    LIVE_GEOMETRY_BYTES="$(printf '%s\n' "$geometry_relative_paths" | sum_brotli_size_of_relative_paths "$version_dir")"
-    LIVE_SHARD_BYTES="$(printf '%s\n' "$shard_relative_paths" | sum_brotli_size_of_relative_paths "$version_dir")"
-    LIVE_POINTER_BYTES=$(($(brotli -q 11 -c "$DISCOVERY_PATH" | wc -c) + $(brotli -q 11 -c "$latest_manifest_path" | wc -c)))
+    LIVE_GEOMETRY_BYTES="$(printf '%s\n' "$geometry_relative_paths" | sum_transfer_size_of_relative_paths "$version_dir")"
+    LIVE_SHARD_BYTES="$(printf '%s\n' "$shard_relative_paths" | sum_transfer_size_of_relative_paths "$version_dir")"
+    LIVE_POINTER_BYTES=$(($(transfer_size_of "$DISCOVERY_PATH") + $(transfer_size_of "$latest_manifest_path")))
 }
 measure_live_bundle
 
@@ -425,4 +453,7 @@ else
     echo "    and latest/manifest.json the client fetches to find them ($(format_size "$LIVE_POINTER_BYTES") combined)."
 fi
 
-echo "  - Sizes are brotli -q 11 over the built tree. Decimal megabytes: 1 MB is 1000 KB."
+echo "  - Sizes are what a client transfers: brotli -q 11 for the types Cloudflare compresses (wasm, js,"
+echo "    css, html, json), and the full file size for the rest. The geometry and statistic shards are"
+echo "    served with content types absent from Cloudflare's auto-compress list, so they transfer whole."
+echo "  - Decimal megabytes: 1 MB is 1000 KB."
