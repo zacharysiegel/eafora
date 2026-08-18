@@ -4,10 +4,10 @@ use leptos::prelude::LeptosOptions;
 
 /* The document the static deploy serves for `/`. Rendered here rather than read from a built tree so the
    assertions hold without a build, which also keeps them independent of whichever build ran last. */
-async fn render_shell_document() -> String {
+async fn prerendered_document() -> String {
     let leptos_options: LeptosOptions = web::server::read_manifest_options()
         .expect("the manifest carries the leptos settings");
-    let document_bytes = web::server::render_shell_document(leptos_options)
+    let document_bytes = web::server::prerender_document(leptos_options)
         .await
         .expect("the shell route renders");
 
@@ -16,16 +16,16 @@ async fn render_shell_document() -> String {
 }
 
 #[tokio::test]
-async fn render_shell_document_renders_the_map_view_and_its_canvas() {
-    let document: String = render_shell_document().await;
+async fn prerendered_document_renders_the_map_view_and_its_canvas() {
+    let document: String = prerendered_document().await;
 
     assert!(document.contains(r#"<main id="map-view">"#));
     assert!(document.contains(r#"<canvas id="map-canvas">"#));
 }
 
 #[tokio::test]
-async fn render_shell_document_references_the_client_bundle() {
-    let document: String = render_shell_document().await;
+async fn prerendered_document_references_the_client_bundle() {
+    let document: String = prerendered_document().await;
 
     assert!(document.contains("/pkg/"));
     assert!(document.contains(".wasm"));
@@ -33,8 +33,8 @@ async fn render_shell_document_references_the_client_bundle() {
 }
 
 #[tokio::test]
-async fn render_shell_document_declares_one_language_and_direction() {
-    let document: String = render_shell_document().await;
+async fn prerendered_document_declares_one_language_and_direction() {
+    let document: String = prerendered_document().await;
     let language_attribute_count: usize = document.matches("lang=").count();
     let direction_attribute_count: usize = document.matches("dir=").count();
 
@@ -45,8 +45,8 @@ async fn render_shell_document_declares_one_language_and_direction() {
 }
 
 #[tokio::test]
-async fn render_shell_document_omits_the_dev_reload_socket() {
-    let document: String = render_shell_document().await;
+async fn prerendered_document_omits_the_dev_reload_socket() {
+    let document: String = prerendered_document().await;
 
     /* cargo-leptos sets LEPTOS_WATCH, and the reload script it gates opens a websocket to a developer's
        reload port, which a deployed document must not carry. */

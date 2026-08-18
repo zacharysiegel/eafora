@@ -343,7 +343,7 @@ The budget bounds **artifact bytes**, which are the ones a data decision moves: 
 
 These are targets, not gates: an overage produces a loud warning in the perf-budget report and never fails a build. Deciding whether the bytes are worth it is a judgment call for a person, not a threshold a pipeline can make.
 
-Client code (wasm, the wasm-bindgen JS shim, the stylesheet, the shell document) is reported alongside the artifact totals but is not capped, because its size follows from the framework and the renderer rather than from a data decision. For scale, a release build measures approx. 1.2 MB compressed, of which the wasm is nearly all.
+Client code (wasm, the wasm-bindgen JS shim, the stylesheet, the prerendered document) is reported alongside the artifact totals but is not capped, because its size follows from the framework and the renderer rather than from a data decision. For scale, a release build measures approx. 1.2 MB compressed, of which the wasm is nearly all.
 
 Sizes count what a client actually transfers, which is not the same as what compresses well. Cloudflare compresses only the content types on a fixed list, and that list has no generic binary entry, so the FlatGeobuf geometry and the SQLite shards transfer at full size even though they compress by 3.4x and, for the multi-year live shard, 13.0x. That gap is the single largest lever on both totals; see `client-web.md` §Compression.
 

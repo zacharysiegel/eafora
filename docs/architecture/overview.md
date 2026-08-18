@@ -87,7 +87,7 @@ eafora/
 ├── rustfmt.toml            # max_width=120, chain_width=100, edition 2024
 ├── secrets.yaml            # secr-encrypted secrets
 ├── setup.sh                # first-time setup: brew install postgresql@17, install launchd plist, decrypt secrets, run migrations, cargo sqlx prepare --workspace
-├── scripts/                # tooling scripts, grouped by concern: build/ (site build, shell export, tree verify, deploy, perf budget), db/ (dbmate wrapper + cargo sqlx prepare, test-db setup), git/ (branch-init, pr-integrate, cleanup-merged), test/
+├── scripts/                # tooling scripts, grouped by concern: build/ (site build, prerender, tree verify, deploy, perf budget), db/ (dbmate wrapper + cargo sqlx prepare, test-db setup), git/ (branch-init, pr-integrate, cleanup-merged), test/
 ├── tools/                  # cross-cutting tooling that doesn't belong to one platform — e.g. `tools/aasa-deploy/` (the dedicated Cloudflare Worker that serves `/.well-known/apple-app-site-association` for iOS Universal Links; deployed from the iOS pipeline but lives here because the deploy mechanism is cross-cutting infrastructure, not iOS source)
 ├── docs/                   # cross-cutting research and architecture
 ├── specs/                  # per-feature spec-kit artifacts (NNN-slug)

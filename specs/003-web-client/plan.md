@@ -148,7 +148,7 @@ docs/design/stub-desktop.html     # accent colors #e60019/#0030d4 -> #d50000/#00
 
 # NEW — build/deploy scripts (Phase E, except sync which pairs with 0b)
 scripts/build/sync-embedded-bundle.sh   # cp -R $EAFORA_ARTIFACTS_DIR/latest/downsampled/* into web/static/embedded_artifacts/
-scripts/build/build-site.sh             # release build, then `web export-shell`, then verify
+scripts/build/build-site.sh             # release build, then `web prerender`, then verify
 scripts/build/verify-site-tree.sh       # refuses a tree with no shell, a dangling ref, or an unhashed /pkg/ ref
 scripts/build/deploy-site.sh            # [--build] [--dry-run]; verifies, then `wrangler deploy`
 scripts/build/measure-site-budget.sh    # artifact-byte report vs 2 MB / 8 MB caps; always exits 0
@@ -277,7 +277,7 @@ Two independent prerequisite PRs off `master`, then a linear stack for the web f
 - **Phase D — fetch + discovery + speculative fetch + hot-swap** (stacks on C). FR-025..030, 041.
   Adds `BUNDLE_TX` publishing; the renderer's `borrow_and_update` read path (`renderer.rs:188`) already
   consumes it. Closes P3.
-- **Phase E — perf-budget + static shell export + deploy config** (stacks on A; `sync` needs Phase 0b).
+- **Phase E — perf-budget + build-time prerender + deploy config** (stacks on A; `sync` needs Phase 0b).
   FR-004, 006, 032, 033, 034, 043. Closes P4. FR-005 (precompression) was in scope and was withdrawn;
   a probe deploy showed Workers Assets does not serve uploaded `.br` siblings.
 

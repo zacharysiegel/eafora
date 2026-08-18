@@ -13,31 +13,15 @@ use shared::AppError;
 
 use crate::app::{shell, App};
 
-const EXPORT_SHELL_ARGUMENT: &str = "export-shell";
 const HASH_FILES_VARIABLE: &str = "LEPTOS_HASH_FILES";
-const SHELL_ROUTE_PATH: &str = "/";
-const SHELL_DOCUMENT_NAME: &str = "index.html";
+const PRERENDERED_ROUTE_PATH: &str = "/";
+const PRERENDERED_DOCUMENT_NAME: &str = "index.html";
+const WORKSPACE_MANIFEST_MARKER: &str = "[workspace";
 
+const CRATE_DIRECTORY: &str = env!("CARGO_MANIFEST_DIR");
 const MANIFEST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
-/* The manifest's site-root is relative to the workspace root, which is this crate's parent. */
-const WORKSPACE_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 
-/* With no argument this runs the dev server (`cargo leptos watch`); with `export-shell` it renders `/`
-   once and writes the document the production deploy serves. Production serves static assets and runs
-   no server. */
-pub async fn run() -> Result<(), AppError> {
-    let first_argument: Option<String> = env::args().nth(1);
-
-    match first_argument.as_deref() {
-        None => serve().await,
-        Some(EXPORT_SHELL_ARGUMENT) => export_shell().await,
-        Some(unrecognized) => Err(AppError::from(format!(
-            "unrecognized argument; [argument={unrecognized} expected={EXPORT_SHELL_ARGUMENT}]",
-        ))),
-    }
-}
-
-async fn serve() -> Result<(), AppError> {
+pub async fn serve() -> Result<(), AppError> {
     let configuration: ConfFile = get_configuration(None)
         .map_err(|error| AppError::from(format!("could not read the leptos settings; [error={error}]")))?;
     let leptos_options: LeptosOptions = configuration.leptos_options;
@@ -62,20 +46,22 @@ async fn serve() -> Result<(), AppError> {
         .map_err(|error| AppError::from(format!("the server stopped; [error={error}]")))
 }
 
-async fn export_shell() -> Result<(), AppError> {
+/* Production serves static files and runs no server, so the one document a visitor loads is rendered here
+   at build time and written into the site tree. */
+pub async fn write_prerendered_document() -> Result<(), AppError> {
     let leptos_options: LeptosOptions = read_manifest_options()?;
     let site_root: PathBuf = resolve_site_root(&leptos_options)?;
-    let document_bytes: Bytes = render_shell_document(leptos_options).await?;
+    let document_bytes: Bytes = prerender_document(leptos_options).await?;
 
-    let document_path: PathBuf = site_root.join(SHELL_DOCUMENT_NAME);
+    let document_path: PathBuf = site_root.join(PRERENDERED_DOCUMENT_NAME);
     fs::write(&document_path, &document_bytes)
         .map_err(|error| AppError::from(format!(
-            "could not write the shell document; [path={} error={error}]",
+            "could not write the prerendered document; [path={} error={error}]",
             document_path.display(),
         )))?;
 
     log!(
-        "wrote the shell document; [path={} bytes={}]",
+        "wrote the prerendered document; [path={} bytes={}]",
         document_path.display(),
         document_bytes.len(),
     );
@@ -86,21 +72,21 @@ async fn export_shell() -> Result<(), AppError> {
 /* Renders with the async mode rather than either streaming mode so the result is one complete document;
    a streamed render emits out-of-order chunks that only resolve once the client runs their patch
    scripts. */
-pub async fn render_shell_document(leptos_options: LeptosOptions) -> Result<Bytes, AppError> {
+pub async fn prerender_document(leptos_options: LeptosOptions) -> Result<Bytes, AppError> {
     let declared_paths: Vec<String> = declared_route_paths();
 
-    if declared_paths != [SHELL_ROUTE_PATH] {
+    if declared_paths != [PRERENDERED_ROUTE_PATH] {
         return Err(AppError::from(format!(
-            "the app declares routes this export does not write; [declared={} written={SHELL_ROUTE_PATH}]",
+            "the app declares routes this build does not prerender; [declared={} prerendered={PRERENDERED_ROUTE_PATH}]",
             declared_paths.join(","),
         )));
     }
 
     let render_document = leptos_axum::render_app_async(move || shell(leptos_options.clone()));
     let request: Request<Body> = Request::builder()
-        .uri(SHELL_ROUTE_PATH)
+        .uri(PRERENDERED_ROUTE_PATH)
         .body(Body::empty())
-        .map_err(|error| AppError::from(format!("could not build the shell request; [error={error}]")))?;
+        .map_err(|error| AppError::from(format!("could not build the render request; [error={error}]")))?;
     let response: axum::response::Response = render_document(request)
         .await;
     let status: StatusCode = response.status();
@@ -109,7 +95,7 @@ pub async fn render_shell_document(leptos_options: LeptosOptions) -> Result<Byte
        otherwise be written out as the deployed document. */
     if !status.is_success() {
         return Err(AppError::from(format!(
-            "rendering the shell route did not succeed; [status={status} path={SHELL_ROUTE_PATH}]",
+            "rendering did not succeed; [status={status} path={PRERENDERED_ROUTE_PATH}]",
         )));
     }
 
@@ -128,7 +114,7 @@ fn declared_route_paths() -> Vec<String> {
 }
 
 /* cargo-leptos is what sets the LEPTOS_* environment variables get_configuration reads from the
-   environment, and the export runs on its own, so the settings come from the manifest instead. */
+   environment, and a build-time render runs on its own, so the settings come from the manifest instead. */
 pub fn read_manifest_options() -> Result<LeptosOptions, AppError> {
     let configuration: ConfFile = get_configuration(Some(MANIFEST_PATH))
         .map_err(|error| AppError::from(format!(
@@ -140,9 +126,9 @@ pub fn read_manifest_options() -> Result<LeptosOptions, AppError> {
 
 /* Hashed filenames are a deploy-time choice rather than a manifest setting, because cargo-leptos only
    re-hashes on a full build: under `watch`, an incremental rebuild writes the unhashed names and leaves
-   the hash file naming the previous build, so the page would load stale assets. The build that hashes
-   sets this variable, and cargo-leptos itself layers the same variable over the manifest, so both
-   processes agree on the filenames. */
+   the hash file naming the previous build, so the page would load stale assets. The variable is
+   cargo-leptos's own, and it layers the same variable over the manifest, so both processes agree on the
+   filenames. */
 fn apply_hash_files_override(mut leptos_options: LeptosOptions) -> Result<LeptosOptions, AppError> {
     let declared_hash_files: Result<String, env::VarError> = env::var(HASH_FILES_VARIABLE);
 
@@ -158,12 +144,42 @@ fn apply_hash_files_override(mut leptos_options: LeptosOptions) -> Result<Leptos
 }
 
 fn resolve_site_root(leptos_options: &LeptosOptions) -> Result<PathBuf, AppError> {
-    let declared_site_root: PathBuf =
-        Path::new(WORKSPACE_ROOT).join(leptos_options.site_root.as_ref());
+    let workspace_root: PathBuf = find_workspace_root()?;
+    let declared_site_root: PathBuf = workspace_root.join(leptos_options.site_root.as_ref());
 
     fs::canonicalize(&declared_site_root)
         .map_err(|error| AppError::from(format!(
             "the site root does not exist, so no build has run; [path={} error={error}]",
             declared_site_root.display(),
         )))
+}
+
+/* The manifest's site-root is relative to the workspace root, so it resolves against the directory holding
+   the workspace manifest rather than this crate's own. Searching upward keeps working if this crate moves
+   deeper in the tree, which counting parent directories would not. */
+fn find_workspace_root() -> Result<PathBuf, AppError> {
+    let mut directory: Option<&Path> = Some(Path::new(CRATE_DIRECTORY));
+
+    while let Some(candidate) = directory {
+        if declares_workspace(&candidate.join("Cargo.toml")) {
+            return Ok(candidate.to_path_buf());
+        }
+
+        directory = candidate.parent();
+    }
+
+    Err(AppError::from(format!(
+        "no Cargo.toml declaring a workspace at or above this crate; [crate={CRATE_DIRECTORY}]",
+    )))
+}
+
+fn declares_workspace(manifest_path: &Path) -> bool {
+    let manifest_text: Result<String, std::io::Error> = fs::read_to_string(manifest_path);
+
+    match manifest_text {
+        Ok(manifest_text) => manifest_text
+            .lines()
+            .any(|line| line.trim_start().starts_with(WORKSPACE_MANIFEST_MARKER)),
+        Err(_) => false,
+    }
 }

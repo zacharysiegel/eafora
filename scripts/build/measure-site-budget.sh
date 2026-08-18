@@ -5,7 +5,7 @@
 # The targets bound artifact bytes, not client code. First paint is the embedded bundle that paints the map
 # immediately; second paint adds the live-bundle files the client fetches on its first online connection,
 # namely the geometry shard and every statistic shard the live manifest lists. The wasm, the wasm-bindgen
-# JS shim, the stylesheet, and the shell document are reported alongside for information, because their
+# JS shim, the stylesheet, and the prerendered document are reported alongside for information, because their
 # size is a consequence of the framework and the renderer rather than of a data decision.
 #
 # A file counts at its brotli -q 11 size when Cloudflare's content-type list says the edge compresses it,
@@ -26,7 +26,7 @@
 #
 # Behavior:
 #   1. Runs ./scripts/build/build-site.sh first unless --no-build is passed, so the tree measured is a
-#      release build with its shell document. That output goes to stderr so stdout carries only the report.
+#      release build with its prerendered document. That output goes to stderr so stdout carries only the report.
 #      With --no-build the report describes whatever is in the tree, which may be a debug build.
 #   2. Reads the site root and the pkg subdirectory from web/Cargo.toml so no path constant is duplicated.
 #   3. Resolves the live bundle the way the client does: the repository base the built discovery document
@@ -46,7 +46,7 @@ readonly NEAR_CAP_PERCENT=90
 readonly UNMEASURED_VALUE="n/a"
 readonly EMBEDDED_SUBDIR="embedded_artifacts"
 readonly DISCOVERY_FILENAME="discovery"
-readonly SHELL_DOCUMENT_NAME="index.html"
+readonly DOCUMENT_NAME="index.html"
 readonly LATEST_MANIFEST_RELATIVE_PATH="latest/manifest.json"
 
 function required_program {
@@ -123,7 +123,7 @@ SITE_DIR="$REPO_ROOT/$(get_leptos_metadata_value "site-root")"
 PKG_DIR="$SITE_DIR/$(get_leptos_metadata_value "site-pkg-dir")"
 EMBEDDED_DIR="$SITE_DIR/$EMBEDDED_SUBDIR"
 DISCOVERY_PATH="$SITE_DIR/$DISCOVERY_FILENAME"
-SHELL_PATH="$SITE_DIR/$SHELL_DOCUMENT_NAME"
+DOCUMENT_PATH="$SITE_DIR/$DOCUMENT_NAME"
 
 if [[ "$RUN_BUILD" -eq 1 ]]; then
     "$REPO_ROOT/scripts/build/build-site.sh" 1>&2
@@ -333,10 +333,10 @@ CSS_DISPLAY="$MEASURED_COMPONENT_DISPLAY"
 
 HTML_BYTES=0
 
-if [[ -f "$SHELL_PATH" ]]; then
-    HTML_BYTES="$(transfer_size_of "$SHELL_PATH")"
+if [[ -f "$DOCUMENT_PATH" ]]; then
+    HTML_BYTES="$(transfer_size_of "$DOCUMENT_PATH")"
 else
-    note_code_gap "the site tree has no shell document at $(to_repo_relative_path "$SHELL_PATH"); run ./scripts/build/build-site.sh, which writes it after the build"
+    note_code_gap "the site tree has no prerendered document at $(to_repo_relative_path "$DOCUMENT_PATH"); run ./scripts/build/build-site.sh, which writes it after the build"
 fi
 
 EMBEDDED_BYTES=0
@@ -471,10 +471,10 @@ print_component_line "wasm" "$WASM_DISPLAY"
 print_component_line "js shim" "$JS_SHIM_DISPLAY"
 print_component_line "css" "$CSS_DISPLAY"
 
-if [[ -f "$SHELL_PATH" ]]; then
-    print_component_line "html shell" "$(format_size "$HTML_BYTES")"
+if [[ -f "$DOCUMENT_PATH" ]]; then
+    print_component_line "document" "$(format_size "$HTML_BYTES")"
 else
-    print_component_line "html shell" "$UNMEASURED_VALUE"
+    print_component_line "document" "$UNMEASURED_VALUE"
 fi
 
 echo ""

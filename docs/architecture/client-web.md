@@ -54,7 +54,7 @@ eafora/
 │   │   └── robots.txt
 │   └── src/
 │       ├── lib.rs              # crate root; declares `app` + the cfg-gated `client` module; both SSR and client-side builds compile this
-│       ├── main.rs             # the ssr binary: dev server, or `export-shell` to write index.html
+│       ├── main.rs             # the ssr binary: dev server, or `prerender` to write index.html
 │       ├── error.rs            # `cache: ...` and `fetch: ...` AppError prefixes documented here
 │       ├── app.rs              # root App component + <Routes> tree; both the SSR build and the client-side build compile this
 │       ├── about.rs            # SSG'd About page (per design.md §Naming and the About page)
@@ -114,7 +114,7 @@ lib-profile-release  = "wasm-release"
 
 The `style-file` entry points at one entrypoint; that file `@use`s the partials under `style/` (see §CSS architecture). The `assets-dir` is verbatim-copied to `target/site/`, which is what gets uploaded to Cloudflare Workers Assets.
 
-The SSR build produces one binary with two jobs. Run with no argument it is the dev server (`cargo leptos watch`). Run as `web export-shell` it renders `/` once and writes `target/site/index.html`, which is the document the static deploy serves for the map route; production runs no server. It is also what will write the static HTML for `/region/<region.code>` and `/about` when those land (see §Routing and SSG). The client-side build is the browser-side WASM that takes over on `/` (the map view) and on any region page if v2+ ever adds client-side interactivity to those pages.
+The SSR build produces one binary with two jobs. Run with no argument it is the dev server (`cargo leptos watch`). Run as `web prerender` it renders `/` once and writes `target/site/index.html`, which is the document the static deploy serves for the map route; production runs no server. It is also what will write the static HTML for `/region/<region.code>` and `/about` when those land (see §Routing and SSG). The client-side build is the browser-side WASM that takes over on `/` (the map view) and on any region page if v2+ ever adds client-side interactivity to those pages.
 
 Ordering is load-bearing: `cargo leptos build` empties the site root before it writes, so the shell has to be exported after the build, never before. `./scripts/build/build-site.sh` runs the two in that order.
 
@@ -152,7 +152,7 @@ Per `client.md` §Web first-paint perf budget, the targets bound artifact bytes:
 
 `scripts/build/measure-site-budget.sh`:
 
-1. Runs `./scripts/build/build-site.sh` unless `--no-build` is passed, so the tree it measures is a release build carrying its shell document.
+1. Runs `./scripts/build/build-site.sh` unless `--no-build` is passed, so the tree it measures is a release build carrying its prerendered document.
 2. Counts each file at what a client transfers: `brotli -q 11` for the content types Cloudflare compresses, and the full file size for the rest. The geometry and the statistic shards fall in the latter group, which is why they dominate.
 3. For first paint, sums the embedded bundle. For second paint, adds every artifact file the live-bundle fetch needs on first online connection: the geometry shard and every base statistic shard.
 4. Prints labeled, aligned key:value lines (narrow-terminal-safe; no markdown tables) and always exits zero. A total whose parts the tree cannot supply is reported as unmeasured rather than as a smaller number.
@@ -657,13 +657,13 @@ End-to-end browser tests are **not** in scope for the foreseeable future (throug
 
 ## Decisions still open
 
-- Page shell HTML structure. The shell is rendered from `web/src/app.rs::shell`, not from a checked-in template, and `web export-shell` writes it to `target/site/index.html` for the deploy. Its `<head>` still needs a pass for font preloads, OG tags for social sharing, and `<link rel="canonical">`. Trigger: the first real deployment to the production domain.
+- Page shell HTML structure. The shell is rendered from `web/src/app.rs::shell`, not from a checked-in template, and `web prerender` writes it to `target/site/index.html` for the deploy. Its `<head>` still needs a pass for font preloads, OG tags for social sharing, and `<link rel="canonical">`. Trigger: the first real deployment to the production domain.
 
 ## Things to verify
 
 1. **Pinned Leptos version's exact `[package.metadata.leptos]` keys**: `wasm-opt-args`, `bin-profile-release`, `lib-profile-release`. Confirm key spellings against the version pinned in `web/Cargo.toml` before relying on the snippet in §`cargo-leptos`.
 2. **wgpu surface-from-canvas function name**: `Instance::create_surface_unsafe` with `SurfaceTargetUnsafe::Canvas` is the current shape; verify against the version pinned in `core/`.
-3. ~~Does `cargo leptos build --release` invoke the SSR binary's `main`?~~ Answered: it does not. The binary is built and not run, and a build empties the site root, so `scripts/build/build-site.sh` runs `./target/release/web export-shell` afterward. The binary is at `target/release/`, not `target/server/release/`, because `bin-target-dir` is unset.
+3. ~~Does `cargo leptos build --release` invoke the SSR binary's `main`?~~ Answered: it does not. The binary is built and not run, and a build empties the site root, so `scripts/build/build-site.sh` runs `./target/release/web prerender` afterward. The binary is at `target/release/`, not `target/server/release/`, because `bin-target-dir` is unset.
 4. **Safari OPFS support cutoff**: Safari shipped OPFS in 16.4 but `createWritable` arrived later still. Verify the exact iOS/macOS Safari version cutoff against `caniuse.com` before relying on the §Quota and persistence step 5 hard-fail path.
 5. **`core::canonical::all_region_codes()` shape**: the function the `prerender_params` closure calls. Confirm the exact signature when `core/` lands; the SSG step depends on this list being authoritative and complete.
 
