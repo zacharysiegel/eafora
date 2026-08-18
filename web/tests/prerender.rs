@@ -5,7 +5,7 @@ use leptos::prelude::LeptosOptions;
 /* The document the static deploy serves for `/`. Rendered here rather than read from a built tree so the
    assertions hold without a build, which also keeps them independent of whichever build ran last. */
 async fn prerendered_document() -> String {
-    let leptos_options: LeptosOptions = web::server::read_manifest_options()
+    let leptos_options: LeptosOptions = web::server::read_leptos_manifest_options()
         .expect("the manifest carries the leptos settings");
     let document_bytes = web::server::prerender_document(leptos_options)
         .await

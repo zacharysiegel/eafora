@@ -49,7 +49,7 @@ pub async fn serve() -> Result<(), AppError> {
 /* Production serves static files and runs no server, so the one document a visitor loads is rendered here
    at build time and written into the site tree. */
 pub async fn write_prerendered_document() -> Result<(), AppError> {
-    let leptos_options: LeptosOptions = read_manifest_options()?;
+    let leptos_options: LeptosOptions = read_leptos_manifest_options()?;
     let site_root: PathBuf = resolve_site_root(&leptos_options)?;
     let document_bytes: Bytes = prerender_document(leptos_options).await?;
 
@@ -115,7 +115,7 @@ fn declared_route_paths() -> Vec<String> {
 
 /* cargo-leptos is what sets the LEPTOS_* environment variables get_configuration reads from the
    environment, and a build-time render runs on its own, so the settings come from the manifest instead. */
-pub fn read_manifest_options() -> Result<LeptosOptions, AppError> {
+pub fn read_leptos_manifest_options() -> Result<LeptosOptions, AppError> {
     let configuration: ConfFile = get_configuration(Some(MANIFEST_PATH))
         .map_err(|error| AppError::from(format!(
             "could not read the leptos settings; [path={MANIFEST_PATH} error={error}]",
