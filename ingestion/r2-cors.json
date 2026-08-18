@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": [
+          "https://eafora.org",
+          "https://eafora-web.siegelzc.workers.dev"
+        ],
+        "methods": ["GET", "HEAD"]
+      }
+    }
+  ]
+}

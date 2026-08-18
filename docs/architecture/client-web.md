@@ -605,6 +605,24 @@ The `repository_base_url` is **not** a hand-typed constant. It's resolved at run
 
 The deploy target is Cloudflare Workers Assets, served from `eafora.org` (the apex domain). The build output (`target/site/`) is uploaded as a static-asset bundle attached to a Worker; the Worker is a single pass-through that serves whatever asset matches the incoming request.
 
+### Artifact CDN CORS
+
+The site and the artifacts are different origins, so every shard fetch is cross-origin and the R2 bucket has to say so. Without it the browser blocks a response that arrived intact, reporting a CORS failure against a 200.
+
+The policy lives in `ingestion/r2-cors.json`, next to the crate that owns the bucket, and is applied with:
+
+```sh
+npx wrangler r2 bucket cors set eafora-repository --file ingestion/r2-cors.json
+```
+
+Origins are listed exactly rather than wildcarded, because Cloudflare documents origin values as matching exactly and does not document wildcard support. `GET` and `HEAD` are the only methods the clients use, and the fetch sets no header beyond the cache mode, so no request triggers a preflight and no `AllowedHeaders` entry is needed.
+
+Two operational notes from Cloudflare's documentation: a policy change can take up to 30 seconds to propagate, and a custom domain already serving traffic needs its cache purged before responses carry the new header. Confirm with `npx wrangler r2 bucket cors list eafora-repository`, or against a real response:
+
+```sh
+curl -sD - -o /dev/null -H 'Origin: https://eafora.org' https://repository.eafora.org/latest/manifest.json
+```
+
 ### Why Workers Assets instead of Cloudflare Pages
 
 Workers Assets is Cloudflare's successor to Pages for static-site deploys, and is the platform Cloudflare's own migration guide points new projects at. That, rather than any single feature, is the reason to prefer it.
