@@ -653,7 +653,17 @@ That's the whole config. **No `main` field, no Worker script.** Cloudflare's sta
 
 If we ever need request-time logic (response modification, A/B routing, edge-rendered pages), we add a `main = "src/index.ts"` file then. Through v1+ the static-only shape is correct.
 
-`wrangler deploy` uploads `target/site/` (the cargo-leptos output) as the asset set. Custom-domain routing to `eafora.org` is configured in the Cloudflare dashboard or via a `routes` block in `wrangler.toml` (verify the exact syntax against current wrangler docs when we deploy).
+`wrangler deploy` uploads `target/site/` (the cargo-leptos output) as the asset set. Until a domain is attached, the Worker answers at `<name>.<account subdomain>.workers.dev`, composed from `name` in `wrangler.toml` and the account's own subdomain; nothing in the repository names that URL.
+
+Attaching the apex is two lines of configuration rather than dashboard state, which is preferable because it is reviewable and versioned:
+
+```toml
+[[routes]]
+pattern = "eafora.org"
+custom_domain = true
+```
+
+`custom_domain` defaults to `false`, and with it true Cloudflare handles the DNS record and the certificate. It does not disable the workers.dev address: `workers_dev` is independent and defaults to `true`, so both serve until it is set to `false`. Whichever origins end up serving the site have to appear in the artifact bucket's CORS policy, since a shard fetch from an unlisted origin is discarded by the browser.
 
 ### Headers
 

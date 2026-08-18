@@ -117,7 +117,7 @@ The site and the artifact CDN are different origins, so without a CORS policy on
 
 Pure static asset serving from Cloudflare Workers Assets (`web/wrangler.toml` has `[assets] directory`, no `main`, no Worker). The script deploys whatever is already in `target/site`; `--build` produces it first. Either way it runs `./scripts/build/verify-site-tree.sh`, which refuses a tree with no shell document, a shell reference missing from disk, or a `/pkg/` reference whose name carries no content hash, since `_headers` serves that path as immutable for a year.
 
-The first deploy needs `npx wrangler login` once, which opens a browser. The apex-domain routing to `eafora.org` is configured in the Cloudflare dashboard, outside the codebase.
+The first deploy needs `npx wrangler login` once, which opens a browser. With no domain attached the Worker answers at `<name>.<account subdomain>.workers.dev`, where `name` comes from `wrangler.toml` and the subdomain from the account. Attaching `eafora.org` takes a `[[routes]]` entry with `custom_domain = true`, or dashboard configuration; see `client-web.md` §Deploy target.
 
 ## Common pitfalls
 
