@@ -24,9 +24,11 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 // The product name, not a translated string: it reads the same in every locale.
                 <title>Eafora</title>
+                /* Order matters: Safari takes the first icon it can use and does not reliably fall back to a
+                   later one, and its support for svg icons cannot be relied on across the versions we
+                   target, so the raster form is declared first. */
+                <link rel="icon" sizes="32x32" href="/favicon.ico" />
                 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-                // Safari's support for svg icons is not something we can rely on across the versions we target.
-                <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
                 <HashedStylesheet options=options.clone() id="leptos" />
                 <AutoReload options=options.clone() />
                 <HydrationScripts options />

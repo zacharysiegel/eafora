@@ -44,11 +44,16 @@ async fn prerendered_document_names_the_product_in_the_tab() {
 async fn prerendered_document_references_the_favicon() {
     let document: String = prerendered_document().await;
 
-    /* Without this a browser requests /favicon.ico, gets the 404 the deploy correctly returns for an
-       unmatched path, and falls back to its own glyph. The raster copy covers browsers that do not take
-       the svg. */
-    assert!(document.contains(r#"href="/favicon.svg""#));
-    assert!(document.contains(r#"href="/favicon-32.png""#));
+    /* The raster form has to come first, because Safari takes the first icon it can use rather than the
+       best one, and cannot be relied on to read the svg. */
+    let raster_position: usize = document
+        .find(r#"href="/favicon.ico""#)
+        .expect("the document declares the raster icon");
+    let vector_position: usize = document
+        .find(r#"href="/favicon.svg""#)
+        .expect("the document declares the vector icon");
+
+    assert!(raster_position < vector_position);
 }
 
 #[tokio::test]
