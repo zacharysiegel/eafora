@@ -33,6 +33,14 @@ async fn prerendered_document_references_the_client_bundle() {
 }
 
 #[tokio::test]
+async fn prerendered_document_names_the_product_in_the_tab() {
+    let document: String = prerendered_document().await;
+
+    /* Without it a browser labels the tab with the host, which is how the first deploy read. */
+    assert!(document.contains("<title>Eafora</title>"));
+}
+
+#[tokio::test]
 async fn prerendered_document_references_the_favicon() {
     let document: String = prerendered_document().await;
 
