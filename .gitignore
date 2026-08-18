@@ -10,6 +10,9 @@ target/
 # macOS
 .DS_Store
 
+# wrangler's account cache and temporary bundles, written into whichever directory it runs in
+.wrangler/
+
 # Per-developer environment overrides (template.env is committed)
 .env
 

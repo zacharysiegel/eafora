@@ -2,6 +2,3 @@
 # run (see specs/003-web-client/plan.md, FR-004); it is not checked in.
 /static/embedded_artifacts/
 /static/repository/
-
-# wrangler's local state and temporary bundles, written on every deploy.
-/.wrangler/
