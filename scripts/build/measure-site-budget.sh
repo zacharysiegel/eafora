@@ -48,6 +48,7 @@ readonly EMBEDDED_SUBDIR="embedded_artifacts"
 readonly DISCOVERY_FILENAME="discovery"
 readonly DOCUMENT_NAME="index.html"
 readonly LATEST_MANIFEST_RELATIVE_PATH="latest/manifest.json"
+readonly LOCAL_REPOSITORY_SUBDIR="repository"
 
 function required_program {
     local program_name="$1"
@@ -363,6 +364,7 @@ LIVE_UNAVAILABLE_REASON=""
 LIVE_GEOMETRY_BYTES=0
 LIVE_SHARD_BYTES=0
 LIVE_POINTER_BYTES=0
+LIVE_MEASURED_LOCALLY=false
 
 # Sets the LIVE_* globals above. The tree can hold several published versions at once; only the one that
 # latest/manifest.json names is ever fetched, so the manifest picks the version rather than the filesystem.
@@ -374,13 +376,22 @@ function measure_live_bundle {
 
     local repository_base_url
     repository_base_url="$(jq -r '.repository_base_url' "$DISCOVERY_PATH")"
+    local repository_dir
 
-    if [[ "$repository_base_url" != /* ]]; then
-        LIVE_UNAVAILABLE_REASON="the discovery document points the live bundle at $repository_base_url, which this site tree does not serve"
-        return 0
+    if [[ "$repository_base_url" == /* ]]; then
+        repository_dir="$SITE_DIR${repository_base_url%/}"
+    else
+        # A deploy build names the CDN, which this tree does not serve. The shards are the same bytes
+        # wherever they are served from, so the local publish tree stands in for them; only its origin
+        # differs. Without this a deploy build could not report second paint at all.
+        repository_dir="$SITE_DIR/$LOCAL_REPOSITORY_SUBDIR"
+        LIVE_MEASURED_LOCALLY=true
+
+        if [[ ! -d "$repository_dir" ]]; then
+            LIVE_UNAVAILABLE_REASON="the discovery document points the live bundle at $repository_base_url, and no local publish tree at $(to_repo_relative_path "$repository_dir") stands in for it; run: cargo run -p ingestion -- publish local --root ./web/static/$LOCAL_REPOSITORY_SUBDIR --public-base-url /$LOCAL_REPOSITORY_SUBDIR"
+            return 0
+        fi
     fi
-
-    local repository_dir="$SITE_DIR${repository_base_url%/}"
     local latest_manifest_path="$repository_dir/$LATEST_MANIFEST_RELATIVE_PATH"
 
     if [[ ! -f "$latest_manifest_path" ]]; then
@@ -505,6 +516,11 @@ fi
 if [[ -n "$LIVE_UNAVAILABLE_REASON" ]]; then
     echo "  - Second paint is unmeasured: $LIVE_UNAVAILABLE_REASON."
 else
+    if [[ "$LIVE_MEASURED_LOCALLY" == true ]]; then
+        echo "  - The live shards were measured in the local publish tree, since the discovery document names"
+        echo "    a remote repository this tree does not serve. Same bytes, different origin."
+    fi
+
     echo "  - Second paint counts the geometry shard and the statistic shards, not the discovery document"
     echo "    and latest/manifest.json the client fetches to find them ($(format_size "$LIVE_POINTER_BYTES") combined)."
 fi
