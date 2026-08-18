@@ -51,6 +51,7 @@ eafora/
 │   │   ├── _headers            # per-path response headers the edge applies
 │   │   ├── .assetsignore       # paths wrangler skips when uploading
 │   │   ├── discovery           # static discovery document naming the repository base
+│   │   ├── favicon.svg         # solid-form mark; a 1px stroke would vanish at 16px
 │   │   └── robots.txt
 │   └── src/
 │       ├── lib.rs              # crate root; declares `app` + the cfg-gated `client` module; both SSR and client-side builds compile this
@@ -695,7 +696,7 @@ End-to-end browser tests are **not** in scope for the foreseeable future (throug
 
 ## Decisions still open
 
-- Page shell HTML structure. The shell is rendered from `web/src/app.rs::shell`, not from a checked-in template, and `web prerender` writes it to `target/site/index.html` for the deploy. Its `<head>` still needs a pass for font preloads, OG tags for social sharing, and `<link rel="canonical">`. Trigger: the first real deployment to the production domain.
+- Page shell HTML structure. The shell is rendered from `web/src/app.rs::shell`, not from a checked-in template, and `web prerender` writes it to `target/site/index.html` for the deploy. Its `<head>` carries the viewport, the stylesheet, and the icon; it still needs a pass for font preloads, OG tags for social sharing, and `<link rel="canonical">`. Trigger: the first real deployment to the production domain.
 
 ## Things to verify
 

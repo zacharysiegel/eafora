@@ -22,6 +22,7 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
             <head>
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
+                <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
                 <HashedStylesheet options=options.clone() id="leptos" />
                 <AutoReload options=options.clone() />
                 <HydrationScripts options />

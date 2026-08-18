@@ -89,7 +89,7 @@ pub fn Controls() -> impl IntoView {
                                     max=move || latest_year.get()
                                     value=move || active_year.get()
                                     prop:value=move || active_year.get()
-                                    on:input=move |event| apply_year(&event_target_value(&event))
+                                    on:input=move |event| apply_year(&event, earliest_year.get(), latest_year.get())
                                     on:pointerdown=move |_| grabbing.set(true)
                                     on:pointerup=move |_| grabbing.set(false)
                                     on:pointercancel=move |_| grabbing.set(false)
@@ -106,7 +106,7 @@ pub fn Controls() -> impl IntoView {
                                     max=move || latest_year.get()
                                     value=move || active_year.get()
                                     prop:value=move || active_year.get()
-                                    on:change=move |event| apply_year(&event_target_value(&event))
+                                    on:change=move |event| apply_year(&event, earliest_year.get(), latest_year.get())
                                 />
                             </div>
                             {bound_label(latest_year, active_year)}
@@ -146,14 +146,53 @@ fn thumb_proportion(active_year: i32, earliest_year: i32, latest_year: i32) -> f
     offset / span as f64
 }
 
-fn apply_year(year_text: &str) {
-    let Ok(year) = year_text.parse::<i32>() else {
+fn apply_year(event: &leptos::ev::Event, earliest_year: Option<i32>, latest_year: Option<i32>) {
+    let typed_text: String = event_target_value(event);
+    let Some(year) = clamped_year(&typed_text, earliest_year, latest_year) else {
         return;
     };
+
+    /* Clamping to the year already active leaves the driver's state unchanged, so nothing would reassert
+       the field and it would keep showing the out-of-range number that was typed. */
+    if year.to_string() != typed_text {
+        overwrite_year_field(event, year);
+    }
+
     if let Some(period_start) = NaiveDate::from_ymd_opt(year, 1, 1) {
         dispatch_period(period_start);
     }
 }
+
+/// The typed year held inside the range the bundle covers, or `None` when the text is not a year. The
+/// input's `min` and `max` bound its steppers and its validity, neither of which stops a typed value.
+fn clamped_year(year_text: &str, earliest_year: Option<i32>, latest_year: Option<i32>) -> Option<i32> {
+    let year: i32 = year_text
+        .trim()
+        .parse::<i32>()
+        .ok()?;
+
+    match (earliest_year, latest_year) {
+        (Some(earliest), Some(latest)) => Some(year.clamp(earliest, latest)),
+        _ => Some(year),
+    }
+}
+
+#[cfg(feature = "hydrate")] // writes to the DOM element the event came from
+fn overwrite_year_field(event: &leptos::ev::Event, year: i32) {
+    use wasm_bindgen::JsCast;
+    use web_sys::HtmlInputElement;
+
+    let field: Option<HtmlInputElement> = event
+        .target()
+        .and_then(|target| target.dyn_into::<HtmlInputElement>().ok());
+
+    if let Some(field) = field {
+        field.set_value(&year.to_string());
+    }
+}
+
+#[cfg(not(feature = "hydrate"))] // no DOM to write to
+fn overwrite_year_field(_event: &leptos::ev::Event, _year: i32) {}
 
 #[cfg(feature = "hydrate")]
 fn dispatch_statistic(statistic: StatisticKind) {
@@ -174,6 +213,28 @@ fn dispatch_period(_period_start: NaiveDate) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clamped_year_holds_a_typed_year_inside_the_covered_range() {
+        assert_eq!(clamped_year("1800", Some(1960), Some(2024)), Some(1960));
+        assert_eq!(clamped_year("3000", Some(1960), Some(2024)), Some(2024));
+        assert_eq!(clamped_year("1990", Some(1960), Some(2024)), Some(1990));
+        assert_eq!(clamped_year("1960", Some(1960), Some(2024)), Some(1960));
+        assert_eq!(clamped_year("2024", Some(1960), Some(2024)), Some(2024));
+    }
+
+    #[test]
+    fn clamped_year_rejects_text_that_is_not_a_year() {
+        assert_eq!(clamped_year("", Some(1960), Some(2024)), None);
+        assert_eq!(clamped_year("nineteen", Some(1960), Some(2024)), None);
+        assert_eq!(clamped_year("19 90", Some(1960), Some(2024)), None);
+    }
+
+    #[test]
+    fn clamped_year_passes_a_year_through_when_no_range_is_known() {
+        assert_eq!(clamped_year("1800", None, None), Some(1800));
+        assert_eq!(clamped_year("1800", Some(1960), None), Some(1800));
+    }
 
     #[test]
     fn thumb_proportion_pins_a_single_year_range_to_the_start() {

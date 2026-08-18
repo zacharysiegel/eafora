@@ -33,6 +33,15 @@ async fn prerendered_document_references_the_client_bundle() {
 }
 
 #[tokio::test]
+async fn prerendered_document_references_the_favicon() {
+    let document: String = prerendered_document().await;
+
+    /* Without this a browser requests /favicon.ico, gets the 404 the deploy correctly returns for an
+       unmatched path, and falls back to its own glyph. */
+    assert!(document.contains(r#"href="/favicon.svg""#));
+}
+
+#[tokio::test]
 async fn prerendered_document_declares_one_language_and_direction() {
     let document: String = prerendered_document().await;
     let language_attribute_count: usize = document.matches("lang=").count();
