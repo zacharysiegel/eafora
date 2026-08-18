@@ -23,6 +23,8 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+                // Safari's support for svg icons is not something we can rely on across the versions we target.
+                <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
                 <HashedStylesheet options=options.clone() id="leptos" />
                 <AutoReload options=options.clone() />
                 <HydrationScripts options />

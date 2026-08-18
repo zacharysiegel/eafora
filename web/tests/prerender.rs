@@ -37,8 +37,10 @@ async fn prerendered_document_references_the_favicon() {
     let document: String = prerendered_document().await;
 
     /* Without this a browser requests /favicon.ico, gets the 404 the deploy correctly returns for an
-       unmatched path, and falls back to its own glyph. */
+       unmatched path, and falls back to its own glyph. The raster copy covers browsers that do not take
+       the svg. */
     assert!(document.contains(r#"href="/favicon.svg""#));
+    assert!(document.contains(r#"href="/favicon-32.png""#));
 }
 
 #[tokio::test]

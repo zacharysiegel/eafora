@@ -52,6 +52,7 @@ eafora/
 │   │   ├── .assetsignore       # paths wrangler skips when uploading
 │   │   ├── discovery           # static discovery document naming the repository base
 │   │   ├── favicon.svg         # solid-form mark; a 1px stroke would vanish at 16px
+│   │   ├── favicon-32.png      # the same mark rastered, for browsers that do not take the svg
 │   │   └── robots.txt
 │   └── src/
 │       ├── lib.rs              # crate root; declares `app` + the cfg-gated `client` module; both SSR and client-side builds compile this
