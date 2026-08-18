@@ -53,4 +53,4 @@ if [[ "$reference_count" -eq 0 ]]; then
     fail "the shell references no /pkg/ assets, so it would load nothing"
 fi
 
-printf '%s is deployable; %d referenced assets present and content-hashed\n' "$SITE_DIR" "$reference_count"
+printf '%s: shell document present, %d referenced assets present and content-hashed\n' "$SITE_DIR" "$reference_count"

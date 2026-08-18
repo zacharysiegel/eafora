@@ -13,8 +13,8 @@
 #                                                                         checked-out branch)
 #   ./scripts/git/pr-integrate.sh <branch> --from <former-parent-branch>     (for a stacked branch
 #                                                                         whose parent already merged)
-#   ./scripts/git/pr-integrate.sh <branch> --skip-budget                     (skip the perf-budget
-#                                                                         report, which builds a release)
+#   ./scripts/git/pr-integrate.sh <branch> --skip-budget                     (skip the build and the
+#                                                                         perf-budget report)
 #
 # Behavior:
 #   1. Validate: working tree is clean; <branch> exists locally and on origin.
@@ -22,8 +22,9 @@
 #   3. Update branch atop latest master:
 #        non-stacked: `git checkout <branch> && git rebase master`
 #        stacked:     `git checkout <branch> && git rebase --onto master <former-parent> <branch>`
-#   4. Report the perf budget when the branch touched web/ or shared/, standing in for the hosted CI
-#      check that does not exist yet. The report never fails the integration.
+#   4. Build the site and report the perf budget when the branch touched anything the deployed site is
+#      built from, standing in for the hosted CI check that does not exist yet. The report itself never
+#      fails the integration, but a build failure does, before anything is pushed.
 #   5. Force-push branch (`git push --force-with-lease`).
 #   6. Fast-forward master to branch tip via `git rebase <branch>` (consistent
 #      with the rebase-family preference; equivalent to `merge --ff-only`).
@@ -93,7 +94,7 @@ if [[ "$USE_CURRENT_BRANCH" == true ]]; then
 fi
 
 if [[ -z "$BRANCH" ]]; then
-    echo "usage: $0 (<branch> | --current) [--from <former-parent-branch>]" >&2
+    echo "usage: $0 (<branch> | --current) [--from <former-parent-branch>] [--skip-budget]" >&2
     exit 64
 fi
 
@@ -153,7 +154,10 @@ function report_site_budget {
         return 0
     fi
 
-    "$(dirname "$0")/../build/measure-site-budget.sh"
+    # Built separately from the report, which always exits zero by design, so that a branch that stops
+    # compiling once rebased fails here rather than being force-pushed and fast-forwarded onto master.
+    "$(dirname "$0")/../build/build-site.sh"
+    "$(dirname "$0")/../build/measure-site-budget.sh" --no-build
 }
 
 if [[ "$RUN_BUDGET_REPORT" == true ]]; then

@@ -58,6 +58,12 @@ headless Chrome:
 cd web && wasm-pack test --headless --chrome
 ```
 
+The shell-export tests are host tests behind the `ssr` feature, so they need their own command:
+
+```sh
+cargo test -p web --features ssr
+```
+
 Cross-platform logic (manifest parse, SHA-256, license authorization, hit-test, projection) is tested
 once in `shared` with host `cargo test` and is not re-run here.
 
@@ -96,4 +102,4 @@ The first deploy needs `npx wrangler login` once, which opens a browser. The ape
 - **Blank canvas, no error**: the bundle is missing or empty — re-run the embedded-bundle sync. `Bundle::open` reads from the cache, so a bundle that never got fetched into OPFS yields nothing to draw.
 - **`shared` won't link the wgpu types**: the web crate must depend on `shared` with `features = ["render"]`; the feature is off by default.
 - **`cache: opfs unsupported` on older Safari**: expected on browsers without OPFS: the client hard-fails and renders the unsupported panel instead of the map (no fallback). Verify the exact Safari cutoff against caniuse.com.
-- **WebGL2 forced path looks identical to WebGPU**: intended — the renderer is built to the WebGL2 feature set, so `?renderer=webgl2` output matches (FR-005 acceptance scenario 5).
+- **WebGL2 forced path looks identical to WebGPU**: intended — the renderer is built to the WebGL2 feature set, so `?renderer=webgl2` output matches (FR-015).

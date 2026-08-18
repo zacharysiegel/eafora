@@ -53,8 +53,9 @@ primary, WebGL2 fallback — the renderer is already built to the WebGL2 feature
 **Project Type**: web (Rust/WASM SPA served as static assets from Cloudflare Workers Assets, plus
 static CDN-delivered data; no origin server, no live API).
 
-**Performance Goals**: first paint within the 2 MB compressed cap (WASM approx. 600–700 KB brotli +
-embedded bundle approx. 700 KB–1 MB + page shell <50 KB); second paint under 3 MB. Interactions are
+**Performance Goals**: the targets bound artifact bytes, not client code: the embedded bundle within
+2 MB at first paint, and the embedded bundle plus the live geometry and statistic shards within 8 MB at
+second paint. Client code is reported uncapped. Interactions are
 instant apart from the zoom-to-country camera move (the one v1 animation). Rendering is event-driven
 (dirty flag + `requestAnimationFrame`); no idle rAF loop at refresh rate.
 
@@ -147,7 +148,13 @@ docs/design/stub-desktop.html     # accent colors #e60019/#0030d4 -> #d50000/#00
 
 # NEW — build/deploy scripts (Phase E, except sync which pairs with 0b)
 scripts/build/sync-embedded-bundle.sh   # cp -R $EAFORA_ARTIFACTS_DIR/latest/downsampled/* into web/static/embedded_artifacts/
+scripts/build/build-site.sh             # release build, then `web export-shell`, then verify
+scripts/build/verify-site-tree.sh       # refuses a tree with no shell, a dangling ref, or an unhashed /pkg/ ref
+scripts/build/deploy-site.sh            # [--build] [--dry-run]; verifies, then `wrangler deploy`
 scripts/build/measure-site-budget.sh    # artifact-byte report vs 2 MB / 8 MB caps; always exits 0
+web/wrangler.toml                       # assets-only Workers config; no main, no not_found_handling
+web/static/_headers                     # Content-Type for .fgb/.sqlite/discovery; immutable for hashed paths
+web/static/.assetsignore                # keeps the local repository tree and wasm-bindgen .d.ts out of the upload
 ```
 
 **Structure decision**: single `web/` workspace member (added to the root `[workspace]` members
@@ -270,8 +277,9 @@ Two independent prerequisite PRs off `master`, then a linear stack for the web f
 - **Phase D — fetch + discovery + speculative fetch + hot-swap** (stacks on C). FR-025..030, 041.
   Adds `BUNDLE_TX` publishing; the renderer's `borrow_and_update` read path (`renderer.rs:188`) already
   consumes it. Closes P3.
-- **Phase E — perf-budget + static shell export + deploy config** (stacks on A; `sync` needs Phase 0b). Precompression was in this phase's scope and was withdrawn; see spec FR-005.
-  FR-004, 005, 006, 032, 033, 034, 043. Closes P4.
+- **Phase E — perf-budget + static shell export + deploy config** (stacks on A; `sync` needs Phase 0b).
+  FR-004, 006, 032, 033, 034, 043. Closes P4. FR-005 (precompression) was in scope and was withdrawn;
+  a probe deploy showed Workers Assets does not serve uploaded `.br` siblings.
 
 ### Deferred to C2: viewport aspect ratio
 

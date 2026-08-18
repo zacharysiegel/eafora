@@ -1,13 +1,20 @@
-use leptos::hydration::{AutoReload, HydrationScripts};
 use leptos::prelude::*;
 use leptos_i18n::context::{CookieOptions, UseLocalesOptions};
-use leptos_meta::HashedStylesheet;
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::StaticSegment;
 
 use crate::i18n::*;
 use crate::map::MapView;
 
+/* Only the ssr build renders a document, and these three exist solely to build it: on wasm they would
+   compile HashedStylesheet's filesystem lookup and AutoReload's embedded reload script for a function
+   nothing calls. */
+#[cfg(feature = "ssr")]
+use leptos::hydration::{AutoReload, HydrationScripts};
+#[cfg(feature = "ssr")]
+use leptos_meta::HashedStylesheet;
+
+#[cfg(feature = "ssr")]
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
         <!DOCTYPE html>

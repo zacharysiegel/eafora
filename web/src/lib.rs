@@ -1,5 +1,5 @@
-// Release builds monomorphize the whole view tree into one deeply nested concrete type, whose layout
-// computation exceeds rustc's default query depth. Dev builds do not hit it: cargo-leptos type-erases them.
+/* Release builds monomorphize the whole view tree into one deeply nested concrete type, whose layout
+   computation exceeds rustc's default query depth. Dev builds do not hit it: cargo-leptos type-erases them. */
 #![recursion_limit = "512"]
 
 include!(concat!(env!("OUT_DIR"), "/i18n/mod.rs"));

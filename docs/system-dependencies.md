@@ -82,6 +82,17 @@ needs a package manifest, not the workspace root) and forwards extra arguments t
 
 It is equivalent to `cd shared && wasm-pack test --headless --chrome`.
 
+## Web site build and deploy
+
+- `brotli` — the perf-budget report pipes assets through it to estimate transfer size; it writes no
+  compressed file. Install with `brew install brotli`.
+- `jq` — the same report reads the built manifests with it. Install with `brew install jq`.
+- `node` — only for `npx wrangler`, which `scripts/build/deploy-site.sh` invokes to upload the site.
+  Install with `brew install node`, then authenticate once with `npx wrangler login`.
+- `wasm-opt` is deliberately absent: cargo-leptos downloads and caches the binaryen release it pins on
+  the first release build, which keeps the optimizer tied to the toolchain rather than to Homebrew. That
+  first build needs network access to `github.com` and its release-asset host.
+
 ## Contribution workflow
 
 - `git` — version control; the `scripts/git/branch-init.sh` and

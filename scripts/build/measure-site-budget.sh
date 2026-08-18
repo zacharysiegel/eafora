@@ -98,10 +98,15 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 function get_leptos_metadata_value {
     local key_name="$1"
+    local declared_value
+    declared_value="$(grep -E "^$key_name[[:space:]]*=" "$REPO_ROOT/web/Cargo.toml" | head -1 || true)"
 
-    grep -E "^$key_name[[:space:]]*=" "$REPO_ROOT/web/Cargo.toml" \
-        | head -1 \
-        | sed -E 's/^[^=]*=[[:space:]]*"(.*)".*$/\1/'
+    if [[ -z "$declared_value" ]]; then
+        echo "error: web/Cargo.toml declares no $key_name under [package.metadata.leptos]" >&2
+        exit 1
+    fi
+
+    printf '%s' "$declared_value" | sed -E 's/^[^=]*=[[:space:]]*"(.*)".*$/\1/'
 }
 
 function to_repo_relative_path {
@@ -306,7 +311,7 @@ function measure_single_pkg_file {
     fi
 
     if [[ "$match_count" -gt 1 ]]; then
-        note_code_gap "$(to_repo_relative_path "$PKG_DIR") holds $match_count files matching $name_glob, so the $label a visitor fetches is ambiguous; ./scripts/build/build-site.sh empties the site root first"
+        note_code_gap "$(to_repo_relative_path "$PKG_DIR") holds $match_count files matching $name_glob, so the $label a visitor fetches is ambiguous; a full ./scripts/build/build-site.sh clears the site root and rebuilds it"
         return 0
     fi
 
@@ -337,10 +342,17 @@ fi
 EMBEDDED_BYTES=0
 EMBEDDED_UNAVAILABLE_REASON=""
 
-if [[ -d "$EMBEDDED_DIR" ]]; then
-    EMBEDDED_BYTES="$(sum_transfer_size_of_fetched_files_in "$EMBEDDED_DIR")"
-else
+EMBEDDED_MANIFEST_PATH="$EMBEDDED_DIR/manifest.json"
+
+if [[ ! -d "$EMBEDDED_DIR" ]]; then
     EMBEDDED_UNAVAILABLE_REASON="$(to_repo_relative_path "$EMBEDDED_DIR") is absent; run scripts/build/sync-embedded-bundle.sh ./web/static/$EMBEDDED_SUBDIR before the build"
+elif [[ ! -f "$EMBEDDED_MANIFEST_PATH" ]]; then
+    EMBEDDED_UNAVAILABLE_REASON="$(to_repo_relative_path "$EMBEDDED_DIR") holds no manifest.json, so the bundle a visitor would open is incomplete"
+else
+    EMBEDDED_BYTES="$(sum_transfer_size_of_fetched_files_in "$EMBEDDED_DIR")"
+fi
+
+if [[ -n "$EMBEDDED_UNAVAILABLE_REASON" ]]; then
     note_artifact_gap "$EMBEDDED_UNAVAILABLE_REASON"
 fi
 

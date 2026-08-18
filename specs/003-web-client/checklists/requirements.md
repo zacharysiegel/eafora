@@ -37,7 +37,7 @@
 - [x] All functional requirements have clear acceptance criteria
 
 > Mapping (each FR-N has at least one acceptance scenario or success criterion that exercises it):
-> - FR-001 / FR-002 / FR-003 → SC-002 (build produces a deployable tree under the size budget)
+> - FR-001 / FR-002 / FR-003 → SC-008 (the build produces a tree that deploys and renders); SC-002 bounds artifact bytes, not client code, so it does not exercise these
 > - FR-004 → exercised by P1 acceptance #1 (embedded bundle loads)
 > - FR-005 withdrawn, so SC-002 no longer counts `.br` siblings; it counts what a client transfers, which for the shards is their full size
 > - FR-006 → P4 acceptance scenarios (perf-budget report)

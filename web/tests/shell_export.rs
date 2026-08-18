@@ -5,21 +5,22 @@ use leptos::prelude::LeptosOptions;
 /* The document the static deploy serves for `/`. Rendered here rather than read from a built tree so the
    assertions hold without a build, which also keeps them independent of whichever build ran last. */
 async fn render_shell_document() -> String {
-    let leptos_options: LeptosOptions = web::server::read_manifest_options();
+    let leptos_options: LeptosOptions = web::server::read_manifest_options()
+        .expect("the manifest carries the leptos settings");
     let document_bytes = web::server::render_shell_document(leptos_options)
-        .await;
+        .await
+        .expect("the shell route renders");
 
     String::from_utf8(document_bytes.to_vec())
         .expect("the rendered document is utf-8")
 }
 
 #[tokio::test]
-async fn render_shell_document_mounts_the_app_on_its_own_container() {
+async fn render_shell_document_renders_the_map_view_and_its_canvas() {
     let document: String = render_shell_document().await;
 
-    /* Mounting on <body> would entangle Leptos's reactive tree with extension-injected nodes. */
-    assert!(document.contains(r#"<div id="leptos">"#) || document.contains(r#"id="map-view""#));
-    assert!(document.contains("<canvas"));
+    assert!(document.contains(r#"<main id="map-view">"#));
+    assert!(document.contains(r#"<canvas id="map-canvas">"#));
 }
 
 #[tokio::test]
@@ -44,11 +45,12 @@ async fn render_shell_document_declares_one_language_and_direction() {
 }
 
 #[tokio::test]
-async fn render_shell_document_omits_the_dev_reload_script() {
+async fn render_shell_document_omits_the_dev_reload_socket() {
     let document: String = render_shell_document().await;
 
-    /* cargo-leptos sets LEPTOS_WATCH, and a deployed document carrying a websocket pointing at a
-       developer's reload port would be inert at best. */
-    assert!(!document.contains("__leptos_hot_reload"));
+    /* cargo-leptos sets LEPTOS_WATCH, and the reload script it gates opens a websocket to a developer's
+       reload port, which a deployed document must not carry. */
     assert!(!document.contains("ws://"));
+    assert!(!document.contains("wss://"));
+    assert!(!document.contains("reload_port"));
 }

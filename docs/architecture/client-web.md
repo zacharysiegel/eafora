@@ -41,13 +41,16 @@ eafora/
 ├── core/                       # the shared Rust core (consumer surface)
 ├── web/                        # this document's subject
 │   ├── Cargo.toml              # depends on core, leptos, wasm-bindgen, web-sys, js-sys, gloo, ...; cargo-leptos config under [package.metadata.leptos]
+│   ├── wrangler.toml           # assets-only Workers Assets config; no `main`, no `not_found_handling`
 │   ├── style/                  # Sass partials (organized per §CSS architecture)
 │   ├── static/                 # static assets served verbatim
 │   │   ├── embedded_artifacts/ # downsampled bundle copied here by the build script
 │   │   │   ├── manifest.json
 │   │   │   ├── geometry/
 │   │   │   └── (statistic shards under whatever subdirectory the manifest names)
-│   │   ├── favicon.ico
+│   │   ├── _headers            # per-path response headers the edge applies
+│   │   ├── .assetsignore       # paths wrangler skips when uploading
+│   │   ├── discovery           # static discovery document naming the repository base
 │   │   └── robots.txt
 │   └── src/
 │       ├── lib.rs              # crate root; declares `app` + the cfg-gated `client` module; both SSR and client-side builds compile this
@@ -141,9 +144,7 @@ We upload no precompressed files. Workers Assets does not negotiate them, and up
 
 The consequence for the perf budget is larger than the compression question itself. Cloudflare compresses a response only when its content type is on a fixed list, and that list holds no generic binary type: no `application/octet-stream`, no `application/vnd.sqlite3`, no catch-all. A 1.5 MB FlatGeobuf file, far above any size threshold, came back with all 1,576,240 bytes and no `Content-Encoding`. So the geometry and the statistic shards transfer whole even though they compress by 3.4x and 13x, and `scripts/build/measure-site-budget.sh` counts them at full size for that reason.
 
-Claiming that saving means compressing the artifacts in the producer and decompressing them in `shared`, which would cover the R2-served live bundle and the native clients too. Tracked in `docs/backlog.md`.
-
-The compression gap between Workers Assets's automatic q4–q5 and our shipped q11 is real for the WASM bundle and the embedded artifacts (both compress well; both are perf-budget-relevant). Worth the extra build step.
+Compressed in transit those two files would total 631,850 bytes rather than 3,702,064, so approx. 3.07 MB per cold fetch is on the table. Claiming it means compressing the artifacts in the producer and decompressing them in `shared`, which would cover the R2-served live bundle and the native clients too. Tracked in `docs/backlog.md`.
 
 ### Perf-budget warning
 
@@ -178,7 +179,7 @@ Total:        1.21 MB
   html shell             964 B
 ```
 
-Until hosted CI exists, `scripts/git/pr-integrate.sh` runs the report while integrating any branch that touched `web/` or `shared/`.
+Until hosted CI exists, `scripts/git/pr-integrate.sh` runs the report while integrating any branch that touched anything the site is built from (`web/`, `shared/`, or either Cargo manifest).
 
 ### Build dependency direction
 
@@ -648,7 +649,7 @@ Per Constitution Principle VII, the web-only TDD-required surfaces are:
 - Browser fetch adapter error mapping: simulated 4xx / 5xx responses (via a mock server or `web_sys` interception layer; verify the most ergonomic option in headless Chrome) map to `AppError`s carrying the source URL and HTTP status in the message body.
 - Canvas-to-wgpu-surface bridge: assert the surface's reported size matches the canvas's `clientWidth`/`clientHeight`; assert resize events propagate. Headless Chrome.
 - WebGPU vs WebGL2 backend selection: the `?renderer=webgl2` query-string flag forces the GL backend; assert the resulting `wgpu::Adapter::backend()` is `Backend::Gl`; the unflagged path picks `Backend::WebGpu` on browsers that support it.
-- Perf-budget reporting: `scripts/build/measure-site-budget.sh` is the test surface, invoked by `scripts/git/pr-integrate.sh` while integrating a branch that touched `web/` or `shared/`. The script does not fail the build; the warning is in the text output for human review.
+- Perf-budget reporting: `scripts/build/measure-site-budget.sh` is the test surface, invoked by `scripts/git/pr-integrate.sh` while integrating a branch that touched anything the site is built from (`web/`, `shared/`, or either Cargo manifest). The script does not fail the build; the warning is in the text output for human review.
 
 Cross-platform surfaces (manifest parsing, SHA-256 verification, license-class authorization, FlatGeobuf hit testing) are tested in `core/` once and not re-tested per platform. See `client.md` §Testing strategy.
 
@@ -656,13 +657,13 @@ End-to-end browser tests are **not** in scope for the foreseeable future (throug
 
 ## Decisions still open
 
-- Page shell HTML structure. The `index.html` template that cargo-leptos uses as the SSR shell is checked in; its exact `<head>` contents (font preloads, viewport meta, OG tags for social sharing, `<link rel="canonical">`) need a small pass before the first deploy. Trigger: the first real deployment to the production domain.
+- Page shell HTML structure. The shell is rendered from `web/src/app.rs::shell`, not from a checked-in template, and `web export-shell` writes it to `target/site/index.html` for the deploy. Its `<head>` still needs a pass for font preloads, OG tags for social sharing, and `<link rel="canonical">`. Trigger: the first real deployment to the production domain.
 
 ## Things to verify
 
 1. **Pinned Leptos version's exact `[package.metadata.leptos]` keys**: `wasm-opt-args`, `bin-profile-release`, `lib-profile-release`. Confirm key spellings against the version pinned in `web/Cargo.toml` before relying on the snippet in §`cargo-leptos`.
 2. **wgpu surface-from-canvas function name**: `Instance::create_surface_unsafe` with `SurfaceTargetUnsafe::Canvas` is the current shape; verify against the version pinned in `core/`.
-3. **Does `cargo leptos build --release` invoke the SSR binary's `main`?** The official `examples/static_routing/` documents `cargo leptos watch` only. If `--release` builds the binary but does not run it, CI needs an explicit `./target/server/release/web` step after the build to trigger `static_routes.generate()`. Confirm by running once and inspecting `target/site/region/`.
+3. ~~Does `cargo leptos build --release` invoke the SSR binary's `main`?~~ Answered: it does not. The binary is built and not run, and a build empties the site root, so `scripts/build/build-site.sh` runs `./target/release/web export-shell` afterward. The binary is at `target/release/`, not `target/server/release/`, because `bin-target-dir` is unset.
 4. **Safari OPFS support cutoff**: Safari shipped OPFS in 16.4 but `createWritable` arrived later still. Verify the exact iOS/macOS Safari version cutoff against `caniuse.com` before relying on the §Quota and persistence step 5 hard-fail path.
 5. **`core::canonical::all_region_codes()` shape**: the function the `prerender_params` closure calls. Confirm the exact signature when `core/` lands; the SSG step depends on this list being authoritative and complete.
 

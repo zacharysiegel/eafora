@@ -13,4 +13,4 @@ directory = "../target/site"
 # which would hand the artifact loader an HTML document in place of the shard it asked for instead of the
 # 404 it reports.
 # TODO: produce a 404.html in the build and switch this to "404-page", so a person who mistypes a URL
-# gets a styled page rather than an empty response. Tracked in docs/backlog.md under Infrastructure / ops.
+# gets a styled page rather than an empty response.
