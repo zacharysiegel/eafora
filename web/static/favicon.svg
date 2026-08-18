@@ -1,13 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-    <!-- A sheet with a 1px border, which at this size is the identity's hairline rule and also the only
-         thing separating a white tile from a light browser tab strip. -->
-    <rect x="0.5" y="0.5" width="15" height="15" fill="#ffffff" stroke="#111111" stroke-width="1" />
-    <!-- Drawn as rectangles rather than set as text, so it needs no font present and stays crisp at any
-         size. The identity's 1px stroke would vanish at 16px, so the mark is solid. -->
-    <g fill="#d50000">
-        <rect x="4" y="3" width="2" height="10" />
-        <rect x="4" y="3" width="8" height="2" />
-        <rect x="4" y="7" width="7" height="2" />
-        <rect x="4" y="11" width="8" height="2" />
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" shape-rendering="crispEdges">
+    <!-- Four values from the map's white-to-red ramp, lightest to darkest in reading order.
+         The tile is otherwise transparent: there is no border and no paper. -->
+    <rect x="2" y="2" width="6" height="6" fill="#f7d1d1"/>
+    <rect x="8" y="2" width="6" height="6" fill="#ec8c8c"/>
+    <rect x="2" y="8" width="6" height="6" fill="#e14747"/>
+    <rect x="8" y="8" width="6" height="6" fill="#d50000"/>
 </svg>
