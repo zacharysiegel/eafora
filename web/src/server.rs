@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use axum::body::{Body, Bytes};
 use axum::http::{Request, StatusCode};
+use any_spawner::Executor;
 use axum::Router;
 use leptos::logging::log;
 use leptos::prelude::*;
@@ -73,6 +74,11 @@ pub async fn write_prerendered_document() -> Result<(), AppError> {
    a streamed render emits out-of-order chunks that only resolve once the client runs their patch
    scripts. */
 pub async fn prerender_document(leptos_options: LeptosOptions) -> Result<Bytes, AppError> {
+    /* Rendering spawns futures onto a global executor and panics when none is set. The dev server gets one
+       from leptos_axum's routing helper, which a build-time render never calls. An error means it is
+       already set, which is not a problem here. */
+    let _ = Executor::init_tokio();
+
     let declared_paths: Vec<String> = declared_route_paths();
 
     if declared_paths != [PRERENDERED_ROUTE_PATH] {
@@ -104,8 +110,6 @@ pub async fn prerender_document(leptos_options: LeptosOptions) -> Result<Bytes, 
         .map_err(|error| AppError::from(format!("could not read the rendered document; [error={error}]")))
 }
 
-/* leptos_axum initializes the global executor that rendering spawns onto inside this call, and rendering
-   panics without it, so this has to run before any render on this path. */
 fn declared_route_paths() -> Vec<String> {
     leptos_axum::generate_route_list(App)
         .iter()

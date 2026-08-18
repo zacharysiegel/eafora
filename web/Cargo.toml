@@ -50,6 +50,7 @@ web-sys = { workspace = true, optional = true, features = [
 console_log = { workspace = true, optional = true }
 console_error_panic_hook = { workspace = true, optional = true }
 leptos_axum = { workspace = true, optional = true }
+any_spawner = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 chrono = { workspace = true }
@@ -82,6 +83,7 @@ ssr = [
     "leptos_i18n/ssr",
     "dep:leptos_axum",
     "dep:axum",
+    "dep:any_spawner",
     "tokio/rt",
     "tokio/rt-multi-thread",
     "tokio/net",

@@ -7178,6 +7178,7 @@ dependencies = [
 name = "web"
 version = "0.0.0"
 dependencies = [
+ "any_spawner",
  "axum",
  "base64",
  "chrono",
