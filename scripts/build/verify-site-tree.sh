@@ -14,6 +14,7 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly SITE_DIR="${1:-${REPO_ROOT}/target/site}"
 readonly DOCUMENT_PATH="${SITE_DIR}/index.html"
+readonly DISCOVERY_PATH="${SITE_DIR}/discovery"
 
 # cargo-leptos inserts a 22-character base64url digest between the stem and the extension.
 readonly HASHED_NAME_PATTERN='\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9]+$'
@@ -53,4 +54,17 @@ if [[ "$reference_count" -eq 0 ]]; then
     fail "the document references no /pkg/ assets, so it would load nothing"
 fi
 
+if [[ ! -f "$DISCOVERY_PATH" ]]; then
+    fail "${DISCOVERY_PATH} is missing, so a client has nothing to resolve the artifact repository from"
+fi
+
+repository_base_url="$(jq -r '.repository_base_url' "$DISCOVERY_PATH")"
+
+# A relative base only resolves against whatever origin serves this tree, which is what local development
+# wants and a deploy never does: it would send every artifact fetch back at the site itself.
+if [[ "$repository_base_url" != https://* ]]; then
+    fail "the discovery document names a relative artifact repository, which only works when serving locally; [repository_base_url=${repository_base_url}]"
+fi
+
 printf '%s: prerendered document present, %d referenced assets present and content-hashed\n' "$SITE_DIR" "$reference_count"
+printf '%s: discovery names %s\n' "$SITE_DIR" "$repository_base_url"

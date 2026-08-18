@@ -9,8 +9,14 @@ pub fn static_discovery_document() -> Result<DiscoveryDocument, AppError> {
     artifact::parse_discovery_document(STATIC_DISCOVERY_JSON.as_bytes())
 }
 
+/* The committed document names the local repository, which is what `cargo leptos watch` serves. A deploy
+   sets this variable so the value compiled in names the artifact CDN instead, which matters because the
+   speculative manifest fetch that races discovery uses it. */
 pub fn static_repository_base_url() -> Result<String, AppError> {
-    Ok(static_discovery_document()?.repository_base_url)
+    match option_env!("EAFORA_REPOSITORY_BASE_URL") {
+        Some(base_url) => Ok(base_url.to_string()),
+        None => Ok(static_discovery_document()?.repository_base_url),
+    }
 }
 
 pub enum AuthoritativeBase {
