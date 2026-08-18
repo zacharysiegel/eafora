@@ -3,10 +3,14 @@
     {
       "allowed": {
         "origins": [
+          "https://app.eafora.org",
           "https://eafora.org",
           "https://eafora-web.siegelzc.workers.dev"
         ],
-        "methods": ["GET", "HEAD"]
+        "methods": [
+          "GET",
+          "HEAD"
+        ]
       }
     }
   ]
