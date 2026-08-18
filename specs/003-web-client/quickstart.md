@@ -97,6 +97,14 @@ curl -sD - -o /dev/null http://127.0.0.1:8787/discovery
 
 Pass `--port` if 8787 is taken. This serves whatever is in `target/site`, so run `./scripts/build/build-site.sh` first.
 
+## Allow the artifact fetches cross-origin
+
+```sh
+./scripts/build/set-artifact-cors.sh
+```
+
+The site and the artifact CDN are different origins, so without a CORS policy on the bucket the browser discards every shard response after it arrives, reporting a CORS failure against a 200. The policy is `ingestion/r2-cors.json`; the script reads the bucket and account from `.env`. Run it once per bucket, and after adding a deployment origin.
+
 ## Deploy
 
 ```sh

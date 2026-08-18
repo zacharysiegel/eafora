@@ -612,12 +612,18 @@ The site and the artifacts are different origins, so every shard fetch is cross-
 The policy lives in `ingestion/r2-cors.json`, next to the crate that owns the bucket, and is applied with:
 
 ```sh
-npx wrangler r2 bucket cors set eafora-repository --file ingestion/r2-cors.json
+./scripts/build/set-artifact-cors.sh
 ```
+
+```sh
+./scripts/build/set-artifact-cors.sh --list
+```
+
+The script reads the bucket and account from `.env`, the same place the publisher reads them, so neither name is restated. `--list` reports what is applied without changing it.
 
 Origins are listed exactly rather than wildcarded, because Cloudflare documents origin values as matching exactly and does not document wildcard support. `GET` and `HEAD` are the only methods the clients use, and the fetch sets no header beyond the cache mode, so no request triggers a preflight and no `AllowedHeaders` entry is needed.
 
-Two operational notes from Cloudflare's documentation: a policy change can take up to 30 seconds to propagate, and a custom domain already serving traffic needs its cache purged before responses carry the new header. Confirm with `npx wrangler r2 bucket cors list eafora-repository`, or against a real response:
+Two operational notes from Cloudflare's documentation: a policy change can take up to 30 seconds to propagate, and a custom domain already serving traffic needs its cache purged before responses carry the new header. Either one makes a correct policy look like it never took effect, so confirm against a real response rather than against the applied policy alone:
 
 ```sh
 curl -sD - -o /dev/null -H 'Origin: https://eafora.org' https://repository.eafora.org/latest/manifest.json
