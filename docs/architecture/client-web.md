@@ -276,6 +276,8 @@ Mechanically, the deploy runs:
 ./scripts/build/deploy-site.sh --build    # build-site.sh, verify, then `wrangler deploy` of target/site/
 ```
 
+`cd web && npx wrangler dev` serves the same tree locally through the same asset worker, which is the only way to exercise `_headers` and the 404 behavior without deploying. Opening `target/site/index.html` over `file://` does not work, because the asset URLs leptos writes are absolute.
+
 The server binary lands at `./target/release/web` (cargo-leptos only writes it under `target/server/` when `bin-target-dir` is set, which this project does not set). `build-site.sh` runs it in place, because the render reads the content-hash file from the directory holding the binary.
 
 The binary serves in dev and exports on demand, rather than being an SSG-only pass-through: the `axum::serve(...)` step from Leptos's standard SSR pattern is what makes `cargo leptos watch` work, while production deploys the exported files and starts no server. When the SSG routes land they can either extend the export or declare `SsrMode::Static` and call `static_routes.generate()`; note that a route declared `SsrMode::Static` is served from a generated file in dev too, and an incremental watch rebuild does not regenerate it, so the dev server would keep serving a stale document.

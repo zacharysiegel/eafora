@@ -83,6 +83,20 @@ Every script resolves its own paths, so none of them care about the current dire
 
 `measure-site-budget.sh` prints the first-paint and second-paint artifact totals against the 2 MB / 8 MB targets, and the client code alongside them uncapped. It marks a total at or above 90% of its target ` near cap` and one over it `*** OVER CAP ***` with a warning line, and it always exits 0: the targets are for a person to weigh, not a gate. Anything it cannot pin down (a missing shell document, or two `.wasm` files where a visitor fetches one) is reported as unmeasured rather than as a smaller number. With no arguments it runs `build-site.sh` first; `--no-build` reports on whatever is already in `target/site/`, which may be a debug build.
 
+## Serve the deployable tree locally
+
+```sh
+cd web && npx wrangler dev
+```
+
+The prerendered `index.html` cannot be opened over `file://`: leptos writes absolute asset URLs (`/pkg/...`), which resolve against the filesystem root there, so nothing loads. Serving the tree fixes that, and `wrangler dev` is worth preferring over any static server because it runs the same asset worker production does. It reports how many `_headers` rules it parsed and then applies them, so the response headers and the 404 behavior can be checked without deploying:
+
+```sh
+curl -sD - -o /dev/null http://127.0.0.1:8787/discovery
+```
+
+Pass `--port` if 8787 is taken. This serves whatever is in `target/site`, so run `./scripts/build/build-site.sh` first.
+
 ## Deploy
 
 ```sh
