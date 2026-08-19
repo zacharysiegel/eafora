@@ -79,7 +79,7 @@ The manifest type lives once in `core/src/artifact/manifest.rs` with both `Seria
 > - Stand up the `core/` crate (workspace member) and move the manifest type into `core::artifact::manifest`, with `ingestion::artifact::writer::manifest` importing it. Currently the producer-side struct is local (`ingestion/src/artifact/writer/manifest.rs::ManifestSerializer`) and there is no `core/`. Sequenced before the first client implementation, since the client depends on `core/` existing.
 > - Rename the `data/` subdirectory to `statistics/` for symmetry with `geometry/` and to remove the ambiguity of "data" as a shard subtype name. Touches the `SUBDIR_DATA` constant and its references. Pre-dates the first client implementation, so no migration concern.
 > - `ingestion build` emits a `downsampled/` subtree per build (under `$EAFORA_ARTIFACTS_DIR/<version-label>/downsampled/`) for the native-client embedded bundle, generated directly from the canonical store alongside the complete bundle.
-> - Publish the discovery document at `https://eafora.org/discovery` (see §Discovery and live bundle resolution for the schema). Initially a committed static file under the web app's `static/` tree; regenerated via a small script when the contract changes.
+> - Publish the discovery document at `https://app.eafora.org/discovery` (see §Discovery and live bundle resolution for the schema). Initially a committed static file under the web app's `static/` tree; regenerated via a small script when the contract changes.
 
 ### Discovery and live bundle resolution
 
@@ -93,7 +93,7 @@ Pinned at client build time on every platform. The client's build script pulls t
 
 #### Discovery URL: the one forever-URL
 
-Clients commit to exactly one immutable URL: `https://eafora.org/discovery`. Everything else — including the repository base URL — is server-supplied at runtime. This indirection exists almost entirely for the native clients: web rebuilds and redeploys on every commit, so a static URL would be a one-commit change to update, but iOS and Android binaries live on user devices for months or years, and a `repository.eafora.org` re-platform without runtime indirection would silently break every old install in the field. We keep the contract identical across platforms (web included) for simplicity; it costs web nothing.
+Clients commit to exactly one immutable URL: `https://app.eafora.org/discovery`. Everything else — including the repository base URL — is server-supplied at runtime. This indirection exists almost entirely for the native clients: web rebuilds and redeploys on every commit, so a static URL would be a one-commit change to update, but iOS and Android binaries live on user devices for months or years, and a `repository.eafora.org` re-platform without runtime indirection would silently break every old install in the field. We keep the contract identical across platforms (web included) for simplicity; it costs web nothing.
 
 The endpoint is `/discovery` with no extension. The content-type comes from the response header, not the path; an extension would prematurely couple the URL to a specific backing implementation (static file vs. Pages Function vs. someday-Worker) and we want freedom there.
 
@@ -119,13 +119,13 @@ Fields not in v1, intentionally:
 
 Cache headers on the discovery doc: `Cache-Control: public, max-age=3600`. A re-platform propagates to every client within an hour. Short enough to recover from a mistake; long enough to avoid hammering the endpoint.
 
-The document is physically hosted on the same Cloudflare Workers Assets deploy that serves the web app (`web/static/discovery`, deployed at `https://eafora.org/discovery`), because `eafora.org` is the obvious place for it and we already have a deploy serving that origin. The endpoint is platform-agnostic — every client fetches it at startup — but it ends up living in the web tree by convenience. See `client-web.md` §Deploy target for the deployment shape.
+The document is physically hosted on the same Cloudflare Workers Assets deploy that serves the web app (`web/static/discovery`, deployed at `https://app.eafora.org/discovery`), because `eafora.org` is the obvious place for it and we already have a deploy serving that origin. The endpoint is platform-agnostic — every client fetches it at startup — but it ends up living in the web tree by convenience. See `client-web.md` §Deploy target for the deployment shape.
 
 ##### Static fallback
 
 Clients also keep a static `repository_base_url` from the committed discovery document at build time (web: `include_str!` of `web/static/discovery`). This fallback is used **only** when the discovery fetch fails (offline, broken document, transient outage). It drifts from current truth over time, but it's the right behavior for "client can't reach discovery — use the last-known-good source." If both discovery and the manifest fetch under the fallback URL fail, the embedded bundle remains the floor, exactly as designed.
 
-The fallback is the committed discovery file, not a hand-typed string and not a script that fetches `https://eafora.org/discovery`.
+The fallback is the committed discovery file, not a hand-typed string and not a script that fetches `https://app.eafora.org/discovery`.
 
 ##### Speculative parallel fetch at startup
 
@@ -133,7 +133,7 @@ The expected case is "the discovery URL still points at the static repository UR
 
 1. Construct `Bundle` from the embedded bundle. Map renders. (No network.)
 2. Fire two requests in parallel:
-   - The discovery fetch to `https://eafora.org/discovery`.
+   - The discovery fetch to `https://app.eafora.org/discovery`.
    - The manifest fetch to `<static_repository_base_url>/latest/manifest.json` (speculative).
 3. When discovery resolves:
    - If its `repository_base_url` matches the static URL → the speculative fetch is the one we wanted. Await it, verify, hot-swap.

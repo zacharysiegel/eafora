@@ -8,7 +8,7 @@ pub const DISCOVERY_SCHEMA_VERSION: u32 = 1;
 /// The single forever-URL of the Eafora system. Consumers commit to exactly this
 /// URL; everything else (including `repository_base_url`) is server-supplied at
 /// runtime by the discovery document fetched from here.
-pub const DISCOVERY_URL: &str = "https://eafora.org/discovery";
+pub const DISCOVERY_URL: &str = "https://app.eafora.org/discovery";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiscoveryDocument {
