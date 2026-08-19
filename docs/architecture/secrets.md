@@ -4,21 +4,20 @@
 
 ## The rule
 
-**A secret is a value that grants access. Everything else is an identifier, however obscure it looks.**
+**Anything that must not be disclosed goes through `secr`. Everything else is configuration and sits in `.env` in plaintext.**
 
-- Secrets live encrypted in `secrets.yaml`, are decrypted at runtime through `secr`, and never appear in plaintext in the repository or in a shell history.
-- Identifiers live in `.env`, in plaintext. Account ids, bucket names, usernames, base URLs.
+The practical test is rotation: if this value leaked, would it have to be changed? A password, an API secret, a signing key, yes. An account id, a bucket name, a username, no.
 
-The distinction is not about how sensitive a value feels. A username identifies an account and grants nothing on its own; a password grants access. Both halves of one credential can therefore end up in different places, which is the part that surprises people.
+Obscurity is not the test. A long random-looking access key id is still configuration; a short guessable password is still a secret. And both halves of one credential can land in different places, which is the part that surprises people.
 
 Worked examples:
 
 | Value | Where | Why |
 |---|---|---|
-| `R2_ACCOUNT_ID` | `.env` | identifies an account |
-| `R2_ARTIFACT_BUCKET` | `.env` | names a bucket |
-| `R2_PUBLISH_ACCESS_KEY_ID` | `.env` | names a key, grants nothing alone |
-| `cloudflare.r2.publish.secret_access_key` | `secrets.yaml` | grants write access to the bucket |
+| `R2_ACCOUNT_ID` | `.env` | configuration |
+| `R2_ARTIFACT_BUCKET` | `.env` | configuration |
+| `R2_PUBLISH_ACCESS_KEY_ID` | `.env` | names a key; leaking it costs nothing |
+| `cloudflare.r2.publish.secret_access_key` | `secrets.yaml` | leaking it means rotating it |
 
 `.env` is gitignored, so an identifier that is also personal data (an account email, say) belongs there rather than in `template.env`.
 
