@@ -1,0 +1,13 @@
+Completed cohort fertility and completed cohort fertility by age 40
+Last modified: 2026-07-02
+Code    Cohort     CCF     CCF40
+AUT     1936     2.436     2.402
+AUT     1937     2.410     2.379
+AUT     1938     2.339     2.313
+AUT     1974         .     1.603
+AUT     1975         .     1.590
+USA     1918     2.507     2.429
+USA     1919     2.595     2.517
+DEUTNP  1941     1.916     1.902
+DEUTE   1941     1.952     1.945
+GBR_SCO 1930     2.544     2.501
