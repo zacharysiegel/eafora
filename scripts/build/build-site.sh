@@ -5,6 +5,7 @@
 #
 # Usage:
 #   ./scripts/build/build-site.sh
+#   ./scripts/build/build-site.sh --force    (proceed even while the dev server is running)
 #
 # Two orderings matter and are the reason this is a script rather than two commands in a doc. A build
 # empties the site root, so the document must be written after it, never before. And the hashed-filename
@@ -29,10 +30,47 @@ export LEPTOS_HASH_FILES=true
 # serves and in the value compiled into the wasm for the speculative fetch that races discovery.
 export EAFORA_REPOSITORY_BASE_URL="${EAFORA_REPOSITORY_BASE_URL:-$PRODUCTION_REPOSITORY_BASE_URL}"
 
+FORCE=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force)
+            FORCE=true
+            shift
+            ;;
+        *)
+            echo "usage: $0 [--force]" >&2
+            exit 64
+            ;;
+    esac
+done
+
 function fail {
     printf 'error: %s\n' "$1" >&2
     exit 1
 }
+
+# `cargo leptos watch` serves this same site root, and a release build replaces everything in it. The
+# rebuild that follows restores the dev files under their stable names, which leaves a browser holding a
+# cached shim from one build and fetching a module from another: the symbols no longer line up.
+function refuse_while_the_dev_server_runs {
+    local site_address
+    site_address="$(grep -E '^site-addr[[:space:]]*=' "${WEB_DIR}/Cargo.toml" | head -1 | sed -E 's/^[^=]*=[[:space:]]*"(.*)".*$/\1/' || true)"
+
+    if [[ -z "$site_address" ]]; then
+        return 0
+    fi
+
+    local port="${site_address##*:}"
+
+    if lsof -nP -iTCP:"$port" -sTCP:LISTEN > /dev/null 2>&1; then
+        fail "the dev server is listening on ${site_address} and serves the same tree this build replaces; stop it, or pass --force and hard-reload the browser afterwards"
+    fi
+}
+
+if [[ "$FORCE" == false ]]; then
+    refuse_while_the_dev_server_runs
+fi
 
 if ! command -v cargo-leptos > /dev/null 2>&1; then
     fail "cargo-leptos is not installed; run: cargo install cargo-leptos --locked"
