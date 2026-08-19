@@ -1,6 +1,6 @@
 # Secrets
 
-> **Status: draft, 2026-08-19.** How `secr`, `.env`, and the ingestion binary fit together.
+> **Status: draft, 2026-08-19.** How `secr`, `.env`, and the ingestion binary fit together. `secrets.yaml` lists the secrets and documents adding one; this covers what it does not.
 
 ## Where things go
 
@@ -12,14 +12,9 @@ Names read `<vendor>.<account>.<purpose>`.
 
 ## Reading one
 
-```rust
-secrets::master_decrypt(name) -> Result<Vec<u8>, AppError>
-secrets::master_decrypt_utf8(name) -> Result<String, AppError>
-```
+`secrets::master_decrypt_utf8(name)`, or `master_decrypt` for bytes. Both need `MASTER_SECRET` and `SECR_STORE_PATH` from `.env`. The store is a `LazyLock` with an `expect`, so a missing store panics when a secret is first read rather than at startup.
 
-Needs `MASTER_SECRET` (base64 master key) and `SECR_STORE_PATH` from `.env`. The store is a `LazyLock` with an `expect`, so a missing store panics when a secret is first read rather than at startup.
-
-Read secrets at the point of use, not at startup, so a source that is not running needs no credential present.
+Read at the point of use, not at startup, so a source that is not running needs no credential present.
 
 ## Working-directory dependencies
 
@@ -30,25 +25,3 @@ The scheduled job satisfies both through `WorkingDirectory` in `ingestion/eafora
 ## `.env` is regenerated
 
 `setup.sh` rewrites `.env` from `template.env` on every run, preserving only `MASTER_SECRET`. Put new identifiers in `template.env`, not `.env`.
-
-## Adding a secret
-
-```sh
-secr encrypt --key "$MASTER_SECRET" --name hfd.siegelzc.password '<the-password>'
-```
-
-Paste the resulting `nonce` and `ciphertext` into `secrets.yaml`. The file is committed; the ciphertext is what is in it and the master key is what is not. Run this in your own terminal.
-
-```sh
-secr decrypt --key "$MASTER_SECRET" hfd.siegelzc.password
-```
-
-## Inventory
-
-| Name | Purpose |
-|---|---|
-| `cloudflare.r2.publish.token` | Cloudflare API token for the artifact bucket |
-| `cloudflare.r2.publish.secret_access_key` | S3 secret for uploading artifacts |
-| `hfd.siegelzc.password` | Human Fertility Database account, for downloading data files |
-
-Only `ingestion` reads secrets. The web client has none: it is a static deploy of public artifacts.
