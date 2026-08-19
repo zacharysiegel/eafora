@@ -8,4 +8,6 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
 
 ## Sequence
 
-1. **`004-ios-client`** — Xcode project + xcframework + SwiftUI shell + file-system cache adapter + AASA deploy + TestFlight pipeline. Spec: `specs/004-ios-client/spec.md`. Off `master`; may run in parallel with the web phases. **Pending.**
+1. **`007-hfd-ingestion`** — the second data source and the first added statistic: completed cohort fertility from the Human Fertility Database, plus the client work that keeps a cohort from being drawn as a calendar instant. Spec: `specs/007-hfd-ingestion/spec.md`. **In progress** (`hfd-ingestion`).
+   - Ordered ahead of the iOS client at the owner's direction: data integrations first. The sources after this one are Gapminder, then Eurostat, then OECD, per `docs/research/data-source-licensing.md` §Recommended ingestion roadmap.
+2. **`004-ios-client`** — Xcode project + xcframework + SwiftUI shell + file-system cache adapter + AASA deploy + TestFlight pipeline. Spec: `specs/004-ios-client/spec.md`. Off `master`; may run in parallel with the web phases. **Pending.**
