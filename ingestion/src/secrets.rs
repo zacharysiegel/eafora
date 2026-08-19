@@ -1,9 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use base64::Engine;
 use secr::store::SecretStore;
 use secr::{cryptography, load, BASE64};
+use shared::filesystem;
 
 use crate::error::AppError;
 
@@ -24,7 +25,8 @@ pub fn master_decrypt_utf8(secret_name: &str) -> Result<String, AppError> {
 }
 
 fn load_secrets() -> Result<SecretStore, AppError> {
-    let store_path: String = dotenvy::var("SECR_STORE_PATH")?;
-    let store: SecretStore = load::load_secrets_from_file(Path::new(&store_path))?;
+    let declared_store_path: String = dotenvy::var("SECR_STORE_PATH")?;
+    let store_path: PathBuf = filesystem::resolve_workspace_relative(Path::new(&declared_store_path))?;
+    let store: SecretStore = load::load_secrets_from_file(&store_path)?;
     Ok(store)
 }

@@ -3,10 +3,15 @@ use sha2::{Digest, Sha256};
 use crate::error::AppError;
 
 #[cfg(not(target_arch = "wasm32"))] // not for wasm32: filesystem access (wasm32 reads bytes via the ArtifactCache)
+use std::env;
+#[cfg(not(target_arch = "wasm32"))] // not for wasm32: filesystem access (wasm32 reads bytes via the ArtifactCache)
 use std::fs;
 #[cfg(not(target_arch = "wasm32"))] // not for wasm32: path types for the filesystem helpers below
 use std::path::{Path, PathBuf};
 use std::ops::Deref;
+
+#[cfg(not(target_arch = "wasm32"))] // not for wasm32: names a section of a Cargo manifest read off disk
+const WORKSPACE_MANIFEST_MARKER: &str = "[workspace";
 
 #[cfg(not(target_arch = "wasm32"))] // not for wasm32: holds a PathBuf (a local filesystem path)
 #[derive(Debug, Clone)]
@@ -79,6 +84,53 @@ pub fn filename_of(path: &Path) -> Result<&str, AppError> {
     path.file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| AppError::from(format!("path missing filename component: {:?}", path)))
+}
+
+/* Searching upward keeps working if the starting directory moves deeper in the tree, which counting parent
+   directories would not. */
+#[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads Cargo manifests off the local filesystem
+pub fn find_workspace_root(start_directory: &Path) -> Result<PathBuf, AppError> {
+    let mut directory: Option<&Path> = Some(start_directory);
+
+    while let Some(candidate) = directory {
+        if declares_workspace(&candidate.join("Cargo.toml")) {
+            return Ok(candidate.to_path_buf());
+        }
+
+        directory = candidate.parent();
+    }
+
+    Err(AppError::from(format!(
+        "no Cargo.toml declaring a workspace at or above the starting directory; [start={}]",
+        start_directory.display(),
+    )))
+}
+
+/* `dotenvy` finds `.env` by searching upward from the current directory, so a relative path read out of it
+   has to resolve the same way. Resolving against the current directory instead would make the value depend
+   on where the process was started, and Cargo starts test binaries in the package directory. */
+#[cfg(not(target_arch = "wasm32"))] // not for wasm32: resolves a local filesystem path
+pub fn resolve_workspace_relative(path: &Path) -> Result<PathBuf, AppError> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+
+    let current_directory: PathBuf = env::current_dir()
+        .map_err(|error| AppError::from(format!("could not read the current directory: {}", error)))?;
+
+    Ok(find_workspace_root(&current_directory)?.join(path))
+}
+
+#[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads a Cargo manifest off the local filesystem
+fn declares_workspace(manifest_path: &Path) -> bool {
+    let manifest_text: Result<String, std::io::Error> = fs::read_to_string(manifest_path);
+
+    match manifest_text {
+        Ok(manifest_text) => manifest_text
+            .lines()
+            .any(|line| line.trim_start().starts_with(WORKSPACE_MANIFEST_MARKER)),
+        Err(_) => false,
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads from the local filesystem

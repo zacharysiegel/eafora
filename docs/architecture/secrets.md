@@ -18,9 +18,9 @@ Read at the point of use, not at startup, so a source that is not running needs 
 
 ## Working-directory dependencies
 
-`dotenvy::var` searches for `.env` upward from the current directory, and swallows a missing file before falling back to the process environment — so running from elsewhere fails with a missing-variable error that never mentions `.env`. `SECR_STORE_PATH` is relative too.
+`dotenvy::var` searches for `.env` upward from the current directory, and swallows a missing file before falling back to the process environment — so running from outside the repository fails with a missing-variable error that never mentions `.env`. A relative `SECR_STORE_PATH` resolves against the workspace root the same way, so it holds from any directory inside the tree.
 
-The scheduled job satisfies both through `WorkingDirectory` in `ingestion/eafora-ingestion.plist.template`. Its `EnvironmentVariables` block carries only `RUST_LOG`, and launchd inherits no shell environment, so removing that `WorkingDirectory` breaks decryption.
+The scheduled job satisfies this through `WorkingDirectory` in `ingestion/eafora-ingestion.plist.template`. Its `EnvironmentVariables` block carries only `RUST_LOG`, and launchd inherits no shell environment, so removing that `WorkingDirectory` breaks decryption.
 
 ## `.env` is regenerated
 
