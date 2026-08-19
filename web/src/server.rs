@@ -10,6 +10,7 @@ use axum::Router;
 use leptos::logging::log;
 use leptos::prelude::*;
 use leptos_axum::LeptosRoutes;
+use shared::filesystem;
 use shared::AppError;
 
 use crate::app::{shell, App};
@@ -17,7 +18,6 @@ use crate::app::{shell, App};
 const HASH_FILES_VARIABLE: &str = "LEPTOS_HASH_FILES";
 const PRERENDERED_ROUTE_PATH: &str = "/";
 const PRERENDERED_DOCUMENT_NAME: &str = "index.html";
-const WORKSPACE_MANIFEST_MARKER: &str = "[workspace";
 
 const CRATE_DIRECTORY: &str = env!("CARGO_MANIFEST_DIR");
 const MANIFEST_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
@@ -148,7 +148,10 @@ fn apply_hash_files_override(mut leptos_options: LeptosOptions) -> Result<Leptos
 }
 
 fn resolve_site_root(leptos_options: &LeptosOptions) -> Result<PathBuf, AppError> {
-    let workspace_root: PathBuf = find_workspace_root()?;
+    /* The manifest's site-root is relative to the workspace root, so it resolves against the directory
+       holding the workspace manifest rather than this crate's own. Anchoring on the crate directory rather
+       than the current one keeps a build working from anywhere in the tree. */
+    let workspace_root: PathBuf = filesystem::find_workspace_root(Path::new(CRATE_DIRECTORY))?;
     let declared_site_root: PathBuf = workspace_root.join(leptos_options.site_root.as_ref());
 
     fs::canonicalize(&declared_site_root)
@@ -156,34 +159,4 @@ fn resolve_site_root(leptos_options: &LeptosOptions) -> Result<PathBuf, AppError
             "the site root does not exist, so no build has run; [path={} error={error}]",
             declared_site_root.display(),
         )))
-}
-
-/* The manifest's site-root is relative to the workspace root, so it resolves against the directory holding
-   the workspace manifest rather than this crate's own. Searching upward keeps working if this crate moves
-   deeper in the tree, which counting parent directories would not. */
-fn find_workspace_root() -> Result<PathBuf, AppError> {
-    let mut directory: Option<&Path> = Some(Path::new(CRATE_DIRECTORY));
-
-    while let Some(candidate) = directory {
-        if declares_workspace(&candidate.join("Cargo.toml")) {
-            return Ok(candidate.to_path_buf());
-        }
-
-        directory = candidate.parent();
-    }
-
-    Err(AppError::from(format!(
-        "no Cargo.toml declaring a workspace at or above this crate; [crate={CRATE_DIRECTORY}]",
-    )))
-}
-
-fn declares_workspace(manifest_path: &Path) -> bool {
-    let manifest_text: Result<String, std::io::Error> = fs::read_to_string(manifest_path);
-
-    match manifest_text {
-        Ok(manifest_text) => manifest_text
-            .lines()
-            .any(|line| line.trim_start().starts_with(WORKSPACE_MANIFEST_MARKER)),
-        Err(_) => false,
-    }
 }
