@@ -1,88 +1,54 @@
 # Secrets
 
-> **Status: draft, 2026-08-19.** The contract between `secr`, `.env`, and the ingestion binary. Written because the wiring works but was only inferable by reading `setup.sh`, `secrets.yaml`, and `ingestion/src/secrets.rs` together.
+> **Status: draft, 2026-08-19.** How `secr`, `.env`, and the ingestion binary fit together.
 
-## The rule
+## Where things go
 
-**Anything that must not be disclosed goes through `secr`. Everything else is configuration and sits in `.env` in plaintext.**
+Secrets go in `secrets.yaml` through `secr`. Everything else goes in `.env`.
 
-The practical test is rotation: if this value leaked, would it have to be changed? A password, an API secret, a signing key, yes. An account id, a bucket name, a username, no.
+Both halves of one credential can split: `R2_PUBLISH_ACCESS_KEY_ID` lives in `.env`, `cloudflare.r2.publish.secret_access_key` in `secr`.
 
-Obscurity is not the test. A long random-looking access key id is still configuration; a short guessable password is still a secret. And both halves of one credential can land in different places, which is the part that surprises people.
+Names read `<vendor>.<account>.<purpose>`.
 
-Worked examples:
-
-| Value | Where | Why |
-|---|---|---|
-| `R2_ACCOUNT_ID` | `.env` | configuration |
-| `R2_ARTIFACT_BUCKET` | `.env` | configuration |
-| `R2_PUBLISH_ACCESS_KEY_ID` | `.env` | names a key; leaking it costs nothing |
-| `cloudflare.r2.publish.secret_access_key` | `secrets.yaml` | leaking it means rotating it |
-
-`.env` is gitignored, so an identifier that is also personal data (an account email, say) belongs there rather than in `template.env`.
-
-## How a secret is read
-
-`ingestion/src/secrets.rs` exposes two functions, keyed by the dotted name under which the secret is stored:
+## Reading one
 
 ```rust
 secrets::master_decrypt(name) -> Result<Vec<u8>, AppError>
 secrets::master_decrypt_utf8(name) -> Result<String, AppError>
 ```
 
-Both need two environment variables, read through `dotenvy`:
+Needs `MASTER_SECRET` (base64 master key) and `SECR_STORE_PATH` from `.env`. The store is a `LazyLock` with an `expect`, so a missing store panics when a secret is first read rather than at startup.
 
-- `MASTER_SECRET` — the base64 master key every secret in the store is encrypted against.
-- `SECR_STORE_PATH` — the store's path, `secrets.yaml` by default.
+Read secrets at the point of use, not at startup, so a source that is not running needs no credential present.
 
-The store is a `LazyLock`, loaded once on first use and `expect`ed. A missing or unreadable store therefore panics at the moment a secret is first needed, not at startup, and the panic names the store rather than the caller.
+## Working-directory dependencies
 
-## Two dependencies on the working directory
+`dotenvy::var` searches for `.env` upward from the current directory, and swallows a missing file before falling back to the process environment — so running from elsewhere fails with a missing-variable error that never mentions `.env`. `SECR_STORE_PATH` is relative too.
 
-Both of these are load-bearing and easy to break.
+The scheduled job satisfies both through `WorkingDirectory` in `ingestion/eafora-ingestion.plist.template`. Its `EnvironmentVariables` block carries only `RUST_LOG`, and launchd inherits no shell environment, so removing that `WorkingDirectory` breaks decryption.
 
-**`dotenvy::var` searches for `.env` from the current directory upward.** It is not the process environment alone: `var` calls `dotenv()` once behind a `call_once`, and a missing `.env` is swallowed (`dotenv().ok()`), after which the lookup falls back to the real environment and fails only if the variable is absent there too. Run the binary from outside the repository with no `.env` in an ancestor directory and every secret lookup fails with a missing-variable error rather than anything mentioning `.env`.
+## `.env` is regenerated
 
-**`SECR_STORE_PATH` is relative.** `template.env` sets it to `secrets.yaml`, resolved against the current directory.
-
-The scheduled job satisfies both by setting `WorkingDirectory` to the repository root in `ingestion/eafora-ingestion.plist.template`. Its `EnvironmentVariables` block carries only `RUST_LOG`; `MASTER_SECRET` reaches the job through `.env` and the working directory, not through the plist. A launchd job inherits no shell environment, so moving or removing that `WorkingDirectory` breaks decryption in a way nothing else would explain.
-
-## `setup.sh` regenerates `.env` on every run
-
-`setup.sh` rewrites `.env` from `template.env` each time it runs, substituting exactly one value: `MASTER_SECRET`, taken from its first argument or from the existing `.env`. Everything else comes from the template.
-
-**Anything hand-edited into `.env` is destroyed by the next `setup.sh`.** A new identifier therefore belongs in `template.env`, committed, with `.env` regenerated. Only `MASTER_SECRET` survives.
+`setup.sh` rewrites `.env` from `template.env` on every run, preserving only `MASTER_SECRET`. Put new identifiers in `template.env`, not `.env`.
 
 ## Adding a secret
 
-`secr` is installed as a CLI (`cargo install secr`). Encrypt against the same master key the store already uses, and give the secret the dotted name the code will ask for:
-
 ```sh
-secr encrypt --key "$MASTER_SECRET" --name hfd.password '<the-password>'
+secr encrypt --key "$MASTER_SECRET" --name hfd.siegelzc.password '<the-password>'
 ```
 
-Paste the resulting `nonce` and `ciphertext` pair into `secrets.yaml` under that name. `secrets.yaml` is committed: its contents are ciphertext, and the master key is what is secret.
-
-Run the command in your own terminal rather than through an agent, and prefer a form that keeps the plaintext out of shell history.
-
-To read one back:
+Paste the resulting `nonce` and `ciphertext` into `secrets.yaml`. The file is committed; the ciphertext is what is in it and the master key is what is not. Run this in your own terminal.
 
 ```sh
-secr decrypt --key "$MASTER_SECRET" hfd.password
+secr decrypt --key "$MASTER_SECRET" hfd.siegelzc.password
 ```
 
 ## Inventory
 
-| Name | Read by | Purpose |
-|---|---|---|
-| `cloudflare.r2.publish.token` | ingestion | Cloudflare API token for the artifact bucket |
-| `cloudflare.r2.publish.secret_access_key` | ingestion, `publish cloudflare-r2` | S3 secret for uploading artifacts |
+| Name | Purpose |
+|---|---|
+| `cloudflare.r2.publish.token` | Cloudflare API token for the artifact bucket |
+| `cloudflare.r2.publish.secret_access_key` | S3 secret for uploading artifacts |
+| `hfd.siegelzc.password` | Human Fertility Database account, for downloading data files |
 
-Nothing outside `ingestion` reads a secret. The web client has none by construction: it is a static deploy serving public artifacts, and a secret shipped to a browser would not be one.
-
-## When adding an upstream source that needs credentials
-
-1. Put the identifier in `template.env`, regenerate `.env` through `setup.sh`.
-2. Encrypt the secret into `secrets.yaml` under a dotted name that reads as `<vendor>.<system>.<purpose>`.
-3. Read it in the source's `_client.rs` via `secrets::master_decrypt_utf8`, at the point of use rather than at startup, so a source that is not being run needs no credential present.
-4. Add a row to the inventory above.
+Only `ingestion` reads secrets. The web client has none: it is a static deploy of public artifacts.
