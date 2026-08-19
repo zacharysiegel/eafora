@@ -36,12 +36,21 @@ A visitor selects a region and sees which source supplied the value and whether 
 - A value is missing, which HFD encodes as a dot: the cell is skipped with a warning rather than parsed as zero.
 - Both HFD and World Bank WDI supply a cell for the same region, statistic, and period: the source-preference merge selects one, and the series never mixes sources.
 - The upstream file's header row differs from the expected columns: the run fails with an error naming the file and the columns found, rather than reading a column by position.
+- The download returns the registration page because the account has not accepted the agreement: the run fails with an error saying so, rather than parsing HTML as data.
+- Upstream is unchanged since the last run: nothing is downloaded past the point that becomes knowable, and the report shows a run that wrote nothing.
 
 ## Requirements
 
 ### Phase A, ingestion
 
-- **FR-001**: System MUST implement the `fetch_and_store(pool, options) -> Result<IngestReport, AppError>` adapter contract for HFD exactly as `docs/architecture/ingestion.md` §Adapter contract specifies, with the client and adapter split per the repository's per-source module convention: `hfd_client.rs` knows the file format and nothing about the canonical store, `hfd_adapter.rs` converts to canonical rows and houses the orchestrator.
+- **FR-001**: System MUST implement the `fetch_and_store(pool, options) -> Result<IngestReport, AppError>` adapter contract for HFD exactly as `docs/architecture/ingestion.md` §Adapter contract specifies, with the client and adapter split per the repository's per-source module convention: `hfd_client.rs` knows the wire format and nothing about the canonical store, `hfd_adapter.rs` converts to canonical rows and houses the orchestrator.
+- **FR-001a**: `fetch_upstream` MUST authenticate before downloading. HFD serves its download URLs only to a logged-in account that has accepted the user agreement; an unauthenticated request returns the registration page with status 200, so the client MUST detect a non-archive response rather than trusting the status code.
+- **FR-001b**: Credentials MUST come from `HFD_USERNAME` in the environment and `hfd.siegelzc.password` through `secr`, read at the point of use per `docs/architecture/secrets.md`. Neither may be logged, and a failed login MUST report that it failed without echoing either.
+- **FR-001c**: System MUST download `tfr.zip`, the by-statistic archive holding period and cohort TFR for every country, rather than a per-country archive. One request covers roughly 38 countries.
+- **FR-001d**: System MUST extract the archive in memory using the existing `zip` dependency, and MUST read only `XXXtfrVH.txt` members from it.
+- **FR-001e**: Login failure, an unaccepted agreement, and an archive that cannot be parsed MUST be errors that stop the run, not warnings. They are configuration faults rather than data quirks.
+- **FR-001f**: System MUST skip work when upstream has not changed: compare the last-modification date each file declares against the newest `data_source_publication.revision_label` for HFD, via the contract's `read_latest_publication_revision`, and write nothing for a file whose date is unchanged. `options.force_full_refetch` MUST override this.
+- **FR-001g**: A run MUST make one login and one archive request. Re-fetching per country, or re-downloading an archive already known to be unchanged, is what HFD's request not to circulate stale copies asks us to avoid on their side as well as ours.
 - **FR-002**: System MUST read completed cohort fertility from HFD's cohort summary file, `XXXtfrVH.txt`, where `XXX` is the HFD country code. The by-birth-order companion (`XXXtfrVHbo.txt`) is out of scope. Note for any later feature that ingests exposure-to-risk or fertility tables: the agreement's prescribed citation applies by its own terms to those, and would then have to be rendered verbatim, download date included.
 - **FR-003**: System MUST parse HFD's output format as documented in HFD's own `formats.pdf`: space-delimited ASCII, two informational lines followed by the column header on the third line, and missing values encoded as a dot. Parsing MUST be a pure function over bytes, with no I/O.
 - **FR-004**: System MUST resolve columns by header name read from the third line, never by ordinal position, so an upstream column addition or reordering cannot silently shift which value is stored.
@@ -89,6 +98,8 @@ Phase B ends by releasing the statistic. Until then Phase A's data sits in the c
 - **SC-004**: Selecting completed cohort fertility labels the axis for a birth cohort, and the active value reads as a span rather than an instant.
 - **SC-005**: A cell whose status is not final is distinguishable in the region detail panel from one that is.
 - **SC-006**: An unmapped subpopulation code produces a warning on the report and no rows, and the run's exit status stays zero.
+- **SC-007**: A run against unchanged upstream downloads the archive once, writes nothing, and reports the run as having found no change.
+- **SC-008**: A run with a wrong password fails with an error that names the login step and contains neither the username nor the password.
 
 ## What HFD asks of a republisher
 
@@ -104,7 +115,9 @@ Eafora is an aggregator that republishes values through a CDN, so this is worth 
 ## Assumptions
 
 - HFD's estimates are CC BY 4.0 and its input files are not, per the user agreement quoted above. FR-002 reads a single output file and FR-008b forbids the inputs outright.
-- Downloads sit behind a free account. Whether HFD's terms permit automated fetching with stored credentials is unverified. Until it is, the client reads from a local directory of files the operator has downloaded, which is why FR-001 says nothing about HTTP. A later change can add fetching without touching parsing or normalization.
+- Automated download appears permitted: HFD's `robots.txt` disallows only `/cgi-bin`, and the agreement speaks to redistribution and citation rather than to how files are retrieved. The account gate is enforced per user, confirmed by an unauthenticated request to `/File/Download/Files/zip/tfr.zip` returning the registration page.
+- The login form's fields are not recorded here because they have not been read from the live form. The site is ASP.NET-shaped (`/Account/Auth`, `/Account/Login`), so an antiforgery token is likely and the plan must record what the form actually requires.
+- Session handling needs a decision: `reqwest` is configured with `json` and `rustls-tls` only, so it has no cookie store. Either enable its `cookies` feature or carry the session cookie explicitly across the two requests. The second adds no dependency and keeps the exchange visible, which suits a two-request flow.
 - The exact column headers of `XXXtfrVH.txt` are not recorded here because FR-004 requires reading them from the file. The plan should record them once a real file is in hand.
 - HFD's cohort summary is published by single birth cohort. If a country's file uses multi-year cohorts, FR-007's encoding covers it and FR-018 is what keeps the presentation honest.
 - Countries in scope are those whose HFD code maps to a canonical region under FR-006. The set is expected to be roughly 30 of HFD's 38 codes, the remainder being subpopulations.
@@ -117,7 +130,6 @@ Out of scope, each for a stated reason:
 - **Tempo-adjusted TFR.** Fits the existing cell shape and needs neither of Phase B's changes, so it is a small follow-up rather than part of this feature. `XXXadjtfrRR.txt` is the file.
 - **HFD's Short-Term Fertility Fluctuations series.** Monthly and quarterly counts at a short lag, and the fastest data any source in the survey offers. It is provisional by nature, so it wants FR-019 landed first, and it is a separate cadence of ingestion.
 - **HFD subpopulations.** East and West Germany and the UK constituents have no canonical region. Adding them is a region-hierarchy decision, not an ingestion one.
-- **Automated fetching.** See Assumptions.
 
 ## Constitution check
 
