@@ -30,11 +30,11 @@ A visitor selects a region and sees which source supplied the value and whether 
 
 ### Edge cases
 
-- A cohort has not completed childbearing, so `CCF` is a dot while `CCF40` carries a value: no row is written, because the age-40 measure is a different statistic. This is the newest ten cohorts of every country.
-- A mapped country's every row is dotted, so it yields nothing: Chile is exactly this in the 2026-07-02 release, with four rows covering 1977 to 1980 and no completed cohort among them. One warning, no rows, and the country simply has no data for this statistic.
+- A cohort has not completed childbearing, so `CCF` is `.` while `CCF40` carries a value: no row is written, because the age-40 measure is a different statistic. This is the newest ten cohorts of every country.
+- A mapped country has no value in any row, so it yields nothing: Chile is exactly this in the 2026-07-02 release, with four rows covering 1977 to 1980 and no completed cohort among them. One warning, no rows, and the country simply has no data for this statistic.
 - HFD's file carries a supplementary measure computed by age 40 alongside the completed measure: the age-40 variant is a different definition, not a less-final version of the same one, and is out of scope rather than stored with a different `data_status`.
 - An HFD code names a subpopulation rather than a country (`DEUTE`, `DEUTW`, `GBRTENW`, `GBR_SCO`, `GBR_NIR`): no canonical region matches, and the run records a warning and continues.
-- A value is missing, which HFD encodes as a dot: the cell is skipped with a warning rather than parsed as zero.
+- A value is absent, which HFD writes as `.`: the cell is skipped rather than parsed as zero.
 - Both HFD and World Bank WDI supply a cell for the same region, statistic, and period: the source-preference merge selects one, and the series never mixes sources.
 - The upstream file's header row differs from the expected columns: the run fails with an error naming the file and the columns found, rather than reading a column by position.
 - The download returns the registration page because the account has not accepted the agreement: the run fails with an error saying so, rather than parsing HTML as data.
@@ -53,7 +53,7 @@ A visitor selects a region and sees which source supplied the value and whether 
 - **FR-001f**: System MUST skip work when upstream has not changed: compare the last-modification date each file declares against the newest `data_source_publication.revision_label` for HFD, via the contract's `read_latest_publication_revision`, and write nothing for a file whose date is unchanged. `options.force_full_refetch` MUST override this.
 - **FR-001g**: A run MUST make one login and one archive request. Re-fetching per country, or re-downloading an archive already known to be unchanged, is what HFD's request not to circulate stale copies asks us to avoid on their side as well as ours.
 - **FR-002**: System MUST read completed cohort fertility from the `tfrVH.txt` member of the by-statistic archive, which holds every country in one file keyed by a `Code` column. The per-country archives use `XXXtfrVH.txt`; the by-statistic archive does not, and only the latter is downloaded. The by-birth-order companion (`tfrVHbo.txt`) is out of scope. Note for any later feature that ingests exposure-to-risk or fertility tables: the agreement's prescribed citation applies by its own terms to those, and would then have to be rendered verbatim, download date included.
-- **FR-003**: System MUST parse HFD's output format as documented in HFD's own `formats.pdf`: space-delimited ASCII, two informational lines followed by the column header on the third line, and missing values encoded as a dot. Parsing MUST be a pure function over bytes, with no I/O.
+- **FR-003**: System MUST parse HFD's output format as documented in HFD's own `formats.pdf`: space-delimited ASCII, two informational lines followed by the column header on the third line, and an absent value written as a single `.` rather than left empty. Parsing MUST be a pure function over bytes, with no I/O.
 - **FR-004**: System MUST resolve columns by header name read from the third line, never by ordinal position, so an upstream column addition or reordering cannot silently shift which value is stored. The header is `Code Cohort CCF CCF40`.
 - **FR-004a**: System MUST store `CCF` and MUST ignore `CCF40`. The age-40 measure is a different definition rather than a less-complete version of the same one, and every row carries it even where `CCF` is absent.
 - **FR-005**: System MUST derive the publication's `revision_label` from the last-modification date the file's second line carries, so every captured publication has a label taken from the upstream artifact rather than synthesized.
@@ -70,8 +70,8 @@ A visitor selects a region and sees which source supplied the value and whether 
 - **FR-010c**: The existing `tfr` statistic MUST be released by the same migration that adds the column, so behaviour is unchanged for what already ships.
 - **FR-011**: System MUST set `data_status` on every row it writes, using `final` for HFD's completed measure.
 - **FR-012**: System MUST surface non-fatal upstream quirks as `IngestWarning` values on the report rather than as errors: an unmapped country code, and a mapped country that yielded no values at all.
-- **FR-012a**: A dotted `CCF` MUST NOT warn. It means the cohort has not completed childbearing, which is the normal state of the newest ten cohorts of every country, 364 of 1701 rows in the 2026-07-02 release. Warning per row would emit hundreds of warnings a run and bury the ones that matter. The count of skipped cells belongs in the report instead.
-- **FR-013**: System MUST provide checked-in sample files under `ingestion/samples/hfd/` covering a happy path, a dotted missing value, an unmapped subpopulation code, and a cohort absent from the file. Samples MUST be replayable without network access.
+- **FR-012a**: An absent `CCF` MUST NOT warn. It means the cohort has not completed childbearing, which is the normal state of the newest ten cohorts of every country, 364 of 1701 rows in the 2026-07-02 release. Warning per row would emit hundreds of warnings a run and bury the ones that matter. The count of skipped cells belongs in the report instead.
+- **FR-013**: System MUST provide checked-in sample files under `ingestion/samples/hfd/` covering a happy path, an absent value, an unmapped subpopulation code, and a cohort absent from the file. Samples MUST be replayable without network access.
 - **FR-014**: System MUST cover parsing and normalization with tests written before the implementation, per Constitution Principle VII.
 - **FR-015**: System MUST wire HFD into the CLI's `source` dispatch and the `all` orchestration.
 
