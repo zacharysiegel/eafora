@@ -704,7 +704,6 @@ async fn set_up_driver(
     let initial_controls: ViewControls = driver.view_controls(&published_bundle);
     let initial_legend: LegendView = driver.legend_view(&published_bundle);
     let initial_global: GlobalView = driver.resolve_global_view(&published_bundle);
-    /* At info beside the bundle line: both state which data painted, which is what a report needs. */
     log::info!(
         "initial global figure resolved; [period_start={} value={:?} source={:?}]",
         initial_global.period_start,

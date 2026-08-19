@@ -24,8 +24,6 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 // The product name, not a translated string: it reads the same in every locale.
                 <title>Eafora</title>
-                /* Two forms because a client may take either: the raster is universally decodable, the
-                   vector scales to whatever size a client asks for. */
                 <link rel="icon" sizes="32x32" href="/favicon.ico" />
                 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
                 <HashedStylesheet options=options.clone() id="leptos" />
