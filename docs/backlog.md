@@ -9,7 +9,6 @@ Add new entries at the bottom of the relevant section. When picking up an item, 
 ## Ingestion / producer
 
 - **Decouple geometry from per-version artifact bundles.** The current shape re-uploads the full geometry file under every published `version_label`. Geometry changes rarely (Natural Earth boundary updates are infrequent; subnational additions happen in discrete v2+ steps), so re-publishing it every version wastes R2 storage and bandwidth. A future shape publishes geometry to its own content-addressed key shared across versions, with the per-version manifest referencing it by URL (absolute, or rooted somewhere other than the version directory). Affects the publish flow and the manifest's `relative_path` resolution rule; invisible to consumers as long as they resolve URLs from the manifest entry rather than string-formatting paths. **Trigger:** R2 storage cost or upload time becomes a real signal. See `docs/architecture/ingestion.md` and `docs/architecture/client.md` §Decisions still open for related design notes.
-- **`docs-architecture-secrets` mini-plan.** Document which secrets the ingestion binary needs (R2 credentials initially; nothing else through v2) and how `secr` integrates with the launchd entrypoint. Currently the wiring works and is captured implicitly across `setup.sh`, `secrets.yaml`, and `ingestion/src/secrets.rs`, but no single doc explains the contract. **Trigger:** a second secret enters the system (e.g. a non-R2 upstream API key), or onboarding friction surfaces the gap.
 
 ## Client
 
