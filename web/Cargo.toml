@@ -58,10 +58,12 @@ chrono = { workspace = true }
 [build-dependencies]
 leptos_i18n_build = { workspace = true }
 
-# Compiles the info and debug call sites out of a release client, so neither their output nor their format
-# strings ship. Declared per-target because ingestion reports its progress at info and must keep it.
+# Compiles the debug call sites out of a release client, which are per-interaction and would flood a
+# visitor's console. Info survives: a static deploy has no server to log to, so the console is the only
+# place a report can come from. Declared per-target because feature selection unifies across a workspace
+# build, and ingestion needs its own debug output.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-log = { workspace = true, features = ["release_max_level_warn"] }
+log = { workspace = true, features = ["release_max_level_info"] }
 
 # The headless-browser harness for the OPFS cache's #[wasm_bindgen_test] cases; the native ssr build has no browser tests.
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]

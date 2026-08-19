@@ -6,15 +6,10 @@ use crate::app::App;
 pub fn hydrate() {
     console_error_panic_hook::set_once();
 
-    /* A release client reports only what a visitor's console should carry: something went wrong. The
-       info and debug call sites are compiled out of that build besides, so this only decides what a
-       development build shows. */
-    let level: log::Level = if cfg!(debug_assertions) {
-        log::Level::Debug
-    } else {
-        log::Level::Warn
-    };
-    _ = console_log::init_with_level(level);
+    /* One level serves both builds: a release client has no debug call sites left to filter, since
+       Cargo.toml caps this target at info, and it keeps its info output because a static deploy has no
+       server to log to. */
+    _ = console_log::init_with_level(log::Level::Debug);
 
     log::debug!("the client is attaching to the served document");
 

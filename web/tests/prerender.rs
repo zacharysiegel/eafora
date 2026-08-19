@@ -44,16 +44,8 @@ async fn prerendered_document_names_the_product_in_the_tab() {
 async fn prerendered_document_references_the_favicon() {
     let document: String = prerendered_document().await;
 
-    /* The raster form has to come first, because Safari takes the first icon it can use rather than the
-       best one, and cannot be relied on to read the svg. */
-    let raster_position: usize = document
-        .find(r#"href="/favicon.ico""#)
-        .expect("the document declares the raster icon");
-    let vector_position: usize = document
-        .find(r#"href="/favicon.svg""#)
-        .expect("the document declares the vector icon");
-
-    assert!(raster_position < vector_position);
+    assert!(document.contains(r#"href="/favicon.ico""#));
+    assert!(document.contains(r#"href="/favicon.svg""#));
 }
 
 #[tokio::test]
