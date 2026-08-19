@@ -10,7 +10,7 @@
 
 ## Why this source, and why this statistic
 
-The Human Fertility Database is the second data source and the first one that adds a statistic rather than more coverage of an existing one. `docs/data/sources-survey.md` §Indicator coverage matrix marks completed cohort fertility and tempo-adjusted TFR as unavailable from UN WPP and the World Bank and available from HFD; both are statistics the product names, and neither is reachable without this source. `docs/research/data-source-licensing.md` §Recommended ingestion roadmap places HFD in Tier 2: its derived outputs are CC BY 4.0 and may be ingested, while the national input tables it also hosts may not.
+The Human Fertility Database is the second data source and the first one that adds a statistic rather than more coverage of an existing one. `docs/data/sources-survey.md` §Indicator coverage matrix marks completed cohort fertility and tempo-adjusted TFR as unavailable from UN WPP and the World Bank and available from HFD; both are statistics the product names, and neither is reachable without this source. HFD's user agreement settles the licensing directly: the estimates HFD constructs are CC BY 4.0, while "this is not the case for the input data which remains under each provider's distribution license", and that input data "should not be used for commercial gain or re-published in any form without the explicit permission of the data owners (usually national statistical agencies)". So the outputs are ingestible and the inputs are not, and the distinction is a licence boundary rather than a scoping preference.
 
 HFD is deliberately narrow. It covers roughly 38 developed countries against the World Bank's 180-plus, recomputing every indicator from national birth registers on one method so figures are comparable across countries and decades. It is depth where World Bank WDI is breadth, which is why the two coexist rather than compete: the source-preference merge picks one source per cell, and this feature is the first thing that exercises it.
 
@@ -48,9 +48,14 @@ A visitor selects a region and sees which source supplied the value and whether 
 - **FR-005**: System MUST derive the publication's `revision_label` from the last-modification date the file's second line carries, so every captured publication has a label taken from the upstream artifact rather than synthesized.
 - **FR-006**: System MUST map HFD country codes to canonical regions via ISO 3166-1 alpha-3 where the code is a plain country code, and MUST treat a code that resolves to no canonical region as a warning that does not stop the run. HFD's national-total codes that are not bare alpha-3 (`FRATNP`, `DEUTNP`, `GBR_NP`) MUST map to their countries; its subpopulation codes MUST NOT.
 - **FR-007**: System MUST encode a single-year birth cohort as `period_start` = 1 January of the cohort year and `period_end` = 1 January of the following year, per the encoding `statistic_value.period_start`'s column comment already documents for cohorts.
-- **FR-008**: System MUST register HFD in `data_source` via a seed migration with `code='hfd'`, `license_class='attribution'`, `license_name='CC BY 4.0'`, attribution following HFD's requested citation form, and a `preference_rank` that wins over World Bank WDI for the cells both supply, because HFD recomputes from national registers on one method.
+- **FR-008**: System MUST register HFD in `data_source` via a seed migration with `code='hfd'`, `license_class='attribution'`, `license_name='CC BY 4.0'`, and a `preference_rank` that wins over World Bank WDI for the cells both supply, because HFD recomputes from national registers on one method.
+- **FR-008a**: The attribution MUST follow the citation HFD's agreement prescribes, naming HFD, the Max Planck Institute for Demographic Research, the Vienna Institute of Demography, and `www.humanfertility.org`, and MUST include the download date, which the agreement requires as "Data downloaded on [date]".
+- **FR-008b**: System MUST NOT read, store, or republish any file HFD publishes under Input Data on its country pages. FR-002 names one output file; this requirement states the reason, which is that the inputs carry each provider's own licence and forbid commercial use and republication without the owner's permission.
 - **FR-009**: System MUST register the statistic via a seed migration with `code='ccf'` and a name of "Completed cohort fertility". The code MUST NOT be `cfr`: HFD distributes a `cfr.zip` holding cumulative fertility rates, a different measure, and the collision would mislead every later reader.
-- **FR-010**: System MUST add the matching `StatisticKind` variant in the same change as the seed migration, because `read_all_statistic_kinds` fails on a `statistic.code` it cannot parse and would otherwise break the artifact build.
+- **FR-010**: System MUST add a nullable `released timestamp with time zone` column to `statistic`, and `read_all_statistic_kinds` MUST consider only released statistics. The column follows the schema's existing idiom for state changes, nullable timestamps rather than booleans as with `statistic_value.superseded`, and carries when the statistic began being offered for the same storage. It is named `released` rather than `published` because `data_source_publication.published` already means the upstream's own publication date.
+- **FR-010a**: A statistic MUST NOT need a `StatisticKind` variant until it is released. Ingestion resolves statistics by `statistic.code`, so Phase A can land its seed row, its adapter, and real rows in `statistic_value` with no client knowledge of the statistic at all. This is what decouples the migration from the enum.
+- **FR-010b**: A released statistic whose code has no `StatisticKind` variant MUST remain a hard error rather than being skipped with a warning. Releasing a statistic no client can render is a misconfiguration, and failing the artifact build is how it gets noticed; silently omitting it would publish a bundle missing a statistic someone expected.
+- **FR-010c**: The existing `tfr` statistic MUST be released by the same migration that adds the column, so behaviour is unchanged for what already ships.
 - **FR-011**: System MUST set `data_status` on every row it writes, using `final` for HFD's completed measure.
 - **FR-012**: System MUST surface non-fatal upstream quirks as `IngestWarning` values on the report rather than as errors: an unmapped country code, a dotted value, a cohort with no value.
 - **FR-013**: System MUST provide checked-in sample files under `ingestion/samples/hfd/` covering a happy path, a dotted missing value, an unmapped subpopulation code, and a cohort absent from the file. Samples MUST be replayable without network access.
@@ -59,10 +64,14 @@ A visitor selects a region and sees which source supplied the value and whether 
 
 ### Phase B, presenting a cohort
 
+Phase B ends by releasing the statistic. Until then Phase A's data sits in the canonical store, ingested and verifiable, without reaching a client.
+
 - **FR-016**: The shard read path MUST carry `period_end` and `data_status` into the client's cell values. Both columns are already written into every shard and are discarded by the current five-column read; the range and the status the following requirements need come from the same change.
 - **FR-017**: `StatisticKind` MUST distinguish a period measure from a cohort measure, and the period axis MUST take its label from that distinction rather than from a fixed string. The existing per-statistic colour transform is the precedent for varying presentation by statistic.
 - **FR-018**: The scrubber MUST represent the active value as the span from `period_start` to `period_end` rather than as a single instant, for every statistic. An annual period renders as a one-year span and a multi-year cohort as a span of its width, so a five-year cohort is never drawn as a dot at its first year.
 - **FR-019**: The region detail panel MUST show a cell's `data_status` when it is anything other than final, in the design's existing vocabulary and without decoration.
+- **FR-020a**: The migration releasing `ccf` MUST be the last change in Phase B, so the statistic becomes visible only once the axis, the span, and the citation render correctly.
+- **FR-020**: The client MUST be able to render HFD's required citation, including the download date. The manifest already carries `source_revisions` per source with `revision`, `published`, and `fetched`, so the date is available without a format change; the panel currently shows only the source's name.
 
 ### Key entities
 
@@ -80,9 +89,20 @@ A visitor selects a region and sees which source supplied the value and whether 
 - **SC-005**: A cell whose status is not final is distinguishable in the region detail panel from one that is.
 - **SC-006**: An unmapped subpopulation code produces a warning on the report and no rows, and the run's exit status stays zero.
 
+## What HFD asks of a republisher
+
+HFD's agreement closes with a request rather than a licence term: "the preferable option is not to pass a copy of these data to other users. Instead, refer them to the HFD website, where they may download the data for themselves." Its stated reasons are to stop outdated or incorrect copies circulating, and to keep each user in reach of the source, processing, and citation documentation.
+
+Eafora is an aggregator that republishes values through a CDN, so this is worth answering rather than skipping. CC BY 4.0 permits the redistribution, and the phrasing is a courtesy request, not a condition. The intent is nonetheless honourable within the existing design, and these are the ways it is honoured:
+
+- Every published cell already carries its source and that source's revision, so a value is traceable to the HFD release it came from rather than floating free.
+- FR-008a and FR-020 carry the download date through to the reader, which is what HFD's own citation form asks for and what makes a stale copy identifiable as one.
+- Re-ingesting on HFD's update cadence keeps the published copy current, which is the substance of the concern. A frozen copy would be the thing the request warns against.
+- Attribution links to HFD, where the documentation the request wants users to reach lives.
+
 ## Assumptions
 
-- HFD's terms permit ingesting its derived output files and republishing derived values with attribution, per `docs/research/data-source-licensing.md`. The input tables HFD also hosts are excluded by FR-002 naming a single output file.
+- HFD's estimates are CC BY 4.0 and its input files are not, per the user agreement quoted above. FR-002 reads a single output file and FR-008b forbids the inputs outright.
 - Downloads sit behind a free account. Whether HFD's terms permit automated fetching with stored credentials is unverified. Until it is, the client reads from a local directory of files the operator has downloaded, which is why FR-001 says nothing about HTTP. A later change can add fetching without touching parsing or normalization.
 - The exact column headers of `XXXtfrVH.txt` are not recorded here because FR-004 requires reading them from the file. The plan should record them once a real file is in hand.
 - HFD's cohort summary is published by single birth cohort. If a country's file uses multi-year cohorts, FR-007's encoding covers it and FR-018 is what keeps the presentation honest.
