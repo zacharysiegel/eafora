@@ -18,6 +18,7 @@ use uuid::Uuid;
 use ingestion::artifact;
 use ingestion::artifact::artifact_model::{Artifacts, BuildReport, StatisticShard};
 use shared::artifact::bundle::StatisticShardKey;
+use shared::artifact::manifest::BundleVariant;
 use ingestion::artifact::publish::PublishReport;
 use ingestion::artifact::repository::{ArtifactRepositoryKind, DryArtifactRepository, LocalArtifactRepository};
 use shared::artifact::manifest;
@@ -232,6 +233,7 @@ fn write_synthetic_bundle(artifact_dir: &Path, version_label: &str) -> BuildRepo
         &shards,
         &geometry_hashed,
         version_label,
+        BundleVariant::Complete,
         &data_source_revisions,
         artifact_dir,
     )

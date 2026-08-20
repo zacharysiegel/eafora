@@ -131,8 +131,8 @@ async fn download_cohort_archive(client: &reqwest::Client) -> Result<Vec<u8>, Ap
 /// Reads only the cohort members. HFD's input files carry each provider's own licence and are excluded
 /// from this crate entirely; the by-birth-order companion is a different statistic.
 pub fn read_cohort_members(archive: &[u8]) -> Result<Vec<CohortFertilityFile>, AppError> {
-    let reader = std::io::Cursor::new(archive);
-    let mut zip = zip::ZipArchive::new(reader)
+    let reader: std::io::Cursor<&[u8]> = std::io::Cursor::new(archive);
+    let mut zip: zip::ZipArchive<std::io::Cursor<&[u8]>> = zip::ZipArchive::new(reader)
         .map_err(|error| AppError::from(format!("could not open the hfd archive; [error={error}]")))?;
 
     let member_names: Vec<String> = (0..zip.len())
@@ -143,7 +143,7 @@ pub fn read_cohort_members(archive: &[u8]) -> Result<Vec<CohortFertilityFile>, A
     let mut files: Vec<CohortFertilityFile> = Vec::with_capacity(member_names.len());
 
     for member_name in member_names {
-        let mut member = zip
+        let mut member: zip::read::ZipFile<'_, std::io::Cursor<&[u8]>> = zip
             .by_name(&member_name)
             .map_err(|error| AppError::from(format!("could not read {member_name}; [error={error}]")))?;
         let mut contents: String = String::new();
@@ -293,6 +293,19 @@ mod tests {
             .expect("the sample carries the requested row")
     }
 
+    fn create_archive(members: &[(&str, &str)]) -> Vec<u8> {
+        let mut writer: zip::ZipWriter<std::io::Cursor<Vec<u8>>> =
+            zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default();
+
+        for (member_name, contents) in members {
+            writer.start_file(*member_name, options).expect("start a member");
+            std::io::Write::write_all(&mut writer, contents.as_bytes()).expect("write a member");
+        }
+
+        writer.finish().expect("finish the archive").into_inner()
+    }
+
     #[test]
     fn parse_cohort_file_reads_the_publication_date_from_the_second_line() {
         let (publication, _): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
@@ -406,6 +419,29 @@ mod tests {
              AUT     1936     n/a     2.402\r\n";
 
         parse_cohort_file(bad_value).expect_err("parse_cohort_file fails");
+    }
+
+    /// Only the cohort member is read: the by-birth-order companion is a different statistic and the
+    /// period file belongs to a different one again.
+    #[test]
+    fn read_cohort_members_reads_only_the_cohort_member() {
+        let archive: Vec<u8> = create_archive(&[
+            ("tfrVH.txt", SAMPLE_COHORT_FILE),
+            ("tfrVHbo.txt", "by birth order"),
+            ("tfrRR.txt", "period"),
+        ]);
+
+        let files: Vec<CohortFertilityFile> =
+            read_cohort_members(&archive).expect("read_cohort_members succeeds");
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].member_name, "tfrVH.txt");
+        assert_eq!(files[0].contents, SAMPLE_COHORT_FILE);
+    }
+
+    #[test]
+    fn read_cohort_members_rejects_bytes_that_are_not_an_archive() {
+        read_cohort_members(b"<html>not an archive</html>").expect_err("read_cohort_members fails");
     }
 
     #[test]

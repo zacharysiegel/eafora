@@ -9,5 +9,14 @@ insert into statistic (code, name_en, name_abbreviated_en, description, units) v
 
 -- migrate:down
 
+-- statistic_value references both statistic(id) and data_source(id), and data_source_publication
+-- references data_source(id), none with ON DELETE CASCADE. Phase A accumulates values before the
+-- statistic is released, so dependents are the normal state here rather than an edge case. Keyed on each
+-- parent separately because a later source may supply ccf, and hfd may supply another statistic.
+delete from statistic_value where statistic_id in (select id from statistic where code = 'ccf');
+delete from statistic_value where data_source_id in (select id from data_source where code = 'hfd');
+delete from source_choice   where statistic_id in (select id from statistic where code = 'ccf');
+delete from source_choice   where data_source_id in (select id from data_source where code = 'hfd');
+delete from data_source_publication where data_source_id in (select id from data_source where code = 'hfd');
 delete from statistic   where code = 'ccf';
 delete from data_source where code = 'hfd';

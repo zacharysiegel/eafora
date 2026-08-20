@@ -33,4 +33,8 @@ pub enum IngestWarningKind {
     UnknownCountry,
     NotApplicableValue,
     UnparsableRow,
+    /// A code that resolved to a region, but whose every value upstream was absent.
+    NoValuesForRegion,
+    /// A code naming a subpopulation rather than a country, which has no canonical region.
+    SubpopulationCode,
 }

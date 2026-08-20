@@ -65,6 +65,7 @@ fn detail_panel(
 fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
     match source {
         DataSourceKind::WorldBankWDI => t!(i18n, source.wb_wdi).into_any(),
+        DataSourceKind::HumanFertilityDatabase => t!(i18n, source.hfd).into_any(),
         // test-only variants; never present in production shards, so these arms only satisfy match exhaustiveness
         DataSourceKind::TestAlpha => source.code().into_any(),
         DataSourceKind::TestBeta => source.code().into_any(),

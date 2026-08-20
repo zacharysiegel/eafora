@@ -17,6 +17,7 @@ use ingestion::artifact::repository::{
 use shared::canonical::canonical_model::DataSourceKind;
 use ingestion::db;
 use ingestion::error::AppError;
+use ingestion::hfd::hfd_adapter;
 use ingestion::ingest::IngestReport;
 use ingestion::secrets;
 use ingestion::version_label;
@@ -24,7 +25,7 @@ use ingestion::world_bank_wdi::world_bank_wdi_adapter;
 
 /// Registered source adapters. Adding a new source = one entry here plus
 /// the source's per-feature module + a `data_source` seed row.
-const REGISTERED_SOURCES: &[DataSourceKind] = &[DataSourceKind::WorldBankWDI];
+const REGISTERED_SOURCES: &[DataSourceKind] = &[DataSourceKind::WorldBankWDI, DataSourceKind::HumanFertilityDatabase];
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -58,7 +59,7 @@ fn build_cli() -> Command {
                 .subcommand(
                     Command::new("source")
                         .about("Run a single source adapter")
-                        .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi)"))
+                        .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi, hfd)"))
                         .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
                 )
                 .subcommand(
@@ -154,6 +155,7 @@ async fn run_source(
 ) -> Result<IngestReport, AppError> {
     match source_kind {
         DataSourceKind::WorldBankWDI => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
+        DataSourceKind::HumanFertilityDatabase => hfd_adapter::fetch_and_store(pool, options).await,
         // The test-only source identities have no real adapter; they never appear in
         // REGISTERED_SOURCES, so this is unreachable at runtime. Listed explicitly (not a
         // catch-all) so adding a real source still breaks this match until it's handled.
@@ -165,15 +167,21 @@ async fn run_source(
 
 fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
     log::info!(
-        "source {} complete: added={} revised={} skipped={} warnings={}",
+        "source complete; [source={} added={} revised={} skipped={} absent_upstream={} warnings={}]",
         source_kind.code(),
         report.values_added,
         report.values_revised,
         report.values_skipped,
+        report.values_absent_upstream,
         report.warnings.len(),
     );
     for warning in &report.warnings {
-        log::warn!("source {} {:?}: {}", source_kind.code(), warning.kind, warning.message);
+        log::warn!(
+            "{}; [source={} kind={:?}]",
+            warning.message,
+            source_kind.code(),
+            warning.kind,
+        );
     }
 }
 
