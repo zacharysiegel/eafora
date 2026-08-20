@@ -24,7 +24,8 @@
         "replacement": "replacement"
     },
     "source": {
-        "wb_wdi": "World Bank WDI"
+        "wb_wdi": "World Bank WDI",
+        "hfd": "Human Fertility Database"
     },
     "settings": {
         "title": "Settings",

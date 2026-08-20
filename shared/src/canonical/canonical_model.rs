@@ -112,6 +112,7 @@ impl_code_serde!(StatisticKind, code);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DataSourceKind {
     WorldBankWDI,
+    HumanFertilityDatabase,
     TestAlpha,
     TestBeta,
 }
@@ -120,6 +121,7 @@ impl DataSourceKind {
     pub fn code(self) -> &'static str {
         match self {
             DataSourceKind::WorldBankWDI => "wb_wdi",
+            DataSourceKind::HumanFertilityDatabase => "hfd",
             DataSourceKind::TestAlpha => "_test_alpha",
             DataSourceKind::TestBeta => "_test_beta",
         }
@@ -132,6 +134,7 @@ impl TryFrom<&str> for DataSourceKind {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "wb_wdi" => Ok(DataSourceKind::WorldBankWDI),
+            "hfd" => Ok(DataSourceKind::HumanFertilityDatabase),
             // Parse arms gated to test: the variants exist for test construction, but a
             // production build must reject these codes as unknown (serde Deserialize routes
             // through this TryFrom).
