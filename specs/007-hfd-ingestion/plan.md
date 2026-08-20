@@ -126,6 +126,10 @@ The 39 codes in `tfrRR.txt` against `tfrVH.txt`'s 37 need reconciling when this 
 - SC-008 (a wrong password fails without echoing either credential) is asserted by reading the error's text in a unit test over the failure branch, not by a live attempt with a bad password.
 - Phase B's axis, span, and status behaviour is target-agnostic and belongs in host tests plus `cargo check --target wasm32-unknown-unknown`. No browser harness.
 
+## Deviations
+
+Recorded in [tasks.md](tasks.md) §Deviations from the plan. The substantive ones: the parser sits in `hfd_client.rs` rather than `hfd_model.rs`, the skip decision was extracted as a pure function to make its branches testable, and the publication row carries HFD's declared date rather than null.
+
 ## The adapter trait
 
 `docs/architecture/ingestion.md` says the orchestrator becomes a shared trait once a second source proves the pipeline shape stable. This is that second source, and the answer is no: a hand-written match arm per source is the preferred shape, and the doc's paragraph should be amended to say so rather than left as a standing intention.
