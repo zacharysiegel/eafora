@@ -24,7 +24,7 @@ pub fn master_decrypt_utf8(secret_name: &str) -> Result<String, AppError> {
     Ok(text)
 }
 
-// A relative SECR_STORE_PATH is resolved against the workspace root.
+/// A relative `SECR_STORE_PATH` is resolved against the workspace root.
 fn load_secrets() -> Result<SecretStore, AppError> {
     let declared_store_path: String = dotenvy::var("SECR_STORE_PATH")?;
     let store_path: PathBuf = filesystem::resolve_workspace_relative(Path::new(&declared_store_path))?;

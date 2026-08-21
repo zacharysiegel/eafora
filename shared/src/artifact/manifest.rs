@@ -69,10 +69,7 @@ pub struct Manifest {
     pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
 }
 
-/* A published bundle can name a statistic or a source that this build has no variant for, because a client
-   reads whichever manifest the repository currently serves and may itself be older than it. Dropping the
-   unrecognized entry leaves the rest of the bundle usable, where failing the parse would leave a reader
-   with nothing at all. */
+/// A reader can be older than the bundle it reads, so an unrecognized key is dropped rather than failing.
 fn deserialize_recognized_keys<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -83,13 +80,11 @@ where
     let mut recognized: BTreeMap<K, V> = BTreeMap::new();
 
     for (code, value) in by_code {
-        let key: Result<K, <K as TryFrom<&str>>::Error> = K::try_from(code.as_str());
-
-        match key {
+        match K::try_from(code.as_str()) {
             Ok(key) => {
                 recognized.insert(key, value);
             }
-            Err(_) => log::warn!("skipping a manifest entry this build does not recognize; [code={code}]"),
+            Err(_) => log::warn!("skipping an unrecognized manifest entry; [code={code}]"),
         }
     }
 
