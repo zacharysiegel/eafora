@@ -104,10 +104,8 @@ pub async fn fetch_upstream() -> Result<Vec<CohortFertilityFile>, AppError> {
     read_cohort_members(&archive)
 }
 
-/// Its own client rather than the shared one: the cookie jar holds a session for this source only.
+/// Does not follow redirects: a successful login answers 302 and carries the session cookie on that response.
 fn create_client() -> Result<reqwest::Client, AppError> {
-    /* Redirects are not followed: a successful login answers 302 and carries the session cookie on that
-       response, which reqwest discards once it follows the hop. */
     reqwest::Client::builder()
         .user_agent(concat!("eafora/", env!("CARGO_PKG_VERSION")))
         .redirect(reqwest::redirect::Policy::none())
@@ -115,8 +113,7 @@ fn create_client() -> Result<reqwest::Client, AppError> {
         .map_err(|error| AppError::from(format!("could not build the hfd client; [error={error}]")))
 }
 
-/// A failed login answers 200 by re-rendering the form, so success is a redirect carrying the session
-/// cookie rather than a successful status.
+/// A failed login answers 200 by re-rendering the form, so a successful status does not mean success.
 async fn sign_in(client: &reqwest::Client) -> Result<HfdSession, AppError> {
     let form_response: reqwest::Response = client
         .get(LOGIN_URL)

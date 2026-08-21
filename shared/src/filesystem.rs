@@ -136,9 +136,6 @@ mod local {
         Ok(sha256_hex(&bytes))
     }
 
-    /// Read a file at `<base_dir>/<relative_path>`, hash its bytes, and verify that
-    /// the computed sha256 matches `expected_sha256_hex`. Used by readers that
-    /// validate a manifest's referenced files against their recorded hashes.
     pub fn load_hashed_file(
         base_dir: &Path,
         relative_path: &str,
