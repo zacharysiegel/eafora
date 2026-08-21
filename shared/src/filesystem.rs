@@ -1,24 +1,8 @@
 use sha2::{Digest, Sha256};
 
-use crate::error::AppError;
-
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: filesystem access (wasm32 reads bytes via the ArtifactCache)
-use std::env;
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: filesystem access (wasm32 reads bytes via the ArtifactCache)
-use std::fs;
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: path types for the filesystem helpers below
-use std::path::{Path, PathBuf};
 use std::ops::Deref;
 
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: only the filesystem helpers below read a manifest
-const WORKSPACE_MANIFEST_TABLE: &str = "[workspace]";
-
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: holds a PathBuf (a local filesystem path)
-#[derive(Debug, Clone)]
-pub struct FileReference {
-    pub path: PathBuf,
-    pub byte_count: u64,
-}
+use crate::error::AppError;
 
 #[derive(Debug, Clone)]
 pub struct Hashed<T> {
@@ -79,90 +63,130 @@ fn hex_encode(bytes: &[u8]) -> String {
     hex_string
 }
 
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: filesystem helper
-pub fn filename_of(path: &Path) -> Result<&str, AppError> {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| AppError::from(format!("path missing filename component: {:?}", path)))
-}
+#[cfg(not(target_arch = "wasm32"))] // reads the local filesystem
+pub use local::*;
 
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads Cargo manifests off the local filesystem
-pub fn find_workspace_root(start_directory: &Path) -> Result<PathBuf, AppError> {
-    let mut directory: Option<&Path> = Some(start_directory);
+#[cfg(not(target_arch = "wasm32"))] // reads the local filesystem
+mod local {
+    use std::env;
+    use std::fs;
+    use std::path::{Path, PathBuf};
 
-    while let Some(candidate) = directory {
-        // A directory with no readable manifest is the ordinary case while searching upward.
-        let manifest_text: Option<String> = fs::read_to_string(candidate.join("Cargo.toml")).ok();
-        let is_workspace_root: bool = manifest_text
-            .is_some_and(|manifest_text| declares_workspace(&manifest_text));
+    use super::*;
 
-        if is_workspace_root {
-            return Ok(candidate.to_path_buf());
+    const WORKSPACE_MANIFEST_TABLE: &str = "[workspace]";
+
+    #[derive(Debug, Clone)]
+    pub struct FileReference {
+        pub path: PathBuf,
+        pub byte_count: u64,
+    }
+
+    pub fn filename_of(path: &Path) -> Result<&str, AppError> {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| AppError::from(format!("path missing filename component: {:?}", path)))
+    }
+
+    pub fn find_workspace_root(start_directory: &Path) -> Result<PathBuf, AppError> {
+        let mut directory: Option<&Path> = Some(start_directory);
+
+        while let Some(candidate) = directory {
+            // A directory with no readable manifest is the ordinary case while searching upward.
+            let manifest_text: Option<String> = fs::read_to_string(candidate.join("Cargo.toml")).ok();
+            let is_workspace_root: bool = manifest_text
+                .is_some_and(|manifest_text| declares_workspace(&manifest_text));
+
+            if is_workspace_root {
+                return Ok(candidate.to_path_buf());
+            }
+
+            directory = candidate.parent();
         }
 
-        directory = candidate.parent();
+        Err(AppError::from(format!(
+            "no Cargo.toml declaring a workspace at or above the starting directory; [start={}]",
+            start_directory.display(),
+        )))
     }
 
-    Err(AppError::from(format!(
-        "no Cargo.toml declaring a workspace at or above the starting directory; [start={}]",
-        start_directory.display(),
-    )))
-}
+    pub fn resolve_workspace_relative(path: &Path) -> Result<PathBuf, AppError> {
+        if path.is_absolute() {
+            return Ok(path.to_path_buf());
+        }
 
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: resolves a local filesystem path
-pub fn resolve_workspace_relative(path: &Path) -> Result<PathBuf, AppError> {
-    if path.is_absolute() {
-        return Ok(path.to_path_buf());
+        let current_directory: PathBuf = env::current_dir()
+            .map_err(|error| AppError::from(format!("could not read the current directory: {}", error)))?;
+
+        Ok(find_workspace_root(&current_directory)?.join(path))
     }
 
-    let current_directory: PathBuf = env::current_dir()
-        .map_err(|error| AppError::from(format!("could not read the current directory: {}", error)))?;
-
-    Ok(find_workspace_root(&current_directory)?.join(path))
-}
-
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: only the filesystem search above calls it
-fn declares_workspace(manifest_text: &str) -> bool {
-    manifest_text
-        .lines()
-        .any(|line| line.trim() == WORKSPACE_MANIFEST_TABLE)
-}
-
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads from the local filesystem
-pub fn read_bytes(path: &Path) -> Result<Vec<u8>, AppError> {
-    fs::read(path).map_err(|err| AppError::from(format!("read {:?}: {}", path, err)))
-}
-
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads from the local filesystem
-pub fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
-    let bytes: Vec<u8> = read_bytes(path)?;
-    Ok(sha256_hex(&bytes))
-}
-
-/// Read a file at `<base_dir>/<relative_path>`, hash its bytes, and verify that
-/// the computed sha256 matches `expected_sha256_hex`. Used by readers that
-/// validate a manifest's referenced files against their recorded hashes.
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads from the local filesystem
-pub fn load_hashed_file(
-    base_dir: &Path,
-    relative_path: &str,
-    expected_sha256_hex: &str,
-) -> Result<Hashed<FileReference>, AppError> {
-    let path: PathBuf = base_dir.join(relative_path);
-    let bytes: Vec<u8> = read_bytes(&path)?;
-    let hashed: Hashed<FileReference> = Hashed::new(
-        FileReference { path: path.clone(), byte_count: bytes.len() as u64 },
-        &bytes,
-    );
-
-    if hashed.sha256_hex() != expected_sha256_hex {
-        return Err(AppError::from(format!(
-            "sha256 mismatch for {:?}: expected {}, file hashes to {}",
-            path, expected_sha256_hex, hashed.sha256_hex(),
-        )));
+    fn declares_workspace(manifest_text: &str) -> bool {
+        manifest_text
+            .lines()
+            .any(|line| line.trim() == WORKSPACE_MANIFEST_TABLE)
     }
 
-    Ok(hashed)
+    pub fn read_bytes(path: &Path) -> Result<Vec<u8>, AppError> {
+        fs::read(path).map_err(|err| AppError::from(format!("read {:?}: {}", path, err)))
+    }
+
+    pub fn sha256_hex_of_file(path: &Path) -> Result<String, AppError> {
+        let bytes: Vec<u8> = read_bytes(path)?;
+        Ok(sha256_hex(&bytes))
+    }
+
+    /// Read a file at `<base_dir>/<relative_path>`, hash its bytes, and verify that
+    /// the computed sha256 matches `expected_sha256_hex`. Used by readers that
+    /// validate a manifest's referenced files against their recorded hashes.
+    pub fn load_hashed_file(
+        base_dir: &Path,
+        relative_path: &str,
+        expected_sha256_hex: &str,
+    ) -> Result<Hashed<FileReference>, AppError> {
+        let path: PathBuf = base_dir.join(relative_path);
+        let bytes: Vec<u8> = read_bytes(&path)?;
+        let hashed: Hashed<FileReference> = Hashed::new(
+            FileReference { path: path.clone(), byte_count: bytes.len() as u64 },
+            &bytes,
+        );
+
+        if hashed.sha256_hex() != expected_sha256_hex {
+            return Err(AppError::from(format!(
+                "sha256 mismatch for {:?}: expected {}, file hashes to {}",
+                path, expected_sha256_hex, hashed.sha256_hex(),
+            )));
+        }
+
+        Ok(hashed)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn declares_workspace_accepts_a_workspace_root() {
+            let manifest_text: &str = "[workspace]\nresolver = \"2\"\nmembers = [\"shared\"]\n";
+
+            assert!(declares_workspace(manifest_text));
+        }
+
+        #[test]
+        fn declares_workspace_rejects_a_member_manifest() {
+            let manifest_text: &str = "[package]\nname = \"shared\"\nedition.workspace = true\n";
+
+            assert!(!declares_workspace(manifest_text));
+        }
+
+        /// A member manifest inherits from the workspace without declaring one itself.
+        #[test]
+        fn declares_workspace_rejects_a_manifest_naming_only_a_workspace_subtable() {
+            let manifest_text: &str = "[package]\nname = \"shared\"\n\n[dependencies]\ntokio = { workspace = true }\n";
+
+            assert!(!declares_workspace(manifest_text));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -187,28 +211,6 @@ mod tests {
         let message: String = error.to_string();
         assert!(message.contains(&wrong_hex[..8]));
         assert!(message.contains(&sha256_hex(SAMPLE_BYTES)[..8]));
-    }
-
-    #[test]
-    fn declares_workspace_accepts_a_workspace_root() {
-        let manifest_text: &str = "[workspace]\nresolver = \"2\"\nmembers = [\"shared\"]\n";
-
-        assert!(declares_workspace(manifest_text));
-    }
-
-    #[test]
-    fn declares_workspace_rejects_a_member_manifest() {
-        let manifest_text: &str = "[package]\nname = \"shared\"\nedition.workspace = true\n";
-
-        assert!(!declares_workspace(manifest_text));
-    }
-
-    /// A member manifest inherits from the workspace without declaring one itself.
-    #[test]
-    fn declares_workspace_rejects_a_manifest_naming_only_a_workspace_subtable() {
-        let manifest_text: &str = "[package]\nname = \"shared\"\n\n[dependencies]\ntokio = { workspace = true }\n";
-
-        assert!(!declares_workspace(manifest_text));
     }
 
     #[test]
