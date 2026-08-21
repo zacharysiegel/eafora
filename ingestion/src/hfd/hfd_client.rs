@@ -13,6 +13,7 @@ const USERNAME_VARIABLE: &str = "HFD_USERNAME";
 const PASSWORD_SECRET_NAME: &str = "hfd.siegelzc.password";
 
 const ANTIFORGERY_FIELD: &str = "__RequestVerificationToken";
+const SESSION_COOKIE: &str = "Authorization";
 const COHORT_MEMBER_SUFFIX: &str = "tfrVH.txt";
 const ZIP_MAGIC: [u8; 2] = [b'P', b'K'];
 
@@ -30,34 +31,100 @@ pub struct CohortFertilityFile {
     pub contents: String,
 }
 
-/// HFD serves downloads only to a logged-in account that has accepted the user agreement, and answers an
-/// unauthenticated request with the registration page under a 200, so the archive is identified by its
-/// magic bytes rather than by status.
+/// The cookies an authenticated HFD request must carry, obtained by signing in.
+pub struct HfdSession {
+    cookie_header: String,
+}
+
+/// Resolved from the header once, so an upstream column addition or reordering cannot silently shift which
+/// value is read.
+struct CohortFileColumns {
+    code_index: usize,
+    cohort_index: usize,
+    value_index: usize,
+}
+
+impl CohortFileColumns {
+    fn from_header(header_line: &str) -> Result<CohortFileColumns, AppError> {
+        let names: Vec<&str> = header_line.split_whitespace().collect();
+
+        Ok(CohortFileColumns {
+            code_index: index_of_column(&names, COLUMN_CODE)?,
+            cohort_index: index_of_column(&names, COLUMN_COHORT)?,
+            value_index: index_of_column(&names, COLUMN_COMPLETED_COHORT_FERTILITY)?,
+        })
+    }
+
+    fn read_row(&self, line: &str) -> Result<ParsedHfdStatisticValue, AppError> {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+
+        let hfd_code: &str = self.field(&fields, self.code_index, line)?;
+        let declared_cohort: &str = self.field(&fields, self.cohort_index, line)?;
+        let declared_value: &str = self.field(&fields, self.value_index, line)?;
+
+        let cohort_year: i32 = declared_cohort.parse::<i32>()
+            .map_err(|error| AppError::from(format!(
+                "the hfd cohort is unparsable; [cohort={declared_cohort} error={error}]",
+            )))?;
+
+        let value: Option<f64> = if declared_value == ABSENT_VALUE {
+            None
+        } else {
+            let parsed: f64 = declared_value.parse::<f64>()
+                .map_err(|error| AppError::from(format!(
+                    "the hfd value is unparsable; [code={hfd_code} cohort={cohort_year} value={declared_value} error={error}]",
+                )))?;
+
+            Some(parsed)
+        };
+
+        Ok(ParsedHfdStatisticValue {
+            hfd_code: hfd_code.to_string(),
+            cohort_year,
+            value,
+        })
+    }
+
+    fn field<'a>(&self, fields: &[&'a str], index: usize, line: &str) -> Result<&'a str, AppError> {
+        fields.get(index).copied().ok_or_else(|| AppError::from(format!(
+            "an hfd row has fewer fields than the header declares; [fields={} wanted={} line={}]",
+            fields.len(),
+            index + 1,
+            line.trim(),
+        )))
+    }
+}
+
+
 pub async fn fetch_upstream() -> Result<Vec<CohortFertilityFile>, AppError> {
     let client: reqwest::Client = create_client()?;
-
-    sign_in(&client).await?;
-
-    let archive: Vec<u8> = download_cohort_archive(&client).await?;
+    let session: HfdSession = sign_in(&client).await?;
+    let archive: Vec<u8> = download_cohort_archive(&client, &session).await?;
 
     read_cohort_members(&archive)
 }
 
 /// Its own client rather than the shared one: the cookie jar holds a session for this source only.
 fn create_client() -> Result<reqwest::Client, AppError> {
+    /* Redirects are not followed: a successful login answers 302 and carries the session cookie on that
+       response, which reqwest discards once it follows the hop. */
     reqwest::Client::builder()
         .user_agent(concat!("eafora/", env!("CARGO_PKG_VERSION")))
-        .cookie_store(true)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| AppError::from(format!("could not build the hfd client; [error={error}]")))
 }
 
-async fn sign_in(client: &reqwest::Client) -> Result<(), AppError> {
-    let form_html: String = client
+/// A failed login answers 200 by re-rendering the form, so success is a redirect carrying the session
+/// cookie rather than a successful status.
+async fn sign_in(client: &reqwest::Client) -> Result<HfdSession, AppError> {
+    let form_response: reqwest::Response = client
         .get(LOGIN_URL)
         .send()
         .await
-        .map_err(|error| AppError::from(format!("could not reach the hfd login form; [error={error}]")))?
+        .map_err(|error| AppError::from(format!("could not reach the hfd login form; [error={error}]")))?;
+    let antiforgery_cookies: String = read_cookie_header(&form_response);
+    let form_html: String = form_response
         .text()
         .await
         .map_err(|error| AppError::from(format!("could not read the hfd login form; [error={error}]")))?;
@@ -69,6 +136,7 @@ async fn sign_in(client: &reqwest::Client) -> Result<(), AppError> {
 
     let response: reqwest::Response = client
         .post(LOGIN_URL)
+        .header(reqwest::header::COOKIE, &antiforgery_cookies)
         .form(&[
             ("Email", username.as_str()),
             ("Password", password.as_str()),
@@ -80,15 +148,35 @@ async fn sign_in(client: &reqwest::Client) -> Result<(), AppError> {
         .map_err(|error| AppError::from(format!("the hfd login request failed; [error={error}]")))?;
 
     let status: reqwest::StatusCode = response.status();
+    let cookie_header: String = read_cookie_header(&response);
 
-    if !status.is_success() {
-        return Err(AppError::from(format!("hfd rejected the login; [status={status}]")));
+    if !cookie_header.contains(SESSION_COOKIE) {
+        return Err(AppError::from(format!(
+            "hfd issued no {SESSION_COOKIE} cookie, so the credentials were rejected; [status={status}]",
+        )));
     }
 
-    Ok(())
+    Ok(HfdSession { cookie_header })
 }
 
-/// The token is paired with a cookie the same response set, so it cannot be reused across sessions.
+fn read_cookie_header(response: &reqwest::Response) -> String {
+    let set_cookie_values = response
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok());
+
+    create_cookie_header(set_cookie_values)
+}
+
+/// Keeps the `name=value` of each `Set-Cookie`, dropping the attributes that follow it.
+fn create_cookie_header<'a>(set_cookie_values: impl Iterator<Item = &'a str>) -> String {
+    set_cookie_values
+        .filter_map(|value| value.split(';').next())
+        .collect::<Vec<&str>>()
+        .join("; ")
+}
+
 fn read_antiforgery_token(form_html: &str) -> Result<String, AppError> {
     let field_marker: String = format!("name=\"{ANTIFORGERY_FIELD}\"");
     let field_start: usize = form_html
@@ -106,9 +194,13 @@ fn read_antiforgery_token(form_html: &str) -> Result<String, AppError> {
     Ok(form_html[value_start..value_start + value_length].to_string())
 }
 
-async fn download_cohort_archive(client: &reqwest::Client) -> Result<Vec<u8>, AppError> {
+async fn download_cohort_archive(
+    client: &reqwest::Client,
+    session: &HfdSession,
+) -> Result<Vec<u8>, AppError> {
     let bytes: Vec<u8> = client
         .get(COHORT_TFR_ARCHIVE_URL)
+        .header(reqwest::header::COOKIE, &session.cookie_header)
         .send()
         .await
         .map_err(|error| AppError::from(format!("the hfd archive request failed; [error={error}]")))?
@@ -117,9 +209,11 @@ async fn download_cohort_archive(client: &reqwest::Client) -> Result<Vec<u8>, Ap
         .map_err(|error| AppError::from(format!("could not read the hfd archive; [error={error}]")))?
         .to_vec();
 
+    /* An account that has not accepted the user agreement is served the registration page under a 200, so
+       the archive is identified by its magic bytes rather than by status. */
     if !bytes.starts_with(&ZIP_MAGIC) {
         return Err(AppError::from(format!(
-            "hfd served a page rather than the archive, which means the account is not signed in or has not accepted the user agreement; [bytes={}]",
+            "hfd served a page rather than the archive, which means the account has not accepted the user agreement; [bytes={}]",
             bytes.len(),
         )));
     }
@@ -127,8 +221,6 @@ async fn download_cohort_archive(client: &reqwest::Client) -> Result<Vec<u8>, Ap
     Ok(bytes)
 }
 
-/// HFD's input files carry each provider's own licence and are excluded from this crate entirely; the
-/// by-birth-order companion is a different statistic.
 pub fn read_cohort_members(archive: &[u8]) -> Result<Vec<CohortFertilityFile>, AppError> {
     let reader: std::io::Cursor<&[u8]> = std::io::Cursor::new(archive);
     let mut zip: zip::ZipArchive<std::io::Cursor<&[u8]>> = zip::ZipArchive::new(reader)
@@ -203,65 +295,6 @@ fn read_publication(lines: &[&str]) -> Result<ParsedHfdPublication, AppError> {
         revision_label: declared_date.to_string(),
         last_modified,
     })
-}
-
-/// Resolved from the header once, so an upstream column addition or reordering cannot silently shift which
-/// value is read.
-struct CohortFileColumns {
-    code_index: usize,
-    cohort_index: usize,
-    value_index: usize,
-}
-
-impl CohortFileColumns {
-    fn from_header(header_line: &str) -> Result<CohortFileColumns, AppError> {
-        let names: Vec<&str> = header_line.split_whitespace().collect();
-
-        Ok(CohortFileColumns {
-            code_index: index_of_column(&names, COLUMN_CODE)?,
-            cohort_index: index_of_column(&names, COLUMN_COHORT)?,
-            value_index: index_of_column(&names, COLUMN_COMPLETED_COHORT_FERTILITY)?,
-        })
-    }
-
-    fn read_row(&self, line: &str) -> Result<ParsedHfdStatisticValue, AppError> {
-        let fields: Vec<&str> = line.split_whitespace().collect();
-
-        let hfd_code: &str = self.field(&fields, self.code_index, line)?;
-        let declared_cohort: &str = self.field(&fields, self.cohort_index, line)?;
-        let declared_value: &str = self.field(&fields, self.value_index, line)?;
-
-        let cohort_year: i32 = declared_cohort.parse::<i32>()
-            .map_err(|error| AppError::from(format!(
-                "the hfd cohort is unparsable; [cohort={declared_cohort} error={error}]",
-            )))?;
-
-        let value: Option<f64> = if declared_value == ABSENT_VALUE {
-            None
-        } else {
-            let parsed: f64 = declared_value.parse::<f64>()
-                .map_err(|error| AppError::from(format!(
-                    "the hfd value is unparsable; [code={hfd_code} cohort={cohort_year} value={declared_value} error={error}]",
-                )))?;
-
-            Some(parsed)
-        };
-
-        Ok(ParsedHfdStatisticValue {
-            hfd_code: hfd_code.to_string(),
-            cohort_year,
-            value,
-        })
-    }
-
-    fn field<'a>(&self, fields: &[&'a str], index: usize, line: &str) -> Result<&'a str, AppError> {
-        fields.get(index).copied().ok_or_else(|| AppError::from(format!(
-            "an hfd row has fewer fields than the header declares; [fields={} wanted={} line={}]",
-            fields.len(),
-            index + 1,
-            line.trim(),
-        )))
-    }
 }
 
 fn index_of_column(names: &[&str], wanted: &str) -> Result<usize, AppError> {
@@ -438,6 +471,25 @@ mod tests {
     #[test]
     fn read_cohort_members_rejects_bytes_that_are_not_an_archive() {
         read_cohort_members(b"<html>not an archive</html>").expect_err("read_cohort_members fails");
+    }
+
+    #[test]
+    fn create_cookie_header_keeps_name_and_value_and_drops_attributes() {
+        let set_cookie_values: [&str; 2] = [
+            "Authorization=abc123; path=/; secure; httponly; samesite=lax",
+            ".AspNetCore.Antiforgery.Xyz=tok; path=/; httponly",
+        ];
+
+        let cookie_header: String = create_cookie_header(set_cookie_values.into_iter());
+
+        assert_eq!(cookie_header, "Authorization=abc123; .AspNetCore.Antiforgery.Xyz=tok");
+    }
+
+    #[test]
+    fn create_cookie_header_is_empty_when_nothing_was_set() {
+        let cookie_header: String = create_cookie_header(std::iter::empty());
+
+        assert!(cookie_header.is_empty());
     }
 
     #[test]
