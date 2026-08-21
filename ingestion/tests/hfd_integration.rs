@@ -73,7 +73,6 @@ async fn normalize_maps_a_bare_alpha3_code_to_its_region() {
     transaction.rollback().await.unwrap();
 }
 
-/// `DEUTNP` is HFD's whole-of-Germany series and must reach the same region as a bare `DEU` would.
 #[tokio::test]
 async fn normalize_maps_a_national_total_code_to_its_country() {
     let pool: PgPool = helpers::test_db::test_pool().await;
@@ -115,7 +114,6 @@ async fn normalize_warns_for_a_subnational_territory_and_writes_nothing() {
     transaction.rollback().await.unwrap();
 }
 
-/// Chile's every cohort in the sample is absent upstream, so it warns once rather than per row.
 #[tokio::test]
 async fn normalize_warns_once_for_a_region_that_yielded_no_values() {
     let pool: PgPool = helpers::test_db::test_pool().await;
@@ -136,7 +134,6 @@ async fn normalize_warns_once_for_a_region_that_yielded_no_values() {
     transaction.rollback().await.unwrap();
 }
 
-/// A bare code HFD adds later that no canonical region matches must warn rather than stop the run.
 #[tokio::test]
 async fn normalize_warns_for_a_bare_code_with_no_canonical_region() {
     let pool: PgPool = helpers::test_db::test_pool().await;
@@ -244,7 +241,6 @@ async fn record_statistic_values_skips_every_value_on_an_unchanged_second_run() 
     transaction.rollback().await.unwrap();
 }
 
-/// A revised upstream value supersedes rather than overwrites, so the prior figure stays readable.
 #[tokio::test]
 async fn record_statistic_values_supersedes_a_revised_value_and_keeps_the_original() {
     let pool: PgPool = helpers::test_db::test_pool().await;

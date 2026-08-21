@@ -86,8 +86,6 @@ pub fn filename_of(path: &Path) -> Result<&str, AppError> {
         .ok_or_else(|| AppError::from(format!("path missing filename component: {:?}", path)))
 }
 
-/* Searching upward keeps working if the starting directory moves deeper in the tree, which counting parent
-   directories would not. */
 #[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads Cargo manifests off the local filesystem
 pub fn find_workspace_root(start_directory: &Path) -> Result<PathBuf, AppError> {
     let mut directory: Option<&Path> = Some(start_directory);

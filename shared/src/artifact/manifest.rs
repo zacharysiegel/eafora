@@ -192,8 +192,6 @@ mod tests {
         assert!(error.to_string().contains("unknown manifest_schema_version 2"));
     }
 
-    /// A reader older than the bundle it is reading keeps the statistics it recognizes rather than losing
-    /// the whole manifest.
     #[test]
     fn parse_manifest_skips_an_unrecognized_statistic_and_keeps_the_rest() {
         let later_statistic: String = format!(

@@ -24,7 +24,6 @@ const COLUMN_CODE: &str = "Code";
 const COLUMN_COHORT: &str = "Cohort";
 const COLUMN_COMPLETED_COHORT_FERTILITY: &str = "CCF";
 
-/// One country's cohort fertility file, as bytes, named by the archive member it came from.
 #[derive(Debug, Clone)]
 pub struct CohortFertilityFile {
     pub member_name: String,
@@ -128,8 +127,8 @@ async fn download_cohort_archive(client: &reqwest::Client) -> Result<Vec<u8>, Ap
     Ok(bytes)
 }
 
-/// Reads only the cohort members. HFD's input files carry each provider's own licence and are excluded
-/// from this crate entirely; the by-birth-order companion is a different statistic.
+/// HFD's input files carry each provider's own licence and are excluded from this crate entirely; the
+/// by-birth-order companion is a different statistic.
 pub fn read_cohort_members(archive: &[u8]) -> Result<Vec<CohortFertilityFile>, AppError> {
     let reader: std::io::Cursor<&[u8]> = std::io::Cursor::new(archive);
     let mut zip: zip::ZipArchive<std::io::Cursor<&[u8]>> = zip::ZipArchive::new(reader)
@@ -206,8 +205,8 @@ fn read_publication(lines: &[&str]) -> Result<ParsedHfdPublication, AppError> {
     })
 }
 
-/// Where each value sits on a row. Resolved from the header once so an upstream column addition or
-/// reordering cannot silently shift which value is read.
+/// Resolved from the header once, so an upstream column addition or reordering cannot silently shift which
+/// value is read.
 struct CohortFileColumns {
     code_index: usize,
     cohort_index: usize,
@@ -353,7 +352,6 @@ mod tests {
         assert_eq!(scotland_1930.value, Some(2.544));
     }
 
-    /* Every column is resolved by name, so a reordered upstream file must not shift which value is read. */
     #[test]
     fn parse_cohort_file_resolves_columns_by_name_not_position() {
         let reordered: &str = "Completed cohort fertility\r\n\
@@ -421,8 +419,6 @@ mod tests {
         parse_cohort_file(bad_value).expect_err("parse_cohort_file fails");
     }
 
-    /// Only the cohort member is read: the by-birth-order companion is a different statistic and the
-    /// period file belongs to a different one again.
     #[test]
     fn read_cohort_members_reads_only_the_cohort_member() {
         let archive: Vec<u8> = create_archive(&[
