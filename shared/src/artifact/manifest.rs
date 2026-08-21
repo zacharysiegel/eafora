@@ -63,32 +63,8 @@ pub struct Manifest {
     pub variant: BundleVariant,
     pub artifact_created: DateTime<Utc>,
     pub geometry: ManifestEntry,
-    #[serde(deserialize_with = "deserialize_recognized_keys")]
     pub statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>>,
-    #[serde(deserialize_with = "deserialize_recognized_keys")]
     pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
-}
-
-/// A reader can be older than the bundle it reads, so an unrecognized key is dropped rather than failing.
-fn deserialize_recognized_keys<'de, D, K, V>(deserializer: D) -> Result<BTreeMap<K, V>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    K: Ord + for<'a> TryFrom<&'a str>,
-    V: Deserialize<'de>,
-{
-    let by_code: BTreeMap<String, V> = BTreeMap::deserialize(deserializer)?;
-    let mut recognized: BTreeMap<K, V> = BTreeMap::new();
-
-    for (code, value) in by_code {
-        match K::try_from(code.as_str()) {
-            Ok(key) => {
-                recognized.insert(key, value);
-            }
-            Err(_) => log::warn!("skipping an unrecognized manifest entry; [code={code}]"),
-        }
-    }
-
-    Ok(recognized)
 }
 
 impl Manifest {
@@ -188,30 +164,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_manifest_skips_an_unrecognized_statistic_and_keeps_the_rest() {
-        let later_statistic: String = format!(
-            r#""statistic_from_a_later_release": {{ "base": {{ "relative_path": "data/later-{sha}.sqlite", "size_bytes": 10, "sha256": "{sha}" }} }}, "tfr": {{"#,
-            sha = valid_sha256(),
-        );
-        let json: String = valid_manifest_json().replace(r#""tfr": {"#, &later_statistic);
+    fn parse_manifest_rejects_unknown_statistic_code() {
+        let json: String = valid_manifest_json().replace("\"tfr\"", "\"bogus_statistic\"");
 
-        let manifest: Manifest = parse_manifest(json.as_bytes()).unwrap();
-
-        assert_eq!(manifest.statistics.len(), 1);
-        assert!(manifest.statistics.contains_key(&StatisticKind::Tfr));
-    }
-
-    #[test]
-    fn parse_manifest_skips_an_unrecognized_source_revision() {
-        let json: String = valid_manifest_json().replace(
-            "\"wb_wdi\": {",
-            "\"source_from_a_later_release\": { \"revision\": \"1\", \"published\": null, \"fetched\": \"2024-12-31T00:00:00Z\" }, \"wb_wdi\": {",
-        );
-
-        let manifest: Manifest = parse_manifest(json.as_bytes()).unwrap();
-
-        assert_eq!(manifest.source_revisions.len(), 1);
-        assert!(manifest.source_revisions.contains_key(&DataSourceKind::WorldBankWDI));
+        assert!(parse_manifest(json.as_bytes()).is_err());
     }
 
     #[test]
