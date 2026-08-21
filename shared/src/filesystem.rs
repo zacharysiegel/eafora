@@ -91,7 +91,12 @@ pub fn find_workspace_root(start_directory: &Path) -> Result<PathBuf, AppError> 
     let mut directory: Option<&Path> = Some(start_directory);
 
     while let Some(candidate) = directory {
-        if declares_workspace(&candidate.join("Cargo.toml")) {
+        // A directory with no readable manifest is the ordinary case while searching upward.
+        let manifest_text: Option<String> = fs::read_to_string(candidate.join("Cargo.toml")).ok();
+        let is_workspace_root: bool = manifest_text
+            .is_some_and(|manifest_text| declares_workspace(&manifest_text));
+
+        if is_workspace_root {
             return Ok(candidate.to_path_buf());
         }
 
@@ -116,16 +121,11 @@ pub fn resolve_workspace_relative(path: &Path) -> Result<PathBuf, AppError> {
     Ok(find_workspace_root(&current_directory)?.join(path))
 }
 
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads a Cargo manifest off the local filesystem
-fn declares_workspace(manifest_path: &Path) -> bool {
-    let manifest_text: Result<String, std::io::Error> = fs::read_to_string(manifest_path);
-
-    match manifest_text {
-        Ok(manifest_text) => manifest_text
-            .lines()
-            .any(|line| line.trim() == WORKSPACE_MANIFEST_TABLE),
-        Err(_) => false,
-    }
+#[cfg(not(target_arch = "wasm32"))] // not for wasm32: only the filesystem search above calls it
+fn declares_workspace(manifest_text: &str) -> bool {
+    manifest_text
+        .lines()
+        .any(|line| line.trim() == WORKSPACE_MANIFEST_TABLE)
 }
 
 #[cfg(not(target_arch = "wasm32"))] // not for wasm32: reads from the local filesystem
@@ -187,6 +187,28 @@ mod tests {
         let message: String = error.to_string();
         assert!(message.contains(&wrong_hex[..8]));
         assert!(message.contains(&sha256_hex(SAMPLE_BYTES)[..8]));
+    }
+
+    #[test]
+    fn declares_workspace_accepts_a_workspace_root() {
+        let manifest_text: &str = "[workspace]\nresolver = \"2\"\nmembers = [\"shared\"]\n";
+
+        assert!(declares_workspace(manifest_text));
+    }
+
+    #[test]
+    fn declares_workspace_rejects_a_member_manifest() {
+        let manifest_text: &str = "[package]\nname = \"shared\"\nedition.workspace = true\n";
+
+        assert!(!declares_workspace(manifest_text));
+    }
+
+    /// A member manifest inherits from the workspace without declaring one itself.
+    #[test]
+    fn declares_workspace_rejects_a_manifest_naming_only_a_workspace_subtable() {
+        let manifest_text: &str = "[package]\nname = \"shared\"\n\n[dependencies]\ntokio = { workspace = true }\n";
+
+        assert!(!declares_workspace(manifest_text));
     }
 
     #[test]
