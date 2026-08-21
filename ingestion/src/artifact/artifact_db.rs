@@ -66,9 +66,9 @@ pub async fn read_country_iso3_to_metadata<'e>(
     Ok(map)
 }
 
-/// An unreleased statistic is ingested but not yet offered to clients, so it is skipped here rather than
-/// failing the build for having no [`StatisticKind`] variant. A released one with no variant is a
-/// misconfiguration and stays a hard error.
+/// An unreleased statistic is ingested but not yet offered to clients. A released one whose code this
+/// build cannot parse is skipped with a warning rather than failing the build, because the database can be
+/// migrated ahead of the binary reading it.
 pub async fn read_all_statistic_kinds<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<BTreeSet<StatisticKind>, AppError> {
@@ -76,10 +76,23 @@ pub async fn read_all_statistic_kinds<'e>(
         .fetch_all(executor)
         .await?;
 
-    codes
-        .iter()
-        .map(|code| StatisticKind::try_from(code.as_str()).map_err(AppError::from))
-        .collect()
+    let mut statistic_kinds: BTreeSet<StatisticKind> = BTreeSet::new();
+
+    for code in codes {
+        let parsed: Result<StatisticKind, AppError> =
+            StatisticKind::try_from(code.as_str()).map_err(AppError::from);
+
+        match parsed {
+            Ok(statistic_kind) => {
+                statistic_kinds.insert(statistic_kind);
+            }
+            Err(error) => log::warn!(
+                "skipping a released statistic this build cannot render; [code={code} error={error}]",
+            ),
+        }
+    }
+
+    Ok(statistic_kinds)
 }
 
 pub async fn read_latest_revisions(

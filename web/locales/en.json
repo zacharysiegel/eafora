@@ -14,6 +14,8 @@
     "statistic": {
         "tfr": "Total fertility rate",
         "tfr_unit": "births per woman",
+        "ccf": "Completed cohort fertility",
+        "ccf_unit": "children per woman",
         "picker_label": "Statistic"
     },
     "scrubber": {

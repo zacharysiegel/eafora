@@ -148,9 +148,6 @@ fn apply_hash_files_override(mut leptos_options: LeptosOptions) -> Result<Leptos
 }
 
 fn resolve_site_root(leptos_options: &LeptosOptions) -> Result<PathBuf, AppError> {
-    /* The manifest's site-root is relative to the workspace root, so it resolves against the directory
-       holding the workspace manifest rather than this crate's own. Anchoring on the crate directory rather
-       than the current one keeps a build working from anywhere in the tree. */
     let workspace_root: PathBuf = filesystem::find_workspace_root(Path::new(CRATE_DIRECTORY))?;
     let declared_site_root: PathBuf = workspace_root.join(leptos_options.site_root.as_ref());
 

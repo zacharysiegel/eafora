@@ -76,6 +76,7 @@ pub struct DataSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StatisticKind {
     Tfr,
+    Ccf,
     TestAlpha,
 }
 
@@ -83,6 +84,7 @@ impl StatisticKind {
     pub fn code(self) -> &'static str {
         match self {
             StatisticKind::Tfr => "tfr",
+            StatisticKind::Ccf => "ccf",
             StatisticKind::TestAlpha => "_test_alpha",
         }
     }
@@ -94,6 +96,7 @@ impl TryFrom<&str> for StatisticKind {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "tfr" => Ok(StatisticKind::Tfr),
+            "ccf" => Ok(StatisticKind::Ccf),
             // Parse arm gated to test: the variant exists for test construction, but a
             // production build must reject "_test_alpha" as an unknown code (serde Deserialize
             // routes through this TryFrom).
