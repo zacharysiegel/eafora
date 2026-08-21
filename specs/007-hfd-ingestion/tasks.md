@@ -10,15 +10,12 @@ Organized by the plan's three phases, each landing as its own PR on a linear sta
 
 ## Phase A: ingestion
 
-Order is load-bearing between T001 and T003: the artifact build reads every statistic code and hard-errors on one with no client enum variant, so seeding `ccf` before the release filter exists breaks every build, including the World Bank's.
-
 ### Schema
 
-- [x] T001 Write `ingestion/db/migrations/<timestamp>_add_statistic_released.sql` adding a nullable `released timestamp with time zone` to `statistic`, with a catalog comment, and releasing `tfr` so shipped behaviour is unchanged.
-- [x] T002 Add `where released is not null` to `artifact_db::read_all_statistic_kinds`.
-- [x] T003 Write `ingestion/db/migrations/<timestamp>_seed_hfd_and_completed_cohort_fertility.sql` seeding the `hfd` data source (CC BY 4.0, priority ahead of the World Bank, attribution naming HFD and both institutes) and the `ccf` statistic, left unreleased. Clear dependent rows in the down migration.
-- [x] T004 Apply both migrations to `eafora` and `eafora_test`; commit the regenerated `ingestion/db/schema.sql` and `.sqlx` cache.
-- [x] T005 Verify the decoupling: an artifact build succeeds with `ccf` seeded and no `StatisticKind` variant.
+- [x] T001 Add `StatisticKind::Ccf` and resolve the statistic through the enum rather than a code string.
+- [x] T002 Skip a statistic code the build cannot parse with a warning rather than failing the build, and likewise an unrecognized key when parsing a published manifest.
+- [x] T003 Write `ingestion/db/migrations/<timestamp>_seed_hfd_and_completed_cohort_fertility.sql` seeding the `hfd` data source (CC BY 4.0, priority ahead of the World Bank, attribution naming HFD and both institutes) and the `ccf` statistic. Clear dependent rows in the down migration.
+- [x] T004 Apply the migration to `eafora` and `eafora_test`; commit the regenerated `ingestion/db/schema.sql` and `.sqlx` cache.
 
 ### Parsing
 
@@ -30,10 +27,10 @@ Order is load-bearing between T001 and T003: the artifact build reads every stat
 
 ### Normalization
 
-- [x] T011 Add `IngestWarningKind::SubpopulationCode` and `NoValuesForRegion`, and `IngestReport::values_absent_upstream`.
-- [x] T012 Write `ingestion/src/hfd/hfd_adapter.rs`: the national-total and subpopulation code tables, `resolve_region`, `normalize_row`, `group_by_code`, and `normalize`.
+- [x] T011 Add `IngestWarningKind::NoValuesForRegion`, and rename `UnknownCountry` to `UnrecognizedRegionCode` for what it actually reports.
+- [x] T012 Write `ingestion/src/hfd/hfd_adapter.rs`: the national-total code table, `resolve_region`, `normalize_row`, `group_by_code`, and `normalize`.
 - [x] T013 Implement `fetch_and_store` with the revision check after the download, and `should_skip_run` extracted as a pure function so its branches are testable.
-- [x] T014 Write `ingestion/tests/hfd_integration.rs` covering region mapping, both warning kinds, the absent-value count, the cohort period encoding, a first run, an unchanged second run, and a revision that supersedes while keeping the original readable.
+- [x] T014 Write `ingestion/tests/hfd_integration.rs` covering region mapping, both warning kinds, an absent value dropped without a warning, the cohort period encoding, a first run, an unchanged second run, and a revision that supersedes while keeping the original readable.
 - [x] T015 Unit-test every branch of `should_skip_run`, including the force override.
 
 ### Wiring
@@ -50,7 +47,6 @@ Order is load-bearing between T001 and T003: the artifact build reads every stat
 - [ ] T020 Add `StatisticKind::Ccf` and a period-versus-cohort distinction on the enum, with the axis label taken from it.
 - [ ] T021 Render the active value as a span from `period_start` to `period_end` for every statistic, replacing the year-based scrubber arithmetic.
 - [ ] T022 Show a cell's `data_status` in the region detail panel when it is not final.
-- [ ] T023 Write the release migration for `ccf`, last in the phase.
 
 ---
 
@@ -74,6 +70,8 @@ Order is load-bearing between T001 and T003: the artifact build reads every stat
 - **`should_skip_run` replaced `is_already_captured`.** The plan described the skip inline. Folding the force-refetch override into one pure function made all its branches testable without the network.
 - **`data_source_publication.published` carries HFD's declared date.** The plan did not mention it, and the first implementation passed null while parsing the date anyway, leaving the field unread. The column's own documentation asks for the upstream date where derivable, and it is derivable here.
 - **`IngestWarningKind` gained two variants, not one.** The plan named a no-values warning. A separate `SubpopulationCode` variant was needed so `DEUTE` does not report as a country missing from the seed, which is a different and misleading fact.
-- **The client changed in Phase A.** Adding the source enum variant broke the detail panel's exhaustive match, so the HFD attribution label landed here rather than in Phase B. This is compiler-forced, not scope creep.
+- **The client changed in Phase A.** Adding the source and statistic enum variants broke exhaustive matches in the detail panel, the labels, and the colour transform, so the HFD attribution, the statistic name and unit, and the colour curve landed here rather than in Phase B. Compiler-forced, not scope creep. Completed cohort fertility shares the period measure's colour transform: same unit, and replacement level is meaningful for both.
+- **The `statistic.released` column was added and then removed.** It gated the artifact build so Phase A could ship alone. Once ingestion resolved statistics through the enum, the variant had to exist in Phase A, so the flag became the only thing withholding the statistic; landing the two phases together removes the need for it entirely. The column existed only to support a PR structure.
+- **Two warning kinds became one.** A separate kind for HFD's territory codes implied the problem was their being subnational, which the region schema can represent; the actual fact is that no canonical region matches, which is what `UnknownCountry` already meant. Renamed to `UnrecognizedRegionCode`, shared with World Bank WDI, and the hardcoded list of five codes deleted, since they warn correctly by falling through the region lookup.
 - **A pre-existing broken test was fixed in passing.** `publish_integration.rs` did not compile on `master`, having missed a parameter added to `write_manifest` by `c1f85b8` (eafora). Left broken it would hide real failures.
 - **The samples are byte-faithful.** The plan did not raise line endings. The checked-in sample now carries the CRLF that HFD actually serves.

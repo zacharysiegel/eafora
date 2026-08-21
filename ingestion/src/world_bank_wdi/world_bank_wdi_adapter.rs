@@ -21,10 +21,6 @@ const WORLD_BANK_WORLD_CODE: &str = "WLD";
 
 const WORLD_REGION_CODE: &str = "world";
 
-/// Rows whose country isn't in the canonical seed produce an
-/// `UnknownCountry` warning and are dropped. Rows with `value: None`
-/// produce a `NotApplicableValue` warning and are dropped: we only persist
-/// published values, and `None` means the source had no figure for that cell.
 pub async fn normalize(
     connection: &mut PgConnection,
     parsed_wdi_statistic_values: Vec<ParsedWdiStatisticValue>,
@@ -78,9 +74,9 @@ async fn normalize_row(
             canonical_db::find_country_by_iso3(&mut *connection, &parsed_wdi_statistic_value.iso3).await?
         else {
             return Ok(NormalizeOutcome::Warned(IngestWarning {
-                kind: IngestWarningKind::UnknownCountry,
+                kind: IngestWarningKind::UnrecognizedRegionCode,
                 message: format!(
-                    "wb_wdi: unknown countryiso3code {:?} for year {}",
+                    "countryiso3code {:?} matches no canonical region for year {}",
                     parsed_wdi_statistic_value.iso3, parsed_wdi_statistic_value.year,
                 ),
             }));

@@ -104,7 +104,7 @@ async fn normalize_warns_for_a_subnational_territory_and_writes_nothing() {
 
     let territory_warnings: Vec<&str> = warnings
         .iter()
-        .filter(|warning| warning.kind == IngestWarningKind::SubnationalTerritory)
+        .filter(|warning| warning.kind == IngestWarningKind::UnrecognizedRegionCode)
         .map(|warning| warning.message.as_str())
         .collect();
 
@@ -155,7 +155,7 @@ async fn normalize_warns_for_a_bare_code_with_no_canonical_region() {
 
     assert!(normalized_statistic_values.is_empty());
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].kind, IngestWarningKind::UnknownCountry);
+    assert_eq!(warnings[0].kind, IngestWarningKind::UnrecognizedRegionCode);
     assert!(warnings[0].message.contains("ZZZ"));
 
     transaction.rollback().await.unwrap();

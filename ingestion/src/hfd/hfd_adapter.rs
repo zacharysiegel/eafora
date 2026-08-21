@@ -24,10 +24,6 @@ const NATIONAL_TOTAL_CODES: [NationalTotalCode; 3] = [
     NationalTotalCode { hfd_code: "GBR_NP", iso3: "GBR" },
 ];
 
-/// The former East and West Germany, and the United Kingdom's constituent countries. Listed so their
-/// warning says what they are, rather than reporting them as countries missing from the canonical seed.
-const SUBNATIONAL_TERRITORY_CODES: [&str; 5] = ["DEUTE", "DEUTW", "GBRTENW", "GBR_NIR", "GBR_SCO"];
-
 struct NationalTotalCode {
     hfd_code: &'static str,
     iso3: &'static str,
@@ -153,7 +149,7 @@ pub async fn normalize(
     for hfd_code in codes_yielding_nothing {
         warnings.push(IngestWarning {
             kind: IngestWarningKind::NoValuesForRegion,
-            message: format!("hfd published no completed cohort for {hfd_code}"),
+            message: format!("code {hfd_code} has no completed cohort in this release"),
         });
     }
 
@@ -190,15 +186,6 @@ async fn resolve_region(
     connection: &mut PgConnection,
     hfd_code: &str,
 ) -> Result<RegionOutcome, AppError> {
-    if SUBNATIONAL_TERRITORY_CODES.contains(&hfd_code) {
-        return Ok(RegionOutcome::Warned(IngestWarning {
-            kind: IngestWarningKind::SubnationalTerritory,
-            message: format!(
-                "hfd code {hfd_code} names a territory within a country, which has no canonical region",
-            ),
-        }));
-    }
-
     let national_total: Option<&NationalTotalCode> = NATIONAL_TOTAL_CODES
         .iter()
         .find(|national_total| national_total.hfd_code == hfd_code);
@@ -212,8 +199,8 @@ async fn resolve_region(
     match country {
         Some(country) => Ok(RegionOutcome::Resolved(country.region_id)),
         None => Ok(RegionOutcome::Warned(IngestWarning {
-            kind: IngestWarningKind::UnknownCountry,
-            message: format!("hfd code {hfd_code} matches no canonical country; [iso3={iso3}]"),
+            kind: IngestWarningKind::UnrecognizedRegionCode,
+            message: format!("code {hfd_code} matches no canonical region"),
         })),
     }
 }

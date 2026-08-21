@@ -66,7 +66,7 @@ async fn normalize_unknown_country_warns_and_skips() {
 
     assert!(normalized.is_empty());
     assert_eq!(warnings.len(), 1);
-    assert_eq!(warnings[0].kind, IngestWarningKind::UnknownCountry);
+    assert_eq!(warnings[0].kind, IngestWarningKind::UnrecognizedRegionCode);
     assert!(warnings[0].message.contains("ZZZ"));
 
     transaction.rollback().await.unwrap();
