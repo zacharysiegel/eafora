@@ -16,17 +16,22 @@ use crate::hfd::hfd_model::{ParsedHfdPublication, ParsedHfdStatisticValue};
 use crate::ingest;
 use crate::ingest::IngestReport;
 
-/// HFD's national totals, which carry a suffix rather than a bare ISO 3166-1 alpha-3 code. `NP` is HFD's
-/// marker for the whole national population, as against a territory or a civilian-only series.
-const NATIONAL_TOTAL_CODES: [NationalTotalCode; 3] = [
-    NationalTotalCode { hfd_code: "DEUTNP", iso3: "DEU" },
-    NationalTotalCode { hfd_code: "FRATNP", iso3: "FRA" },
-    NationalTotalCode { hfd_code: "GBR_NP", iso3: "GBR" },
+/// `NP` is HFD's suffix for a country's entire national population; it also publishes narrower series for
+/// the same country, such as East and West Germany separately or France's civilians only.
+const ISO3_BY_HFD_CODE: [HfdCodeAlias; 3] = [
+    HfdCodeAlias { hfd_code: "DEUTNP", iso3: "DEU" },
+    HfdCodeAlias { hfd_code: "FRATNP", iso3: "FRA" },
+    HfdCodeAlias { hfd_code: "GBR_NP", iso3: "GBR" },
 ];
 
-struct NationalTotalCode {
+struct HfdCodeAlias {
     hfd_code: &'static str,
     iso3: &'static str,
+}
+
+enum RegionOutcome {
+    Resolved(Uuid),
+    Warned(IngestWarning),
 }
 
 /// One transaction over the whole run, so a mid-run failure leaves the canonical store untouched.
@@ -175,20 +180,15 @@ fn group_by_code(
     grouped
 }
 
-enum RegionOutcome {
-    Resolved(Uuid),
-    Warned(IngestWarning),
-}
-
 async fn resolve_region(
     connection: &mut PgConnection,
     hfd_code: &str,
 ) -> Result<RegionOutcome, AppError> {
-    let national_total: Option<&NationalTotalCode> = NATIONAL_TOTAL_CODES
+    let alias: Option<&HfdCodeAlias> = ISO3_BY_HFD_CODE
         .iter()
-        .find(|national_total| national_total.hfd_code == hfd_code);
-    let iso3: &str = match national_total {
-        Some(national_total) => national_total.iso3,
+        .find(|alias| alias.hfd_code == hfd_code);
+    let iso3: &str = match alias {
+        Some(alias) => alias.iso3,
         None => hfd_code,
     };
 

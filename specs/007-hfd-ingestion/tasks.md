@@ -28,7 +28,7 @@ Organized by the plan's three phases, each landing as its own PR on a linear sta
 ### Normalization
 
 - [x] T011 Add `IngestWarningKind::NoValuesForRegion`, and rename `UnknownCountry` to `UnrecognizedRegionCode` for what it actually reports.
-- [x] T012 Write `ingestion/src/hfd/hfd_adapter.rs`: the national-total code table, `resolve_region`, `normalize_row`, `group_by_code`, and `normalize`.
+- [x] T012 Write `ingestion/src/hfd/hfd_adapter.rs`: the HFD-code alias table, `resolve_region`, `normalize_row`, `group_by_code`, and `normalize`.
 - [x] T013 Implement `fetch_and_store` with the revision check after the download, and `should_skip_run` extracted as a pure function so its branches are testable.
 - [x] T014 Write `ingestion/tests/hfd_integration.rs` covering region mapping, both warning kinds, an absent value dropped without a warning, the cohort period encoding, a first run, an unchanged second run, and a revision that supersedes while keeping the original readable.
 - [x] T015 Unit-test every branch of `should_skip_run`, including the force override.
