@@ -13,7 +13,7 @@ Organized by the plan's three phases, each landing as its own PR on a linear sta
 ### Schema
 
 - [x] T001 Add `StatisticKind::Ccf` and resolve the statistic through the enum rather than a code string.
-- [x] T002 Skip a statistic code the build cannot parse with a warning rather than failing the build, and likewise an unrecognized key when parsing a published manifest.
+- [x] T002 Skip a statistic code the artifact build cannot parse with a warning rather than failing the build.
 - [x] T003 Write `ingestion/db/migrations/<timestamp>_seed_hfd_and_completed_cohort_fertility.sql` seeding the `hfd` data source (CC BY 4.0, priority ahead of the World Bank, attribution naming HFD and both institutes) and the `ccf` statistic. Clear dependent rows in the down migration.
 - [x] T004 Apply the migration to `eafora` and `eafora_test`; commit the regenerated `ingestion/db/schema.sql` and `.sqlx` cache.
 
