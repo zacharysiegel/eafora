@@ -30,10 +30,8 @@ pub struct IngestWarning {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IngestWarningKind {
-    /// A code the source uses for a region that no canonical region matches.
     UnrecognizedRegionCode,
     NotApplicableValue,
     UnparsableRow,
-    /// A code that resolved to a region, but whose every value upstream was absent.
     NoValuesForRegion,
 }

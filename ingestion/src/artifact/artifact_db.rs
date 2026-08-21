@@ -66,8 +66,6 @@ pub async fn read_country_iso3_to_metadata<'e>(
     Ok(map)
 }
 
-/// A code this build cannot parse is skipped with a warning rather than failing the build, because the
-/// database can be migrated ahead of the binary reading it.
 pub async fn read_all_statistic_kinds<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<BTreeSet<StatisticKind>, AppError> {

@@ -98,9 +98,8 @@ pub fn should_skip_run(
     }
 }
 
-/// An absent value is dropped without a warning: it means the cohort has not finished childbearing, which is
-/// the normal state of the newest cohorts of every country. A code that resolves to a region but yields
-/// nothing at all does warn, once.
+/// An absent value means the cohort has not finished childbearing, which is the normal state of the newest
+/// cohorts of every country, so it is dropped without a warning.
 pub async fn normalize(
     connection: &mut PgConnection,
     parsed_hfd_statistic_values: Vec<ParsedHfdStatisticValue>,
@@ -156,8 +155,7 @@ pub async fn normalize(
     Ok((statistic_values, warnings))
 }
 
-/// Grouped so a code resolves to its region once rather than once per cohort, and so a code that yields
-/// nothing is recognisable as such. Insertion order is preserved, keeping warnings in upstream order.
+/// Preserves upstream order, so warnings come out in the order the file lists the codes.
 fn group_by_code(
     parsed_hfd_statistic_values: Vec<ParsedHfdStatisticValue>,
 ) -> Vec<(String, Vec<ParsedHfdStatisticValue>)> {
