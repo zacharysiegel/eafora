@@ -7,15 +7,14 @@ use chrono::{NaiveDate, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use ingestion::adapter::{IngestWarningKind, NormalizedStatisticValue};
+use ingestion::adapter::{IngestWarning, IngestWarningKind, NormalizedStatisticValue};
 use ingestion::canonical::canonical_entity::StatisticValue;
 use ingestion::hfd::hfd_adapter;
-use ingestion::hfd::hfd_adapter::NormalizedCohortValues;
 use ingestion::hfd::hfd_client;
 use ingestion::hfd::hfd_model::{ParsedHfdPublication, ParsedHfdStatisticValue};
 use ingestion::ingest;
 use ingestion::ingest::IngestReport;
-use shared::canonical::canonical_model::{DataSourceKind, DataStatus, NaiveDatePeriod};
+use shared::canonical::canonical_model::{DataSourceKind, DataStatus, NaiveDatePeriod, StatisticKind};
 
 use helpers::canonical::{get_country_region_id, get_data_source_id, get_statistic_id};
 
@@ -27,7 +26,7 @@ fn parse_sample() -> (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) {
 
 async fn normalize_sample(
     transaction: &mut Transaction<'static, Postgres>,
-) -> NormalizedCohortValues {
+) -> (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) {
     let (_, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) = parse_sample();
 
     hfd_adapter::normalize(&mut **transaction, parsed_hfd_statistic_values)
@@ -39,7 +38,8 @@ async fn record_sample(
     transaction: &mut Transaction<'static, Postgres>,
     revision_label: &str,
 ) -> IngestReport {
-    let normalized: NormalizedCohortValues = normalize_sample(transaction).await;
+    let (normalized_statistic_values, _): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize_sample(transaction).await;
     let data_source_id: Uuid = get_data_source_id(transaction, DataSourceKind::HumanFertilityDatabase).await;
 
     ingest::record_statistic_values(
@@ -48,7 +48,7 @@ async fn record_sample(
         revision_label,
         None,
         Utc::now(),
-        normalized.statistic_values,
+        normalized_statistic_values,
     )
     .await
     .expect("record_statistic_values succeeds")
@@ -59,11 +59,11 @@ async fn normalize_maps_a_bare_alpha3_code_to_its_region() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let normalized: NormalizedCohortValues = normalize_sample(&mut transaction).await;
+    let (normalized_statistic_values, _): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize_sample(&mut transaction).await;
     let austria_region_id: Uuid = get_country_region_id(&mut transaction, "AUT").await;
 
-    let austrian_values: Vec<&NormalizedStatisticValue> = normalized
-        .statistic_values
+    let austrian_values: Vec<&NormalizedStatisticValue> = normalized_statistic_values
         .iter()
         .filter(|statistic_value| statistic_value.region_id == austria_region_id)
         .collect();
@@ -79,11 +79,11 @@ async fn normalize_maps_a_national_total_code_to_its_country() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let normalized: NormalizedCohortValues = normalize_sample(&mut transaction).await;
+    let (normalized_statistic_values, _): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize_sample(&mut transaction).await;
     let germany_region_id: Uuid = get_country_region_id(&mut transaction, "DEU").await;
 
-    let german_values: Vec<&NormalizedStatisticValue> = normalized
-        .statistic_values
+    let german_values: Vec<&NormalizedStatisticValue> = normalized_statistic_values
         .iter()
         .filter(|statistic_value| statistic_value.region_id == germany_region_id)
         .collect();
@@ -95,22 +95,22 @@ async fn normalize_maps_a_national_total_code_to_its_country() {
 }
 
 #[tokio::test]
-async fn normalize_warns_for_a_subpopulation_code_and_writes_nothing() {
+async fn normalize_warns_for_a_subnational_territory_and_writes_nothing() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let normalized: NormalizedCohortValues = normalize_sample(&mut transaction).await;
+    let (_, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize_sample(&mut transaction).await;
 
-    let subpopulation_warnings: Vec<&str> = normalized
-        .warnings
+    let territory_warnings: Vec<&str> = warnings
         .iter()
-        .filter(|warning| warning.kind == IngestWarningKind::SubpopulationCode)
+        .filter(|warning| warning.kind == IngestWarningKind::SubnationalTerritory)
         .map(|warning| warning.message.as_str())
         .collect();
 
-    assert_eq!(subpopulation_warnings.len(), 2);
-    assert!(subpopulation_warnings.iter().any(|message| message.contains("DEUTE")));
-    assert!(subpopulation_warnings.iter().any(|message| message.contains("GBR_SCO")));
+    assert_eq!(territory_warnings.len(), 2);
+    assert!(territory_warnings.iter().any(|message| message.contains("DEUTE")));
+    assert!(territory_warnings.iter().any(|message| message.contains("GBR_SCO")));
 
     transaction.rollback().await.unwrap();
 }
@@ -121,10 +121,10 @@ async fn normalize_warns_once_for_a_region_that_yielded_no_values() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let normalized: NormalizedCohortValues = normalize_sample(&mut transaction).await;
+    let (_, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize_sample(&mut transaction).await;
 
-    let no_value_warnings: Vec<&str> = normalized
-        .warnings
+    let no_value_warnings: Vec<&str> = warnings
         .iter()
         .filter(|warning| warning.kind == IngestWarningKind::NoValuesForRegion)
         .map(|warning| warning.message.as_str())
@@ -148,28 +148,29 @@ async fn normalize_warns_for_a_bare_code_with_no_canonical_region() {
         value: Some(2.1),
     }];
 
-    let normalized: NormalizedCohortValues = hfd_adapter::normalize(&mut *transaction, unknown)
-        .await
-        .expect("normalize succeeds rather than stopping the run");
+    let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        hfd_adapter::normalize(&mut *transaction, unknown)
+            .await
+            .expect("normalize succeeds rather than stopping the run");
 
-    assert!(normalized.statistic_values.is_empty());
-    assert_eq!(normalized.warnings.len(), 1);
-    assert_eq!(normalized.warnings[0].kind, IngestWarningKind::UnknownCountry);
-    assert!(normalized.warnings[0].message.contains("ZZZ"));
+    assert!(normalized_statistic_values.is_empty());
+    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings[0].kind, IngestWarningKind::UnknownCountry);
+    assert!(warnings[0].message.contains("ZZZ"));
 
     transaction.rollback().await.unwrap();
 }
 
 #[tokio::test]
-async fn normalize_counts_absent_values_rather_than_warning_for_each() {
+async fn normalize_drops_an_absent_value_without_a_warning() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let normalized: NormalizedCohortValues = normalize_sample(&mut transaction).await;
+    let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize_sample(&mut transaction).await;
 
-    assert_eq!(normalized.absent_upstream_count, 6);
-    assert!(normalized
-        .warnings
+    assert_eq!(normalized_statistic_values.len(), 6);
+    assert!(warnings
         .iter()
         .all(|warning| warning.kind != IngestWarningKind::NotApplicableValue));
 
@@ -181,11 +182,11 @@ async fn normalize_encodes_a_cohort_as_a_one_year_period() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let normalized: NormalizedCohortValues = normalize_sample(&mut transaction).await;
+    let (normalized_statistic_values, _): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize_sample(&mut transaction).await;
     let austria_region_id: Uuid = get_country_region_id(&mut transaction, "AUT").await;
 
-    let earliest_austrian: &NormalizedStatisticValue = normalized
-        .statistic_values
+    let earliest_austrian: &NormalizedStatisticValue = normalized_statistic_values
         .iter()
         .filter(|statistic_value| statistic_value.region_id == austria_region_id)
         .min_by_key(|statistic_value| statistic_value.period.start)
@@ -202,12 +203,12 @@ async fn normalize_attributes_every_value_to_completed_cohort_fertility() {
     let pool: PgPool = helpers::test_db::test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
-    let normalized: NormalizedCohortValues = normalize_sample(&mut transaction).await;
-    let statistic_id: Uuid = get_statistic_id(&mut transaction, hfd_adapter::COMPLETED_COHORT_FERTILITY_CODE).await;
+    let (normalized_statistic_values, _): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize_sample(&mut transaction).await;
+    let statistic_id: Uuid = get_statistic_id(&mut transaction, StatisticKind::Ccf.code()).await;
 
-    assert!(!normalized.statistic_values.is_empty());
-    assert!(normalized
-        .statistic_values
+    assert!(!normalized_statistic_values.is_empty());
+    assert!(normalized_statistic_values
         .iter()
         .all(|statistic_value| statistic_value.statistic_id == statistic_id));
 
@@ -259,11 +260,11 @@ async fn record_statistic_values_supersedes_a_revised_value_and_keeps_the_origin
         cohort_year: 1936,
         value: Some(2.500),
     }];
-    let normalized: NormalizedCohortValues = hfd_adapter::normalize(&mut *transaction, revised)
-        .await
-        .expect("normalize succeeds");
-    let revised_statistic_value: NormalizedStatisticValue = normalized
-        .statistic_values
+    let (revised_statistic_values, _): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        hfd_adapter::normalize(&mut *transaction, revised)
+            .await
+            .expect("normalize succeeds");
+    let revised_statistic_value: NormalizedStatisticValue = revised_statistic_values
         .into_iter()
         .next()
         .expect("the revised value normalized");
@@ -282,7 +283,7 @@ async fn record_statistic_values_supersedes_a_revised_value_and_keeps_the_origin
 
     let probe: NormalizedStatisticValue = NormalizedStatisticValue {
         region_id: austria_region_id,
-        statistic_id: get_statistic_id(&mut transaction, hfd_adapter::COMPLETED_COHORT_FERTILITY_CODE).await,
+        statistic_id: get_statistic_id(&mut transaction, StatisticKind::Ccf.code()).await,
         period: NaiveDatePeriod::from_year(1936).unwrap(),
         value: 0.0,
         data_status: DataStatus::Final,

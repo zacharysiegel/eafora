@@ -167,12 +167,11 @@ async fn run_source(
 
 fn log_report(source_kind: DataSourceKind, report: &IngestReport) {
     log::info!(
-        "source complete; [source={} added={} revised={} skipped={} absent_upstream={} warnings={}]",
+        "source complete; [source={} added={} revised={} skipped={} warnings={}]",
         source_kind.code(),
         report.values_added,
         report.values_revised,
         report.values_skipped,
-        report.values_absent_upstream,
         report.warnings.len(),
     );
     for warning in &report.warnings {

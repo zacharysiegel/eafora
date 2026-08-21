@@ -4,11 +4,10 @@ use uuid::Uuid;
 
 use shared::canonical::canonical_model::{
     Country, DataSource, DataSourceKind, DataStatus, NaiveDatePeriod, SourceRevision, Statistic,
+    StatisticKind,
 };
 
-use crate::adapter::{
-    AdapterOptions, IngestWarning, IngestWarningKind, NormalizeOutcome, NormalizedStatisticValue,
-};
+use crate::adapter::{AdapterOptions, IngestWarning, IngestWarningKind, NormalizedStatisticValue};
 use crate::canonical::canonical_db;
 use crate::error::AppError;
 use crate::hfd::hfd_client;
@@ -16,10 +15,6 @@ use crate::hfd::hfd_client::CohortFertilityFile;
 use crate::hfd::hfd_model::{ParsedHfdPublication, ParsedHfdStatisticValue};
 use crate::ingest;
 use crate::ingest::IngestReport;
-
-/// The statistic HFD's cohort file supplies. Resolved by code rather than through `StatisticKind`, which
-/// has no variant for it until a client can render a cohort.
-pub const COMPLETED_COHORT_FERTILITY_CODE: &str = "ccf";
 
 /// HFD's national totals, which carry a suffix rather than a bare ISO 3166-1 alpha-3 code. `NP` is HFD's
 /// marker for the whole national population, as against a territory or a civilian-only series.
@@ -29,9 +24,9 @@ const NATIONAL_TOTAL_CODES: [NationalTotalCode; 3] = [
     NationalTotalCode { hfd_code: "GBR_NP", iso3: "GBR" },
 ];
 
-/// Territories and constituent countries HFD publishes alongside the national totals. Listed so their
+/// The former East and West Germany, and the United Kingdom's constituent countries. Listed so their
 /// warning says what they are, rather than reporting them as countries missing from the canonical seed.
-const SUBPOPULATION_CODES: [&str; 5] = ["DEUTE", "DEUTW", "GBRTENW", "GBR_NIR", "GBR_SCO"];
+const SUBNATIONAL_TERRITORY_CODES: [&str; 5] = ["DEUTE", "DEUTW", "GBRTENW", "GBR_NIR", "GBR_SCO"];
 
 struct NationalTotalCode {
     hfd_code: &'static str,
@@ -73,7 +68,7 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         return Ok(IngestReport::default());
     }
 
-    let normalized: NormalizedCohortValues =
+    let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
         normalize(&mut *transaction, parsed_hfd_statistic_values).await?;
 
     let mut report: IngestReport = ingest::record_statistic_values(
@@ -82,11 +77,10 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         &publication.revision_label,
         Some(publication.last_modified.and_time(NaiveTime::MIN).and_utc()),
         Utc::now(),
-        normalized.statistic_values,
+        normalized_statistic_values,
     )
     .await?;
-    report.warnings = normalized.warnings;
-    report.values_absent_upstream = normalized.absent_upstream_count;
+    report.warnings = warnings;
 
     transaction.commit().await?;
 
@@ -108,33 +102,26 @@ pub fn should_skip_run(
     }
 }
 
-pub struct NormalizedCohortValues {
-    pub statistic_values: Vec<NormalizedStatisticValue>,
-    pub warnings: Vec<IngestWarning>,
-    pub absent_upstream_count: u64,
-}
-
-/// An absent value is counted rather than warned: it means the cohort has not finished childbearing, which
-/// is the normal state of the newest cohorts of every country. A code that resolves to a region but yields
+/// An absent value is dropped without a warning: it means the cohort has not finished childbearing, which is
+/// the normal state of the newest cohorts of every country. A code that resolves to a region but yields
 /// nothing at all does warn, once.
 pub async fn normalize(
     connection: &mut PgConnection,
     parsed_hfd_statistic_values: Vec<ParsedHfdStatisticValue>,
-) -> Result<NormalizedCohortValues, AppError> {
+) -> Result<(Vec<NormalizedStatisticValue>, Vec<IngestWarning>), AppError> {
     let statistic: Statistic =
-        canonical_db::find_statistic_by_code(&mut *connection, COMPLETED_COHORT_FERTILITY_CODE)
+        canonical_db::find_statistic_by_code(&mut *connection, StatisticKind::Ccf.code())
             .await?
             .ok_or_else(|| {
                 AppError::from(format!(
                     "statistic {:?} missing from canonical store (run dbmate up)",
-                    COMPLETED_COHORT_FERTILITY_CODE,
+                    StatisticKind::Ccf.code(),
                 ))
             })?;
 
     let mut statistic_values: Vec<NormalizedStatisticValue> =
         Vec::with_capacity(parsed_hfd_statistic_values.len());
     let mut warnings: Vec<IngestWarning> = Vec::new();
-    let mut absent_upstream_count: u64 = 0;
     let mut codes_yielding_nothing: Vec<String> = Vec::new();
 
     for (hfd_code, parsed_values) in group_by_code(parsed_hfd_statistic_values) {
@@ -149,12 +136,12 @@ pub async fn normalize(
         let mut values_for_code: u64 = 0;
 
         for parsed_value in parsed_values {
-            match normalize_row(&parsed_value, region_id, statistic.id)? {
-                NormalizeOutcome::Normalized(statistic_value) => {
-                    statistic_values.push(statistic_value);
-                    values_for_code += 1;
-                }
-                NormalizeOutcome::Warned(_) => absent_upstream_count += 1,
+            let normalized: Option<NormalizedStatisticValue> =
+                normalize_row(&parsed_value, region_id, statistic.id)?;
+
+            if let Some(statistic_value) = normalized {
+                statistic_values.push(statistic_value);
+                values_for_code += 1;
             }
         }
 
@@ -170,7 +157,7 @@ pub async fn normalize(
         });
     }
 
-    Ok(NormalizedCohortValues { statistic_values, warnings, absent_upstream_count })
+    Ok((statistic_values, warnings))
 }
 
 /// Grouped so a code resolves to its region once rather than once per cohort, and so a code that yields
@@ -203,10 +190,12 @@ async fn resolve_region(
     connection: &mut PgConnection,
     hfd_code: &str,
 ) -> Result<RegionOutcome, AppError> {
-    if SUBPOPULATION_CODES.contains(&hfd_code) {
+    if SUBNATIONAL_TERRITORY_CODES.contains(&hfd_code) {
         return Ok(RegionOutcome::Warned(IngestWarning {
-            kind: IngestWarningKind::SubpopulationCode,
-            message: format!("hfd code {hfd_code} names a subpopulation, which has no canonical region"),
+            kind: IngestWarningKind::SubnationalTerritory,
+            message: format!(
+                "hfd code {hfd_code} names a territory within a country, which has no canonical region",
+            ),
         }));
     }
 
@@ -233,19 +222,13 @@ fn normalize_row(
     parsed_hfd_statistic_value: &ParsedHfdStatisticValue,
     region_id: Uuid,
     statistic_id: Uuid,
-) -> Result<NormalizeOutcome, AppError> {
+) -> Result<Option<NormalizedStatisticValue>, AppError> {
     let Some(value) = parsed_hfd_statistic_value.value
     else {
-        return Ok(NormalizeOutcome::Warned(IngestWarning {
-            kind: IngestWarningKind::NotApplicableValue,
-            message: format!(
-                "hfd has no completed cohort for {} {}",
-                parsed_hfd_statistic_value.hfd_code, parsed_hfd_statistic_value.cohort_year,
-            ),
-        }));
+        return Ok(None);
     };
 
-    Ok(NormalizeOutcome::Normalized(NormalizedStatisticValue {
+    Ok(Some(NormalizedStatisticValue {
         region_id,
         statistic_id,
         period: NaiveDatePeriod::from_year(parsed_hfd_statistic_value.cohort_year)?,

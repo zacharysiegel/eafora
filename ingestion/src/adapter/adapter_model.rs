@@ -35,6 +35,6 @@ pub enum IngestWarningKind {
     UnparsableRow,
     /// A code that resolved to a region, but whose every value upstream was absent.
     NoValuesForRegion,
-    /// A code naming a subpopulation rather than a country, which has no canonical region.
-    SubpopulationCode,
+    /// A code naming a territory within a country rather than the country, which has no canonical region.
+    SubnationalTerritory,
 }

@@ -99,7 +99,9 @@ impl StatisticColorTransform {
 
 pub fn transform_for(statistic: StatisticKind) -> StatisticColorTransform {
     match statistic {
-        StatisticKind::Tfr => StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 },
+        StatisticKind::Tfr | StatisticKind::Ccf => {
+            StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 }
+        }
         StatisticKind::TestAlpha => StatisticColorTransform::Linear,
     }
 }

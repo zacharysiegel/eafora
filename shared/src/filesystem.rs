@@ -10,8 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::ops::Deref;
 
-#[cfg(not(target_arch = "wasm32"))] // not for wasm32: names a section of a Cargo manifest read off disk
-const WORKSPACE_MANIFEST_MARKER: &str = "[workspace";
+#[cfg(not(target_arch = "wasm32"))] // not for wasm32: only the filesystem helpers below read a manifest
+const WORKSPACE_MANIFEST_TABLE: &str = "[workspace]";
 
 #[cfg(not(target_arch = "wasm32"))] // not for wasm32: holds a PathBuf (a local filesystem path)
 #[derive(Debug, Clone)]
@@ -106,9 +106,6 @@ pub fn find_workspace_root(start_directory: &Path) -> Result<PathBuf, AppError> 
     )))
 }
 
-/* `dotenvy` finds `.env` by searching upward from the current directory, so a relative path read out of it
-   has to resolve the same way. Resolving against the current directory instead would make the value depend
-   on where the process was started, and Cargo starts test binaries in the package directory. */
 #[cfg(not(target_arch = "wasm32"))] // not for wasm32: resolves a local filesystem path
 pub fn resolve_workspace_relative(path: &Path) -> Result<PathBuf, AppError> {
     if path.is_absolute() {
@@ -128,7 +125,7 @@ fn declares_workspace(manifest_path: &Path) -> bool {
     match manifest_text {
         Ok(manifest_text) => manifest_text
             .lines()
-            .any(|line| line.trim_start().starts_with(WORKSPACE_MANIFEST_MARKER)),
+            .any(|line| line.trim() == WORKSPACE_MANIFEST_TABLE),
         Err(_) => false,
     }
 }

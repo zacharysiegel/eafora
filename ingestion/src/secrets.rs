@@ -24,6 +24,9 @@ pub fn master_decrypt_utf8(secret_name: &str) -> Result<String, AppError> {
     Ok(text)
 }
 
+/* `dotenvy` finds `.env` by searching upward from the current directory, so a relative path declared in it
+   has to resolve the same way. Anchoring on the current directory would instead make the store's location
+   depend on where the process was started, and Cargo starts test binaries in the package directory. */
 fn load_secrets() -> Result<SecretStore, AppError> {
     let declared_store_path: String = dotenvy::var("SECR_STORE_PATH")?;
     let store_path: PathBuf = filesystem::resolve_workspace_relative(Path::new(&declared_store_path))?;
