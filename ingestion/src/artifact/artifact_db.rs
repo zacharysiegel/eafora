@@ -66,13 +66,12 @@ pub async fn read_country_iso3_to_metadata<'e>(
     Ok(map)
 }
 
-/// An unreleased statistic is ingested but not yet offered to clients. A released one whose code this
-/// build cannot parse is skipped with a warning rather than failing the build, because the database can be
-/// migrated ahead of the binary reading it.
+/// A code this build cannot parse is skipped with a warning rather than failing the build, because the
+/// database can be migrated ahead of the binary reading it.
 pub async fn read_all_statistic_kinds<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<BTreeSet<StatisticKind>, AppError> {
-    let codes: Vec<String> = sqlx::query_scalar!("select code from statistic where released is not null")
+    let codes: Vec<String> = sqlx::query_scalar!("select code from statistic")
         .fetch_all(executor)
         .await?;
 
@@ -87,7 +86,7 @@ pub async fn read_all_statistic_kinds<'e>(
                 statistic_kinds.insert(statistic_kind);
             }
             Err(error) => log::warn!(
-                "skipping a released statistic this build cannot render; [code={code} error={error}]",
+                "skipping a statistic this build cannot render; [code={code} error={error}]",
             ),
         }
     }

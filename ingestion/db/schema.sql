@@ -281,8 +281,7 @@ CREATE TABLE public.statistic (
     units text NOT NULL,
     created timestamp with time zone DEFAULT now() NOT NULL,
     modified timestamp with time zone DEFAULT now() NOT NULL,
-    name_abbreviated_en text NOT NULL,
-    released timestamp with time zone
+    name_abbreviated_en text NOT NULL
 );
 
 
@@ -298,13 +297,6 @@ COMMENT ON COLUMN public.statistic.code IS 'short identifier used downstream (''
 --
 
 COMMENT ON COLUMN public.statistic.name_abbreviated_en IS 'Short English label (often an acronym) for space-constrained UI like breadcrumbs; name_en remains the long form.';
-
-
---
--- Name: COLUMN statistic.released; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.statistic.released IS 'When the statistic began being offered to clients; null means it is ingested but not yet published, so the artifact build skips it and it needs no client-side StatisticKind variant.';
 
 
 --
@@ -639,5 +631,4 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260621120000'),
     ('20260812120000'),
     ('20260814120000'),
-    ('20260819140000'),
     ('20260819140100');
