@@ -26,11 +26,11 @@ const WHITE_FILL: Rgba = Rgba {
     a: 1.0,
 };
 
-/// The no-data grey, `#666666`.
+/// The no-data grey, `#999999`.
 const NO_DATA_FILL: Rgba = Rgba {
-    r: 102.0 / 255.0,
-    g: 102.0 / 255.0,
-    b: 102.0 / 255.0,
+    r: 153.0 / 255.0,
+    g: 153.0 / 255.0,
+    b: 153.0 / 255.0,
     a: 1.0,
 };
 
@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn no_data_is_the_mid_dark_grey() {
+    fn no_data_is_the_mid_grey() {
         assert_color_approx(CHOROPLETH_SCALE.no_data(), NO_DATA_FILL);
     }
 

@@ -525,9 +525,21 @@ impl Driver {
         }
 
         self.frame_state.active_statistic = statistic;
-        self.request_redraw();
 
         let bundle: Arc<Bundle> = self.current_bundle();
+
+        /* Two statistics need not cover the same periods, and a cohort measure ends decades before a period
+           one. Holding the old period would leave the map blank on a period the new statistic never
+           covers. */
+        let period_range: Option<(NaiveDate, NaiveDate)> = self
+            .active_shard_values(&bundle)
+            .and_then(|shard_values| shard_values.period_range());
+        if let Some((earliest, latest)) = period_range {
+            self.frame_state.active_period_start =
+                self.frame_state.active_period_start.clamp(earliest, latest);
+        }
+
+        self.request_redraw();
 
         Some(self.republish(&bundle))
     }
