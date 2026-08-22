@@ -156,12 +156,6 @@ async fn run_source(
     match source_kind {
         DataSourceKind::WorldBankWDI => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
         DataSourceKind::HumanFertilityDatabase => hfd_adapter::fetch_and_store(pool, options).await,
-        // The test-only source identities have no real adapter; they never appear in
-        // REGISTERED_SOURCES, so this is unreachable at runtime. Listed explicitly (not a
-        // catch-all) so adding a real source still breaks this match until it's handled.
-        DataSourceKind::TestAlpha | DataSourceKind::TestBeta => {
-            Err(AppError::from(format!("no adapter for test-only source {:?}", source_kind)))
-        }
     }
 }
 

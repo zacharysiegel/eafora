@@ -163,7 +163,7 @@ mod tests {
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66),
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "jpn", 2022, 1.30),
             make_merged(StatisticKind::Tfr, LicenseShardClass::NonCommercial, "usa", 2022, 1.66),
-            make_merged(StatisticKind::TestAlpha, LicenseShardClass::Base, "usa", 2022, 1.85),
+            make_merged(StatisticKind::Ccf, LicenseShardClass::Base, "usa", 2022, 1.85),
         ];
 
         let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();

@@ -77,7 +77,6 @@ pub struct DataSource {
 pub enum StatisticKind {
     Tfr,
     Ccf,
-    TestAlpha,
 }
 
 /// Whether a statistic describes a slice of calendar time or a group of people followed through their
@@ -94,7 +93,6 @@ impl StatisticKind {
         match self {
             StatisticKind::Tfr => TemporalBasis::Period,
             StatisticKind::Ccf => TemporalBasis::Cohort,
-            StatisticKind::TestAlpha => TemporalBasis::Period,
         }
     }
 
@@ -102,7 +100,6 @@ impl StatisticKind {
         match self {
             StatisticKind::Tfr => "tfr",
             StatisticKind::Ccf => "ccf",
-            StatisticKind::TestAlpha => "_test_alpha",
         }
     }
 }
@@ -114,11 +111,6 @@ impl TryFrom<&str> for StatisticKind {
         match value {
             "tfr" => Ok(StatisticKind::Tfr),
             "ccf" => Ok(StatisticKind::Ccf),
-            // Parse arm gated to test: the variant exists for test construction, but a
-            // production build must reject "_test_alpha" as an unknown code (serde Deserialize
-            // routes through this TryFrom).
-            #[cfg(test)]
-            "_test_alpha" => Ok(StatisticKind::TestAlpha),
             other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }
@@ -133,8 +125,6 @@ impl_code_serde!(StatisticKind, code);
 pub enum DataSourceKind {
     WorldBankWDI,
     HumanFertilityDatabase,
-    TestAlpha,
-    TestBeta,
 }
 
 impl DataSourceKind {
@@ -142,8 +132,6 @@ impl DataSourceKind {
         match self {
             DataSourceKind::WorldBankWDI => "wb_wdi",
             DataSourceKind::HumanFertilityDatabase => "hfd",
-            DataSourceKind::TestAlpha => "_test_alpha",
-            DataSourceKind::TestBeta => "_test_beta",
         }
     }
 }
@@ -155,13 +143,6 @@ impl TryFrom<&str> for DataSourceKind {
         match value {
             "wb_wdi" => Ok(DataSourceKind::WorldBankWDI),
             "hfd" => Ok(DataSourceKind::HumanFertilityDatabase),
-            // Parse arms gated to test: the variants exist for test construction, but a
-            // production build must reject these codes as unknown (serde Deserialize routes
-            // through this TryFrom).
-            #[cfg(test)]
-            "_test_alpha" => Ok(DataSourceKind::TestAlpha),
-            #[cfg(test)]
-            "_test_beta" => Ok(DataSourceKind::TestBeta),
             other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }

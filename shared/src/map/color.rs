@@ -102,7 +102,6 @@ pub fn transform_for(statistic: StatisticKind) -> StatisticColorTransform {
         StatisticKind::Tfr | StatisticKind::Ccf => {
             StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 }
         }
-        StatisticKind::TestAlpha => StatisticColorTransform::Linear,
     }
 }
 
@@ -292,6 +291,5 @@ mod tests {
             transform_for(StatisticKind::Tfr),
             StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 },
         );
-        assert_eq!(transform_for(StatisticKind::TestAlpha), StatisticColorTransform::Linear);
     }
 }
