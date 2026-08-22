@@ -10,10 +10,8 @@ use crate::artifact::artifact_model::{
     Artifacts, BuildReport, CandidateValue, CoupledBuildReport, ResolvedValue,
 };
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
-use crate::artifact::{artifact_db, hashing, source_choice, StatisticShard};
-use crate::canonical::canonical_db;
+use crate::artifact::{artifact_db, hashing, source_priority, StatisticShard};
 use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
-use crate::canonical::canonical_entity::SourceChoice;
 use crate::error::AppError;
 use shared::artifact::manifest::{self, BundleVariant};
 use shared::filesystem::{self, FileReference, Hashed};
@@ -42,14 +40,12 @@ pub async fn build_artifacts(
     let started: Instant = Instant::now();
     log::info!("starting; [version_label={} version_dir={:?}]", version_label, version_dir);
 
-    let source_choices: Vec<SourceChoice> = canonical_db::read_source_choices(&mut *connection).await?;
     let statistic_kinds: BTreeSet<StatisticKind> = artifact_db::read_all_statistic_kinds(&mut *connection).await?;
 
     let complete: BuildReport = build_bundle_variant(
         connection,
         &version_dir.join(SUBDIR_COMPLETE),
         BundleVariant::Complete,
-        &source_choices,
         statistic_kinds.clone(),
         version_label,
         options,
@@ -60,7 +56,6 @@ pub async fn build_artifacts(
         connection,
         &version_dir.join(SUBDIR_DOWNSAMPLED),
         BundleVariant::Downsampled,
-        &source_choices,
         statistic_kinds,
         version_label,
         options,
@@ -84,7 +79,6 @@ async fn build_bundle_variant(
     connection: &mut PgConnection,
     variant_dir: &Path,
     variant: BundleVariant,
-    source_choices: &[SourceChoice],
     statistic_kinds: BTreeSet<StatisticKind>,
     version_label: &str,
     options: BuildOptions,
@@ -93,7 +87,7 @@ async fn build_bundle_variant(
     fs::create_dir_all(variant_dir)?;
 
     let (shards, data_sources): (Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>) =
-        create_statistic_shards(connection, variant_dir, source_choices, statistic_kinds, variant).await?;
+        create_statistic_shards(connection, variant_dir, statistic_kinds, variant).await?;
 
     let geometry: Hashed<FileReference> = match shared_geometry {
         Some(existing) => copy_geometry_into(existing, variant_dir)?,
@@ -120,7 +114,6 @@ async fn build_bundle_variant(
 async fn create_statistic_shards(
     connection: &mut PgConnection,
     variant_dir: &Path,
-    source_choices: &[SourceChoice],
     statistic_kinds: BTreeSet<StatisticKind>,
     variant: BundleVariant,
 ) -> Result<(Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>), AppError> {
@@ -139,7 +132,7 @@ async fn create_statistic_shards(
         }
 
         let resolved: Vec<ResolvedValue> = match variant {
-            BundleVariant::Complete => source_choice::resolve_candidates(candidates, source_choices)?,
+            BundleVariant::Complete => source_priority::resolve_candidates(candidates)?,
             BundleVariant::Downsampled => downsample_to_reference_year(candidates, kind),
         };
         if resolved.is_empty() {
@@ -253,6 +246,7 @@ mod tests {
             value,
             data_status: DataStatus::try_from("final").unwrap(),
             data_source_kind,
+            data_source_preference_rank: 100,
             data_source_revision: "rev".to_string(),
             license_class: LicenseClass::Attribution,
         }

@@ -2,8 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use shared::canonical::canonical_model::{
-    Country, DataSource, DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, Region,
-    Statistic, StatisticKind,
+    Country, DataSource, DataSourceKind, DataStatus, LicenseClass, Region, Statistic,
 };
 
 use crate::error::AppError;
@@ -166,40 +165,3 @@ impl TryFrom<StatisticValueEntity> for StatisticValue {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SourceChoice {
-    pub id: Uuid,
-    pub region_id: Option<Uuid>,
-    pub statistic_kind: StatisticKind,
-    pub license_shard_class: LicenseShardClass,
-    pub data_source_kind: DataSourceKind,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone)]
-pub struct SourceChoiceEntity {
-    pub id: Uuid,
-    pub region_id: Option<Uuid>,
-    pub statistic_code: String,
-    pub license_shard_class: String,
-    pub data_source_code: String,
-    pub created: DateTime<Utc>,
-    pub modified: DateTime<Utc>,
-}
-
-impl TryFrom<SourceChoiceEntity> for SourceChoice {
-    type Error = AppError;
-
-    fn try_from(entity: SourceChoiceEntity) -> Result<Self, Self::Error> {
-        Ok(SourceChoice {
-            id: entity.id,
-            region_id: entity.region_id,
-            statistic_kind: StatisticKind::try_from(entity.statistic_code.as_str())?,
-            license_shard_class: LicenseShardClass::try_from(entity.license_shard_class.as_str())?,
-            data_source_kind: DataSourceKind::try_from(entity.data_source_code.as_str())?,
-            created: entity.created,
-            modified: entity.modified,
-        })
-    }
-}

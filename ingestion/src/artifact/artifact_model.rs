@@ -26,6 +26,7 @@ pub struct CandidateValue {
     pub value: f64,
     pub data_status: DataStatus,
     pub data_source_kind: DataSourceKind,
+    pub data_source_preference_rank: i32,
     pub data_source_revision: String,
     pub license_class: LicenseClass,
 }
@@ -40,6 +41,7 @@ pub struct CandidateValueProjection {
     pub value: f64,
     pub data_status: String,
     pub data_source_code: String,
+    pub data_source_preference_rank: i32,
     pub data_source_revision: String,
     pub license_class: String,
 }
@@ -59,6 +61,7 @@ impl TryFrom<CandidateValueProjection> for CandidateValue {
             value: projection.value,
             data_status: DataStatus::try_from(projection.data_status.as_str())?,
             data_source_kind: DataSourceKind::try_from(projection.data_source_code.as_str())?,
+            data_source_preference_rank: projection.data_source_preference_rank,
             data_source_revision: projection.data_source_revision,
             license_class: LicenseClass::try_from(projection.license_class.as_str())?,
         })

@@ -148,7 +148,7 @@ COMMENT ON COLUMN public.data_source.attribution_text IS 'exact display string f
 -- Name: COLUMN data_source.preference_rank; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.data_source.preference_rank IS 'drives data-source-preference merge; lower wins; ties broken deterministically by data_source.id';
+COMMENT ON COLUMN public.data_source.preference_rank IS 'orders sources when more than one supplies a cell; lower wins, ties broken deterministically by data_source.code';
 
 
 --
@@ -238,35 +238,6 @@ COMMENT ON COLUMN public.region.m49_code IS 'UN M49 numeric code as text (preser
 CREATE TABLE public.schema_migrations (
     version character varying NOT NULL
 );
-
-
---
--- Name: source_choice; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.source_choice (
-    id uuid DEFAULT uuidv7() NOT NULL,
-    region_id uuid,
-    statistic_id uuid NOT NULL,
-    license_shard_class text NOT NULL,
-    data_source_id uuid NOT NULL,
-    created timestamp with time zone DEFAULT now() NOT NULL,
-    modified timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: COLUMN source_choice.region_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.source_choice.region_id IS 'null = global default for this (statistic, license_shard_class); non-null = per-region override';
-
-
---
--- Name: COLUMN source_choice.license_shard_class; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.source_choice.license_shard_class IS 'destination shard the chosen data_source contributes to; one of: base | share_alike | noncommercial';
 
 
 --
@@ -473,14 +444,6 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
--- Name: source_choice source_choice_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.source_choice
-    ADD CONSTRAINT source_choice_pkey PRIMARY KEY (id);
-
-
---
 -- Name: statistic statistic_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -513,20 +476,6 @@ ALTER TABLE ONLY public.statistic_value
 
 
 --
--- Name: source_choice_global_uq; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX source_choice_global_uq ON public.source_choice USING btree (statistic_id, license_shard_class) WHERE (region_id IS NULL);
-
-
---
--- Name: source_choice_override_uq; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX source_choice_override_uq ON public.source_choice USING btree (region_id, statistic_id, license_shard_class) WHERE (region_id IS NOT NULL);
-
-
---
 -- Name: statistic_value_current_per_source; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -555,30 +504,6 @@ ALTER TABLE ONLY public.data_source_publication
 
 ALTER TABLE ONLY public.region
     ADD CONSTRAINT region_parent_region_id_fkey FOREIGN KEY (parent_region_id) REFERENCES public.region(id);
-
-
---
--- Name: source_choice source_choice_data_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.source_choice
-    ADD CONSTRAINT source_choice_data_source_id_fkey FOREIGN KEY (data_source_id) REFERENCES public.data_source(id);
-
-
---
--- Name: source_choice source_choice_region_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.source_choice
-    ADD CONSTRAINT source_choice_region_id_fkey FOREIGN KEY (region_id) REFERENCES public.region(id);
-
-
---
--- Name: source_choice source_choice_statistic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.source_choice
-    ADD CONSTRAINT source_choice_statistic_id_fkey FOREIGN KEY (statistic_id) REFERENCES public.statistic(id);
 
 
 --
@@ -632,4 +557,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260812120000'),
     ('20260814120000'),
     ('20260819140100'),
-    ('20260822120000');
+    ('20260822120000'),
+    ('20260822140000');
