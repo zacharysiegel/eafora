@@ -11,7 +11,7 @@ use leptos::prelude::*;
 
 use shared::AppError;
 use shared::artifact::Bundle;
-use shared::canonical::{DataSourceKind, StatisticKind};
+use shared::canonical::{DataSourceKind, DataStatus, StatisticKind};
 use shared::license::DistributionContext;
 use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
@@ -24,7 +24,7 @@ use crate::distribution;
 use crate::live_resolve;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
-use super::{RenderStatus, GlobalView, LegendView, SelectionView, ViewControls};
+use super::{CellView, RenderStatus, GlobalView, LegendView, SelectionView, ViewControls};
 
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
@@ -284,15 +284,16 @@ impl Driver {
         bundle.shard_values_for(self.frame_state.active_statistic)
     }
 
-    fn decode_cell(cell: Option<&CellValue>) -> (Option<f64>, Option<DataSourceKind>) {
+    fn decode_cell(cell: Option<&CellValue>) -> CellView {
         let value: Option<f64> = cell.map(|cell| cell.value);
         let source: Option<DataSourceKind> = cell.and_then(|cell| {
             DataSourceKind::try_from(cell.source_code.as_str())
                 .map_err(|error| log::warn!("shard cell has an unrecognized data source; [code={} error={error}]", cell.source_code))
                 .ok()
         });
+        let data_status: Option<DataStatus> = cell.map(|cell| cell.data_status);
 
-        (value, source)
+        CellView { value, source, data_status }
     }
 
     fn resolve_selection_view(&self, bundle: &Bundle, region_code: &str, name_en: &str) -> SelectionView {
@@ -300,15 +301,12 @@ impl Driver {
             .active_shard_values(bundle)
             .and_then(|shard_values| shard_values.cell(region_code, self.frame_state.active_period_start));
 
-        let (value, source): (Option<f64>, Option<DataSourceKind>) = Self::decode_cell(cell);
-
         SelectionView {
             region_code: region_code.to_string(),
             name_en: name_en.to_string(),
             statistic: self.frame_state.active_statistic,
             period_start: self.frame_state.active_period_start,
-            value,
-            source,
+            cell: Self::decode_cell(cell),
         }
     }
 
@@ -317,13 +315,10 @@ impl Driver {
             .active_shard_values(bundle)
             .and_then(|shard_values| shard_values.cell(WORLD_REGION_CODE, self.frame_state.active_period_start));
 
-        let (value, source): (Option<f64>, Option<DataSourceKind>) = Self::decode_cell(cell);
-
         GlobalView {
             statistic: self.frame_state.active_statistic,
             period_start: self.frame_state.active_period_start,
-            value,
-            source,
+            cell: Self::decode_cell(cell),
         }
     }
 
@@ -360,7 +355,12 @@ impl Driver {
         self.selection = selection_view.clone();
 
         match &selection_view {
-            Some(view) => log::debug!("region selected [name={} region_code={} value={:?}]", view.name_en, view.region_code, view.value),
+            Some(view) => log::debug!(
+                "region selected; [name={} region_code={} value={:?}]",
+                view.name_en,
+                view.region_code,
+                view.cell.value,
+            ),
             None => log::debug!("region deselected"),
         }
 
@@ -709,10 +709,11 @@ async fn set_up_driver(
     let initial_legend: LegendView = driver.legend_view(&published_bundle);
     let initial_global: GlobalView = driver.resolve_global_view(&published_bundle);
     log::info!(
-        "initial global figure resolved; [period_start={} value={:?} source={:?}]",
+        "initial global figure resolved; [period_start={} value={:?} source={:?} data_status={:?}]",
         initial_global.period_start,
-        initial_global.value,
-        initial_global.source,
+        initial_global.cell.value,
+        initial_global.cell.source,
+        initial_global.cell.data_status,
     );
     let live_bundle_sender: watch::Sender<Arc<Bundle>> = driver.bundle_sender.clone();
 

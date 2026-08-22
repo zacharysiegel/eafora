@@ -33,8 +33,14 @@
     color: var(--color-ink-muted);
 }
 
-.detail-panel-source {
+.detail-panel-source,
+.detail-panel-status {
     margin-top: var(--space-sm);
     font-size: 0.6875rem; // approx. 11px
     color: var(--color-ink-muted);
+}
+
+// A status only renders when the figure is not confirmed, so it reads as a qualification of the value above.
+.detail-panel-status {
+    margin-top: var(--space-xs);
 }

@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use leptos::html::Canvas;
 use leptos::prelude::*;
 
-use shared::canonical::{DataSourceKind, StatisticKind};
+use shared::canonical::{DataSourceKind, DataStatus, StatisticKind};
 
 use crate::i18n::*;
 
@@ -20,6 +20,15 @@ pub enum RenderStatus {
     DataUnavailable,
 }
 
+/// What the active shard held for one region and period. Every field is absent together when the shard
+/// carries no such cell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CellView {
+    pub value: Option<f64>,
+    pub source: Option<DataSourceKind>,
+    pub data_status: Option<DataStatus>,
+}
+
 /// Published by the driver so a consumer can render the selection without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectionView {
@@ -27,8 +36,7 @@ pub struct SelectionView {
     pub name_en: String,
     pub statistic: StatisticKind,
     pub period_start: NaiveDate,
-    pub value: Option<f64>,
-    pub source: Option<DataSourceKind>,
+    pub cell: CellView,
 }
 
 /// Published by the driver so a consumer can render the empty-state world figure without bundle access.
@@ -36,8 +44,7 @@ pub struct SelectionView {
 pub struct GlobalView {
     pub statistic: StatisticKind,
     pub period_start: NaiveDate,
-    pub value: Option<f64>,
-    pub source: Option<DataSourceKind>,
+    pub cell: CellView,
 }
 
 /// Published by the driver so the controls render without bundle access.
