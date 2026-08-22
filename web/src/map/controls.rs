@@ -76,7 +76,9 @@ pub fn Controls() -> impl IntoView {
                 </label>
                 {move || has_period_range.get().then(|| view! {
                     <div class="controls-field">
-                        <label class="controls-label" for=YEAR_INPUT_ID>{t!(i18n, scrubber.label)}</label>
+                        <label class="controls-label" for=YEAR_INPUT_ID>
+                            {move || active_statistic.get().map(|statistic| labels::period_axis_label(i18n, statistic))}
+                        </label>
                         <div class="controls-scrubber-row">
                             {bound_label(earliest_year, active_year)}
                             <div class="controls-scrubber-track">
@@ -84,7 +86,9 @@ pub fn Controls() -> impl IntoView {
                                     class="controls-scrubber"
                                     class:grabbing=move || grabbing.get()
                                     type="range"
-                                    aria-label=move || t_string!(i18n, scrubber.label)
+                                    aria-label=move || active_statistic
+                                        .get()
+                                        .map(|statistic| labels::period_axis_label_text(i18n, statistic))
                                     min=move || earliest_year.get()
                                     max=move || latest_year.get()
                                     value=move || active_year.get()

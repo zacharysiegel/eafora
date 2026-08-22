@@ -19,7 +19,8 @@
         "picker_label": "Statistic"
     },
     "scrubber": {
-        "label": "Year"
+        "label": "Year",
+        "cohort_label": "Birth cohort"
     },
     "legend": {
         "no_data": "No data",

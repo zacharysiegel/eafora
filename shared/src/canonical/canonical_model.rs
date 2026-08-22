@@ -80,7 +80,24 @@ pub enum StatisticKind {
     TestAlpha,
 }
 
+/// Whether a statistic describes a slice of calendar time or a group of people followed through their
+/// lives. A period measure combines one year's rates across ages; a cohort measure counts what actually
+/// happened to everyone born in a given year.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TemporalBasis {
+    Period,
+    Cohort,
+}
+
 impl StatisticKind {
+    pub fn temporal_basis(self) -> TemporalBasis {
+        match self {
+            StatisticKind::Tfr => TemporalBasis::Period,
+            StatisticKind::Ccf => TemporalBasis::Cohort,
+            StatisticKind::TestAlpha => TemporalBasis::Period,
+        }
+    }
+
     pub fn code(self) -> &'static str {
         match self {
             StatisticKind::Tfr => "tfr",
@@ -306,5 +323,24 @@ impl NaiveDatePeriod {
         }
 
         Some(self.start.year())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn temporal_basis_separates_the_period_measure_from_the_cohort_measure() {
+        assert_eq!(StatisticKind::Tfr.temporal_basis(), TemporalBasis::Period);
+        assert_eq!(StatisticKind::Ccf.temporal_basis(), TemporalBasis::Cohort);
+    }
+
+    /// Both measures are stored one calendar year wide, so the dates alone cannot tell them apart.
+    #[test]
+    fn a_cohort_period_is_indistinguishable_from_a_calendar_year() {
+        let cohort: NaiveDatePeriod = NaiveDatePeriod::from_year(1936).unwrap();
+
+        assert_eq!(cohort.to_year(), Some(1936));
     }
 }
