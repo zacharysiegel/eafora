@@ -95,7 +95,7 @@ Phase B ends by releasing the statistic. Until then Phase A's data sits in the c
 
 - **SC-001**: A run against the checked-in samples writes the expected `statistic_value` rows, and a second run against the same samples writes nothing.
 - **SC-002**: A revised sample file supersedes the affected rows and inserts replacements, leaving the superseded rows readable with their original values, statuses, and publications.
-- **SC-003**: Every cell in the published shard names exactly one source, and for a cell both HFD and World Bank WDI supply, it is the higher-priority one.
+- **SC-003**: Every cell in the published shard names exactly one source, and for a cell both HFD and World Bank WDI supply, it is the higher-priority one. A period only the lower-priority source covers still emits, so a region's series is not truncated at the preferred source's last period.
 - **SC-004**: Selecting completed cohort fertility labels the axis for a birth cohort, and the active value reads as a span rather than an instant.
 - **SC-005**: A cell whose status is not final is distinguishable in the region detail panel from one that is.
 - **SC-006**: A territory code produces a warning on the report and no rows, and the run's exit status stays zero.

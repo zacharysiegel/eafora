@@ -60,17 +60,23 @@ Organized by the plan's three phases, each landing as its own PR on a linear sta
 
 ## Phase C: period total fertility and per-cell source priority
 
-- [ ] T024 Carry the source's priority onto `CandidateValue` from the join the candidate query already makes.
-- [ ] T025 Group candidates per `(region, statistic, license_shard_class, period)` cell rather than per series, renaming `SeriesKey` to `CellKey`.
-- [ ] T026 Choose the lowest-priority-rank source per cell, ties broken by source id so a rebuild is deterministic.
-- [ ] T027 Delete `SourceChoice`, `SourceChoiceEntity`, `read_source_choices`, and the resolver; rewrite its tests, which encode the replaced rule.
-- [ ] T028 Write the migration dropping `source_choice`.
-- [ ] T029 Read `tfrRR.txt` from the archive as well, reusing the parser with a different column set.
-- [ ] T030 Normalize period total fertility against the existing `tfr` statistic.
-- [ ] T031 Reconcile the 39 codes in `tfrRR.txt` against `tfrVH.txt`'s 37.
-- [ ] T032 Integration-test the join: a region both sources cover where HFD stops earlier keeps its World Bank values for the later periods, with no gap.
+- [x] T024 Carry the source's priority onto `CandidateValue` from the join the candidate query already makes.
+- [x] T025 Group candidates per `(region, statistic, license_shard_class, period)` cell rather than per series, renaming `SeriesKey` to `CellKey`.
+- [x] T026 Choose the lowest-priority-rank source per cell, ties broken deterministically so a rebuild is stable.
+- [x] T027 Delete `SourceChoice`, `SourceChoiceEntity`, `read_source_choices`, and the resolver; rewrite its tests, which encode the replaced rule.
+- [x] T028 Write the migration dropping `source_choice`.
+- [x] T029 Read `tfrRR.txt` from the archive as well, reusing the parser with a different column set.
+- [x] T030 Normalize period total fertility against the existing `tfr` statistic.
+- [x] T031 Reconcile the 39 codes in `tfrRR.txt` against `tfrVH.txt`'s 37.
+- [x] T032 Integration-test the join: a region both sources cover where HFD stops earlier keeps its World Bank values for the later periods, with no gap.
+- [x] T033 Drop the test-only `StatisticKind` and `DataSourceKind` variants, which two real variants of each now make unnecessary.
 
----
+### Deviations from the plan, Phase C
+
+- **The tie-break is the source, not its id.** The schema's comment promised `data_source.id`, but a candidate carries its `DataSourceKind` rather than the row id, and ordering on the kind is equally deterministic without threading a `Uuid` through purely to break a tie that no two seeded sources currently produce. The migration updates the catalog comment to match.
+- **`fetch_upstream` returns the archive rather than parsed files.** Two members are now read from one download, so extracting them belongs to the caller; `read_member` takes the member by name instead of sweeping for a suffix.
+- **The 39-versus-37 code question closed without work.** The extras are Croatia and South Korea, both plain alpha-3, and the cohort file's codes are a strict subset of the period file's, so no alias entry was needed.
+- **The five unrecognized codes now warn twice per run**, once per statistic, because each file is normalized separately. Each warning is a true statement about that file; deduplicating them would mean carrying warning state across two normalizations.
 
 ## Deviations from the plan
 
