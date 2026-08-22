@@ -26,6 +26,7 @@ pub async fn read_candidate_values_for_statistic<'e>(
             statistic_value.value                  as "value!",
             statistic_value.data_status            as "data_status!",
             data_source.code                       as "data_source_code!",
+            data_source.preference_rank            as "data_source_preference_rank!",
             data_source_publication.revision_label as "data_source_revision!",
             data_source.license_class              as "license_class!"
         from statistic_value
