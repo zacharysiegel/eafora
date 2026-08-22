@@ -1,0 +1,10 @@
+Period total fertility rates and period total fertility rates by age 40
+Last modified: 2026-07-02
+Code    Year       TFR     TFR40
+DNK     2023     1.497     1.426
+DNK     2024     1.466     1.395
+DNK     2025     1.507     1.434
+DEUTNP  2016     1.597     1.531
+DEUTNP  2017     1.570     1.503
+KOR     2024     0.749     0.708
+HRV     2024     1.465     1.406

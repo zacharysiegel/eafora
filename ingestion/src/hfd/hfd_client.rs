@@ -14,44 +14,50 @@ const PASSWORD_SECRET_NAME: &str = "hfd.siegelzc.password";
 
 const ANTIFORGERY_FIELD: &str = "__RequestVerificationToken";
 const SESSION_COOKIE: &str = "Authorization";
-const COHORT_MEMBER_SUFFIX: &str = "tfrVH.txt";
 const ZIP_MAGIC: [u8; 2] = [b'P', b'K'];
+
+/// `VH` and `RR` are HFD's Lexis-shape suffixes: a cohort file is indexed by birth cohort, a period file by
+/// calendar year.
+pub const COHORT_MEMBER: &str = "tfrVH.txt";
+pub const PERIOD_MEMBER: &str = "tfrRR.txt";
 
 const LAST_MODIFIED_PREFIX: &str = "Last modified:";
 const HEADER_LINE_INDEX: usize = 2;
 const ABSENT_VALUE: &str = ".";
 
 const COLUMN_CODE: &str = "Code";
-const COLUMN_COHORT: &str = "Cohort";
-const COLUMN_COMPLETED_COHORT_FERTILITY: &str = "CCF";
 
-#[derive(Debug, Clone)]
-pub struct CohortFertilityFile {
-    pub member_name: String,
-    pub contents: String,
-}
+/// The two files share a layout and differ only in what their period and value columns are called.
+pub const COHORT_FERTILITY_COLUMNS: FertilityColumns = FertilityColumns { period: "Cohort", value: "CCF" };
+pub const PERIOD_FERTILITY_COLUMNS: FertilityColumns = FertilityColumns { period: "Year", value: "TFR" };
 
 /// The cookies an authenticated HFD request must carry, obtained by signing in.
 pub struct HfdSession {
     cookie_header: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct FertilityColumns {
+    pub period: &'static str,
+    pub value: &'static str,
+}
+
 /// Resolved from the header once, so an upstream column addition or reordering cannot silently shift which
 /// value is read.
-struct CohortFileColumns {
+struct FertilityColumnIndices {
     code_index: usize,
-    cohort_index: usize,
+    period_index: usize,
     value_index: usize,
 }
 
-impl CohortFileColumns {
-    fn from_header(header_line: &str) -> Result<CohortFileColumns, AppError> {
+impl FertilityColumnIndices {
+    fn from_header(header_line: &str, columns: FertilityColumns) -> Result<FertilityColumnIndices, AppError> {
         let names: Vec<&str> = header_line.split_whitespace().collect();
 
-        Ok(CohortFileColumns {
+        Ok(FertilityColumnIndices {
             code_index: index_of_column(&names, COLUMN_CODE)?,
-            cohort_index: index_of_column(&names, COLUMN_COHORT)?,
-            value_index: index_of_column(&names, COLUMN_COMPLETED_COHORT_FERTILITY)?,
+            period_index: index_of_column(&names, columns.period)?,
+            value_index: index_of_column(&names, columns.value)?,
         })
     }
 
@@ -59,12 +65,12 @@ impl CohortFileColumns {
         let fields: Vec<&str> = line.split_whitespace().collect();
 
         let hfd_code: &str = self.field(&fields, self.code_index, line)?;
-        let declared_cohort: &str = self.field(&fields, self.cohort_index, line)?;
+        let declared_period: &str = self.field(&fields, self.period_index, line)?;
         let declared_value: &str = self.field(&fields, self.value_index, line)?;
 
-        let cohort_year: i32 = declared_cohort.parse::<i32>()
+        let period_year: i32 = declared_period.parse::<i32>()
             .map_err(|error| AppError::from(format!(
-                "the hfd cohort is unparsable; [cohort={declared_cohort} error={error}]",
+                "the hfd period is unparsable; [period={declared_period} error={error}]",
             )))?;
 
         let value: Option<f64> = if declared_value == ABSENT_VALUE {
@@ -72,7 +78,7 @@ impl CohortFileColumns {
         } else {
             let parsed: f64 = declared_value.parse::<f64>()
                 .map_err(|error| AppError::from(format!(
-                    "the hfd value is unparsable; [code={hfd_code} cohort={cohort_year} value={declared_value} error={error}]",
+                    "the hfd value is unparsable; [code={hfd_code} period={period_year} value={declared_value} error={error}]",
                 )))?;
 
             Some(parsed)
@@ -80,7 +86,7 @@ impl CohortFileColumns {
 
         Ok(ParsedHfdStatisticValue {
             hfd_code: hfd_code.to_string(),
-            cohort_year,
+            period_year,
             value,
         })
     }
@@ -96,12 +102,11 @@ impl CohortFileColumns {
 }
 
 
-pub async fn fetch_upstream() -> Result<Vec<CohortFertilityFile>, AppError> {
+pub async fn fetch_upstream() -> Result<Vec<u8>, AppError> {
     let client: reqwest::Client = create_client()?;
     let session: HfdSession = sign_in(&client).await?;
-    let archive: Vec<u8> = download_cohort_archive(&client, &session).await?;
 
-    read_cohort_members(&archive)
+    download_cohort_archive(&client, &session).await
 }
 
 /// Does not follow redirects: a successful login answers 302 and carries the session cookie on that response.
@@ -218,37 +223,29 @@ async fn download_cohort_archive(
     Ok(bytes)
 }
 
-pub fn read_cohort_members(archive: &[u8]) -> Result<Vec<CohortFertilityFile>, AppError> {
+/// HFD's input files carry each provider's own licence and are excluded from this crate entirely; the
+/// by-birth-order companions are a different statistic.
+pub fn read_member(archive: &[u8], member_name: &str) -> Result<String, AppError> {
     let reader: std::io::Cursor<&[u8]> = std::io::Cursor::new(archive);
     let mut zip: zip::ZipArchive<std::io::Cursor<&[u8]>> = zip::ZipArchive::new(reader)
         .map_err(|error| AppError::from(format!("could not open the hfd archive; [error={error}]")))?;
 
-    let member_names: Vec<String> = (0..zip.len())
-        .filter_map(|index| zip.by_index(index).ok().map(|member| member.name().to_string()))
-        .filter(|name| name.ends_with(COHORT_MEMBER_SUFFIX))
-        .collect();
+    let mut member: zip::read::ZipFile<'_, std::io::Cursor<&[u8]>> = zip
+        .by_name(member_name)
+        .map_err(|error| AppError::from(format!("the hfd archive carries no {member_name}; [error={error}]")))?;
+    let mut contents: String = String::new();
+    member
+        .read_to_string(&mut contents)
+        .map_err(|error| AppError::from(format!("{member_name} is not text; [error={error}]")))?;
 
-    let mut files: Vec<CohortFertilityFile> = Vec::with_capacity(member_names.len());
-
-    for member_name in member_names {
-        let mut member: zip::read::ZipFile<'_, std::io::Cursor<&[u8]>> = zip
-            .by_name(&member_name)
-            .map_err(|error| AppError::from(format!("could not read {member_name}; [error={error}]")))?;
-        let mut contents: String = String::new();
-        member
-            .read_to_string(&mut contents)
-            .map_err(|error| AppError::from(format!("{member_name} is not text; [error={error}]")))?;
-
-        files.push(CohortFertilityFile { member_name, contents });
-    }
-
-    Ok(files)
+    Ok(contents)
 }
 
 /// HFD's output format, as its `formats.pdf` documents it: two informational lines, a column header, then
 /// space-delimited rows with an absent value written as a single `.`.
-pub fn parse_cohort_file(
+pub fn parse_fertility_file(
     contents: &str,
+    columns: FertilityColumns,
 ) -> Result<(ParsedHfdPublication, Vec<ParsedHfdStatisticValue>), AppError> {
     let lines: Vec<&str> = contents.lines().collect();
     let header_line: &str = lines
@@ -259,7 +256,7 @@ pub fn parse_cohort_file(
         )))?;
 
     let publication: ParsedHfdPublication = read_publication(&lines)?;
-    let columns: CohortFileColumns = CohortFileColumns::from_header(header_line)?;
+    let column_indices: FertilityColumnIndices = FertilityColumnIndices::from_header(header_line, columns)?;
 
     let mut parsed_hfd_statistic_values: Vec<ParsedHfdStatisticValue> = Vec::new();
 
@@ -268,7 +265,7 @@ pub fn parse_cohort_file(
             continue;
         }
 
-        parsed_hfd_statistic_values.push(columns.read_row(line)?);
+        parsed_hfd_statistic_values.push(column_indices.read_row(line)?);
     }
 
     Ok((publication, parsed_hfd_statistic_values))
@@ -309,15 +306,16 @@ mod tests {
     use super::*;
 
     const SAMPLE_COHORT_FILE: &str = include_str!("../../samples/hfd/tfrVH.txt");
+    const SAMPLE_PERIOD_FILE: &str = include_str!("../../samples/hfd/tfrRR.txt");
 
     fn find_value(
         parsed_hfd_statistic_values: &[ParsedHfdStatisticValue],
         hfd_code: &str,
-        cohort_year: i32,
+        period_year: i32,
     ) -> ParsedHfdStatisticValue {
         parsed_hfd_statistic_values
             .iter()
-            .find(|parsed| parsed.hfd_code == hfd_code && parsed.cohort_year == cohort_year)
+            .find(|parsed| parsed.hfd_code == hfd_code && parsed.period_year == period_year)
             .cloned()
             .expect("the sample carries the requested row")
     }
@@ -336,26 +334,26 @@ mod tests {
     }
 
     #[test]
-    fn parse_cohort_file_reads_the_publication_date_from_the_second_line() {
+    fn parse_fertility_file_reads_the_publication_date_from_the_second_line() {
         let (publication, _): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
-            parse_cohort_file(SAMPLE_COHORT_FILE).expect("parse_cohort_file succeeds");
+            parse_fertility_file(SAMPLE_COHORT_FILE, COHORT_FERTILITY_COLUMNS).expect("parse_fertility_file succeeds");
 
         assert_eq!(publication.revision_label, "2026-07-02");
         assert_eq!(publication.last_modified, NaiveDate::from_ymd_opt(2026, 7, 2).unwrap());
     }
 
     #[test]
-    fn parse_cohort_file_reads_every_data_row() {
+    fn parse_fertility_file_reads_every_data_row() {
         let (_, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
-            parse_cohort_file(SAMPLE_COHORT_FILE).expect("parse_cohort_file succeeds");
+            parse_fertility_file(SAMPLE_COHORT_FILE, COHORT_FERTILITY_COLUMNS).expect("parse_fertility_file succeeds");
 
         assert_eq!(parsed_hfd_statistic_values.len(), 14);
     }
 
     #[test]
-    fn parse_cohort_file_reads_the_completed_measure_not_the_age_forty_one() {
+    fn parse_fertility_file_reads_the_completed_measure_not_the_age_forty_one() {
         let (_, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
-            parse_cohort_file(SAMPLE_COHORT_FILE).expect("parse_cohort_file succeeds");
+            parse_fertility_file(SAMPLE_COHORT_FILE, COHORT_FERTILITY_COLUMNS).expect("parse_fertility_file succeeds");
 
         let austria_1936: ParsedHfdStatisticValue = find_value(&parsed_hfd_statistic_values, "AUT", 1936);
 
@@ -363,9 +361,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_cohort_file_yields_none_for_an_absent_value() {
+    fn parse_fertility_file_yields_none_for_an_absent_value() {
         let (_, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
-            parse_cohort_file(SAMPLE_COHORT_FILE).expect("parse_cohort_file succeeds");
+            parse_fertility_file(SAMPLE_COHORT_FILE, COHORT_FERTILITY_COLUMNS).expect("parse_fertility_file succeeds");
 
         let austria_1974: ParsedHfdStatisticValue = find_value(&parsed_hfd_statistic_values, "AUT", 1974);
 
@@ -373,37 +371,62 @@ mod tests {
     }
 
     #[test]
-    fn parse_cohort_file_keeps_codes_that_are_not_iso3() {
+    fn parse_fertility_file_keeps_codes_that_are_not_iso3() {
         let (_, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
-            parse_cohort_file(SAMPLE_COHORT_FILE).expect("parse_cohort_file succeeds");
+            parse_fertility_file(SAMPLE_COHORT_FILE, COHORT_FERTILITY_COLUMNS).expect("parse_fertility_file succeeds");
 
         let scotland_1930: ParsedHfdStatisticValue = find_value(&parsed_hfd_statistic_values, "GBR_SCO", 1930);
 
         assert_eq!(scotland_1930.value, Some(2.544));
     }
 
+    /// The period file shares the cohort file's layout and differs only in its column names.
     #[test]
-    fn parse_cohort_file_resolves_columns_by_name_not_position() {
+    fn parse_fertility_file_reads_the_period_file_with_its_own_columns() {
+        let (publication, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
+            parse_fertility_file(SAMPLE_PERIOD_FILE, PERIOD_FERTILITY_COLUMNS)
+                .expect("parse_fertility_file succeeds");
+
+        assert_eq!(publication.revision_label, "2026-07-02");
+
+        let denmark_2025: ParsedHfdStatisticValue = find_value(&parsed_hfd_statistic_values, "DNK", 2025);
+        assert_eq!(denmark_2025.value, Some(1.507));
+
+        let korea_2024: ParsedHfdStatisticValue = find_value(&parsed_hfd_statistic_values, "KOR", 2024);
+        assert_eq!(korea_2024.value, Some(0.749));
+    }
+
+    /// Reading the period file with the cohort columns must fail rather than silently take another column.
+    #[test]
+    fn parse_fertility_file_rejects_the_wrong_column_pair() {
+        let error: AppError = parse_fertility_file(SAMPLE_PERIOD_FILE, COHORT_FERTILITY_COLUMNS)
+            .expect_err("parse_fertility_file fails");
+
+        assert!(error.to_string().contains("Cohort"));
+    }
+
+    #[test]
+    fn parse_fertility_file_resolves_columns_by_name_not_position() {
         let reordered: &str = "Completed cohort fertility\r\n\
              Last modified: 2026-07-02\r\n\
              Code    CCF40     CCF     Cohort\r\n\
              AUT     2.402     2.436     1936\r\n";
 
         let (_, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
-            parse_cohort_file(reordered).expect("parse_cohort_file succeeds");
+            parse_fertility_file(reordered, COHORT_FERTILITY_COLUMNS).expect("parse_fertility_file succeeds");
 
-        assert_eq!(parsed_hfd_statistic_values[0].cohort_year, 1936);
+        assert_eq!(parsed_hfd_statistic_values[0].period_year, 1936);
         assert_eq!(parsed_hfd_statistic_values[0].value, Some(2.436));
     }
 
     #[test]
-    fn parse_cohort_file_rejects_a_missing_column() {
+    fn parse_fertility_file_rejects_a_missing_column() {
         let without_cohort: &str = "Completed cohort fertility\r\n\
              Last modified: 2026-07-02\r\n\
              Code    CCF     CCF40\r\n\
              AUT     2.436     2.402\r\n";
 
-        let error: AppError = parse_cohort_file(without_cohort).expect_err("parse_cohort_file fails");
+        let error: AppError = parse_fertility_file(without_cohort, COHORT_FERTILITY_COLUMNS).expect_err("parse_fertility_file fails");
 
         let message: String = error.to_string();
         assert!(message.contains("Cohort"));
@@ -411,63 +434,66 @@ mod tests {
     }
 
     #[test]
-    fn parse_cohort_file_rejects_a_file_with_no_header() {
+    fn parse_fertility_file_rejects_a_file_with_no_header() {
         let truncated: &str = "Completed cohort fertility\r\nLast modified: 2026-07-02\r\n";
 
-        parse_cohort_file(truncated).expect_err("parse_cohort_file fails");
+        parse_fertility_file(truncated, COHORT_FERTILITY_COLUMNS).expect_err("parse_fertility_file fails");
     }
 
     #[test]
-    fn parse_cohort_file_rejects_a_missing_last_modified_line() {
+    fn parse_fertility_file_rejects_a_missing_last_modified_line() {
         let without_date: &str = "Completed cohort fertility\r\n\
              \r\n\
              Code    Cohort     CCF     CCF40\r\n\
              AUT     1936     2.436     2.402\r\n";
 
-        let error: AppError = parse_cohort_file(without_date).expect_err("parse_cohort_file fails");
+        let error: AppError = parse_fertility_file(without_date, COHORT_FERTILITY_COLUMNS).expect_err("parse_fertility_file fails");
 
         assert!(error.to_string().contains(LAST_MODIFIED_PREFIX));
     }
 
     #[test]
-    fn parse_cohort_file_rejects_a_row_with_too_few_fields() {
+    fn parse_fertility_file_rejects_a_row_with_too_few_fields() {
         let short_row: &str = "Completed cohort fertility\r\n\
              Last modified: 2026-07-02\r\n\
              Code    Cohort     CCF     CCF40\r\n\
              AUT     1936\r\n";
 
-        parse_cohort_file(short_row).expect_err("parse_cohort_file fails");
+        parse_fertility_file(short_row, COHORT_FERTILITY_COLUMNS).expect_err("parse_fertility_file fails");
     }
 
     #[test]
-    fn parse_cohort_file_rejects_an_unparsable_value() {
+    fn parse_fertility_file_rejects_an_unparsable_value() {
         let bad_value: &str = "Completed cohort fertility\r\n\
              Last modified: 2026-07-02\r\n\
              Code    Cohort     CCF     CCF40\r\n\
              AUT     1936     n/a     2.402\r\n";
 
-        parse_cohort_file(bad_value).expect_err("parse_cohort_file fails");
+        parse_fertility_file(bad_value, COHORT_FERTILITY_COLUMNS).expect_err("parse_fertility_file fails");
     }
 
     #[test]
-    fn read_cohort_members_reads_only_the_cohort_member() {
+    fn read_member_reads_the_named_member_from_an_archive_of_several() {
         let archive: Vec<u8> = create_archive(&[
-            ("tfrVH.txt", SAMPLE_COHORT_FILE),
+            (COHORT_MEMBER, SAMPLE_COHORT_FILE),
             ("tfrVHbo.txt", "by birth order"),
-            ("tfrRR.txt", "period"),
+            (PERIOD_MEMBER, "period"),
         ]);
 
-        let files: Vec<CohortFertilityFile> =
-            read_cohort_members(&archive).expect("read_cohort_members succeeds");
-
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].member_name, "tfrVH.txt");
-        assert_eq!(files[0].contents, SAMPLE_COHORT_FILE);
+        assert_eq!(read_member(&archive, COHORT_MEMBER).unwrap(), SAMPLE_COHORT_FILE);
+        assert_eq!(read_member(&archive, PERIOD_MEMBER).unwrap(), "period");
     }
 
     #[test]
-    fn read_cohort_members_rejects_bytes_that_are_not_an_archive() {
-        read_cohort_members(b"<html>not an archive</html>").expect_err("read_cohort_members fails");
+    fn read_member_rejects_a_member_the_archive_does_not_carry() {
+        let archive: Vec<u8> = create_archive(&[(COHORT_MEMBER, SAMPLE_COHORT_FILE)]);
+
+        read_member(&archive, PERIOD_MEMBER).expect_err("read_member fails");
+    }
+
+    #[test]
+    fn read_member_rejects_bytes_that_are_not_an_archive() {
+        read_member(b"<html>not an archive</html>", COHORT_MEMBER).expect_err("read_member fails");
     }
 
     #[test]
