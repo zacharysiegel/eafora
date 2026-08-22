@@ -25,9 +25,9 @@ pub struct CellValue {
 #[derive(Debug, Clone)]
 pub struct ShardValues {
     by_region: HashMap<String, HashMap<NaiveDate, CellValue>>,
-    /// Every region reports the same statistic over the same periods, so a period's ending is a property of
-    /// the shard rather than of any one region.
-    period_end_by_start: HashMap<NaiveDate, NaiveDate>,
+    /// Assumes every region shares the statistic's periods; two regions ending the same period on different
+    /// dates would keep only the last read.
+    period_end_by_period_start: HashMap<NaiveDate, NaiveDate>,
     min: f64,
     max: f64,
     earliest_period_start: NaiveDate,
@@ -52,7 +52,7 @@ impl ShardValues {
     }
 
     pub fn period_end(&self, period_start: NaiveDate) -> Option<NaiveDate> {
-        self.period_end_by_start.get(&period_start).copied()
+        self.period_end_by_period_start.get(&period_start).copied()
     }
 
     pub fn period_range(&self) -> Option<(NaiveDate, NaiveDate)> {
@@ -129,7 +129,7 @@ mod native {
         })?;
 
         let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
-        let mut period_end_by_start: HashMap<NaiveDate, NaiveDate> = HashMap::new();
+        let mut period_end_by_period_start: HashMap<NaiveDate, NaiveDate> = HashMap::new();
         let mut min: f64 = f64::INFINITY;
         let mut max: f64 = f64::NEG_INFINITY;
         let mut earliest_period_start: NaiveDate = NaiveDate::MAX;
@@ -147,7 +147,7 @@ mod native {
                 source_code: record.source_code,
                 source_revision: record.source_revision,
             };
-            period_end_by_start.insert(period_start, period_end);
+            period_end_by_period_start.insert(period_start, period_end);
             by_region.entry(record.region_code).or_default().insert(period_start, cell);
             min = min.min(record.value);
             max = max.max(record.value);
@@ -155,7 +155,7 @@ mod native {
             latest_period_start = latest_period_start.max(period_start);
         }
 
-        Ok(ShardValues { by_region, period_end_by_start, min, max, earliest_period_start, latest_period_start })
+        Ok(ShardValues { by_region, period_end_by_period_start, min, max, earliest_period_start, latest_period_start })
     }
 
     /// Open a read-only `Connection` over the shard's in-memory bytes. rusqlite's `deserialize` takes a
@@ -262,7 +262,7 @@ mod wasm {
         let statement: Statement = Statement { handle: raw_statement };
 
         let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
-        let mut period_end_by_start: HashMap<NaiveDate, NaiveDate> = HashMap::new();
+        let mut period_end_by_period_start: HashMap<NaiveDate, NaiveDate> = HashMap::new();
         let mut min: f64 = f64::INFINITY;
         let mut max: f64 = f64::NEG_INFINITY;
         let mut earliest_period_start: NaiveDate = NaiveDate::MAX;
@@ -289,7 +289,7 @@ mod wasm {
                     source_code,
                     source_revision,
                 };
-                period_end_by_start.insert(period_start, period_end);
+                period_end_by_period_start.insert(period_start, period_end);
                 by_region.entry(region_code).or_default().insert(period_start, cell);
                 min = min.min(value);
                 max = max.max(value);
@@ -303,7 +303,7 @@ mod wasm {
             }
         }
 
-        Ok(ShardValues { by_region, period_end_by_start, min, max, earliest_period_start, latest_period_start })
+        Ok(ShardValues { by_region, period_end_by_period_start, min, max, earliest_period_start, latest_period_start })
     }
 }
 
