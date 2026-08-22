@@ -121,12 +121,12 @@ mod tests {
             },
             StatisticShard {
                 key: StatisticShardKey {
-                    statistic_kind: StatisticKind::TestAlpha,
+                    statistic_kind: StatisticKind::Ccf,
                     license_shard_class: LicenseShardClass::Base,
                 },
                 file: Hashed::new_with_sha(
                     FileReference {
-                        path: PathBuf::from("/tmp/eafora/data/_test_alpha-base-cccc1111.sqlite"),
+                        path: PathBuf::from("/tmp/eafora/data/ccf-base-cccc1111.sqlite"),
                         byte_count: 50000,
                     },
                     "cccc1111".repeat(8),
@@ -180,8 +180,8 @@ mod tests {
         let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
 
         let tfr_position: usize = json.find("\"tfr\"").expect("tfr present");
-        let test_alpha_position: usize = json.find("\"_test_alpha\"").expect("_test_alpha present");
-        assert!(tfr_position < test_alpha_position);
+        let ccf_position: usize = json.find("\"ccf\"").expect("ccf present");
+        assert!(tfr_position < ccf_position);
     }
 
     #[test]
@@ -207,7 +207,7 @@ mod tests {
 
         assert!(json.contains(&format!("\"relative_path\": \"{}/world-50m-ab12cd34.fgb\"", manifest::SUBDIR_GEOMETRY)));
         assert!(json.contains(&format!("\"relative_path\": \"{}/tfr-base-ef561234.sqlite\"", manifest::SUBDIR_DATA)));
-        assert!(json.contains(&format!("\"relative_path\": \"{}/_test_alpha-base-cccc1111.sqlite\"", manifest::SUBDIR_DATA)));
+        assert!(json.contains(&format!("\"relative_path\": \"{}/ccf-base-cccc1111.sqlite\"", manifest::SUBDIR_DATA)));
     }
 
     #[test]

@@ -278,8 +278,8 @@ mod tests {
     fn downsample_to_reference_year_excludes_sources_other_than_world_bank_wdi() {
         let candidates: Vec<CandidateValue> = vec![
             candidate_value("usa", DataSourceKind::WorldBankWDI, 2023, 1.62),
-            candidate_value("usa", DataSourceKind::TestAlpha, 2025, 1.50),
-            candidate_value("deu", DataSourceKind::TestAlpha, 2023, 1.46),
+            candidate_value("usa", DataSourceKind::HumanFertilityDatabase, 2025, 1.50),
+            candidate_value("deu", DataSourceKind::HumanFertilityDatabase, 2023, 1.46),
         ];
 
         let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
