@@ -496,11 +496,15 @@ impl Driver {
 
         let period_range: Option<(NaiveDate, NaiveDate)> =
             self.active_shard_values(bundle).and_then(|shard_values| shard_values.period_range());
+        let active_period_end: Option<NaiveDate> = self
+            .active_shard_values(bundle)
+            .and_then(|shard_values| shard_values.period_end(self.frame_state.active_period_start));
 
         ViewControls {
             active_statistic: self.frame_state.active_statistic,
             available_statistics,
             active_period_start: self.frame_state.active_period_start,
+            active_period_end,
             period_range,
         }
     }

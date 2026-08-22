@@ -75,6 +75,23 @@
     color: var(--color-rule);
 }
 
+// The extent of the active period on the rail, so a value reads as the span it describes rather than as a
+// point. Begins at the thumb's centre, which marks the period's start, and extends right. The two
+// thumb-size terms match `.controls-year` so the span aligns with the thumb it belongs to.
+.controls-span {
+    position: absolute;
+    top: calc(var(--scrubber-value-row-height) + 11px);
+    left: calc(
+        var(--scrubber-thumb-size) / 2 +
+        var(--thumb-proportion) * (100% - var(--scrubber-thumb-size))
+    );
+    width: calc(var(--span-proportion) * (100% - var(--scrubber-thumb-size)));
+    min-width: 2px;
+    height: 3px;
+    background: var(--color-accent-active);
+    pointer-events: none;
+}
+
 // A 1px line under a 24px-tall click band, so the thumb is easy to grab.
 .controls-scrubber {
     width: 100%;

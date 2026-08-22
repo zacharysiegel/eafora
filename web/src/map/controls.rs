@@ -46,6 +46,16 @@ pub fn Controls() -> impl IntoView {
             _ => 0.0,
         }
     });
+    let active_period_end: Memo<Option<NaiveDate>> =
+        Memo::new(move |_| view_controls.get().and_then(|controls| controls.active_period_end));
+    let span_width: Memo<f64> = Memo::new(move |_| {
+        match (active_year.get(), earliest_year.get(), latest_year.get()) {
+            (Some(active), Some(earliest), Some(latest)) => {
+                span_proportion(active, active_period_end.get(), earliest, latest)
+            }
+            _ => 0.0,
+        }
+    });
 
     view! {
         {move || has_controls.get().then(|| view! {
@@ -82,6 +92,15 @@ pub fn Controls() -> impl IntoView {
                         <div class="controls-scrubber-row">
                             {bound_label(earliest_year, active_year)}
                             <div class="controls-scrubber-track">
+                                <span
+                                    class="controls-span"
+                                    style=move || format!(
+                                        "--thumb-proportion: {}; --span-proportion: {}",
+                                        thumb_offset.get(),
+                                        span_width.get(),
+                                    )
+                                    aria-hidden="true"
+                                ></span>
                                 <input
                                     class="controls-scrubber"
                                     class:grabbing=move || grabbing.get()
@@ -135,6 +154,28 @@ fn bound_label(bound_year: Memo<Option<i32>>, active_year: Memo<Option<i32>>) ->
             {move || bound_year.get().map(|year| year.to_string())}
         </span>
     }
+}
+
+/// How much of the axis the active period covers, as a proportion, so the value reads as the span it
+/// describes rather than as an instant. `period_end` is exclusive, so a period ending 2025-01-01 covers the
+/// single year 2024 and one axis step.
+fn span_proportion(
+    active_year: i32,
+    period_end: Option<NaiveDate>,
+    earliest_year: i32,
+    latest_year: i32,
+) -> f64 {
+    let axis_years: i32 = latest_year - earliest_year;
+    if axis_years <= 0 {
+        return 1.0;
+    }
+
+    let period_years: i32 = match period_end {
+        Some(period_end) => (period_end.year() - active_year).max(1),
+        None => 1,
+    };
+
+    period_years as f64 / axis_years as f64
 }
 
 /// Where `active_year` sits within the range, as a proportion for the scrubber's thumb offset. A range
@@ -238,6 +279,38 @@ mod tests {
     fn clamped_year_passes_a_year_through_when_no_range_is_known() {
         assert_eq!(clamped_year("1800", None, None), Some(1800));
         assert_eq!(clamped_year("1800", Some(1960), None), Some(1800));
+    }
+
+    fn january(year: i32) -> Option<NaiveDate> {
+        NaiveDate::from_ymd_opt(year, 1, 1)
+    }
+
+    #[test]
+    fn span_proportion_covers_one_axis_step_for_a_single_year_period() {
+        assert_eq!(span_proportion(2000, january(2001), 1960, 2020), 1.0 / 60.0);
+    }
+
+    #[test]
+    fn span_proportion_widens_with_a_multi_year_period() {
+        assert_eq!(span_proportion(1950, january(1955), 1900, 2000), 5.0 / 100.0);
+    }
+
+    /// A period with no known ending still reads as one axis step, never as a point.
+    #[test]
+    fn span_proportion_covers_one_step_when_the_ending_is_unknown() {
+        assert_eq!(span_proportion(2000, None, 1960, 2020), 1.0 / 60.0);
+    }
+
+    #[test]
+    fn span_proportion_fills_a_single_year_axis() {
+        assert_eq!(span_proportion(2024, january(2025), 2024, 2024), 1.0);
+    }
+
+    /// An ending at or before the period's own year would otherwise vanish the span.
+    #[test]
+    fn span_proportion_never_falls_below_one_step() {
+        assert_eq!(span_proportion(2000, january(2000), 1960, 2020), 1.0 / 60.0);
+        assert_eq!(span_proportion(2000, january(1990), 1960, 2020), 1.0 / 60.0);
     }
 
     #[test]

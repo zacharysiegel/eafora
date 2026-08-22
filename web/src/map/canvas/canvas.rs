@@ -46,6 +46,8 @@ pub struct ViewControls {
     pub active_statistic: StatisticKind,
     pub available_statistics: Vec<StatisticKind>,
     pub active_period_start: NaiveDate,
+    /// `None` when the shard covers no period starting at `active_period_start`.
+    pub active_period_end: Option<NaiveDate>,
     pub period_range: Option<(NaiveDate, NaiveDate)>,
 }
 
