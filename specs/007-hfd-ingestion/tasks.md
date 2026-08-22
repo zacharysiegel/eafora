@@ -43,10 +43,18 @@ Organized by the plan's three phases, each landing as its own PR on a linear sta
 
 ## Phase B: presenting a cohort
 
-- [ ] T019 Carry `period_end` and `data_status` into `CellValue`, changing both target-gated `read_shard` implementations.
-- [ ] T020 Add `StatisticKind::Ccf` and a period-versus-cohort distinction on the enum, with the axis label taken from it.
-- [ ] T021 Render the active value as a span from `period_start` to `period_end` for every statistic, replacing the year-based scrubber arithmetic.
-- [ ] T022 Show a cell's `data_status` in the region detail panel when it is not final.
+- [x] T019 Carry `period_end` and `data_status` into `CellValue`, changing both target-gated `read_shard` implementations.
+- [x] T020 Add a period-versus-cohort distinction on the enum, with the axis label and the slider's accessible name taken from it.
+- [x] T021 Render the active value as a span from `period_start` to `period_end` for every statistic.
+- [x] T022 Show a cell's `data_status` in the region detail panel when it is not final.
+- [x] T023 Select `hfd` as the source for `ccf`, without which the artifact build refuses a statistic that has values and no configured source.
+
+### Deviations from the plan, Phase B
+
+- **`ShardValues` gained a period-ending lookup.** The plan had the span come from the active cell, but the scrubber is global while a cell is per-region, and the active period can name one no region has a value for. A period's ending is a property of the statistic's data, so it is indexed by period start on the shard.
+- **`CellView` was extracted rather than a field added twice.** `SelectionView` and `GlobalView` already duplicated four cell-derived fields and the panel took six parameters; a status would have made it seven. Both views now embed one struct, which is also what `decode_cell` returns instead of a widening tuple.
+- **A `source_choice` row is seeded for `ccf`.** Removing the release column let `ccf` into the artifact build, which refuses a series that has candidate values and no configured source. Caught by building against the real store rather than by any test, because the test database holds no `ccf` values and so never reaches that series.
+- **The client cannot show HFD's full attribution.** The spec asks for it, but the manifest carries only `revision`, `published`, and `fetched` per source; `attribution_text` lives in Postgres and is never serialized into a bundle. The panel names the source, which is what a bundle supports today. Carrying the full attribution needs a producer change of its own.
 
 ---
 

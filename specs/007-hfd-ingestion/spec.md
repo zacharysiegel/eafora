@@ -82,7 +82,7 @@ Phase B ends by releasing the statistic. Until then Phase A's data sits in the c
 - **FR-017**: `StatisticKind` MUST distinguish a period measure from a cohort measure, and the period axis MUST take its label from that distinction rather than from a fixed string. The existing per-statistic colour transform is the precedent for varying presentation by statistic.
 - **FR-018**: The scrubber MUST represent the active value as the span from `period_start` to `period_end` rather than as a single instant, for every statistic. An annual period renders as a one-year span and a multi-year cohort as a span of its width, so a five-year cohort is never drawn as a dot at its first year.
 - **FR-019**: The region detail panel MUST show a cell's `data_status` when it is anything other than final, in the design's existing vocabulary and without decoration.
-- **FR-020**: The client MUST show the attribution FR-008a describes for a cell attributed to HFD. Rendering the download date alongside it is optional: the agreement's citation form covers exposure-to-risk, death rates, and life tables rather than fertility indicators, and its date instruction asks only that the date be noted. The manifest carries `fetched` per source, so displaying it costs nothing if wanted, and it does make a stale copy identifiable.
+- **FR-020**: The client MUST name the source of a cell attributed to HFD. The full attribution FR-008a describes cannot be rendered from a bundle: the manifest carries a source's revision and dates but not its attribution text, which lives only in the canonical store. Carrying it into the manifest is a producer change outside this feature.
 
 ### Key entities
 
