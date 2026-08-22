@@ -15,7 +15,6 @@ use crate::error::AppError;
 #[derive(Debug, Clone)]
 pub struct CellValue {
     pub value: f64,
-    pub period_end: NaiveDate,
     pub data_status: DataStatus,
     pub source_code: String,
     pub source_revision: String,
@@ -144,7 +143,6 @@ mod native {
 
             let cell: CellValue = CellValue {
                 value: record.value,
-                period_end,
                 data_status,
                 source_code: record.source_code,
                 source_revision: record.source_revision,
@@ -287,7 +285,6 @@ mod wasm {
 
                 let cell: CellValue = CellValue {
                     value,
-                    period_end,
                     data_status,
                     source_code,
                     source_revision,
@@ -388,11 +385,10 @@ mod tests {
     }
 
     #[test]
-    fn read_shard_reads_the_period_end_and_data_status() {
+    fn read_shard_reads_the_data_status() {
         let shard: ShardValues = read_shard(&sample_shard_bytes()).unwrap();
 
         let final_cell: &CellValue = shard.cell("usa", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap();
-        assert_eq!(final_cell.period_end, NaiveDate::from_ymd_opt(2020, 12, 31).unwrap());
         assert_eq!(final_cell.data_status, DataStatus::Final);
 
         let provisional_cell: &CellValue = shard.cell("usa", NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()).unwrap();
