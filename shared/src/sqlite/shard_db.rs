@@ -9,9 +9,14 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
+use crate::canonical::canonical_model::DataStatus;
+use crate::error::AppError;
+
 #[derive(Debug, Clone)]
 pub struct CellValue {
     pub value: f64,
+    pub period_end: NaiveDate,
+    pub data_status: DataStatus,
     pub source_code: String,
     pub source_revision: String,
 }
@@ -53,6 +58,11 @@ impl ShardValues {
     }
 }
 
+fn parse_period(text: &str) -> Result<NaiveDate, AppError> {
+    NaiveDate::parse_from_str(text, crate::sqlite::schema::PERIOD_DATE_FORMAT)
+        .map_err(|error| AppError::from(format!("shard_db: unparseable period {text:?}: {error}")))
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::*;
 
@@ -69,7 +79,17 @@ mod native {
     use crate::error::AppError;
     use crate::sqlite::schema;
 
-    use super::{CellValue, ShardValues};
+    use super::{CellValue, DataStatus, ShardValues};
+
+    struct ShardRecord {
+        region_code: String,
+        period_start: String,
+        period_end: String,
+        value: f64,
+        data_status: String,
+        source_code: String,
+        source_revision: String,
+    }
 
     /// Read every `(region_code, period_start, value)` row of a statistic shard into a [`ShardValues`].
     /// The shard's SQLite header is validated before any query per [`crate::sqlite::schema::validate_shard_header`].
@@ -78,10 +98,12 @@ mod native {
         schema::validate_shard_header(&connection)?;
 
         let query: String = format!(
-            "select {}, {}, {}, {}, {} from {}",
+            "select {}, {}, {}, {}, {}, {}, {} from {}",
             schema::COL_REGION_CODE,
             schema::COL_PERIOD_START,
+            schema::COL_PERIOD_END,
             schema::COL_VALUE,
+            schema::COL_DATA_STATUS,
             schema::COL_DATA_SOURCE_CODE,
             schema::COL_DATA_SOURCE_REVISION,
             schema::TABLE_STATISTIC_VALUE,
@@ -91,11 +113,13 @@ mod native {
         let row_iter = statement.query_map([], |row| {
             let region_code: String = row.get(0)?;
             let period_start: String = row.get(1)?;
-            let value: f64 = row.get(2)?;
-            let source_code: String = row.get(3)?;
-            let source_revision: String = row.get(4)?;
+            let period_end: String = row.get(2)?;
+            let value: f64 = row.get(3)?;
+            let data_status: String = row.get(4)?;
+            let source_code: String = row.get(5)?;
+            let source_revision: String = row.get(6)?;
 
-            Ok((region_code, period_start, value, source_code, source_revision))
+            Ok(ShardRecord { region_code, period_start, period_end, value, data_status, source_code, source_revision })
         })?;
 
         let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
@@ -105,14 +129,21 @@ mod native {
         let mut latest_period_start: NaiveDate = NaiveDate::MIN;
 
         for row in row_iter {
-            let (region_code, period_start, value, source_code, source_revision): (String, String, f64, String, String) = row?;
-            let period_start: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
-                .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
+            let record: ShardRecord = row?;
+            let period_start: NaiveDate = super::parse_period(&record.period_start)?;
+            let period_end: NaiveDate = super::parse_period(&record.period_end)?;
+            let data_status: DataStatus = DataStatus::try_from(record.data_status.as_str())?;
 
-            let cell: CellValue = CellValue { value, source_code, source_revision };
-            by_region.entry(region_code).or_default().insert(period_start, cell);
-            min = min.min(value);
-            max = max.max(value);
+            let cell: CellValue = CellValue {
+                value: record.value,
+                period_end,
+                data_status,
+                source_code: record.source_code,
+                source_revision: record.source_revision,
+            };
+            by_region.entry(record.region_code).or_default().insert(period_start, cell);
+            min = min.min(record.value);
+            max = max.max(record.value);
             earliest_period_start = earliest_period_start.min(period_start);
             latest_period_start = latest_period_start.max(period_start);
         }
@@ -156,7 +187,7 @@ mod wasm {
     use crate::error::AppError;
     use crate::sqlite::{ffi_conversions, ro_memory_vfs, schema};
 
-    use super::{CellValue, ShardValues};
+    use super::{CellValue, DataStatus, ShardValues};
 
     /// Open the shard's bytes through the read-only VFS (native has no such module) and step the one
     /// load-once query via the raw `sqlite3_*` FFI, since `sqlite-wasm-rs` exposes no safe query
@@ -201,10 +232,12 @@ mod wasm {
 
     fn read_all_rows(db: *mut sqlite3) -> Result<ShardValues, AppError> {
         let query: CString = CString::new(format!(
-            "select {}, {}, {}, {}, {} from {}",
+            "select {}, {}, {}, {}, {}, {}, {} from {}",
             schema::COL_REGION_CODE,
             schema::COL_PERIOD_START,
+            schema::COL_PERIOD_END,
             schema::COL_VALUE,
+            schema::COL_DATA_STATUS,
             schema::COL_DATA_SOURCE_CODE,
             schema::COL_DATA_SOURCE_REVISION,
             schema::TABLE_STATISTIC_VALUE,
@@ -232,13 +265,23 @@ mod wasm {
             if step_res == sqlite_wasm_rs::SQLITE_ROW {
                 let region_code: String = ffi_conversions::column_text(statement.handle, 0)?;
                 let period_start: String = ffi_conversions::column_text(statement.handle, 1)?;
-                let value: f64 = unsafe { sqlite_wasm_rs::sqlite3_column_double(statement.handle, 2) };
-                let source_code: String = ffi_conversions::column_text(statement.handle, 3)?;
-                let source_revision: String = ffi_conversions::column_text(statement.handle, 4)?;
-                let period_start: NaiveDate = NaiveDate::parse_from_str(&period_start, schema::PERIOD_DATE_FORMAT)
-                    .map_err(|err| AppError::from(format!("shard_db: unparseable period_start {:?}: {}", period_start, err)))?;
+                let period_end: String = ffi_conversions::column_text(statement.handle, 2)?;
+                let value: f64 = unsafe { sqlite_wasm_rs::sqlite3_column_double(statement.handle, 3) };
+                let data_status: String = ffi_conversions::column_text(statement.handle, 4)?;
+                let source_code: String = ffi_conversions::column_text(statement.handle, 5)?;
+                let source_revision: String = ffi_conversions::column_text(statement.handle, 6)?;
 
-                let cell: CellValue = CellValue { value, source_code, source_revision };
+                let period_start: NaiveDate = super::parse_period(&period_start)?;
+                let period_end: NaiveDate = super::parse_period(&period_end)?;
+                let data_status: DataStatus = DataStatus::try_from(data_status.as_str())?;
+
+                let cell: CellValue = CellValue {
+                    value,
+                    period_end,
+                    data_status,
+                    source_code,
+                    source_revision,
+                };
                 by_region.entry(region_code).or_default().insert(period_start, cell);
                 min = min.min(value);
                 max = max.max(value);
@@ -268,6 +311,14 @@ mod tests {
     /// Build a real shard in memory via the shared DDL, then serialize it to bytes. The loader
     /// round-trip is then tested against the actual schema without committing an opaque binary.
     fn sample_shard_bytes() -> Vec<u8> {
+        shard_bytes(&[
+            ("usa", "2020-01-01", "2020-12-31", 1.6, "final"),
+            ("usa", "2021-01-01", "2021-12-31", 1.7, "provisional"),
+            ("deu", "2020-01-01", "2020-12-31", 1.5, "final"),
+        ])
+    }
+
+    fn shard_bytes(rows: &[(&str, &str, &str, f64, &str)]) -> Vec<u8> {
         let connection: Connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(schema::shard_schema_ddl()).unwrap();
         connection.pragma_update(None, "application_id", schema::APPLICATION_ID).unwrap();
@@ -286,16 +337,12 @@ mod tests {
             schema::COL_DATA_SOURCE_REVISION,
         );
         let region_id: Vec<u8> = vec![0u8; 16];
-        let rows: [(&str, &str, &str, f64); 3] = [
-            ("usa", "2020-01-01", "2020-12-31", 1.6),
-            ("usa", "2021-01-01", "2021-12-31", 1.7),
-            ("deu", "2020-01-01", "2020-12-31", 1.5),
-        ];
-        for (region_code, period_start, period_end, value) in rows {
+
+        for (region_code, period_start, period_end, value, data_status) in rows {
             connection
                 .execute(
                     &insert,
-                    (region_code, region_id.clone(), period_start, period_end, value, "final", "wb_wdi", "2024-12-12"),
+                    (region_code, region_id.clone(), period_start, period_end, *value, *data_status, "wb_wdi", "2024-12-12"),
                 )
                 .unwrap();
         }
@@ -327,6 +374,25 @@ mod tests {
         assert_eq!(cell.value, 1.6);
         assert_eq!(cell.source_code, "wb_wdi");
         assert_eq!(cell.source_revision, "2024-12-12");
+    }
+
+    #[test]
+    fn read_shard_reads_the_period_end_and_data_status() {
+        let shard: ShardValues = read_shard(&sample_shard_bytes()).unwrap();
+
+        let final_cell: &CellValue = shard.cell("usa", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap();
+        assert_eq!(final_cell.period_end, NaiveDate::from_ymd_opt(2020, 12, 31).unwrap());
+        assert_eq!(final_cell.data_status, DataStatus::Final);
+
+        let provisional_cell: &CellValue = shard.cell("usa", NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()).unwrap();
+        assert_eq!(provisional_cell.data_status, DataStatus::Provisional);
+    }
+
+    #[test]
+    fn read_shard_rejects_an_unknown_data_status() {
+        let bytes: Vec<u8> = shard_bytes(&[("usa", "2020-01-01", "2020-12-31", 1.6, "later_status_value")]);
+
+        read_shard(&bytes).unwrap_err();
     }
 
     #[test]
