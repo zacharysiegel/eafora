@@ -10,12 +10,13 @@
         "no_data": "No data for this region.",
         "source": "Source",
         "world": "Global",
-        "status_final": "Final.",
-        "status_provisional": "Provisional figure, subject to revision.",
-        "status_preliminary": "Preliminary figure, subject to revision.",
-        "status_projection": "Projected figure, not an observation.",
-        "status_imputed": "Imputed figure, not directly reported.",
-        "status_interpolated": "Interpolated between reported figures."
+        "status": {
+            "provisional": "Provisional figure, subject to revision.",
+            "preliminary": "Preliminary figure, subject to revision.",
+            "projection": "Projected figure, not an observation.",
+            "imputed": "Imputed figure, not directly reported.",
+            "interpolated": "Interpolated between reported figures."
+        }
     },
     "statistic": {
         "tfr": "Total fertility rate",

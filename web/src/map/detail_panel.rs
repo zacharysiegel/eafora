@@ -36,8 +36,7 @@ fn detail_panel(
     cell: CellView,
 ) -> impl IntoView {
     let CellView { value, source, data_status } = cell;
-    let unconfirmed_status: Option<DataStatus> =
-        data_status.filter(|data_status| *data_status != DataStatus::Final);
+    let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
 
     view! {
         <aside class="panel detail-panel">
@@ -54,8 +53,8 @@ fn detail_panel(
                     {source.map(|source| view! {
                         <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
                     })}
-                    {unconfirmed_status.map(|data_status| view! {
-                        <p class="detail-panel-status">{status_label(i18n, data_status)}</p>
+                    {status.map(|status| view! {
+                        <p class="detail-panel-status">{status}</p>
                     })}
                 }
                 .into_any(),
@@ -68,15 +67,15 @@ fn detail_panel(
     }
 }
 
-/// Only the statuses a cell can carry short of confirmed reach this, so a final value states nothing.
-fn status_label(i18n: I18nContext<Locale>, data_status: DataStatus) -> AnyView {
+/// `None` for a confirmed figure, which qualifies nothing about the value above it.
+fn status_label(i18n: I18nContext<Locale>, data_status: DataStatus) -> Option<AnyView> {
     match data_status {
-        DataStatus::Final => t!(i18n, detail.status_final).into_any(),
-        DataStatus::Provisional => t!(i18n, detail.status_provisional).into_any(),
-        DataStatus::Preliminary => t!(i18n, detail.status_preliminary).into_any(),
-        DataStatus::Projection => t!(i18n, detail.status_projection).into_any(),
-        DataStatus::Imputed => t!(i18n, detail.status_imputed).into_any(),
-        DataStatus::Interpolated => t!(i18n, detail.status_interpolated).into_any(),
+        DataStatus::Final => None,
+        DataStatus::Provisional => Some(t!(i18n, detail.status.provisional).into_any()),
+        DataStatus::Preliminary => Some(t!(i18n, detail.status.preliminary).into_any()),
+        DataStatus::Projection => Some(t!(i18n, detail.status.projection).into_any()),
+        DataStatus::Imputed => Some(t!(i18n, detail.status.imputed).into_any()),
+        DataStatus::Interpolated => Some(t!(i18n, detail.status.interpolated).into_any()),
     }
 }
 
