@@ -25,8 +25,7 @@ pub struct CellValue {
 #[derive(Debug, Clone)]
 pub struct ShardValues {
     by_region: HashMap<String, HashMap<NaiveDate, CellValue>>,
-    /// Assumes every region shares the statistic's periods; two regions ending the same period on different
-    /// dates would keep only the last read.
+    /// Assumes every region shares the statistic's periods.
     period_end_by_period_start: HashMap<NaiveDate, NaiveDate>,
     min: f64,
     max: f64,
