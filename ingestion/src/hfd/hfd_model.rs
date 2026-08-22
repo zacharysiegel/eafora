@@ -9,6 +9,7 @@ pub struct ParsedHfdPublication {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedHfdStatisticValue {
     pub hfd_code: String,
-    pub cohort_year: i32,
+    /// The birth cohort in a cohort file, the calendar year in a period file.
+    pub period_year: i32,
     pub value: Option<f64>,
 }

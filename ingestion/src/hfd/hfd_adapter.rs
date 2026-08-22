@@ -11,7 +11,6 @@ use crate::adapter::{AdapterOptions, IngestWarning, IngestWarningKind, Normalize
 use crate::canonical::canonical_db;
 use crate::error::AppError;
 use crate::hfd::hfd_client;
-use crate::hfd::hfd_client::CohortFertilityFile;
 use crate::hfd::hfd_model::{ParsedHfdPublication, ParsedHfdStatisticValue};
 use crate::ingest;
 use crate::ingest::IngestReport;
@@ -50,13 +49,14 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     let last_seen: Option<SourceRevision> =
         ingest::ingest_db::read_latest_publication(&mut *transaction, data_source.id).await?;
 
-    let cohort_files: Vec<CohortFertilityFile> = hfd_client::fetch_upstream().await?;
-    let cohort_file: &CohortFertilityFile = cohort_files
-        .first()
-        .ok_or_else(|| AppError::from("the hfd archive carries no cohort fertility file"))?;
+    let archive: Vec<u8> = hfd_client::fetch_upstream().await?;
+    let cohort_contents: String = hfd_client::read_member(&archive, hfd_client::COHORT_MEMBER)?;
+    let period_contents: String = hfd_client::read_member(&archive, hfd_client::PERIOD_MEMBER)?;
 
-    let (publication, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
-        hfd_client::parse_cohort_file(&cohort_file.contents)?;
+    let (publication, parsed_cohort_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
+        hfd_client::parse_fertility_file(&cohort_contents, hfd_client::COHORT_FERTILITY_COLUMNS)?;
+    let (_, parsed_period_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) =
+        hfd_client::parse_fertility_file(&period_contents, hfd_client::PERIOD_FERTILITY_COLUMNS)?;
 
     /* HFD prints its last-modification date inside the file, so an unchanged upstream is only knowable
        after the download; the request is unavoidable, the write is not. */
@@ -69,8 +69,13 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         return Ok(IngestReport::default());
     }
 
-    let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
-        normalize(&mut *transaction, parsed_hfd_statistic_values).await?;
+    let (cohort_values, cohort_warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize(&mut *transaction, parsed_cohort_values, StatisticKind::Ccf).await?;
+    let (period_values, period_warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+        normalize(&mut *transaction, parsed_period_values, StatisticKind::Tfr).await?;
+
+    let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = cohort_values;
+    normalized_statistic_values.extend(period_values);
 
     let mut report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
@@ -81,7 +86,8 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         normalized_statistic_values,
     )
     .await?;
-    report.warnings = warnings;
+    report.warnings = cohort_warnings;
+    report.warnings.extend(period_warnings);
 
     transaction.commit().await?;
 
@@ -108,14 +114,15 @@ pub fn should_skip_run(
 pub async fn normalize(
     connection: &mut PgConnection,
     parsed_hfd_statistic_values: Vec<ParsedHfdStatisticValue>,
+    statistic_kind: StatisticKind,
 ) -> Result<(Vec<NormalizedStatisticValue>, Vec<IngestWarning>), AppError> {
     let statistic: Statistic =
-        canonical_db::find_statistic_by_code(&mut *connection, StatisticKind::Ccf.code())
+        canonical_db::find_statistic_by_code(&mut *connection, statistic_kind.code())
             .await?
             .ok_or_else(|| {
                 AppError::from(format!(
                     "statistic {:?} missing from canonical store (run dbmate up)",
-                    StatisticKind::Ccf.code(),
+                    statistic_kind.code(),
                 ))
             })?;
 
@@ -216,7 +223,7 @@ fn normalize_row(
     Ok(Some(NormalizedStatisticValue {
         region_id,
         statistic_id,
-        period: NaiveDatePeriod::from_year(parsed_hfd_statistic_value.cohort_year)?,
+        period: NaiveDatePeriod::from_year(parsed_hfd_statistic_value.period_year)?,
         value,
         data_status: DataStatus::Final,
     }))

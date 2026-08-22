@@ -21,7 +21,8 @@ use helpers::canonical::{get_country_region_id, get_data_source_id, get_statisti
 const SAMPLE_COHORT_FILE: &str = include_str!("../samples/hfd/tfrVH.txt");
 
 fn parse_sample() -> (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) {
-    hfd_client::parse_cohort_file(SAMPLE_COHORT_FILE).expect("the sample parses")
+    hfd_client::parse_fertility_file(SAMPLE_COHORT_FILE, hfd_client::COHORT_FERTILITY_COLUMNS)
+        .expect("the sample parses")
 }
 
 async fn normalize_sample(
@@ -29,7 +30,7 @@ async fn normalize_sample(
 ) -> (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) {
     let (_, parsed_hfd_statistic_values): (ParsedHfdPublication, Vec<ParsedHfdStatisticValue>) = parse_sample();
 
-    hfd_adapter::normalize(&mut **transaction, parsed_hfd_statistic_values)
+    hfd_adapter::normalize(&mut **transaction, parsed_hfd_statistic_values, StatisticKind::Ccf)
         .await
         .expect("normalize succeeds")
 }
@@ -141,12 +142,12 @@ async fn normalize_warns_for_a_bare_code_with_no_canonical_region() {
 
     let unknown: Vec<ParsedHfdStatisticValue> = vec![ParsedHfdStatisticValue {
         hfd_code: "ZZZ".to_string(),
-        cohort_year: 1950,
+        period_year: 1950,
         value: Some(2.1),
     }];
 
     let (normalized_statistic_values, warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
-        hfd_adapter::normalize(&mut *transaction, unknown)
+        hfd_adapter::normalize(&mut *transaction, unknown, StatisticKind::Ccf)
             .await
             .expect("normalize succeeds rather than stopping the run");
 
@@ -253,11 +254,11 @@ async fn record_statistic_values_supersedes_a_revised_value_and_keeps_the_origin
 
     let revised: Vec<ParsedHfdStatisticValue> = vec![ParsedHfdStatisticValue {
         hfd_code: "AUT".to_string(),
-        cohort_year: 1936,
+        period_year: 1936,
         value: Some(2.500),
     }];
     let (revised_statistic_values, _): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
-        hfd_adapter::normalize(&mut *transaction, revised)
+        hfd_adapter::normalize(&mut *transaction, revised, StatisticKind::Ccf)
             .await
             .expect("normalize succeeds");
     let revised_statistic_value: NormalizedStatisticValue = revised_statistic_values
