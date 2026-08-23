@@ -18,29 +18,29 @@ use shared::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use shared::filesystem::FileReference;
 use shared::sqlite::schema;
 
-use crate::artifact::artifact_model::{ResolvedValue, StatisticShard};
+use crate::artifact::artifact_model::{PartitionedValue, StatisticShard};
 use crate::error::AppError;
 
 pub fn write_sqlite_shards(
-    values: &[ResolvedValue],
+    values: &[PartitionedValue],
     data_dir: &Path,
 ) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
     fs::create_dir_all(data_dir)?;
 
-    let groups: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = group_values(values);
+    let groups: BTreeMap<StatisticShardKey, Vec<&PartitionedValue>> = group_values(values);
     let shards: Vec<StatisticShard<FileReference>> = shard_values(data_dir, groups)?;
     Ok(shards)
 }
 
-fn group_values(resolved: &[ResolvedValue]) -> BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> {
-    let mut grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>> = BTreeMap::new();
-    for resolved_value in resolved {
-        grouped.entry(resolved_value.shard_key()).or_default().push(resolved_value);
+fn group_values(resolved: &[PartitionedValue]) -> BTreeMap<StatisticShardKey, Vec<&PartitionedValue>> {
+    let mut grouped: BTreeMap<StatisticShardKey, Vec<&PartitionedValue>> = BTreeMap::new();
+    for partitioned_value in resolved {
+        grouped.entry(partitioned_value.shard_key()).or_default().push(partitioned_value);
     }
     grouped
 }
 
-fn shard_values(data_dir: &Path, grouped: BTreeMap<StatisticShardKey, Vec<&ResolvedValue>>) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
+fn shard_values(data_dir: &Path, grouped: BTreeMap<StatisticShardKey, Vec<&PartitionedValue>>) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
     let mut shards: Vec<StatisticShard<FileReference>> = Vec::with_capacity(grouped.len());
     for (shard_key, values) in grouped {
         let file: FileReference = write_one_shard(data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
@@ -56,7 +56,7 @@ fn write_one_shard(
     data_dir: &Path,
     statistic_kind: StatisticKind,
     license_shard_class: LicenseShardClass,
-    values: &[&ResolvedValue],
+    values: &[&PartitionedValue],
 ) -> Result<FileReference, AppError> {
     let tmp_uuid: Uuid = Uuid::now_v7();
     let filename: String = format!(
@@ -74,6 +74,7 @@ fn write_one_shard(
 
     connection.execute_batch(schema::shard_schema_ddl())?;
     insert_shard_key(&connection, statistic_kind, license_shard_class)?;
+    insert_data_sources(&connection, values)?;
     insert_rows(&mut connection, values)?;
 
     let byte_count: u64 = fs::metadata(&path)?.len();
@@ -96,7 +97,31 @@ fn insert_shard_key(
     Ok(())
 }
 
-fn insert_rows(connection: &mut Connection, values: &[&ResolvedValue]) -> Result<(), AppError> {
+/// Each source's rank travels with the shard so a consumer resolves between sources without the manifest.
+fn insert_data_sources(connection: &Connection, values: &[&PartitionedValue]) -> Result<(), AppError> {
+    let mut preference_rank_by_source: BTreeMap<&str, i32> = BTreeMap::new();
+
+    for partitioned_value in values {
+        preference_rank_by_source.insert(
+            partitioned_value.data_source_kind.code(),
+            partitioned_value.data_source_preference_rank,
+        );
+    }
+
+    for (source_code, preference_rank) in preference_rank_by_source {
+        connection.execute(
+            formatcp!(
+                "insert into {} ({}, {}) values (?1, ?2)",
+                schema::TABLE_DATA_SOURCE, schema::COL_DATA_SOURCE_CODE, schema::COL_PREFERENCE_RANK,
+            ),
+            (source_code, preference_rank),
+        )?;
+    }
+
+    Ok(())
+}
+
+fn insert_rows(connection: &mut Connection, values: &[&PartitionedValue]) -> Result<(), AppError> {
     let transaction: rusqlite::Transaction = connection.transaction()?;
 
     let mut statement: rusqlite::Statement = transaction.prepare(formatcp!(
@@ -112,16 +137,16 @@ fn insert_rows(connection: &mut Connection, values: &[&ResolvedValue]) -> Result
         schema::COL_DATA_SOURCE_REVISION,
     ))?;
 
-    for resolved_value in values {
+    for partitioned_value in values {
         statement.execute((
-            &resolved_value.region_code,
-            resolved_value.region_id.as_bytes().as_slice(),
-            resolved_value.period.start.format(schema::PERIOD_DATE_FORMAT).to_string(),
-            resolved_value.period.end.format(schema::PERIOD_DATE_FORMAT).to_string(),
-            resolved_value.value,
-            resolved_value.data_status.as_str(),
-            resolved_value.data_source_kind.code(),
-            &resolved_value.data_source_revision,
+            &partitioned_value.region_code,
+            partitioned_value.region_id.as_bytes().as_slice(),
+            partitioned_value.period.start.format(schema::PERIOD_DATE_FORMAT).to_string(),
+            partitioned_value.period.end.format(schema::PERIOD_DATE_FORMAT).to_string(),
+            partitioned_value.value,
+            partitioned_value.data_status.as_str(),
+            partitioned_value.data_source_kind.code(),
+            &partitioned_value.data_source_revision,
         ))?;
     }
 
@@ -142,8 +167,8 @@ mod tests {
         region_code: &str,
         year: i32,
         value: f64,
-    ) -> ResolvedValue {
-        ResolvedValue {
+    ) -> PartitionedValue {
+        PartitionedValue {
             region_id: Uuid::from_u128(year as u128),
             region_code: region_code.to_string(),
             statistic_kind,
@@ -151,6 +176,7 @@ mod tests {
             value,
             data_status: DataStatus::Final,
             data_source_kind: DataSourceKind::WorldBankWDI,
+            data_source_preference_rank: 100,
             data_source_revision: "2024-Q4".to_string(),
             license_shard_class,
         }
@@ -159,7 +185,7 @@ mod tests {
     #[test]
     fn write_sqlite_shards_creates_one_file_per_statistic_per_license_class() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let merged: Vec<ResolvedValue> = vec![
+        let merged: Vec<PartitionedValue> = vec![
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66),
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "jpn", 2022, 1.30),
             make_merged(StatisticKind::Tfr, LicenseShardClass::NonCommercial, "usa", 2022, 1.66),
@@ -181,7 +207,7 @@ mod tests {
     #[test]
     fn write_sqlite_shards_writes_rows_with_expected_schema() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let merged: Vec<ResolvedValue> = vec![
+        let merged: Vec<PartitionedValue> = vec![
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66),
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "jpn", 2022, 1.30),
         ];
@@ -226,7 +252,7 @@ mod tests {
     #[test]
     fn write_sqlite_shards_index_is_present() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let merged: Vec<ResolvedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66)];
+        let merged: Vec<PartitionedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66)];
 
         let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
@@ -244,7 +270,7 @@ mod tests {
     #[test]
     fn write_sqlite_shards_writes_header_and_shard_key() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let merged: Vec<ResolvedValue> = vec![make_merged(
+        let merged: Vec<PartitionedValue> = vec![make_merged(
             StatisticKind::Tfr,
             LicenseShardClass::NonCommercial,
             "usa",
@@ -279,7 +305,7 @@ mod tests {
     #[test]
     fn write_sqlite_shards_uses_correct_filename_format() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let merged: Vec<ResolvedValue> = vec![make_merged(
+        let merged: Vec<PartitionedValue> = vec![make_merged(
             StatisticKind::Tfr,
             LicenseShardClass::ShareAlike,
             "usa",

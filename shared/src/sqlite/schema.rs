@@ -11,10 +11,11 @@ pub const APPLICATION_ID: i32 = 0x4541464F;
 /// Written to SQLite's `user_version` PRAGMA (offset 68). Bump when the shard
 /// schema changes in a way consumers need to detect; same forward-compat
 /// motivation as the manifest's `manifest_schema_version`.
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 pub const TABLE_STATISTIC_VALUE: &str = "statistic_value";
 pub const TABLE_SHARD_KEY: &str = "shard_key";
+pub const TABLE_DATA_SOURCE: &str = "data_source";
 
 pub const INDEX_STATISTIC_VALUE_BY_REGION: &str = "statistic_value_by_region";
 
@@ -30,6 +31,8 @@ pub const COL_DATA_SOURCE_REVISION: &str = "data_source_revision";
 pub const COL_STATISTIC_KIND: &str = "statistic_kind";
 pub const COL_LICENSE_SHARD_CLASS: &str = "license_shard_class";
 
+pub const COL_PREFERENCE_RANK: &str = "preference_rank";
+
 /// ISO 8601 date format for the `period_start` / `period_end` columns. Producer
 /// formats periods with it; consumer SQL string-compares periods without needing
 /// date-function support.
@@ -44,6 +47,11 @@ pub fn shard_schema_ddl() -> &'static str {
     {COL_LICENSE_SHARD_CLASS} text not null
 );
 
+create table {TABLE_DATA_SOURCE} (
+    {COL_DATA_SOURCE_CODE} text not null primary key,
+    {COL_PREFERENCE_RANK} integer not null
+);
+
 create table {TABLE_STATISTIC_VALUE} (
     {COL_REGION_CODE} text not null,
     {COL_REGION_ID} blob not null,
@@ -51,9 +59,9 @@ create table {TABLE_STATISTIC_VALUE} (
     {COL_PERIOD_END} text not null,
     {COL_VALUE} real not null,
     {COL_DATA_STATUS} text not null,
-    {COL_DATA_SOURCE_CODE} text not null,
+    {COL_DATA_SOURCE_CODE} text not null references {TABLE_DATA_SOURCE} ({COL_DATA_SOURCE_CODE}),
     {COL_DATA_SOURCE_REVISION} text not null,
-    primary key ({COL_REGION_CODE}, {COL_PERIOD_START}, {COL_PERIOD_END})
+    primary key ({COL_REGION_CODE}, {COL_PERIOD_START}, {COL_PERIOD_END}, {COL_DATA_SOURCE_CODE})
 );
 create index {INDEX_STATISTIC_VALUE_BY_REGION} on {TABLE_STATISTIC_VALUE} ({COL_REGION_ID});
 "
