@@ -78,12 +78,8 @@ pub struct CountryMetadataProjection {
     pub region_code: String,
 }
 
-/// A "resolved" `CandidateValue` (after data source selection). Exactly one
-/// `PartitionedValue` per `(region, statistic, period)` cell, drawn from the source
-/// chosen for that series.
+/// A candidate assigned to the shard its licence puts it in.
 #[derive(Debug, Clone)]
-/// A candidate assigned to the shard its licence puts it in. Every candidate is written; the consumer
-/// picks between sources.
 pub struct PartitionedValue {
     pub region_id: Uuid,
     pub region_code: String,

@@ -65,12 +65,18 @@ pub async fn open_newest_cached_bundle(
     distribution_context: DistributionContext,
 ) -> Result<Option<Bundle>, AppError> {
     for version_label in version_labels_newest_first(cache).await? {
-        match Bundle::open(cache, &version_label, distribution_context).await {
+        let opened: Result<Bundle, AppError> =
+            Bundle::open(cache, &version_label, distribution_context).await;
+
+        match opened {
             Ok(bundle) => return Ok(Some(bundle)),
             Err(error) => {
+                /* A cached version this build cannot read is useless and re-fetchable, and keeping it would
+                   fail the same way on the next start while holding one of the retained slots. */
                 log::warn!(
-                    "opening a cached bundle failed, trying an older version; [version_label={version_label} error={error}]"
+                    "discarding a cached bundle this build cannot open; [version_label={version_label} error={error}]"
                 );
+                cache.delete_version(&version_label).await?;
             }
         }
     }

@@ -170,11 +170,10 @@ mod native {
         source_revision: String,
     }
 
-    /// Read every `(region_code, period_start, value)` row of a statistic shard into a [`ShardValues`].
-    /// The shard's SQLite header is validated before any query per [`crate::sqlite::schema::validate_shard_header`].
     pub fn read_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
+        schema::validate_shard_header(bytes)?;
+
         let connection: Connection = deserialize_read_only(bytes)?;
-        schema::validate_shard_header(&connection)?;
 
         let query: String = format!(
             "select {}, {}, {}, {}, {}, {}, {} from {}",
@@ -300,6 +299,8 @@ mod wasm {
     /// load-once query via the raw `sqlite3_*` FFI, since `sqlite-wasm-rs` exposes no safe query
     /// wrapper. Same result shape as the native path.
     pub fn read_shard(bytes: &[u8]) -> Result<ShardValues, AppError> {
+        schema::validate_shard_header(bytes)?;
+
         let filename: String = ro_memory_vfs::register_shard(bytes);
         let result: Result<ShardValues, AppError> = open_and_read_shard(&filename);
         ro_memory_vfs::unregister_shard(&filename);
@@ -452,20 +453,26 @@ mod tests {
 
     use rusqlite::{Connection, DatabaseName};
 
-    const WORLD_BANK: &str = "wb_wdi";
-    const HUMAN_FERTILITY_DATABASE: &str = "hfd";
-
     use crate::error::AppError;
     use crate::sqlite::schema;
+
+    const WORLD_BANK: &str = "wb_wdi";
+    const HUMAN_FERTILITY_DATABASE: &str = "hfd";
 
     /// Build a real shard in memory via the shared DDL, then serialize it to bytes. The loader
     /// round-trip is then tested against the actual schema without committing an opaque binary.
     fn sample_shard_bytes() -> Vec<u8> {
-        shard_bytes(&[
-            ("usa", "2020-01-01", "2020-12-31", 1.6, "final"),
-            ("usa", "2021-01-01", "2021-12-31", 1.7, "provisional"),
-            ("deu", "2020-01-01", "2020-12-31", 1.5, "final"),
-        ])
+        sourced_shard_bytes(
+            &[
+                ("usa", "2020-01-01", "2020-12-31", 1.6, "final", WORLD_BANK),
+                ("usa", "2021-01-01", "2021-12-31", 1.7, "provisional", WORLD_BANK),
+                ("deu", "2020-01-01", "2020-12-31", 1.5, "final", WORLD_BANK),
+                // A contested cell, so a reader that ignores the ranks draws the wrong value here.
+                ("fra", "2020-01-01", "2020-12-31", 1.69, "final", WORLD_BANK),
+                ("fra", "2020-01-01", "2020-12-31", 1.55, "final", HUMAN_FERTILITY_DATABASE),
+            ],
+            &[(WORLD_BANK, 100), (HUMAN_FERTILITY_DATABASE, 50)],
+        )
     }
 
     fn shard_bytes(rows: &[(&str, &str, &str, f64, &str)]) -> Vec<u8> {
@@ -556,6 +563,22 @@ mod tests {
         let cells: &[CellValue] = shard.cells("deu", NaiveDate::from_ymd_opt(2016, 1, 1).unwrap());
 
         assert_eq!(cells.len(), 2);
+    }
+
+    #[test]
+    fn cell_breaks_an_equal_rank_on_the_source_code() {
+        let ascending: ShardValues = read_shard(&sourced_shard_bytes(
+            &[
+                ("deu", "2016-01-01", "2017-01-01", 1.6, "final", HUMAN_FERTILITY_DATABASE),
+                ("deu", "2016-01-01", "2017-01-01", 1.597, "final", WORLD_BANK),
+            ],
+            &[(WORLD_BANK, 50), (HUMAN_FERTILITY_DATABASE, 50)],
+        ))
+        .unwrap();
+
+        let cell: &CellValue = ascending.cell("deu", NaiveDate::from_ymd_opt(2016, 1, 1).unwrap()).unwrap();
+
+        assert_eq!(cell.source_code, HUMAN_FERTILITY_DATABASE);
     }
 
     #[test]
@@ -692,6 +715,12 @@ mod wasm_tests {
         assert_eq!(shard.value("deu", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), Some(1.5));
         assert_eq!(shard.value_range(), Some((1.5, 1.7)));
         assert_eq!(shard.value("xkx", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()), None);
-        assert_eq!(shard.cell("usa", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap().source_code, "wb_wdi");
+        assert_eq!(shard.cell("usa", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap().source_code, WORLD_BANK);
+
+        // The contested cell: a reader that ignored the shard's ranks would draw the World Bank's 1.69.
+        let contested: &CellValue = shard.cell("fra", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).unwrap();
+        assert_eq!(contested.source_code, HUMAN_FERTILITY_DATABASE);
+        assert_eq!(contested.value, 1.55);
+        assert_eq!(shard.cells("fra", NaiveDate::from_ymd_opt(2020, 1, 1).unwrap()).len(), 2);
     }
 }

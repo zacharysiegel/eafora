@@ -1,14 +1,12 @@
 use const_format::formatcp;
 
-// not for wasm32: the only consumer, validate_shard_header, is itself native-only
-#[cfg(not(target_arch = "wasm32"))]
 use crate::error::AppError;
 
-/// ASCII "EAFO"; written to SQLite's `application_id` PRAGMA (offset 60) so hex
-/// viewers and `file(1)` can identify Eafora shards by magic number alone.
+/// ASCII "EAFO"; written to SQLite's `application_id` PRAGMA so hex viewers and `file(1)` can identify
+/// Eafora shards by magic number alone.
 pub const APPLICATION_ID: i32 = 0x4541464F;
 
-/// Written to SQLite's `user_version` PRAGMA (offset 68). Bump when the shard
+/// Written to SQLite's `user_version` PRAGMA. Bump when the shard
 /// schema changes in a way consumers need to detect; same forward-compat
 /// motivation as the manifest's `manifest_schema_version`.
 pub const SCHEMA_VERSION: i32 = 2;
@@ -68,12 +66,15 @@ create index {INDEX_STATISTIC_VALUE_BY_REGION} on {TABLE_STATISTIC_VALUE} ({COL_
     )
 }
 
-/// Consumer-side gate: confirm a connection's SQLite header marks it as an Eafora
-/// shard with a schema version we understand, before issuing any query.
-// not for wasm32: takes a rusqlite::Connection, and rusqlite doesn't compile to wasm32
-#[cfg(not(target_arch = "wasm32"))]
-pub fn validate_shard_header(connection: &rusqlite::Connection) -> Result<(), AppError> {
-    let application_id: i32 = connection.pragma_query_value(None, "application_id", |row| row.get::<_, i32>(0))?;
+/// SQLite writes both values at fixed offsets in a database file's header, so a shard is checked before any
+/// handle is opened and both targets run the same check.
+const SCHEMA_VERSION_OFFSET: usize = 60;
+const APPLICATION_ID_OFFSET: usize = 68;
+
+/// Consumer-side gate: confirm bytes are an Eafora shard at a schema version this build understands, before
+/// issuing any query.
+pub fn validate_shard_header(bytes: &[u8]) -> Result<(), AppError> {
+    let application_id: i32 = read_header_i32(bytes, APPLICATION_ID_OFFSET)?;
     if application_id != APPLICATION_ID {
         return Err(AppError::from(format!(
             "sqlite shard: application_id mismatch (got {:#x}, expected {:#x})",
@@ -81,15 +82,27 @@ pub fn validate_shard_header(connection: &rusqlite::Connection) -> Result<(), Ap
         )));
     }
 
-    let user_version: i32 = connection.pragma_query_value(None, "user_version", |row| row.get::<_, i32>(0))?;
-    if user_version != SCHEMA_VERSION {
+    let schema_version: i32 = read_header_i32(bytes, SCHEMA_VERSION_OFFSET)?;
+    if schema_version != SCHEMA_VERSION {
         return Err(AppError::from(format!(
             "sqlite shard: unknown schema_version {} (expected {})",
-            user_version, SCHEMA_VERSION,
+            schema_version, SCHEMA_VERSION,
         )));
     }
 
     Ok(())
+}
+
+fn read_header_i32(bytes: &[u8], offset: usize) -> Result<i32, AppError> {
+    let field: Option<&[u8]> = bytes.get(offset..offset + 4);
+
+    match field {
+        Some(field) => Ok(i32::from_be_bytes([field[0], field[1], field[2], field[3]])),
+        None => Err(AppError::from(format!(
+            "sqlite shard: too short to hold a header; [bytes={}]",
+            bytes.len(),
+        ))),
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -98,11 +111,17 @@ mod tests {
 
     use crate::error::AppError;
 
-    fn shard_with_header(application_id: i32, user_version: i32) -> rusqlite::Connection {
+    /// Serialized rather than hand-built, so the offsets under test are the ones SQLite itself writes.
+    fn shard_bytes_with_header(application_id: i32, schema_version: i32) -> Vec<u8> {
         let connection: rusqlite::Connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection.execute_batch(shard_schema_ddl()).unwrap();
         connection.pragma_update(None, "application_id", application_id).unwrap();
-        connection.pragma_update(None, "user_version", user_version).unwrap();
-        connection
+        connection.pragma_update(None, "user_version", schema_version).unwrap();
+
+        let data: rusqlite::serialize::Data<'_> =
+            connection.serialize(rusqlite::DatabaseName::Main).unwrap();
+
+        data.to_vec()
     }
 
     #[test]
@@ -139,27 +158,37 @@ mod tests {
     }
 
     #[test]
-    fn validate_shard_header_accepts_correctly_initialized_connection() {
-        let connection: rusqlite::Connection = shard_with_header(APPLICATION_ID, SCHEMA_VERSION);
+    fn validate_shard_header_accepts_a_shard_this_build_understands() {
+        let bytes: Vec<u8> = shard_bytes_with_header(APPLICATION_ID, SCHEMA_VERSION);
 
-        validate_shard_header(&connection).unwrap();
+        validate_shard_header(&bytes).unwrap();
     }
 
     #[test]
     fn validate_shard_header_rejects_wrong_application_id() {
-        let connection: rusqlite::Connection = shard_with_header(0xDEADBEEFu32 as i32, SCHEMA_VERSION);
+        let bytes: Vec<u8> = shard_bytes_with_header(0xDEADBEEFu32 as i32, SCHEMA_VERSION);
 
-        let error: AppError = validate_shard_header(&connection).unwrap_err();
+        let error: AppError = validate_shard_header(&bytes).unwrap_err();
 
         assert!(error.to_string().contains("sqlite shard: application_id mismatch"));
     }
 
+    /// The version a reader of the previous schema meets when handed a shard of this one.
     #[test]
-    fn validate_shard_header_rejects_unknown_schema_version() {
-        let connection: rusqlite::Connection = shard_with_header(APPLICATION_ID, 99);
+    fn validate_shard_header_rejects_a_neighbouring_schema_version() {
+        for schema_version in [SCHEMA_VERSION - 1, SCHEMA_VERSION + 1] {
+            let bytes: Vec<u8> = shard_bytes_with_header(APPLICATION_ID, schema_version);
 
-        let error: AppError = validate_shard_header(&connection).unwrap_err();
+            let error: AppError = validate_shard_header(&bytes).unwrap_err();
 
-        assert!(error.to_string().contains("sqlite shard: unknown schema_version"));
+            assert!(error.to_string().contains("sqlite shard: unknown schema_version"));
+        }
+    }
+
+    #[test]
+    fn validate_shard_header_rejects_bytes_too_short_to_hold_a_header() {
+        let error: AppError = validate_shard_header(&[0u8; 16]).unwrap_err();
+
+        assert!(error.to_string().contains("too short"));
     }
 }
