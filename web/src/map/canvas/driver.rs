@@ -88,11 +88,10 @@ const ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT: f64 = 8.0;
 /// by the clipped amount, which would otherwise reach zero; this is the minimum it may shrink to.
 const ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN: f64 = 0.1;
 
-/// Canonical `region.code` of the World aggregate. World has no geometry, so it is never a hit-test result; the driver looks it up as the empty-state figure.
-/// How much of a statistic's best-covered period a period must match to open a view. A source reporting
-/// ahead of the others covers a handful of regions.
+/// Minimum coverage for the default period, as a proportion of the best-covered period's.
 const MINIMUM_DEFAULT_COVERAGE_PROPORTION: f64 = 0.8;
 
+/// Canonical `region.code` of the World aggregate. World has no geometry, so it is never a hit-test result; the driver looks it up as the empty-state figure.
 const WORLD_REGION_CODE: &str = "world";
 
 /// The result of hit-testing a pointer against the regions, compared to the previously known region.
@@ -820,8 +819,7 @@ fn apply_live_bundle(
     }
 }
 
-/// A period outside what the statistic covers lands on its default rather than on its last period, which
-/// the newest source can carry alone.
+/// A period outside what the statistic covers lands on its default, not on the nearest bound.
 fn clamp_active_period(driver: &mut Driver, bundle: &Bundle) {
     let Some((earliest, latest)) = driver
         .active_shard_values(bundle)
@@ -857,9 +855,8 @@ fn initial_frame_state(bundle: &Bundle) -> FrameState {
     }
 }
 
-/// The latest `period_start` in the shard the renderer would color from, taken through
-/// `Bundle::shard_values_for` so the seeded period and the colored shard never disagree about which
-/// license class won.
+/// Read through `Bundle::shard_values_for` so the seeded period and the coloured shard never disagree about
+/// which license class won.
 fn default_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
     let shard_values: &ShardValues = bundle.shard_values_for(statistic)?;
 
