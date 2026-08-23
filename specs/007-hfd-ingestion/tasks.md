@@ -78,6 +78,23 @@ Organized by the plan's three phases, each landing as its own PR on a linear sta
 - **The 39-versus-37 code question closed without work.** The extras are Croatia and South Korea, both plain alpha-3, and the cohort file's codes are a strict subset of the period file's, so no alias entry was needed.
 - **The five unrecognized codes now warn twice per run**, once per statistic, because each file is normalized separately. Each warning is a true statement about that file; deduplicating them would mean carrying warning state across two normalizations.
 
+## Phase D: every source in the shard
+
+Not in the original plan. Resolution at build time discarded the losing candidate, so a reader could never be offered an alternative to the one preference picked, and a source filter could not be a client-only change.
+
+- [x] T034 Add `data_source_code` to the shard's primary key and carry each source's rank in a `data_source` table inside the shard, at schema version 2.
+- [x] T035 Write every candidate for the complete bundle; keep the downsampled bundle single-source, since it exists to be small for first paint.
+- [x] T036 Resolve on read: `ShardValues::cell` returns what a map draws, `cells` and `cell_from` expose the alternatives, and the value range covers only drawn values.
+- [x] T037 Validate the shard header on both targets, from the file header's fixed offsets rather than a database handle.
+- [x] T038 Refuse a site tree whose embedded shard the build cannot read.
+- [x] T039 Discard a cached version this build cannot open rather than retrying it on every start.
+
+### Deviations, Phase D
+
+- **The header check moved from a connection to the bytes.** `validate_shard_header` took a `rusqlite::Connection`, so it was compiled only for non-wasm32 and the web client had no version gate at all. Reading `application_id` and `user_version` from the file header's fixed offsets needs no handle, so both readers run the same check. Doing so exposed that the two constants' doc comments named the offsets the wrong way round.
+- **The embedded bundle is not committed.** It is gitignored and refreshed by `sync-embedded-bundle.sh`, which no site build runs, so a schema change could have deployed a first-paint shard the client cannot read. `verify-site-tree.sh` now refuses that tree and names the script that fixes it.
+- **A one-value-per-cell assumption was carried in prose.** `PartitionedValue`, renamed from `ResolvedValue`, kept a doc comment asserting exactly one value per cell, which this change makes false.
+
 ## Deviations from the plan
 
 - **The parser lives in `hfd_client.rs`, not `hfd_model.rs`.** The plan put it in the model file on the grounds that it is pure and belongs beside its types. The repo's own convention is stronger: `_model.rs` files hold type definitions and nothing else, and wire-format knowledge belongs to the client. `hfd_model.rs` holds only the two parsed types.
