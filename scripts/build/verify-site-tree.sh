@@ -15,6 +15,8 @@ readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly SITE_DIR="${1:-${REPO_ROOT}/target/site}"
 readonly DOCUMENT_PATH="${SITE_DIR}/index.html"
 readonly DISCOVERY_PATH="${SITE_DIR}/discovery"
+readonly EMBEDDED_DATA_DIR="${SITE_DIR}/embedded_artifacts/data"
+readonly SHARD_SCHEMA_SOURCE="${REPO_ROOT}/shared/src/sqlite/schema.rs"
 
 # cargo-leptos inserts a 22-character base64url digest between the stem and the extension.
 readonly HASHED_NAME_PATTERN='\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9]+$'
@@ -66,5 +68,30 @@ if [[ "$repository_base_url" != https://* ]]; then
     fail "the discovery document names a relative artifact repository, which only works when serving locally; [repository_base_url=${repository_base_url}]"
 fi
 
+# The embedded bundle is refreshed by sync-embedded-bundle.sh rather than by a site build, so a shard schema
+# change leaves a tree whose first paint the client cannot read.
+expected_schema_version="$(grep -oE 'SCHEMA_VERSION: i32 = [0-9]+' "$SHARD_SCHEMA_SOURCE" | grep -oE '[0-9]+$')"
+
+if [[ -z "$expected_schema_version" ]]; then
+    fail "could not read the shard schema version from ${SHARD_SCHEMA_SOURCE}"
+fi
+
+embedded_shard_count=0
+
+while IFS= read -r shard_path; do
+    shard_schema_version="$(sqlite3 "$shard_path" 'pragma user_version;')"
+
+    if [[ "$shard_schema_version" != "$expected_schema_version" ]]; then
+        fail "${shard_path} is shard schema ${shard_schema_version} and this build reads ${expected_schema_version}; run ./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts"
+    fi
+
+    embedded_shard_count=$((embedded_shard_count + 1))
+done < <(find "$EMBEDDED_DATA_DIR" -name '*.sqlite' 2>/dev/null)
+
+if [[ "$embedded_shard_count" -eq 0 ]]; then
+    fail "${EMBEDDED_DATA_DIR} holds no shard, so first paint would show no data; run ./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts"
+fi
+
 printf '%s: prerendered document present, %d referenced assets present and content-hashed\n' "$SITE_DIR" "$reference_count"
 printf '%s: discovery names %s\n' "$SITE_DIR" "$repository_base_url"
+printf '%s: %d embedded shard(s) at schema %s\n' "$SITE_DIR" "$embedded_shard_count" "$expected_schema_version"
