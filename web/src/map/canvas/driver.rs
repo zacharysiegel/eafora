@@ -89,6 +89,10 @@ const ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT: f64 = 8.0;
 const ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN: f64 = 0.1;
 
 /// Canonical `region.code` of the World aggregate. World has no geometry, so it is never a hit-test result; the driver looks it up as the empty-state figure.
+/// How much of a statistic's best-covered period a period must match to open a view. A source reporting
+/// ahead of the others covers a handful of regions.
+const MINIMUM_DEFAULT_COVERAGE_PROPORTION: f64 = 0.8;
+
 const WORLD_REGION_CODE: &str = "world";
 
 /// The result of hit-testing a pointer against the regions, compared to the previously known region.
@@ -531,13 +535,7 @@ impl Driver {
         /* Two statistics need not cover the same periods, and a cohort measure ends decades before a period
            one. Holding the old period would leave the map blank on a period the new statistic never
            covers. */
-        let period_range: Option<(NaiveDate, NaiveDate)> = self
-            .active_shard_values(&bundle)
-            .and_then(|shard_values| shard_values.period_range());
-        if let Some((earliest, latest)) = period_range {
-            self.frame_state.active_period_start =
-                self.frame_state.active_period_start.clamp(earliest, latest);
-        }
+        clamp_active_period(self, &bundle);
 
         self.request_redraw();
 
@@ -822,6 +820,8 @@ fn apply_live_bundle(
     }
 }
 
+/// A period outside what the statistic covers lands on its default rather than on its last period, which
+/// the newest source can carry alone.
 fn clamp_active_period(driver: &mut Driver, bundle: &Bundle) {
     let Some((earliest, latest)) = driver
         .active_shard_values(bundle)
@@ -830,19 +830,22 @@ fn clamp_active_period(driver: &mut Driver, bundle: &Bundle) {
         return;
     };
 
-    if driver.frame_state.active_period_start < earliest
-        || driver.frame_state.active_period_start > latest
-    {
-        driver.frame_state.active_period_start = latest;
+    let covers_active_period: bool = driver.frame_state.active_period_start >= earliest
+        && driver.frame_state.active_period_start <= latest;
+    if covers_active_period {
+        return;
+    }
+
+    if let Some(period_start) = default_period_start(bundle, driver.frame_state.active_statistic) {
+        driver.frame_state.active_period_start = period_start;
     }
 }
 
-/// Anchors the initial period to the reference year the embedded bundle ships (its single period).
 /// Falls back to the Unix epoch when the default statistic's shard is missing, so the map still paints
 /// geometry with every region reading "no data".
 fn initial_frame_state(bundle: &Bundle) -> FrameState {
     let active_statistic: StatisticKind = StatisticKind::Tfr;
-    let active_period_start: NaiveDate = latest_period_start(bundle, active_statistic)
+    let active_period_start: NaiveDate = default_period_start(bundle, active_statistic)
         .unwrap_or_else(|| NaiveDate::from_epoch_days(0).expect("day 0 is the Unix epoch"));
 
     FrameState {
@@ -857,10 +860,10 @@ fn initial_frame_state(bundle: &Bundle) -> FrameState {
 /// The latest `period_start` in the shard the renderer would color from, taken through
 /// `Bundle::shard_values_for` so the seeded period and the colored shard never disagree about which
 /// license class won.
-fn latest_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
+fn default_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
     let shard_values: &ShardValues = bundle.shard_values_for(statistic)?;
 
-    shard_values.period_range().map(|(_earliest, latest)| latest)
+    shard_values.newest_well_covered_period_start(MINIMUM_DEFAULT_COVERAGE_PROPORTION)
 }
 
 /// `?renderer=webgl2` forces the WebGL2 backend for developer parity testing. Not a user-facing
