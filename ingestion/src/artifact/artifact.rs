@@ -133,24 +133,24 @@ async fn create_statistic_shards(
 
         /* The complete bundle keeps every source's value so a consumer can present an alternative to the one
            preference picks. The downsampled bundle exists to be small for first paint, so it keeps one. */
-        let resolved: Vec<PartitionedValue> = match variant {
+        let partitioned_values: Vec<PartitionedValue> = match variant {
             BundleVariant::Complete => partition_by_license(candidates),
             BundleVariant::Downsampled => downsample_to_reference_year(candidates, kind),
         };
-        if resolved.is_empty() {
+        if partitioned_values.is_empty() {
             continue;
         }
 
-        for value in &resolved {
+        for value in &partitioned_values {
             data_sources.insert(value.data_source_kind);
         }
 
-        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&resolved, &variant_dir.join(manifest::SUBDIR_DATA))?;
+        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&partitioned_values, &variant_dir.join(manifest::SUBDIR_DATA))?;
         let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
         log::info!(
-            "statistic {:?}: {} resolved values across {} shards",
+            "statistic {:?}: {} values across {} shards",
             kind,
-            resolved.len(),
+            partitioned_values.len(),
             hashed_shards.len()
         );
         shards.extend(hashed_shards);
@@ -159,11 +159,6 @@ async fn create_statistic_shards(
     Ok((shards, data_sources))
 }
 
-/// Reduces a statistic to its World Bank WDI values at one reference year (the most-recent period
-/// the United States reports) for the embedded bundle's single time slice. One shared year is
-/// required because the renderer resolves each region's value by exact period; a per-region-latest
-/// slice would leave every region whose latest year differs from the active period with nothing to
-/// draw. Yields nothing when the United States has no World Bank WDI value to anchor the year.
 fn partition_by_license(candidates: Vec<CandidateValue>) -> Vec<PartitionedValue> {
     candidates
         .iter()
@@ -176,6 +171,11 @@ fn partition_by_license(candidates: Vec<CandidateValue>) -> Vec<PartitionedValue
         .collect()
 }
 
+/// Reduces a statistic to its World Bank WDI values at one reference year (the most-recent period
+/// the United States reports) for the embedded bundle's single time slice. One shared year is
+/// required because the renderer resolves each region's value by exact period; a per-region-latest
+/// slice would leave every region whose latest year differs from the active period with nothing to
+/// draw. Yields nothing when the United States has no World Bank WDI value to anchor the year.
 fn downsample_to_reference_year(
     candidates: Vec<CandidateValue>,
     statistic_kind: StatisticKind,

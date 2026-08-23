@@ -32,9 +32,9 @@ pub fn write_sqlite_shards(
     Ok(shards)
 }
 
-fn group_values(resolved: &[PartitionedValue]) -> BTreeMap<StatisticShardKey, Vec<&PartitionedValue>> {
+fn group_values(values: &[PartitionedValue]) -> BTreeMap<StatisticShardKey, Vec<&PartitionedValue>> {
     let mut grouped: BTreeMap<StatisticShardKey, Vec<&PartitionedValue>> = BTreeMap::new();
-    for partitioned_value in resolved {
+    for partitioned_value in values {
         grouped.entry(partitioned_value.shard_key()).or_default().push(partitioned_value);
     }
     grouped
@@ -168,6 +168,26 @@ mod tests {
         year: i32,
         value: f64,
     ) -> PartitionedValue {
+        make_sourced(
+            statistic_kind,
+            license_shard_class,
+            region_code,
+            year,
+            value,
+            DataSourceKind::WorldBankWDI,
+            100,
+        )
+    }
+
+    fn make_sourced(
+        statistic_kind: StatisticKind,
+        license_shard_class: LicenseShardClass,
+        region_code: &str,
+        year: i32,
+        value: f64,
+        data_source_kind: DataSourceKind,
+        data_source_preference_rank: i32,
+    ) -> PartitionedValue {
         PartitionedValue {
             region_id: Uuid::from_u128(year as u128),
             region_code: region_code.to_string(),
@@ -175,11 +195,45 @@ mod tests {
             period: NaiveDatePeriod::from_year(year).unwrap(),
             value,
             data_status: DataStatus::Final,
-            data_source_kind: DataSourceKind::WorldBankWDI,
-            data_source_preference_rank: 100,
+            data_source_kind,
+            data_source_preference_rank,
             data_source_revision: "2024-Q4".to_string(),
             license_shard_class,
         }
+    }
+
+    /// Both sources' values for one cell reach the shard, with each source's rank, so the consumer can
+    /// resolve and offer the alternative.
+    #[test]
+    fn write_sqlite_shards_keeps_every_source_for_a_contested_cell() {
+        let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+        let merged: Vec<PartitionedValue> = vec![
+            make_sourced(StatisticKind::Tfr, LicenseShardClass::Base, "deu", 2016, 1.6, DataSourceKind::WorldBankWDI, 100),
+            make_sourced(StatisticKind::Tfr, LicenseShardClass::Base, "deu", 2016, 1.597, DataSourceKind::HumanFertilityDatabase, 50),
+        ];
+
+        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+
+        assert_eq!(shards.len(), 1);
+
+        let connection: Connection = Connection::open(&shards[0].file.path).unwrap();
+        let value_count: i64 = connection
+            .query_row(&format!("select count(*) from {}", schema::TABLE_STATISTIC_VALUE), [], |row| row.get(0))
+            .unwrap();
+        let ranks: Vec<(String, i32)> = connection
+            .prepare(&format!(
+                "select {}, {} from {} order by {} asc",
+                schema::COL_DATA_SOURCE_CODE, schema::COL_PREFERENCE_RANK,
+                schema::TABLE_DATA_SOURCE, schema::COL_PREFERENCE_RANK,
+            ))
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .map(|row| row.unwrap())
+            .collect();
+
+        assert_eq!(value_count, 2);
+        assert_eq!(ranks, vec![("hfd".to_string(), 50), ("wb_wdi".to_string(), 100)]);
     }
 
     #[test]
