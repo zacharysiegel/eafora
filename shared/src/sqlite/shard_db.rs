@@ -74,6 +74,33 @@ impl ShardValues {
         self.period_end_by_period_start.get(&period_start).copied()
     }
 
+    /// The newest period at least `minimum_coverage_proportion` of the shard's best-covered period, for a
+    /// view that should open on data rather than on the frontier. A source that reports a year ahead of the
+    /// others covers a handful of regions, which the newest period alone would land on.
+    pub fn newest_well_covered_period_start(&self, minimum_coverage_proportion: f64) -> Option<NaiveDate> {
+        let region_count_by_period_start: HashMap<NaiveDate, usize> = self.count_regions_by_period_start();
+        let peak_region_count: usize = region_count_by_period_start.values().copied().max()?;
+        let minimum_region_count: f64 = peak_region_count as f64 * minimum_coverage_proportion;
+
+        region_count_by_period_start
+            .into_iter()
+            .filter(|(_period_start, region_count)| *region_count as f64 >= minimum_region_count)
+            .map(|(period_start, _region_count)| period_start)
+            .max()
+    }
+
+    fn count_regions_by_period_start(&self) -> HashMap<NaiveDate, usize> {
+        let mut region_count_by_period_start: HashMap<NaiveDate, usize> = HashMap::new();
+
+        for by_period in self.by_region.values() {
+            for period_start in by_period.keys() {
+                *region_count_by_period_start.entry(*period_start).or_insert(0) += 1;
+            }
+        }
+
+        region_count_by_period_start
+    }
+
     pub fn period_range(&self) -> Option<(NaiveDate, NaiveDate)> {
         if self.by_region.is_empty() {
             return None;
@@ -544,6 +571,90 @@ mod tests {
             ],
             &[(WORLD_BANK, 100), (HUMAN_FERTILITY_DATABASE, 50)],
         )
+    }
+
+    /// One region reporting a year ahead of the rest is the frontier a default view must not open on.
+    #[test]
+    fn newest_well_covered_period_start_skips_a_thinly_covered_frontier() {
+        let shard: ShardValues = read_shard(&sourced_shard_bytes(
+            &[
+                ("usa", "2023-01-01", "2024-01-01", 1.6, "final", WORLD_BANK),
+                ("deu", "2023-01-01", "2024-01-01", 1.5, "final", WORLD_BANK),
+                ("fra", "2023-01-01", "2024-01-01", 1.8, "final", WORLD_BANK),
+                ("usa", "2024-01-01", "2025-01-01", 1.6, "final", WORLD_BANK),
+            ],
+            &[(WORLD_BANK, 100)],
+        ))
+        .unwrap();
+
+        assert_eq!(
+            shard.newest_well_covered_period_start(0.8),
+            Some(NaiveDate::from_ymd_opt(2023, 1, 1).unwrap()),
+        );
+    }
+
+    #[test]
+    fn newest_well_covered_period_start_takes_the_newest_period_when_coverage_holds() {
+        let shard: ShardValues = read_shard(&sourced_shard_bytes(
+            &[
+                ("usa", "2023-01-01", "2024-01-01", 1.6, "final", WORLD_BANK),
+                ("deu", "2023-01-01", "2024-01-01", 1.5, "final", WORLD_BANK),
+                ("usa", "2024-01-01", "2025-01-01", 1.6, "final", WORLD_BANK),
+                ("deu", "2024-01-01", "2025-01-01", 1.5, "final", WORLD_BANK),
+            ],
+            &[(WORLD_BANK, 100)],
+        ))
+        .unwrap();
+
+        assert_eq!(
+            shard.newest_well_covered_period_start(0.8),
+            Some(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()),
+        );
+    }
+
+    /// Coverage that tapers rather than cliffs: the boundary is the newest period still meeting the bar.
+    #[test]
+    fn newest_well_covered_period_start_takes_the_boundary_of_a_tapering_range() {
+        let shard: ShardValues = read_shard(&sourced_shard_bytes(
+            &[
+                ("usa", "2021-01-01", "2022-01-01", 1.6, "final", WORLD_BANK),
+                ("deu", "2021-01-01", "2022-01-01", 1.5, "final", WORLD_BANK),
+                ("fra", "2021-01-01", "2022-01-01", 1.8, "final", WORLD_BANK),
+                ("usa", "2022-01-01", "2023-01-01", 1.6, "final", WORLD_BANK),
+                ("deu", "2022-01-01", "2023-01-01", 1.5, "final", WORLD_BANK),
+                ("usa", "2023-01-01", "2024-01-01", 1.6, "final", WORLD_BANK),
+            ],
+            &[(WORLD_BANK, 100)],
+        ))
+        .unwrap();
+
+        // Peak is 3, so a two-region period clears 0.6 and a one-region period does not.
+        assert_eq!(
+            shard.newest_well_covered_period_start(0.6),
+            Some(NaiveDate::from_ymd_opt(2022, 1, 1).unwrap()),
+        );
+        assert_eq!(
+            shard.newest_well_covered_period_start(1.0),
+            Some(NaiveDate::from_ymd_opt(2021, 1, 1).unwrap()),
+        );
+    }
+
+    /// A cell carried by two sources counts once, so an overlap cannot inflate a period's coverage.
+    #[test]
+    fn newest_well_covered_period_start_counts_a_region_once_per_period() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        assert_eq!(
+            shard.newest_well_covered_period_start(1.0),
+            Some(NaiveDate::from_ymd_opt(2018, 1, 1).unwrap()),
+        );
+    }
+
+    #[test]
+    fn newest_well_covered_period_start_is_absent_for_an_empty_shard() {
+        let shard: ShardValues = read_shard(&sourced_shard_bytes(&[], &[(WORLD_BANK, 100)])).unwrap();
+
+        assert_eq!(shard.newest_well_covered_period_start(0.8), None);
     }
 
     #[test]
