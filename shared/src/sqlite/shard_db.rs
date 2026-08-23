@@ -74,9 +74,7 @@ impl ShardValues {
         self.period_end_by_period_start.get(&period_start).copied()
     }
 
-    /// The newest period at least `minimum_coverage_proportion` of the shard's best-covered period, for a
-    /// view that should open on data rather than on the frontier. A source that reports a year ahead of the
-    /// others covers a handful of regions, which the newest period alone would land on.
+    /// Coverage is counted in regions, and the proportion is of the best-covered period's count.
     pub fn newest_well_covered_period_start(&self, minimum_coverage_proportion: f64) -> Option<NaiveDate> {
         let region_count_by_period_start: HashMap<NaiveDate, usize> = self.count_regions_by_period_start();
         let peak_region_count: usize = region_count_by_period_start.values().copied().max()?;
