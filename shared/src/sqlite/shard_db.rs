@@ -20,11 +20,13 @@ pub struct CellValue {
     pub source_revision: String,
 }
 
-/// The values of one statistic shard, keyed by `region.code` and period start, with the value and
-/// period ranges precomputed.
+/// A shard holds every source's value for a cell, so a consumer can present an alternative to the one
+/// preference picks. Keyed by `region.code` and period start, with the value and period ranges precomputed
+/// over the preferred value of each cell, which is what a map draws.
 #[derive(Debug, Clone)]
 pub struct ShardValues {
-    by_region: HashMap<String, HashMap<NaiveDate, CellValue>>,
+    by_region: HashMap<String, HashMap<NaiveDate, Vec<CellValue>>>,
+    preference_rank_by_source: HashMap<String, i32>,
     /// Assumes every region shares the statistic's periods.
     period_end_by_period_start: HashMap<NaiveDate, NaiveDate>,
     min: f64,
@@ -38,8 +40,26 @@ impl ShardValues {
         self.cell(region_code, period_start).map(|cell| cell.value)
     }
 
+    /// The value a map draws: the highest-priority source covering the cell.
     pub fn cell(&self, region_code: &str, period_start: NaiveDate) -> Option<&CellValue> {
-        self.by_region.get(region_code)?.get(&period_start)
+        let cells: &[CellValue] = self.cells(region_code, period_start);
+
+        preferred_cell(cells, &self.preference_rank_by_source)
+    }
+
+    /// Every source's value for the cell, in no particular order.
+    pub fn cells(&self, region_code: &str, period_start: NaiveDate) -> &[CellValue] {
+        self.by_region
+            .get(region_code)
+            .and_then(|by_period| by_period.get(&period_start))
+            .map(|cells| cells.as_slice())
+            .unwrap_or_default()
+    }
+
+    pub fn cell_from(&self, region_code: &str, period_start: NaiveDate, source_code: &str) -> Option<&CellValue> {
+        self.cells(region_code, period_start)
+            .iter()
+            .find(|cell| cell.source_code == source_code)
     }
 
     pub fn value_range(&self) -> Option<(f64, f64)> {
@@ -60,6 +80,60 @@ impl ShardValues {
         }
 
         Some((self.earliest_period_start, self.latest_period_start))
+    }
+}
+
+/// Ties break on the source's code, so the same data resolves the same way on every read.
+fn preferred_cell<'cells>(
+    cells: &'cells [CellValue],
+    preference_rank_by_source: &HashMap<String, i32>,
+) -> Option<&'cells CellValue> {
+    cells.iter().min_by_key(|cell| {
+        let rank: i32 = preference_rank_by_source
+            .get(&cell.source_code)
+            .copied()
+            .unwrap_or(i32::MAX);
+
+        (rank, cell.source_code.as_str())
+    })
+}
+
+/// Both target-gated readers accumulate rows and hand them here, rather than each deriving the ranges.
+fn create_shard_values(
+    by_region: HashMap<String, HashMap<NaiveDate, Vec<CellValue>>>,
+    preference_rank_by_source: HashMap<String, i32>,
+    period_end_by_period_start: HashMap<NaiveDate, NaiveDate>,
+) -> ShardValues {
+    let mut min: f64 = f64::INFINITY;
+    let mut max: f64 = f64::NEG_INFINITY;
+    let mut earliest_period_start: NaiveDate = NaiveDate::MAX;
+    let mut latest_period_start: NaiveDate = NaiveDate::MIN;
+
+    /* The legend and the color scale read this range, so it covers the values a map draws rather than every
+       candidate: an alternative source's outlier must not stretch the scale. */
+    for by_period in by_region.values() {
+        for (period_start, cells) in by_period {
+            earliest_period_start = earliest_period_start.min(*period_start);
+            latest_period_start = latest_period_start.max(*period_start);
+
+            let Some(preferred) = preferred_cell(cells, &preference_rank_by_source)
+            else {
+                continue;
+            };
+
+            min = min.min(preferred.value);
+            max = max.max(preferred.value);
+        }
+    }
+
+    ShardValues {
+        by_region,
+        preference_rank_by_source,
+        period_end_by_period_start,
+        min,
+        max,
+        earliest_period_start,
+        latest_period_start,
     }
 }
 
@@ -127,12 +201,8 @@ mod native {
             Ok(ShardRecord { region_code, period_start, period_end, value, data_status, source_code, source_revision })
         })?;
 
-        let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
+        let mut by_region: HashMap<String, HashMap<NaiveDate, Vec<CellValue>>> = HashMap::new();
         let mut period_end_by_period_start: HashMap<NaiveDate, NaiveDate> = HashMap::new();
-        let mut min: f64 = f64::INFINITY;
-        let mut max: f64 = f64::NEG_INFINITY;
-        let mut earliest_period_start: NaiveDate = NaiveDate::MAX;
-        let mut latest_period_start: NaiveDate = NaiveDate::MIN;
 
         for row in row_iter {
             let record: ShardRecord = row?;
@@ -147,14 +217,45 @@ mod native {
                 source_revision: record.source_revision,
             };
             period_end_by_period_start.insert(period_start, period_end);
-            by_region.entry(record.region_code).or_default().insert(period_start, cell);
-            min = min.min(record.value);
-            max = max.max(record.value);
-            earliest_period_start = earliest_period_start.min(period_start);
-            latest_period_start = latest_period_start.max(period_start);
+            by_region
+                .entry(record.region_code)
+                .or_default()
+                .entry(period_start)
+                .or_default()
+                .push(cell);
         }
 
-        Ok(ShardValues { by_region, period_end_by_period_start, min, max, earliest_period_start, latest_period_start })
+        drop(statement);
+
+        let preference_rank_by_source: HashMap<String, i32> = read_preference_ranks(&connection)?;
+
+        Ok(super::create_shard_values(by_region, preference_rank_by_source, period_end_by_period_start))
+    }
+
+    fn read_preference_ranks(connection: &Connection) -> Result<HashMap<String, i32>, AppError> {
+        let query: String = format!(
+            "select {}, {} from {}",
+            schema::COL_DATA_SOURCE_CODE,
+            schema::COL_PREFERENCE_RANK,
+            schema::TABLE_DATA_SOURCE,
+        );
+
+        let mut statement: rusqlite::Statement<'_> = connection.prepare(&query)?;
+        let row_iter = statement.query_map([], |row| {
+            let source_code: String = row.get(0)?;
+            let preference_rank: i32 = row.get(1)?;
+
+            Ok((source_code, preference_rank))
+        })?;
+
+        let mut preference_rank_by_source: HashMap<String, i32> = HashMap::new();
+
+        for row in row_iter {
+            let (source_code, preference_rank): (String, i32) = row?;
+            preference_rank_by_source.insert(source_code, preference_rank);
+        }
+
+        Ok(preference_rank_by_source)
     }
 
     /// Open a read-only `Connection` over the shard's in-memory bytes. rusqlite's `deserialize` takes a
@@ -260,12 +361,8 @@ mod wasm {
 
         let statement: Statement = Statement { handle: raw_statement };
 
-        let mut by_region: HashMap<String, HashMap<NaiveDate, CellValue>> = HashMap::new();
+        let mut by_region: HashMap<String, HashMap<NaiveDate, Vec<CellValue>>> = HashMap::new();
         let mut period_end_by_period_start: HashMap<NaiveDate, NaiveDate> = HashMap::new();
-        let mut min: f64 = f64::INFINITY;
-        let mut max: f64 = f64::NEG_INFINITY;
-        let mut earliest_period_start: NaiveDate = NaiveDate::MAX;
-        let mut latest_period_start: NaiveDate = NaiveDate::MIN;
 
         loop {
             let step_res: std::os::raw::c_int = unsafe { sqlite_wasm_rs::sqlite3_step(statement.handle) };
@@ -289,11 +386,12 @@ mod wasm {
                     source_revision,
                 };
                 period_end_by_period_start.insert(period_start, period_end);
-                by_region.entry(region_code).or_default().insert(period_start, cell);
-                min = min.min(value);
-                max = max.max(value);
-                earliest_period_start = earliest_period_start.min(period_start);
-                latest_period_start = latest_period_start.max(period_start);
+                by_region
+                    .entry(region_code)
+                    .or_default()
+                    .entry(period_start)
+                    .or_default()
+                    .push(cell);
             } else if step_res == sqlite_wasm_rs::SQLITE_DONE {
                 break;
             } else {
@@ -302,7 +400,49 @@ mod wasm {
             }
         }
 
-        Ok(ShardValues { by_region, period_end_by_period_start, min, max, earliest_period_start, latest_period_start })
+        drop(statement);
+
+        let preference_rank_by_source: HashMap<String, i32> = read_preference_ranks(db)?;
+
+        Ok(super::create_shard_values(by_region, preference_rank_by_source, period_end_by_period_start))
+    }
+
+    fn read_preference_ranks(db: *mut sqlite3) -> Result<HashMap<String, i32>, AppError> {
+        let query: CString = CString::new(format!(
+            "select {}, {} from {}",
+            schema::COL_DATA_SOURCE_CODE,
+            schema::COL_PREFERENCE_RANK,
+            schema::TABLE_DATA_SOURCE,
+        ))
+        .unwrap();
+
+        let mut raw_statement: *mut sqlite3_stmt = std::ptr::null_mut();
+        let prepare_res: std::os::raw::c_int =
+            unsafe { sqlite_wasm_rs::sqlite3_prepare_v2(db, query.as_ptr(), -1, &mut raw_statement, std::ptr::null_mut()) };
+        if prepare_res != sqlite_wasm_rs::SQLITE_OK {
+            let message: String = ffi_conversions::error_message(db);
+            return Err(AppError::from(format!("shard_db: prepare failed: {message}")));
+        }
+
+        let statement: Statement = Statement { handle: raw_statement };
+        let mut preference_rank_by_source: HashMap<String, i32> = HashMap::new();
+
+        loop {
+            let step_res: std::os::raw::c_int = unsafe { sqlite_wasm_rs::sqlite3_step(statement.handle) };
+            if step_res == sqlite_wasm_rs::SQLITE_ROW {
+                let source_code: String = ffi_conversions::column_text(statement.handle, 0)?;
+                let preference_rank: i32 = unsafe { sqlite_wasm_rs::sqlite3_column_int(statement.handle, 1) };
+
+                preference_rank_by_source.insert(source_code, preference_rank);
+            } else if step_res == sqlite_wasm_rs::SQLITE_DONE {
+                break;
+            } else {
+                let message: String = ffi_conversions::error_message(db);
+                return Err(AppError::from(format!("shard_db: step failed: {message}")));
+            }
+        }
+
+        Ok(preference_rank_by_source)
     }
 }
 
@@ -311,6 +451,9 @@ mod tests {
     use super::*;
 
     use rusqlite::{Connection, DatabaseName};
+
+    const WORLD_BANK: &str = "wb_wdi";
+    const HUMAN_FERTILITY_DATABASE: &str = "hfd";
 
     use crate::error::AppError;
     use crate::sqlite::schema;
@@ -326,10 +469,34 @@ mod tests {
     }
 
     fn shard_bytes(rows: &[(&str, &str, &str, f64, &str)]) -> Vec<u8> {
+        let sourced: Vec<(&str, &str, &str, f64, &str, &str)> = rows
+            .iter()
+            .map(|(region_code, period_start, period_end, value, data_status)| {
+                (*region_code, *period_start, *period_end, *value, *data_status, WORLD_BANK)
+            })
+            .collect();
+
+        sourced_shard_bytes(&sourced, &[(WORLD_BANK, 100)])
+    }
+
+    fn sourced_shard_bytes(
+        rows: &[(&str, &str, &str, f64, &str, &str)],
+        sources: &[(&str, i32)],
+    ) -> Vec<u8> {
         let connection: Connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(schema::shard_schema_ddl()).unwrap();
         connection.pragma_update(None, "application_id", schema::APPLICATION_ID).unwrap();
         connection.pragma_update(None, "user_version", schema::SCHEMA_VERSION).unwrap();
+
+        let insert_source: String = format!(
+            "insert into {} ({}, {}) values (?1, ?2)",
+            schema::TABLE_DATA_SOURCE,
+            schema::COL_DATA_SOURCE_CODE,
+            schema::COL_PREFERENCE_RANK,
+        );
+        for (source_code, preference_rank) in sources {
+            connection.execute(&insert_source, (source_code, preference_rank)).unwrap();
+        }
 
         let insert: String = format!(
             "insert into {} ({}, {}, {}, {}, {}, {}, {}, {}) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -345,11 +512,11 @@ mod tests {
         );
         let region_id: Vec<u8> = vec![0u8; 16];
 
-        for (region_code, period_start, period_end, value, data_status) in rows {
+        for (region_code, period_start, period_end, value, data_status, source_code) in rows {
             connection
                 .execute(
                     &insert,
-                    (region_code, region_id.clone(), period_start, period_end, *value, *data_status, "wb_wdi", "2024-12-12"),
+                    (region_code, region_id.clone(), period_start, period_end, *value, *data_status, *source_code, "2024-12-12"),
                 )
                 .unwrap();
         }
@@ -357,6 +524,74 @@ mod tests {
         let data: rusqlite::serialize::Data<'_> = connection.serialize(DatabaseName::Main).unwrap();
 
         data.to_vec()
+    }
+
+    /// A cell both sources cover: the ranked-lower source supplies what a map draws, and the other stays
+    /// readable.
+    fn contested_shard_bytes() -> Vec<u8> {
+        sourced_shard_bytes(
+            &[
+                ("deu", "2016-01-01", "2017-01-01", 1.6, "final", WORLD_BANK),
+                ("deu", "2016-01-01", "2017-01-01", 1.597, "final", HUMAN_FERTILITY_DATABASE),
+                ("deu", "2018-01-01", "2019-01-01", 1.57, "final", WORLD_BANK),
+            ],
+            &[(WORLD_BANK, 100), (HUMAN_FERTILITY_DATABASE, 50)],
+        )
+    }
+
+    #[test]
+    fn cell_takes_the_highest_priority_source_covering_it() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        let cell: &CellValue = shard.cell("deu", NaiveDate::from_ymd_opt(2016, 1, 1).unwrap()).unwrap();
+
+        assert_eq!(cell.source_code, HUMAN_FERTILITY_DATABASE);
+        assert_eq!(cell.value, 1.597);
+    }
+
+    #[test]
+    fn cells_keeps_every_source_for_a_contested_cell() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        let cells: &[CellValue] = shard.cells("deu", NaiveDate::from_ymd_opt(2016, 1, 1).unwrap());
+
+        assert_eq!(cells.len(), 2);
+    }
+
+    #[test]
+    fn cell_from_reads_a_named_source_rather_than_the_preferred_one() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        let world_bank: &CellValue = shard
+            .cell_from("deu", NaiveDate::from_ymd_opt(2016, 1, 1).unwrap(), WORLD_BANK)
+            .unwrap();
+
+        assert_eq!(world_bank.value, 1.6);
+    }
+
+    /// A period the preferred source does not cover still reads, from whoever does.
+    #[test]
+    fn cell_falls_through_to_a_lower_priority_source() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        let cell: &CellValue = shard.cell("deu", NaiveDate::from_ymd_opt(2018, 1, 1).unwrap()).unwrap();
+
+        assert_eq!(cell.source_code, WORLD_BANK);
+    }
+
+    /// The legend reads this range, so an alternative source's value must not stretch it.
+    #[test]
+    fn value_range_covers_the_preferred_values_only() {
+        let shard: ShardValues = read_shard(&sourced_shard_bytes(
+            &[
+                ("deu", "2016-01-01", "2017-01-01", 9.9, "final", WORLD_BANK),
+                ("deu", "2016-01-01", "2017-01-01", 1.597, "final", HUMAN_FERTILITY_DATABASE),
+            ],
+            &[(WORLD_BANK, 100), (HUMAN_FERTILITY_DATABASE, 50)],
+        ))
+        .unwrap();
+
+        assert_eq!(shard.value_range(), Some((1.597, 1.597)));
     }
 
     #[test]

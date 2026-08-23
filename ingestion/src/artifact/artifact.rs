@@ -7,10 +7,10 @@ use chrono::NaiveDate;
 use sqlx::PgConnection;
 
 use crate::artifact::artifact_model::{
-    Artifacts, BuildReport, CandidateValue, CoupledBuildReport, ResolvedValue,
+    Artifacts, BuildReport, CandidateValue, CoupledBuildReport, PartitionedValue,
 };
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
-use crate::artifact::{artifact_db, hashing, source_priority, StatisticShard};
+use crate::artifact::{artifact_db, hashing, StatisticShard};
 use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
 use crate::error::AppError;
 use shared::artifact::manifest::{self, BundleVariant};
@@ -131,8 +131,10 @@ async fn create_statistic_shards(
             continue;
         }
 
-        let resolved: Vec<ResolvedValue> = match variant {
-            BundleVariant::Complete => source_priority::resolve_candidates(candidates)?,
+        /* The complete bundle keeps every source's value so a consumer can present an alternative to the one
+           preference picks. The downsampled bundle exists to be small for first paint, so it keeps one. */
+        let resolved: Vec<PartitionedValue> = match variant {
+            BundleVariant::Complete => partition_by_license(candidates),
             BundleVariant::Downsampled => downsample_to_reference_year(candidates, kind),
         };
         if resolved.is_empty() {
@@ -162,10 +164,22 @@ async fn create_statistic_shards(
 /// required because the renderer resolves each region's value by exact period; a per-region-latest
 /// slice would leave every region whose latest year differs from the active period with nothing to
 /// draw. Yields nothing when the United States has no World Bank WDI value to anchor the year.
+fn partition_by_license(candidates: Vec<CandidateValue>) -> Vec<PartitionedValue> {
+    candidates
+        .iter()
+        .map(|candidate| {
+            let license_shard_class: LicenseShardClass =
+                LicenseShardClass::from_license_class(candidate.license_class);
+
+            PartitionedValue::from_candidate(candidate, license_shard_class)
+        })
+        .collect()
+}
+
 fn downsample_to_reference_year(
     candidates: Vec<CandidateValue>,
     statistic_kind: StatisticKind,
-) -> Vec<ResolvedValue> {
+) -> Vec<PartitionedValue> {
     let world_bank_wdi_candidates: Vec<CandidateValue> = candidates
         .into_iter()
         .filter(|candidate| candidate.data_source_kind == DataSourceKind::WorldBankWDI)
@@ -189,7 +203,7 @@ fn downsample_to_reference_year(
         .filter(|candidate| candidate.period.start == reference_period_start)
         .map(|candidate| {
             let license_shard_class: LicenseShardClass = LicenseShardClass::from_license_class(candidate.license_class);
-            ResolvedValue::from_candidate(&candidate, license_shard_class)
+            PartitionedValue::from_candidate(&candidate, license_shard_class)
         })
         .collect()
 }
@@ -263,7 +277,7 @@ mod tests {
             candidate_value("bra", DataSourceKind::WorldBankWDI, 2021, 1.64),
         ];
 
-        let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
+        let kept: Vec<PartitionedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
 
         let reference_period_start: NaiveDate = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
         assert!(kept.iter().all(|value| value.period.start == reference_period_start));
@@ -282,7 +296,7 @@ mod tests {
             candidate_value("deu", DataSourceKind::HumanFertilityDatabase, 2023, 1.46),
         ];
 
-        let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
+        let kept: Vec<PartitionedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
 
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].region_code, "usa");
@@ -296,7 +310,7 @@ mod tests {
             candidate_value("deu", DataSourceKind::WorldBankWDI, 2023, 1.46),
         ];
 
-        let kept: Vec<ResolvedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
+        let kept: Vec<PartitionedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
 
         assert!(kept.is_empty());
     }

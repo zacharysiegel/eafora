@@ -79,10 +79,12 @@ pub struct CountryMetadataProjection {
 }
 
 /// A "resolved" `CandidateValue` (after data source selection). Exactly one
-/// `ResolvedValue` per `(region, statistic, period)` cell, drawn from the source
+/// `PartitionedValue` per `(region, statistic, period)` cell, drawn from the source
 /// chosen for that series.
 #[derive(Debug, Clone)]
-pub struct ResolvedValue {
+/// A candidate assigned to the shard its licence puts it in. Every candidate is written; the consumer
+/// picks between sources.
+pub struct PartitionedValue {
     pub region_id: Uuid,
     pub region_code: String,
     pub statistic_kind: StatisticKind,
@@ -90,13 +92,14 @@ pub struct ResolvedValue {
     pub value: f64,
     pub data_status: DataStatus,
     pub data_source_kind: DataSourceKind,
+    pub data_source_preference_rank: i32,
     pub data_source_revision: String,
     pub license_shard_class: LicenseShardClass,
 }
 
-impl ResolvedValue {
+impl PartitionedValue {
     pub fn from_candidate(candidate: &CandidateValue, license_shard_class: LicenseShardClass) -> Self {
-        ResolvedValue {
+        PartitionedValue {
             region_id: candidate.region_id,
             region_code: candidate.region_code.clone(),
             statistic_kind: candidate.statistic_kind,
@@ -104,6 +107,7 @@ impl ResolvedValue {
             value: candidate.value,
             data_status: candidate.data_status,
             data_source_kind: candidate.data_source_kind,
+            data_source_preference_rank: candidate.data_source_preference_rank,
             data_source_revision: candidate.data_source_revision.clone(),
             license_shard_class,
         }
