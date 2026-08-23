@@ -531,10 +531,7 @@ impl Driver {
 
         let bundle: Arc<Bundle> = self.current_bundle();
 
-        /* Two statistics need not cover the same periods, and a cohort measure ends decades before a period
-           one. Holding the old period would leave the map blank on a period the new statistic never
-           covers. */
-        clamp_active_period(self, &bundle);
+        reset_active_period_if_uncovered(self, &bundle);
 
         self.request_redraw();
 
@@ -803,7 +800,7 @@ fn apply_live_bundle(
         let driver: &mut Driver = driver_slot.as_mut()?;
 
         let bundle: Arc<Bundle> = driver.current_bundle();
-        clamp_active_period(driver, &bundle);
+        reset_active_period_if_uncovered(driver, &bundle);
 
         let views: RepublishedViews = driver.republish(&bundle);
         driver.request_redraw();
@@ -819,8 +816,8 @@ fn apply_live_bundle(
     }
 }
 
-/// A period outside what the statistic covers lands on its default, not on the nearest bound.
-fn clamp_active_period(driver: &mut Driver, bundle: &Bundle) {
+/// Leaves the period unchanged when the statistic has no shard to take a default from.
+fn reset_active_period_if_uncovered(driver: &mut Driver, bundle: &Bundle) {
     let Some((earliest, latest)) = driver
         .active_shard_values(bundle)
         .and_then(|shard_values| shard_values.period_range())
