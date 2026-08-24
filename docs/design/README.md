@@ -8,6 +8,7 @@ architecture, SwiftUI styling, Compose theming) inherit from this doc.
 Companion artifacts in this directory:
   ./stub-desktop.html — desktop reference frame (map, ranking, scrubber)
   ./stub-mobile.html  — mobile reference frames (empty, peek, list, detail)
+  ./tag-specimen.html — the bordered categorical tag, isolated for reuse
 -->
 
 ## One-line summary
@@ -21,6 +22,7 @@ and cartographic, not consumer-app.
 Two static HTML stubs sit alongside this doc and render the language end-to-end. Open them in a browser to evaluate any proposed change against the established baseline; treat them as the visual ground truth that this prose describes.
 
 - `./stub-desktop.html` — single-frame desktop layout: map with selected region (Japan), top-left detail panel, top-right ranking table, bottom time scrubber, full continent choropleth.
+- `./tag-specimen.html` — the tag idiom on its own: a 1px-bordered uppercase word carrying a categorical value, in three weights, with the cases it must not be used for.
 - `./stub-mobile.html` — four mobile frames at iPhone 14 Pro logical size: (00) empty map with choropleth legend and tap prompt; (01) selected region with full bottom sheet (region name, primary stat, metadata grid, source citation); (02) ranked list; (03) region detail with history chart and sources.
 
 The stubs are static fixtures: no animations, no interactivity, no real data wiring. They demonstrate the visual language, not the app's behavior. When the language evolves, update both the prose below and the stubs in lockstep.
@@ -66,7 +68,7 @@ reference work, not browsing a feed.
 - Region fills use a continuous single-hue scale — a white-to-red lerp over the statistic's value range, not discrete buckets. No multi-hue choropleths; the data itself is the only saturated color on the map. For TFR the most-saturated red marks the lowest (below-replacement) value and white the highest; no-data regions render as a distinct mid-dark gray.
 - Selection: 1px red outline, not a fill change.
 - Hover: the hovered region scales up slightly. This is a discrete, instant transform (not an eased animation), so it stays consistent with "Animation". The scale is visual only; hit-testing reads the unscaled source polygon, so a region growing under the cursor never changes which region is hit.
-- Choropleth legend: a small inline (no-border) caption + swatches + mono numerals at the bottom-left of the map. Visible on desktop permanently. On mobile, visible when no region is selected; hidden when a region is selected and the bottom sheet is up. The selected-state mobile sheet is the canonical place for the values themselves; the legend is the orientation cue for the empty state.
+- Choropleth legend: a small inline (no-border) caption + swatches + mono numerals at the bottom-left of the map. Hidden whenever a region's detail surface is open, on every platform, since that surface covers the bottom-left on desktop and the legend's own corner on mobile. Visible otherwise. The selected-state mobile sheet is the canonical place for the values themselves; the legend is the orientation cue for the empty state.
 
 ## Interaction
 

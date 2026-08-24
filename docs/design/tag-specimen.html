@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eafora · tag specimen</title>
+<!-- No webfont: web/ loads none, so these stacks fall back to system-ui exactly as the product does. -->
+<style>
+:root {
+    --color-paper:         #ffffff;
+    --color-ink:           #000000;
+    --color-accent-active: #d50000;
+    --color-accent-link:   #0050ff;
+    --color-rule:          #d4d4d4;
+    --color-ink-muted:     #555555;
+
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 2rem;
+
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+    --type-size-body:  0.875rem;
+    --type-size-data:  0.8125rem;
+    --type-size-bound: 0.6875rem;
+
+    --border-ink:    1px solid var(--color-ink);
+    --border-active: 1px solid var(--color-accent-active);
+    --border-rule:   1px solid var(--color-rule);
+}
+
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    padding: var(--space-lg) var(--space-lg) 5rem;
+    font-family: var(--font-sans);
+    font-size: var(--type-size-body);
+    line-height: 1.5;
+    color: var(--color-ink);
+    background: var(--color-paper);
+}
+main { max-width: 54rem; }
+h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 var(--space-xs); }
+.lede { color: var(--color-ink-muted); margin: 0 0 var(--space-lg); max-width: 40rem; }
+h2 {
+    font-size: var(--type-size-bound);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: var(--border-ink);
+    padding-bottom: var(--space-sm);
+    margin: 2.5rem 0 var(--space-md);
+}
+p { max-width: 40rem; }
+code { font-family: var(--font-mono); font-size: 0.8em; }
+.numeric { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* ===========================================================
+   THE IDIOM. Copy this block.
+   A tag is a 1px-bordered rectangle around one uppercase word.
+   It carries a categorical value, never a count and never prose.
+   =========================================================== */
+.tag {
+    display: inline-block;
+    font-size: 0.625rem;               /* approx. 10px; below the smallest type token on purpose */
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    line-height: 1.4;
+    padding: 1px var(--space-xs);
+    border: var(--border-rule);
+    color: var(--color-ink-muted);
+    white-space: nowrap;
+}
+
+/* Three weights, matching the colour rules: grey is the default, ink is affirmative,
+   red is the exception that wants attention. No fills; the border carries the state. */
+.tag.ink    { border-color: var(--color-ink);           color: var(--color-ink); }
+.tag.accent { border-color: var(--color-accent-active); color: var(--color-accent-active); }
+.tag.link   { border-color: var(--color-accent-link);   color: var(--color-accent-link); }
+/* ======================= end of the idiom ================== */
+
+.row { display: flex; gap: var(--space-md); align-items: center; flex-wrap: wrap; margin-bottom: var(--space-md); }
+.swatch-note { font-size: var(--type-size-data); color: var(--color-ink-muted); }
+
+table { border-collapse: collapse; width: 100%; font-size: var(--type-size-data); }
+th {
+    text-align: left;
+    font-size: var(--type-size-bound);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+    font-weight: 500;
+    border-bottom: var(--border-ink);
+    padding: var(--space-sm) var(--space-md) var(--space-sm) 0;
+}
+td { border-bottom: var(--border-rule); padding: var(--space-sm) var(--space-md) var(--space-sm) 0; }
+td:last-child, th:last-child { padding-right: 0; }
+
+.panel { border: var(--border-ink); padding: var(--space-md); width: 20rem; }
+.panel-region { font-size: 1rem; font-weight: 600; }
+.panel-statistic { font-size: var(--type-size-data); color: var(--color-ink-muted); margin-bottom: var(--space-md); }
+.panel-value { font-size: 2.25rem; line-height: 1; letter-spacing: -0.01em; }
+.panel-unit { font-size: var(--type-size-bound); color: var(--color-ink-muted); margin-top: var(--space-xs); }
+.panel-line { display: flex; justify-content: space-between; align-items: center; margin-top: var(--space-sm); font-size: var(--type-size-bound); color: var(--color-ink-muted); }
+
+.dont { border-left: var(--border-active); padding-left: var(--space-md); margin: var(--space-md) 0; }
+.dont-label { font-size: var(--type-size-bound); letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-accent-active); }
+.pill-round { border-radius: 999px; padding: 2px var(--space-sm); }
+.pill-filled { background: var(--color-accent-active); color: var(--color-paper); border-color: var(--color-accent-active); }
+.pill-lower { text-transform: none; letter-spacing: 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Tag</h1>
+<p class="lede">A 1px-bordered rectangle around one uppercase word, carrying a categorical value. Extracted from the region-detail availability table, where it distinguished what the client can render today from what needs producer work. Kept here so the idiom is reusable rather than re-invented.</p>
+
+<h2>Variants</h2>
+<div class="row">
+  <span class="tag">DEFAULT</span>
+  <span class="swatch-note">Rule grey. The neutral case: a value with no weight of its own.</span>
+</div>
+<div class="row">
+  <span class="tag ink">NOW</span>
+  <span class="swatch-note">Ink. Affirmative: present, available, final.</span>
+</div>
+<div class="row">
+  <span class="tag accent">PRODUCER</span>
+  <span class="swatch-note">Red. The exception that wants attention: missing, blocked, provisional.</span>
+</div>
+<div class="row">
+  <span class="tag link">SOURCE</span>
+  <span class="swatch-note">Blue. Reserved, per the colour rules, for a source citation or a secondary series.</span>
+</div>
+
+<h2>Why it works here</h2>
+<p>It is the same construction as every other surface in the product: an opaque white fill, one hairline border, square corners, no shadow. It reads as a small sheet, which is the metaphor the whole interface runs on. And because the border carries the state rather than a fill, a red tag draws the eye without introducing a saturated block that would compete with the map.</p>
+<p>The type is 10px, deliberately below the smallest type token. A tag is a label on a value, never the value, so it should not match the weight of the text it annotates.</p>
+
+<h2>In a table column</h2>
+<table>
+<thead><tr><th style="width: 22rem">Content</th><th style="width: 9rem">Available</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Value, unit, period, source</td><td><span class="tag ink">NOW</span></td><td>Reaches the panel already</td></tr>
+<tr><td>A region's full time series</td><td><span class="tag accent">NEEDS A METHOD</span></td><td>One accessor on <code>ShardValues</code></td></tr>
+<tr><td>Source attribution text</td><td><span class="tag accent">PRODUCER</span></td><td>Not serialized into a bundle</td></tr>
+<tr><td>Population</td><td><span class="tag accent">NOT INGESTED</span></td><td>No source yet</td></tr>
+</tbody>
+</table>
+
+<h2>In a panel</h2>
+<div class="panel">
+  <div class="panel-region">Japan</div>
+  <div class="panel-statistic">Total fertility rate · 2024</div>
+  <div class="panel-value numeric">1.20</div>
+  <div class="panel-unit">births per woman</div>
+  <div class="panel-line"><span>Human Fertility Database</span><span class="tag ink">FINAL</span></div>
+  <div class="panel-line"><span>World Bank WDI · 2023</span><span class="tag accent">PROVISIONAL</span></div>
+</div>
+
+<h2>Do not</h2>
+
+<div class="dont">
+  <div class="dont-label">Round it</div>
+  <div class="row" style="margin: var(--space-sm) 0 0">
+    <span class="tag accent pill-round">PROVISIONAL</span>
+    <span class="swatch-note">A pill radius contradicts square corners. <code>--radius-default</code> is 0, and the larger the element the closer to zero.</span>
+  </div>
+</div>
+
+<div class="dont">
+  <div class="dont-label">Fill it</div>
+  <div class="row" style="margin: var(--space-sm) 0 0">
+    <span class="tag pill-filled">PROVISIONAL</span>
+    <span class="swatch-note">A saturated block competes with the map's data colour, which is meant to be the only saturated thing on screen.</span>
+  </div>
+</div>
+
+<div class="dont">
+  <div class="dont-label">Put a sentence in it</div>
+  <div class="row" style="margin: var(--space-sm) 0 0">
+    <span class="tag accent pill-lower">Subject to revision by the source</span>
+    <span class="swatch-note">A tag holds one categorical word or two. Prose belongs in the line beside it.</span>
+  </div>
+</div>
+
+<div class="dont">
+  <div class="dont-label">Use it for a number</div>
+  <div class="row" style="margin: var(--space-sm) 0 0">
+    <span class="tag ink numeric">218</span>
+    <span class="swatch-note">Numbers are tabular figures in running text, not boxed. A box says "category".</span>
+  </div>
+</div>
+
+<h2>If it ships</h2>
+<p>Add <code>.tag</code> and its three modifiers to a component stylesheet under <code>web/style/components/</code>, reading every value from the existing tokens. The 10px size and the <code>0.06em</code> tracking are the only two numbers here that are not already tokens; promote them if a second component wants them.</p>
+
+</main>
+</body>
+</html>
