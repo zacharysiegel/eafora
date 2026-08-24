@@ -78,7 +78,9 @@ reference work, not browsing a feed.
 
 ## Animation
 
-Through v1 there is exactly one animation: the zoom-to-country camera move. It does not fire on plain selection, which stays instant; re-selecting the already-selected country (a second tap on it, or a double-click) eases the viewport from its current framing to one that frames the country, over roughly 600ms with a cubic ease-in-out. Every other state change is instant, consistent with the paper-and-ink metaphor: turning a page does not have an easing curve.
+Through v1 there are two animations. The first is the zoom-to-country camera move. It does not fire on plain selection, which stays instant; re-selecting the already-selected country (a second tap on it, or a double-click) eases the viewport from its current framing to one that frames the country, over roughly 600ms with a cubic ease-in-out. Every other state change is instant, consistent with the paper-and-ink metaphor: turning a page does not have an easing curve.
+
+The second is the detail dock's scroll thumb, whose width alone is animated: nothing at rest, three pixels while the pointer is in the panel, seven while the pointer is on the thumb or holding it. It is included because the mark exists to be grabbed and a thing that appears at full size under the cursor reads as a glitch rather than as an affordance; the transition is the shortest that reads as deliberate, and only `width` moves, so the thumb's position still cuts instantly to wherever the content is.
 
 The camera move is a deliberate exception to that metaphor because it is the one transition where an instant cut destroys information. When the globe rescales and recenters at once, a hard cut leaves the viewer with no way to track where the new view sits relative to the old one; the eased move preserves that spatial continuity. The exception is scoped narrowly to viewport motion and does not license eased transitions elsewhere.
 

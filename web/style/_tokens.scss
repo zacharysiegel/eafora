@@ -23,9 +23,12 @@
     --type-line-height-body: 1.5; // unitless multiplier of the inheritor's font-size
     --type-line-height-data: 1.15;
 
-    --border-ink:            1px solid var(--color-ink);
-    --border-active:         1px solid var(--color-accent-active);
-    --border-rule:           1px solid var(--color-rule);
+    --border-width-hairline: 1px; // every border in the interface; referenced directly only when something must be positioned against one
+    --border-ink:            var(--border-width-hairline) solid var(--color-ink);
+    --border-active:         var(--border-width-hairline) solid var(--color-accent-active);
+    --border-rule:           var(--border-width-hairline) solid var(--color-rule);
+
+    --duration-thumb:        120ms; // the scroll thumb's width change, the only animated property in the interface
 
     --radius-default:        0;
     --radius-input:          1px;

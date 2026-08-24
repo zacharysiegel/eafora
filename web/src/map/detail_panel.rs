@@ -9,6 +9,7 @@ use crate::map::canvas::{
     BundleProseView, CellView, GlobalView, RankView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
 };
 use crate::map::labels;
+use crate::map::scroll_thumb::{self, ScrollThumbState};
 
 /// Births per woman at which a generation replaces itself. Drawn as the line a fertility series is read
 /// against, so it is the one value on the chart that does not come from the data.
@@ -166,9 +167,16 @@ fn detail_dock(
     let RegionDetail { series, sources, rank } = detail;
     let CellView { value, source: _, data_status } = cell;
     let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
+    let thumb: ScrollThumbState = scroll_thumb::create_state();
 
     view! {
         <aside class="panel region-dock">
+        <div
+            class="region-dock-scroll"
+            node_ref=thumb.scroller()
+            on:scroll=move |_| scroll_thumb::refresh(thumb)
+            on:pointerenter=move |_| scroll_thumb::refresh(thumb)
+        >
             <header class="region-dock-header">
                 <h2 class="region-dock-region">{label}</h2>
                 <button
@@ -204,6 +212,8 @@ fn detail_dock(
             {history_section(i18n, statistic, &series, period_start)}
             {sources_section(i18n, &sources, prose.as_ref())}
             {about_section(i18n, statistic, prose.as_ref())}
+        </div>
+        {scroll_thumb::view(thumb)}
         </aside>
     }
 }
