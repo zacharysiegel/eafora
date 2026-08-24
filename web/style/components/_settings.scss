@@ -64,8 +64,10 @@
     cursor: pointer;
 }
 
-.settings-close:hover {
+.settings-close:hover,
+.settings-close:focus-visible {
     color: var(--color-accent-hover);
+    outline: none;
 }
 
 .settings-close svg {

@@ -7,9 +7,12 @@
     cursor: pointer;
 }
 
-.button:hover {
+// Focus looks exactly like hover, so the interface has one way of saying "this control is the one you are on".
+.button:hover,
+.button:focus-visible {
     border-color: var(--color-accent-hover);
     color: var(--color-accent-hover);
+    outline: none;
 }
 
 // A pressed control keeps the undarkened accent: hover is feedback under the pointer, this is a state.
