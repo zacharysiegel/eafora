@@ -106,6 +106,27 @@ impl ShardValues {
         series
     }
 
+    /// Every region the shard covers for one period, each with the value a map draws. Unordered, since a
+    /// caller ranking these decides its own direction.
+    pub fn preferred_values_at(&self, period_start: NaiveDate) -> Vec<(&str, f64)> {
+        let mut region_values: Vec<(&str, f64)> = Vec::new();
+
+        for (region_code, by_period) in &self.by_region {
+            let Some(cells) = by_period.get(&period_start)
+            else {
+                continue;
+            };
+            let Some(preferred) = preferred_cell(cells, &self.preference_rank_by_source)
+            else {
+                continue;
+            };
+
+            region_values.push((region_code.as_str(), preferred.value));
+        }
+
+        region_values
+    }
+
     pub fn value_range(&self) -> Option<(f64, f64)> {
         if self.by_region.is_empty() {
             return None;
@@ -808,6 +829,32 @@ mod tests {
         let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
 
         assert!(shard.series("jpn").is_empty());
+    }
+
+    #[test]
+    fn preferred_values_at_reports_one_value_per_covered_region() {
+        let shard: ShardValues = read_shard(&sourced_shard_bytes(
+            &[
+                ("deu", "2016-01-01", "2017-01-01", 1.6, "final", WORLD_BANK),
+                ("deu", "2016-01-01", "2017-01-01", 1.597, "final", HUMAN_FERTILITY_DATABASE),
+                ("jpn", "2016-01-01", "2017-01-01", 1.44, "final", WORLD_BANK),
+                ("jpn", "2018-01-01", "2019-01-01", 1.42, "final", WORLD_BANK),
+            ],
+            &[(WORLD_BANK, 100), (HUMAN_FERTILITY_DATABASE, 50)],
+        ))
+        .unwrap();
+
+        let mut region_values: Vec<(&str, f64)> = shard.preferred_values_at(NaiveDate::from_ymd_opt(2016, 1, 1).unwrap());
+        region_values.sort_by(|left, right| left.0.cmp(right.0));
+
+        assert_eq!(region_values, vec![("deu", 1.597), ("jpn", 1.44)]);
+    }
+
+    #[test]
+    fn preferred_values_at_is_empty_for_a_period_the_shard_does_not_cover() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        assert!(shard.preferred_values_at(NaiveDate::from_ymd_opt(1999, 1, 1).unwrap()).is_empty());
     }
 
     /// The legend reads this range, so an alternative source's value must not stretch it.
