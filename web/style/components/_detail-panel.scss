@@ -206,3 +206,24 @@
     font-size: var(--type-size-bound);
     color: var(--color-ink-muted);
 }
+
+.region-dock-source-attribution {
+    flex-basis: 100%;
+    font-size: var(--type-size-bound);
+    color: var(--color-ink-muted);
+}
+
+.region-dock-source-links {
+    flex-basis: 100%;
+    font-size: var(--type-size-bound);
+    color: var(--color-ink-muted);
+
+    a {
+        color: var(--color-accent-link);
+    }
+}
+
+.region-dock-about {
+    margin-top: var(--space-md);
+    font-size: var(--type-size-data);
+}

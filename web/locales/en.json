@@ -26,7 +26,10 @@
     "history": "History",
     "no_history": "No other periods are covered for this region.",
     "sources": "Data sources",
-    "source_preferred": "Prioritized"
+    "source_preferred": "Prioritized",
+    "about": "About this statistic",
+    "license": "Licence",
+    "homepage": "Homepage"
   },
   "statistic": {
     "tfr": "Total fertility rate",

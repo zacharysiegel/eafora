@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 
 use crate::i18n::*;
-use crate::map::canvas::{GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
+use crate::map::canvas::{BundleProseView, GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
 use crate::map::controls::Controls;
 use crate::map::detail_panel::{DetailSurface, RegionDetailPanel};
 use crate::map::legend::Legend;
@@ -26,6 +26,9 @@ pub fn MapView() -> impl IntoView {
 
     let detail_surface: RwSignal<DetailSurface> = RwSignal::new(DetailSurface::Summary);
     provide_context(detail_surface);
+
+    let bundle_prose: RwSignal<Option<BundleProseView>> = RwSignal::new(None);
+    provide_context(bundle_prose);
 
     let i18n = use_i18n();
 

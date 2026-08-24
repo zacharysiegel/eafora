@@ -24,7 +24,7 @@ use crate::distribution;
 use crate::live_resolve;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
-use super::{CellView, RankView, RegionDetail, RenderStatus, GlobalView, LegendView, SelectionView, SeriesPointView, SourceCellView, ViewControls};
+use super::{BundleProseView, CellView, RankView, RegionDetail, RenderStatus, GlobalView, LegendView, SelectionView, SeriesPointView, SourceCellView, ViewControls};
 
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
@@ -122,10 +122,7 @@ struct Driver {
     viewport: Viewport,
     surface_dimensions: SurfaceDimensions,
     frame_state: FrameState,
-    selection_view: WriteSignal<Option<SelectionView>>,
-    global_view: WriteSignal<Option<GlobalView>>,
-    view_controls: WriteSignal<Option<ViewControls>>,
-    legend: WriteSignal<Option<LegendView>>,
+    signals: DriverSignals,
     selection: Option<SelectionView>,
     redraw_pending: bool,
     gesture: Gesture,
@@ -691,28 +688,30 @@ enum StartupError {
     BrowserUnsupported(AppError),
 }
 
+fn bundle_prose_view(bundle: &Bundle) -> BundleProseView {
+    BundleProseView {
+        source_attribution: bundle.manifest.source_attribution.clone(),
+        statistic_definitions: bundle.manifest.statistic_definitions.clone(),
+    }
+}
+
 /// The reactive signals wiring the map component to the driver.
+#[derive(Clone, Copy)]
 pub struct DriverSignals {
     pub render_status: RwSignal<RenderStatus>,
     pub selection_view: WriteSignal<Option<SelectionView>>,
     pub global_view: WriteSignal<Option<GlobalView>>,
     pub view_controls: WriteSignal<Option<ViewControls>>,
     pub legend: WriteSignal<Option<LegendView>>,
+    pub bundle_prose: WriteSignal<Option<BundleProseView>>,
     pub live_load_failed: WriteSignal<bool>,
 }
 
 pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
-    let DriverSignals { render_status, selection_view, global_view, view_controls, legend, live_load_failed } = signals;
+    let render_status: RwSignal<RenderStatus> = signals.render_status;
 
     leptos::task::spawn_local(async move {
-        let status: RenderStatus = match set_up_driver(
-            canvas,
-            selection_view,
-            global_view,
-            view_controls,
-            legend,
-            live_load_failed,
-        ).await {
+        let status: RenderStatus = match set_up_driver(canvas, signals).await {
             Ok(()) => RenderStatus::Ready,
             Err(StartupError::DataUnavailable(error)) => {
                 log::error!("map data could not be loaded [error={error}]");
@@ -728,14 +727,7 @@ pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
     });
 }
 
-async fn set_up_driver(
-    canvas: HtmlCanvasElement,
-    selection_view: WriteSignal<Option<SelectionView>>,
-    global_view: WriteSignal<Option<GlobalView>>,
-    view_controls: WriteSignal<Option<ViewControls>>,
-    legend: WriteSignal<Option<LegendView>>,
-    live_load_failed: WriteSignal<bool>,
-) -> Result<(), StartupError> {
+async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Result<(), StartupError> {
     let cache: OpfsArtifactCache = OpfsArtifactCache::create()
         .await
         .map_err(StartupError::BrowserUnsupported)?;
@@ -789,10 +781,7 @@ async fn set_up_driver(
         viewport: home_viewport(SurfaceDimensions { width, height }),
         surface_dimensions: SurfaceDimensions { width, height },
         frame_state,
-        selection_view,
-        global_view,
-        view_controls,
-        legend,
+        signals,
         selection: None,
         redraw_pending: false,
         gesture: Gesture::Idle,
@@ -815,6 +804,7 @@ async fn set_up_driver(
     let initial_controls: ViewControls = driver.view_controls(&published_bundle);
     let initial_legend: LegendView = driver.legend_view(&published_bundle);
     let initial_global: GlobalView = driver.resolve_global_view(&published_bundle);
+    let initial_prose: BundleProseView = bundle_prose_view(&published_bundle);
     log::info!(
         "initial global figure resolved; [period_start={} value={:?} source={:?} data_status={:?}]",
         initial_global.period_start,
@@ -828,22 +818,13 @@ async fn set_up_driver(
         driver_slot.insert(driver).request_redraw();
     });
 
-    view_controls.set(Some(initial_controls));
-    legend.set(Some(initial_legend));
-    global_view.set(Some(initial_global));
+    signals.view_controls.set(Some(initial_controls));
+    signals.legend.set(Some(initial_legend));
+    signals.global_view.set(Some(initial_global));
+    signals.bundle_prose.set(Some(initial_prose));
 
     leptos::task::spawn_local(async move {
-        upgrade_to_live_bundle(
-            cache,
-            distribution_context,
-            live_bundle_sender,
-            view_controls,
-            legend,
-            selection_view,
-            global_view,
-            live_load_failed,
-        )
-        .await;
+        upgrade_to_live_bundle(cache, distribution_context, live_bundle_sender, signals).await;
     });
 
     Ok(())
@@ -853,67 +834,51 @@ async fn upgrade_to_live_bundle(
     cache: OpfsArtifactCache,
     distribution_context: DistributionContext,
     live_bundle_sender: watch::Sender<Arc<Bundle>>,
-    view_controls: WriteSignal<Option<ViewControls>>,
-    legend: WriteSignal<Option<LegendView>>,
-    selection_view: WriteSignal<Option<SelectionView>>,
-    global_view: WriteSignal<Option<GlobalView>>,
-    live_load_failed: WriteSignal<bool>,
+    signals: DriverSignals,
 ) {
     let static_base: String = match live_resolve::static_repository_base_url() {
         Ok(static_base) => static_base,
         Err(error) => {
             log::warn!("reading the static repository base failed; [error={error}]");
-            live_load_failed.set(true);
+            signals.live_load_failed.set(true);
             return;
         }
     };
 
     match load::load_live_bundle(&cache, &static_base, distribution_context).await {
-        Ok(bundle) => apply_live_bundle(
-            live_bundle_sender,
-            bundle,
-            view_controls,
-            legend,
-            selection_view,
-            global_view,
-        ),
+        Ok(bundle) => apply_live_bundle(live_bundle_sender, bundle, signals),
         Err(error) => {
             log::warn!("loading the live bundle failed; [error={error}]");
-            live_load_failed.set(true);
+            signals.live_load_failed.set(true);
         }
     }
 }
 
-fn apply_live_bundle(
-    live_bundle_sender: watch::Sender<Arc<Bundle>>,
-    bundle: Bundle,
-    view_controls: WriteSignal<Option<ViewControls>>,
-    legend: WriteSignal<Option<LegendView>>,
-    selection_view: WriteSignal<Option<SelectionView>>,
-    global_view: WriteSignal<Option<GlobalView>>,
-) {
+fn apply_live_bundle(live_bundle_sender: watch::Sender<Arc<Bundle>>, bundle: Bundle, signals: DriverSignals) {
     if let Err(error) = live_bundle_sender.send(Arc::new(bundle)) {
         log::warn!("publishing the live bundle failed; [error={error}]");
         return;
     }
 
-    let published: Option<RepublishedViews> = DRIVER.with_borrow_mut(|driver_slot| {
+    let published: Option<(RepublishedViews, BundleProseView)> = DRIVER.with_borrow_mut(|driver_slot| {
         let driver: &mut Driver = driver_slot.as_mut()?;
 
         let bundle: Arc<Bundle> = driver.current_bundle();
         reset_active_period_if_uncovered(driver, &bundle);
 
         let views: RepublishedViews = driver.republish(&bundle);
+        let prose: BundleProseView = bundle_prose_view(&bundle);
         driver.request_redraw();
 
-        Some(views)
+        Some((views, prose))
     });
 
-    if let Some(views) = published {
-        view_controls.set(Some(views.view_controls));
-        legend.set(Some(views.legend));
-        selection_view.set(views.selection);
-        global_view.set(Some(views.global));
+    if let Some((views, prose)) = published {
+        signals.view_controls.set(Some(views.view_controls));
+        signals.legend.set(Some(views.legend));
+        signals.selection_view.set(views.selection);
+        signals.global_view.set(Some(views.global));
+        signals.bundle_prose.set(Some(prose));
     }
 }
 
@@ -1174,7 +1139,7 @@ fn handle_pointer_up(event: &PointerEvent) {
         with_driver(|driver| {
             let new_selection: Option<SelectionView> = driver.end_pointer(pointer_id, surface_point)?;
 
-            Some((driver.selection_view, new_selection))
+            Some((driver.signals.selection_view, new_selection))
         })
         .flatten();
 
@@ -1252,10 +1217,10 @@ fn publish_mutation(mutate: impl FnOnce(&mut Driver) -> Option<RepublishedViews>
         let views: RepublishedViews = mutate(driver)?;
 
         Some(PendingPublish {
-            controls_signal: driver.view_controls,
-            selection_signal: driver.selection_view,
-            global_signal: driver.global_view,
-            legend_signal: driver.legend,
+            controls_signal: driver.signals.view_controls,
+            selection_signal: driver.signals.selection_view,
+            global_signal: driver.signals.global_view,
+            legend_signal: driver.signals.legend,
             views,
         })
     })

@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
+
 use chrono::NaiveDate;
 use leptos::html::Canvas;
 use leptos::prelude::*;
 
-use shared::canonical::{DataSourceKind, DataStatus, StatisticKind};
+use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, StatisticDefinition, StatisticKind};
 
 use crate::i18n::*;
 
@@ -85,6 +87,14 @@ pub struct GlobalView {
     pub detail: RegionDetail,
 }
 
+/// The producer-owned text the active bundle carries. Published when a bundle is opened rather than with the
+/// view state, since it changes only when the bundle does.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BundleProseView {
+    pub source_attribution: BTreeMap<DataSourceKind, SourceAttribution>,
+    pub statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition>,
+}
+
 /// Published by the driver so the controls render without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewControls {
@@ -114,6 +124,7 @@ pub fn MapCanvas() -> impl IntoView {
             let global: RwSignal<Option<GlobalView>> = expect_context();
             let view_controls: RwSignal<Option<ViewControls>> = expect_context();
             let legend: RwSignal<Option<LegendView>> = expect_context();
+            let bundle_prose: RwSignal<Option<BundleProseView>> = expect_context();
             let live_load_failed: RwSignal<bool> = expect_context();
             super::driver::start(
                 canvas,
@@ -123,6 +134,7 @@ pub fn MapCanvas() -> impl IntoView {
                     global_view: global.write_only(),
                     view_controls: view_controls.write_only(),
                     legend: legend.write_only(),
+                    bundle_prose: bundle_prose.write_only(),
                     live_load_failed: live_load_failed.write_only(),
                 },
             );

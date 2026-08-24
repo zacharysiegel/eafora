@@ -2,10 +2,12 @@ use chrono::{Datelike, NaiveDate};
 use leptos::prelude::*;
 use leptos_i18n::I18nContext;
 
-use shared::canonical::{DataSourceKind, DataStatus, StatisticKind};
+use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, StatisticKind};
 
 use crate::i18n::*;
-use crate::map::canvas::{CellView, GlobalView, RegionDetail, RankView, SelectionView, SeriesPointView, SourceCellView};
+use crate::map::canvas::{
+    BundleProseView, CellView, GlobalView, RankView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
+};
 use crate::map::labels;
 
 /// Births per woman at which a generation replaces itself. Drawn as the line a fertility series is read
@@ -54,6 +56,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
     let selection: RwSignal<Option<SelectionView>> = expect_context();
     let global: RwSignal<Option<GlobalView>> = expect_context();
     let surface: RwSignal<DetailSurface> = expect_context();
+    let prose: RwSignal<Option<BundleProseView>> = expect_context();
     let i18n = use_i18n();
 
     move || {
@@ -61,7 +64,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
 
         let view: AnyView = match surface.get() {
             DetailSurface::Summary => summary_panel(i18n, figure, surface).into_any(),
-            DetailSurface::Expanded => detail_dock(i18n, figure, surface).into_any(),
+            DetailSurface::Expanded => detail_dock(i18n, figure, surface, prose.get()).into_any(),
         };
 
         Some(view)
@@ -157,6 +160,7 @@ fn detail_dock(
     i18n: I18nContext<Locale>,
     figure: ActiveFigure,
     surface: RwSignal<DetailSurface>,
+    prose: Option<BundleProseView>,
 ) -> impl IntoView {
     let ActiveFigure { label, statistic, period_start, cell, detail } = figure;
     let RegionDetail { series, sources, rank } = detail;
@@ -198,7 +202,8 @@ fn detail_dock(
 
             {context_rows(i18n, &series, period_start, rank)}
             {history_section(i18n, statistic, &series, period_start)}
-            {sources_section(i18n, &sources)}
+            {sources_section(i18n, &sources, prose.as_ref())}
+            {about_section(i18n, statistic, prose.as_ref())}
         </aside>
     }
 }
@@ -454,7 +459,7 @@ impl ChartScale {
 }
 
 /// Every source covering the active period, so a reader can see that sources disagree and by how much.
-fn sources_section(i18n: I18nContext<Locale>, sources: &[SourceCellView]) -> AnyView {
+fn sources_section(i18n: I18nContext<Locale>, sources: &[SourceCellView], prose: Option<&BundleProseView>) -> AnyView {
     if sources.is_empty() {
         return ().into_any();
     }
@@ -462,7 +467,12 @@ fn sources_section(i18n: I18nContext<Locale>, sources: &[SourceCellView]) -> Any
     let is_contested: bool = sources.len() > 1;
     let rows: Vec<AnyView> = sources
         .iter()
-        .map(|source_cell| source_row(i18n, source_cell, is_contested))
+        .map(|source_cell| {
+            let attribution: Option<&SourceAttribution> =
+                prose.and_then(|prose| prose.source_attribution.get(&source_cell.source));
+
+            source_row(i18n, source_cell, is_contested, attribution)
+        })
         .collect();
 
     view! {
@@ -473,7 +483,12 @@ fn sources_section(i18n: I18nContext<Locale>, sources: &[SourceCellView]) -> Any
 }
 
 /// `is_contested` gates the tag: with one source there is nothing for a priority to have decided.
-fn source_row(i18n: I18nContext<Locale>, source_cell: &SourceCellView, is_contested: bool) -> AnyView {
+fn source_row(
+    i18n: I18nContext<Locale>,
+    source_cell: &SourceCellView,
+    is_contested: bool,
+    attribution: Option<&SourceAttribution>,
+) -> AnyView {
     let status: Option<AnyView> = status_label(i18n, source_cell.data_status);
     let is_tagged: bool = source_cell.is_preferred && is_contested;
 
@@ -489,7 +504,39 @@ fn source_row(i18n: I18nContext<Locale>, source_cell: &SourceCellView, is_contes
             {status.map(|status| view! {
                 <span class="region-dock-source-status">{status}</span>
             })}
+            {attribution.map(|attribution| attribution_lines(i18n, attribution))}
         </div>
+    }
+    .into_any()
+}
+
+/// The citation is rendered verbatim because the source's licence asks for exactly that string.
+fn attribution_lines(i18n: I18nContext<Locale>, attribution: &SourceAttribution) -> AnyView {
+    view! {
+        <span class="region-dock-source-attribution">{attribution.attribution_text.clone()}</span>
+        <span class="region-dock-source-links">
+            <a href=attribution.license_url.clone() target="_blank" rel="noopener noreferrer">
+                {attribution.license_name.clone()}
+            </a>
+            " · "
+            <a href=attribution.homepage_url.clone() target="_blank" rel="noopener noreferrer">
+                {t!(i18n, detail.homepage)}
+            </a>
+        </span>
+    }
+    .into_any()
+}
+
+/// The statistic's own definition, last, for the reader who wants to know what the figure above measures.
+fn about_section(i18n: I18nContext<Locale>, statistic: StatisticKind, prose: Option<&BundleProseView>) -> AnyView {
+    let Some(definition) = prose.and_then(|prose| prose.statistic_definitions.get(&statistic))
+    else {
+        return ().into_any();
+    };
+
+    view! {
+        <h3 class="region-dock-heading">{t!(i18n, detail.about)}</h3>
+        <p class="region-dock-about">{definition.description.clone()}</p>
     }
     .into_any()
 }
