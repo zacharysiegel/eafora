@@ -183,8 +183,11 @@ fn detail_dock(
 
     view! {
         <aside class="panel region-dock" node_ref=dock>
+        /* A div that scrolls is not focusable on its own, so without this a keyboard has no way to reach the
+           content below the fold. Focused, the browser's own arrow, page, home and end handling does the rest. */
         <div
             class="region-dock-scroll"
+            tabindex="0"
             node_ref=thumb.scroller()
             on:scroll=move |_| scroll_thumb::refresh(thumb)
             on:pointerenter=move |_| scroll_thumb::refresh(thumb)

@@ -66,6 +66,7 @@ pub fn view(state: ScrollThumbState) -> impl IntoView {
                moves or resizes, so it is hoverable even while the bar is scaled to nothing. */
             <div
                 class="region-dock-thumb"
+                aria-hidden="true"
                 class:is-held=move || state.grab.get().is_some()
                 style=geometry.style()
                 on:pointerdown=move |event: PointerEvent| take_hold(state, geometry, event)

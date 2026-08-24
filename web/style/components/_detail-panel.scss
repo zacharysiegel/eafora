@@ -76,6 +76,11 @@
     &::-webkit-scrollbar {
         display: none;
     }
+
+    &:focus-visible {
+        outline: var(--border-active);
+        outline-offset: -1px;
+    }
 }
 
 /* The panel's right border, thickened over the visible span. Centred on the border so it grows both ways and

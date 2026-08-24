@@ -131,11 +131,15 @@ pre {
     height: 100%;
     padding: var(--space-md);
     overflow-y: auto;
-    scrollbar-width: none; // the thumb replaces it
-
-    &::-webkit-scrollbar { display: none; }
+    scrollbar-width: none; /* the thumb replaces it */
 }
 .panel-scroll::-webkit-scrollbar { display: none; }
+
+/* A scrolling div is not focusable on its own, so the demo carries the tabindex the write-up asks for. */
+.panel-scroll:focus-visible {
+    outline: var(--border-width-hairline) solid var(--color-accent-active);
+    outline-offset: -1px;
+}
 .panel-scroll h4 { margin: 0 0 var(--space-sm); font-size: var(--type-size-data); }
 .panel-scroll p { font-size: var(--type-size-data); margin: 0 0 var(--space-md); }
 
@@ -212,6 +216,7 @@ pre {
   <div class="demo-stage" id="stage-short"></div>
   <div class="demo-stage" id="stage-long"></div>
   <div class="demo-controls">
+    <p class="note" style="margin: 0 0 var(--space-xs)">Tab into a panel and use the arrow keys: the scrolling element carries <code>tabindex="0"</code>, without which a keyboard cannot reach the content below the fold.</p>
     <label><input type="checkbox" id="toggle-held"> hold both thumbs open</label>
     <label><input type="checkbox" id="toggle-hit-area"> show the pointer target</label>
     <label><input type="checkbox" id="toggle-slow"> slow the transitions to 1.2s</label>
@@ -331,7 +336,11 @@ function scrollTopFor(requestedTop, visibleLength, contentLength, thumbLength) {
 <p class="note">Recompute on <code>scroll</code>, and again when the pointer enters the panel. The second covers a viewport resize without a resize listener, because the thumb cannot be reached without entering the panel first.</p>
 
 <h2>What it costs</h2>
-<p>A browser scrollbar is free because the browser positions it. This is an element the client positions itself from a <code>scroll</code> listener, and it is not reported to assistive technology as a scrollbar. Native keyboard scrolling of the panel is unaffected, since the panel is still a real scrolling element; only the visible indicator is replaced. Firefox is not a special case here, because nothing depends on <code>::-webkit-scrollbar</code>; the native bar is hidden with <code>scrollbar-width: none</code>, which Firefox does support.</p>
+<p>A browser scrollbar is free because the browser positions it. This is an element the client positions itself from a <code>scroll</code> listener. Firefox is not a special case, because nothing depends on <code>::-webkit-scrollbar</code>: the native bar is hidden with <code>scrollbar-width: none</code>, which Firefox does support.</p>
+
+<h3>Accessibility</h3>
+<p>The thumb carries <code>aria-hidden="true"</code> and no role, which is correct rather than a shortcut. A native scrollbar is not exposed as an operable widget either, and a screen reader user does not drag scrollbars: they move through the content and the view follows. Giving it <code>role="scrollbar"</code> would advertise a control that duplicates what the reader already has, and would oblige it to carry <code>aria-controls</code>, <code>aria-orientation</code>, a value triple, and its own keyboard handling.</p>
+<p>The obligation that <em>does</em> attach to replacing a scrollbar is a different one, and it is easy to miss because it exists whether or not the scrollbar is custom: <strong>a <code>div</code> that scrolls is not focusable</strong>, so without <code>tabindex="0"</code> on the scrolling element a keyboard-only user cannot reach content below the fold at all. With it, the browser's own arrow, page, home and end handling works unchanged, and the focus ring is the design language's red hairline. That is the accessibility item worth checking when lifting this into another project.</p>
 
 <script>
 const TRACK_MARGIN = 6;
@@ -379,11 +388,11 @@ function paragraphs(count) {
 function buildPanel(stage, paragraphCount) {
     stage.innerHTML = `
         <div class="panel">
-            <div class="panel-scroll">
+            <div class="panel-scroll" tabindex="0">
                 <h4>History</h4>
                 ${paragraphs(paragraphCount)}
             </div>
-            <div class="panel-thumb"><div class="panel-thumb-bar"></div></div>
+            <div class="panel-thumb" aria-hidden="true"><div class="panel-thumb-bar"></div></div>
         </div>`;
 
     const panel = stage.querySelector('.panel');
