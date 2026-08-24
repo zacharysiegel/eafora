@@ -8,7 +8,7 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
 
 ## Sequence
 
-1. **Region detail view** — the modal the current panel only previews: a statistic's full time series for the selected region, and what each source says for a cell now that a shard carries every candidate. Ordered ahead of the iOS client at the owner's direction. **Pending**, needs a spec.
+1. **Region detail view** — a statistic's full time series for the selected region, and what each source says for a cell now that a shard carries every candidate. Ordered ahead of the iOS client at the owner's direction. **In progress** (`region-detail-dock`): the surface is a full-height left dock reached by an expand control on the summary panel, covering the legend while it is open.
 2. **`004-ios-client`** — the iOS surface: a UniFFI boundary, a SwiftUI shell, and the Metal surface. Spec, plan, and tasks in `specs/004-ios-client/`. **In progress** (`004-ios-client`), planning only so far.
    - Delivered in phases per `plan.md` §Phasing for PRs. Phases 0.1, 0.2, A, and B carry task breakdowns; C and D are scoped sketches that need one before being picked up.
    - Phase 0.1 is blocked on approving `uniffi`, the feature's one new Rust dependency. Phase D is blocked on an Apple Developer Program enrollment, which gates device installs, TestFlight, and Universal Links but nothing on the simulator.
