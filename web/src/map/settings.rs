@@ -2,13 +2,21 @@ use leptos::prelude::*;
 
 use crate::i18n::*;
 
+/// Whether the settings panel is up. Held in context rather than by the component, since Escape closes the
+/// topmost open surface and has to see this one to know it is on top.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsSurface {
+    Closed,
+    Open,
+}
+
 /// The bottom-right settings button, replaced in place by a settings panel while open. Closes on the ✕,
 /// or a click outside the panel. The panel's toggles read and persist through the platform settings store
 /// and dispatch the change to the map driver.
 #[component]
 pub fn SettingsModal() -> impl IntoView {
     let i18n = use_i18n();
-    let open: RwSignal<bool> = RwSignal::new(false);
+    let surface: RwSignal<SettingsSurface> = expect_context();
     // Seed the default; a first client render must match the server's, so the persisted value is loaded
     // in an effect after mount rather than read during render.
     let regions_expand: RwSignal<bool> = RwSignal::new(true);
@@ -25,13 +33,13 @@ pub fn SettingsModal() -> impl IntoView {
     };
 
     view! {
-        <div class="settings" class:is-open=move || open.get()>
-            <div class="settings-scrim" on:click=move |_| open.set(false)></div>
+        <div class="settings" class:is-open=move || surface.get() == SettingsSurface::Open>
+            <div class="settings-scrim" on:click=move |_| surface.set(SettingsSurface::Closed)></div>
 
             <button
                 class="settings-button"
                 aria-label=move || t_string!(i18n, settings.open)
-                on:click=move |_| open.set(true)
+                on:click=move |_| surface.set(SettingsSurface::Open)
             >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="3"></circle>
@@ -45,7 +53,7 @@ pub fn SettingsModal() -> impl IntoView {
                     <button
                         class="settings-close"
                         aria-label=move || t_string!(i18n, settings.close)
-                        on:click=move |_| open.set(false)
+                        on:click=move |_| surface.set(SettingsSurface::Closed)
                     >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
                             <path d="M5 5l14 14M19 5L5 19"></path>

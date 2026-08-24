@@ -27,7 +27,7 @@ const PLOT_BOTTOM: f64 = 133.4;
    right. Equal widths, so the plot stays centred in the panel. Both labels are anchored to the plot's edge and
    grow away from it, so the gap holds whatever the label says and a long one runs out of the chart rather than
    over the series. */
-const AXIS_GUTTER_WIDTH: f64 = 25.0;
+const AXIS_GUTTER_WIDTH: f64 = 27.0;
 const AXIS_LABEL_GAP: f64 = 6.0;
 const PLOT_LEFT: f64 = AXIS_GUTTER_WIDTH;
 const PLOT_RIGHT: f64 = CHART_WIDTH - AXIS_GUTTER_WIDTH;
@@ -48,12 +48,6 @@ const FLAT_SERIES_HALF_EXTENT: f64 = 0.5;
    together. */
 const CHANGE_INTERVAL_IN_YEARS_SHORT: i32 = 1;
 const CHANGE_INTERVAL_IN_YEARS_LONG: i32 = 10;
-
-// Read only by the window listener, which the ssr build does not compile.
-#[cfg_attr(not(feature = "hydrate"), allow(dead_code))]
-const ESCAPE_KEY: &str = "Escape";
-#[cfg_attr(not(feature = "hydrate"), allow(dead_code))]
-const KEYDOWN_EVENT: &str = "keydown";
 
 /// Which detail surface is up. Independent of the selection, so collapsing leaves the region selected and
 /// outlined.
@@ -183,7 +177,6 @@ fn detail_dock(
 
     Effect::new(move |_| report_covered_surface(dock));
     on_cleanup(|| dispatch_left_surface_inset(0.0));
-    consume_escape_while_open(surface);
 
     view! {
         <aside class="panel region-dock" node_ref=dock>
@@ -603,54 +596,6 @@ fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
         DataSourceKind::HumanFertilityDatabase => t!(i18n, source.hfd).into_any(),
     }
 }
-
-/* Escape closes the dock, and it is taken in the capture phase at the window so that while the dock is up
-   nothing downstream sees the key. */
-#[cfg(feature = "hydrate")]
-fn consume_escape_while_open(surface: RwSignal<DetailSurface>) {
-    use wasm_bindgen::closure::Closure;
-    use wasm_bindgen::JsCast;
-
-    let handler: Closure<dyn FnMut(web_sys::KeyboardEvent)> = Closure::new(move |event: web_sys::KeyboardEvent| {
-        if event.key() != ESCAPE_KEY {
-            return;
-        }
-
-        event.prevent_default();
-        event.stop_propagation();
-        surface.set(DetailSurface::Summary);
-    });
-
-    let listen_options: web_sys::AddEventListenerOptions = web_sys::AddEventListenerOptions::new();
-    listen_options.set_capture(true);
-
-    let _ = window().add_event_listener_with_callback_and_add_event_listener_options(
-        KEYDOWN_EVENT,
-        handler.as_ref().unchecked_ref(),
-        &listen_options,
-    );
-
-    /* A JS closure is neither Send nor Sync and the cleanup must be both, so the store holds it: the handle is
-       what the cleanup captures, and the closure stays alive as long as it is registered. */
-    let registered: StoredValue<Closure<dyn FnMut(web_sys::KeyboardEvent)>, LocalStorage> =
-        StoredValue::new_local(handler);
-
-    on_cleanup(move || {
-        let remove_options: web_sys::EventListenerOptions = web_sys::EventListenerOptions::new();
-        remove_options.set_capture(true);
-
-        registered.with_value(|handler| {
-            let _ = window().remove_event_listener_with_callback_and_event_listener_options(
-                KEYDOWN_EVENT,
-                handler.as_ref().unchecked_ref(),
-                &remove_options,
-            );
-        });
-    });
-}
-
-#[cfg(not(feature = "hydrate"))] // the ssr build has no window to listen on
-fn consume_escape_while_open(_surface: RwSignal<DetailSurface>) {}
 
 /// The dock covers the map's left edge, and how much depends on its stylesheet, so it measures itself rather
 /// than the camera assuming a width.

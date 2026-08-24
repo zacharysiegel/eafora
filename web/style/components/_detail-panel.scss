@@ -263,11 +263,10 @@
     font-size: var(--type-size-data);
 }
 
-/* The chart's viewBox is close to 1:1 with its rendered width, so these sizes are in effect pixels. Text takes
-   fill rather than color in SVG. */
+// Text takes fill rather than color in SVG.
 .region-dock-chart-unit,
 .region-dock-chart-reference-value {
-    font-size: 9px;
+    font-size: var(--type-size-bound);
     fill: var(--color-ink-muted);
 }
 

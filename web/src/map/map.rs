@@ -4,8 +4,9 @@ use crate::i18n::*;
 use crate::map::canvas::{BundleProseView, GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
 use crate::map::controls::Controls;
 use crate::map::detail_panel::{DetailSurface, RegionDetailPanel};
+use crate::map::escape::{self, DismissableSurfaces};
 use crate::map::legend::Legend;
-use crate::map::settings::SettingsModal;
+use crate::map::settings::{SettingsModal, SettingsSurface};
 
 #[component]
 pub fn MapView() -> impl IntoView {
@@ -29,6 +30,14 @@ pub fn MapView() -> impl IntoView {
 
     let bundle_prose: RwSignal<Option<BundleProseView>> = RwSignal::new(None);
     provide_context(bundle_prose);
+
+    let settings_surface: RwSignal<SettingsSurface> = RwSignal::new(SettingsSurface::Closed);
+    provide_context(settings_surface);
+
+    escape::dismiss_on_escape(DismissableSurfaces {
+        settings: settings_surface,
+        detail: detail_surface,
+    });
 
     let i18n = use_i18n();
 
