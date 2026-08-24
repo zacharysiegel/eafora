@@ -71,7 +71,7 @@ eafora/
 │       │   ├── legend.rs       # choropleth legend
 │       │   └── controls.rs     # statistic picker, year scrubber, source panel
 │       └── region/             # SSG'd region detail page (region = any level of the region hierarchy: country, subregion, supranational, etc.)
-│           ├── region.rs       # RegionDetail component; rendered for /region/<region.code>
+│           ├── region.rs       # RegionDetail component; rendered for /region/<region.code>/...
 │           └── history.rs      # history chart (per design.md mobile frame 03)
 ```
 
@@ -116,7 +116,7 @@ lib-profile-release  = "wasm-release"
 
 The `style-file` entry points at one entrypoint; that file `@use`s the partials under `style/` (see §CSS architecture). The `assets-dir` is verbatim-copied to `target/site/`, which is what gets uploaded to Cloudflare Workers Assets.
 
-The SSR build produces one binary with two jobs. Run with no argument it is the dev server (`cargo leptos watch`). Run as `web prerender` it renders `/` once and writes `target/site/index.html`, which is the document the static deploy serves for the map route; production runs no server. It is also what will write the static HTML for `/region/<region.code>` and `/about` when those land (see §Routing and SSG). The client-side build is the browser-side WASM that takes over on `/` (the map view) and on any region page if v2+ ever adds client-side interactivity to those pages.
+The SSR build produces one binary with two jobs. Run with no argument it is the dev server (`cargo leptos watch`). Run as `web prerender` it renders `/` once and writes `target/site/index.html`, which is the document the static deploy serves for the map route; production runs no server. It is also what will write the static HTML for the prerendered `/region/...` forms and `/about` when those land (see §Routing and SSG). The client-side build is the browser-side WASM that takes over on `/` (the map view) and on any region page if v2+ ever adds client-side interactivity to those pages.
 
 Ordering is load-bearing: `cargo leptos build` empties the site root before it writes, so the shell has to be exported after the build, never before. `./scripts/build/build-site.sh` runs the two in that order.
 
@@ -205,10 +205,13 @@ Three route categories:
   - Mode: client-side only.
   - The map view is wgpu-on-canvas. There is nothing useful to render server-side; the canvas is empty until WebGPU initializes. SEO concerns are moot for a map.
 
-- `/region/<region.code>`
-  - Mode: SSG.
+- `/region/<region.code>[/<statistic.code>[/<year>]]`
+  - Mode: SSG for the two shortest forms; the year-bearing form is client-rendered.
   - Region detail pages are content-shaped (region name, primary statistic, history chart, sources list). They benefit from search-engine indexing.
-  - `region.code` is the existing slug from the `region` table (`usa`, `south_america`, etc.).
+  - `region.code` is the existing slug from the `region` table (`usa`, `south_america`, etc.). `statistic.code` is the statistic slug (`tfr`, `ccf`). `<year>` is a four-digit year, matching what the scrubber displays, which the client resolves to the period whose `period_start` falls in it; both statistics are annual, and a cohort year addresses a cohort exactly as a calendar year addresses a period.
+  - All three segments are load-bearing because the surface's content depends on all three: the same region reads differently per statistic and per period, so a URL naming only the region cannot reproduce what the sender was looking at.
+  - **The region identifies the page; the statistic and the year are view state on it.** An absent statistic or year resolves to the same default the map view opens on (`StatisticKind::Tfr`, and the newest period whose coverage clears `MINIMUM_DEFAULT_COVERAGE_PROPORTION`), so `/region/deu` is a valid, permanent URL rather than an error. That asymmetry decides the failure modes too: an unknown `region.code` is a 404, since the page has no subject, while an unrecognized statistic code or a year the loaded bundle does not cover falls back to the default instead of failing. A reader who follows a link into a period a later publish has dropped still gets the region.
+  - Prerendering is bounded by that same asymmetry. `/region/<code>` and `/region/<code>/<statistic>` come to 651 pages at today's 217 regions and two statistics, which is worth prerendering for indexing. Adding the year multiplies by every period the bundle covers, 135 of them today, for 58,590 pages, and each would pin a default that the next publish moves. So the year-bearing form is reachable and shareable but not prerendered.
 
 - `/about`
   - Mode: SSG.
@@ -240,7 +243,7 @@ Per `docs/design/README.md`, the only v1 animation is the zoom-to-country camera
 
 ### SSG for region detail and About pages
 
-Leptos's `static_routes` API (stable as of Leptos 0.8 / cargo-leptos 0.3) drives the static-HTML generation natively. Each SSG route declares `SsrMode::Static(StaticRoute::new()...)` in the routes tree; the SSR-build binary's `main` calls `static_routes.generate(&leptos_options).await` once at build time, which writes the rendered HTML into `target/site/region/<region.code>/index.html` and `target/site/about/index.html`. The directory is then uploaded to Cloudflare Workers Assets.
+Leptos's `static_routes` API (stable as of Leptos 0.8 / cargo-leptos 0.3) drives the static-HTML generation natively. Each SSG route declares `SsrMode::Static(StaticRoute::new()...)` in the routes tree; the SSR-build binary's `main` calls `static_routes.generate(&leptos_options).await` once at build time, which writes the rendered HTML into `target/site/region/<region.code>/index.html`, `target/site/region/<region.code>/<statistic.code>/index.html`, and `target/site/about/index.html`. The directory is then uploaded to Cloudflare Workers Assets.
 
 Sketch in `web/src/app.rs`:
 
@@ -260,6 +263,14 @@ Sketch in `web/src/app.rs`:
                 })
         )
     />
+    <Route
+        path=path!("/region/:code/:statistic")
+        view=RegionDetail
+        ssr=SsrMode::Static(
+            StaticRoute::new().prerender_params(region_and_statistic_params)
+        )
+    />
+    <Route path=path!("/region/:code/:statistic/:year") view=RegionDetail />
     <Route
         path=path!("/about")
         view=AboutView

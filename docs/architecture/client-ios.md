@@ -753,7 +753,7 @@ The owner submits via a personal Apple Developer Program account — the same en
 
 ### Universal Links
 
-Universal Links let `https://eafora.org/region/<region.code>` deep-link into the iOS app when installed. Setup has three pieces.
+Universal Links let `https://eafora.org/region/<region.code>[/<statistic.code>[/<year>]]` deep-link into the iOS app when installed. Setup has three pieces.
 
 #### 1. Xcode capability
 
@@ -857,7 +857,9 @@ The split: rendering is iOS-scoped (consumes iOS source of truth), deploying is 
 
 #### 5. Routing in the app
 
-The app's `EaforaApp.swift` handles incoming URLs via `.onOpenURL { ... }` and routes by setting the appropriate sheet binding: a `/region/<region.code>` URL sets `selectedRegion = .some(RegionCode("..."))` (presents the region-detail sheet); an `/about` URL sets `settingsPresented = true` (presents the Settings sheet, where About is the first section visible without scrolling). SwiftUI presents the corresponding sheet on the next render.
+The app's `EaforaApp.swift` handles incoming URLs via `.onOpenURL { ... }` and routes by setting the appropriate sheet binding: a `/region/...` URL sets `selectedRegion = .some(RegionCode("..."))` (presents the region-detail sheet); an `/about` URL sets `settingsPresented = true` (presents the Settings sheet, where About is the first section visible without scrolling). SwiftUI presents the corresponding sheet on the next render.
+
+A region URL carries up to two more segments, the statistic code and the year, per `client-web.md` §Routing and SSG. Both are optional and both are view state rather than identity, so an absent, unrecognized, or uncovered value resolves to the default the map opens on instead of failing; only the region code can fail the link. The AASA `paths` entry stays `/region/*`, whose `*` is a substring wildcard and so already spans the longer forms.
 
 ### Domain and email
 
