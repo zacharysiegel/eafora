@@ -7,7 +7,7 @@ use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, Statistic
 
 use crate::i18n::*;
 use crate::map::canvas::{
-    BundleProseView, CellView, GlobalView, RankView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
+    BundleProseView, CellView, GlobalView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
 };
 use crate::map::labels;
 use crate::map::scroll_thumb::{self, ScrollThumbState};
@@ -68,22 +68,26 @@ pub fn RegionDetailPanel() -> impl IntoView {
     let prose: RwSignal<Option<BundleProseView>> = expect_context();
     let i18n = use_i18n();
 
-    move || {
-        let figure: ActiveFigure = active_figure(i18n, selection.get(), global.get())?;
+    let figure: Memo<Option<ActiveFigure>> = Memo::new(move |_| active_figure(i18n, selection.get(), global.get()));
 
-        let view: AnyView = match surface.get() {
-            DetailSurface::Summary => summary_panel(i18n, figure, surface).into_any(),
-            DetailSurface::Expanded => detail_dock(i18n, figure, surface, prose.get()).into_any(),
-        };
-
-        Some(view)
+    /* Each surface is built once, when it becomes the one showing, and its values then update through the
+       closures below. Reading the figure here instead would rebuild the whole panel on every republish, which
+       means rebuilding the chart's elements on every scrub tick. */
+    view! {
+        <Show when=move || surface.get() == DetailSurface::Summary && figure.with(Option::is_some)>
+            {summary_panel(i18n, figure, surface)}
+        </Show>
+        <Show when=move || surface.get() == DetailSurface::Expanded && figure.with(Option::is_some)>
+            {detail_dock(i18n, figure, surface, prose)}
+        </Show>
     }
 }
 
 /// The figure both surfaces render, whichever of the two the driver published. The world is the figure
 /// whenever no region is selected.
+#[derive(Clone, PartialEq)]
 struct ActiveFigure {
-    label: AnyView,
+    label: String,
     statistic: StatisticKind,
     period_start: NaiveDate,
     cell: CellView,
@@ -99,7 +103,7 @@ fn active_figure(
         let SelectionView { region_code: _, name_en, statistic, period_start, cell, detail } = selection;
 
         return Some(ActiveFigure {
-            label: name_en.into_any(),
+            label: name_en,
             statistic,
             period_start,
             cell,
@@ -110,7 +114,7 @@ fn active_figure(
     let GlobalView { statistic, period_start, cell, detail } = global?;
 
     Some(ActiveFigure {
-        label: t!(i18n, detail.world).into_any(),
+        label: t_string!(i18n, detail.world).to_string(),
         statistic,
         period_start,
         cell,
@@ -118,16 +122,32 @@ fn active_figure(
     })
 }
 
+/// Reads one string off the active figure. Each of these subscribes only itself, so a republish rewrites the
+/// text that changed and leaves the elements holding it alone.
+fn figure_text(
+    figure: Memo<Option<ActiveFigure>>,
+    read: impl Fn(&ActiveFigure) -> String + Copy + Send + Sync + 'static,
+) -> impl Fn() -> String + Copy + Send + Sync {
+    move || figure.with(|figure| figure.as_ref().map(read).unwrap_or_default())
+}
+
+/// The statistic and the period, which always change together.
+fn figure_heading(figure: Memo<Option<ActiveFigure>>, i18n: I18nContext<Locale>) -> impl Fn() -> String + Copy + Send + Sync {
+    figure_text(figure, move |figure| {
+        format!(
+            "{} · {}",
+            labels::statistic_label_string(i18n, figure.statistic),
+            figure.period_start.year(),
+        )
+    })
+}
+
 /// The small top-left figure: the value and its source, and the control that expands to the dock.
 fn summary_panel(
     i18n: I18nContext<Locale>,
-    figure: ActiveFigure,
+    figure: Memo<Option<ActiveFigure>>,
     surface: RwSignal<DetailSurface>,
 ) -> impl IntoView {
-    let ActiveFigure { label, statistic, period_start, cell, detail: _ } = figure;
-    let CellView { value, source, data_status } = cell;
-    let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
-
     view! {
         <aside class="panel detail-panel">
             <button
@@ -138,43 +158,54 @@ fn summary_panel(
             >
                 {expand_icon()}
             </button>
-            <p class="detail-panel-region">{label}</p>
-            <p class="detail-panel-statistic">
-                {labels::statistic_label(i18n, statistic)}
-                " · "
-                {period_start.year().to_string()}
-            </p>
-            {match value {
-                Some(value) => view! {
-                    <p class="detail-panel-value numeric">{format_value(value)}</p>
-                    <p class="detail-panel-unit">{labels::statistic_unit(i18n, statistic)}</p>
-                    {source.map(|source| view! {
-                        <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
-                    })}
-                    {status.map(|status| view! {
-                        <p class="detail-panel-status">{status}</p>
-                    })}
-                }
-                .into_any(),
-                None => view! {
-                    <p class="detail-panel-no-data">{t!(i18n, detail.no_data)}</p>
-                }
-                .into_any(),
-            }}
+            <p class="detail-panel-region">{figure_text(figure, |figure| figure.label.clone())}</p>
+            <p class="detail-panel-statistic">{figure_heading(figure, i18n)}</p>
+            {move || figure.with(|figure| {
+                let Some(figure) = figure.as_ref()
+                else {
+                    return ().into_any();
+                };
+
+                summary_figure(i18n, figure)
+            })}
         </aside>
     }
 }
 
+/// The value block alone is rebuilt when a region loses or gains a reading, since it swaps a figure and its
+/// source for a sentence. Keeping it in its own closure holds that rebuild away from the panel around it.
+fn summary_figure(i18n: I18nContext<Locale>, figure: &ActiveFigure) -> AnyView {
+    let CellView { value, source, data_status } = figure.cell;
+    let statistic: StatisticKind = figure.statistic;
+    let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
+
+    let Some(value) = value
+    else {
+        return view! {
+            <p class="detail-panel-no-data">{t!(i18n, detail.no_data)}</p>
+        }
+        .into_any();
+    };
+
+    view! {
+        <p class="detail-panel-value numeric">{format_value(value)}</p>
+        <p class="detail-panel-unit">{labels::statistic_unit(i18n, statistic)}</p>
+        {source.map(|source| view! {
+            <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
+        })}
+        {status.map(|status| view! {
+            <p class="detail-panel-status">{status}</p>
+        })}
+    }
+    .into_any()
+}
+
 fn detail_dock(
     i18n: I18nContext<Locale>,
-    figure: ActiveFigure,
+    figure: Memo<Option<ActiveFigure>>,
     surface: RwSignal<DetailSurface>,
-    prose: Option<BundleProseView>,
+    prose: RwSignal<Option<BundleProseView>>,
 ) -> impl IntoView {
-    let ActiveFigure { label, statistic, period_start, cell, detail } = figure;
-    let RegionDetail { series, sources, rank } = detail;
-    let CellView { value, source: _, data_status } = cell;
-    let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
     let thumb: ScrollThumbState = scroll_thumb::create_state();
     let dock: NodeRef<Aside> = NodeRef::new();
     let collapse: NodeRef<Button> = NodeRef::new();
@@ -182,6 +213,11 @@ fn detail_dock(
     Effect::new(move |_| report_covered_surface(dock));
     Effect::new(move |_| take_focus(collapse));
     on_cleanup(|| dispatch_left_surface_inset(0.0));
+
+    let value_text = figure_text(figure, move |figure| match figure.cell.value {
+        Some(value) => format_value(value),
+        None => t_string!(i18n, detail.not_applicable).to_string(),
+    });
 
     view! {
         <aside class="panel region-dock" node_ref=dock>
@@ -192,7 +228,7 @@ fn detail_dock(
             on:pointerenter=move |_| scroll_thumb::refresh(thumb)
         >
             <header class="region-dock-header">
-                <h2 class="region-dock-region">{label}</h2>
+                <h2 class="region-dock-region">{figure_text(figure, |figure| figure.label.clone())}</h2>
                 <button
                     class="button button-icon region-dock-collapse"
                     node_ref=collapse
@@ -204,76 +240,88 @@ fn detail_dock(
                 </button>
             </header>
 
-            <p class="region-dock-statistic">
-                {labels::statistic_label(i18n, statistic)}
-                " · "
-                {period_start.year().to_string()}
-            </p>
+            <p class="region-dock-statistic">{figure_heading(figure, i18n)}</p>
 
             /* The dock keeps the value's block whether or not there is a value, so scrubbing across a gap in
                coverage does not move everything below it. */
-            <p class="region-dock-value numeric">
-                {match value {
-                    Some(value) => format_value(value),
-                    None => t_string!(i18n, detail.not_applicable).to_string(),
-                }}
+            <p class="region-dock-value numeric">{value_text}</p>
+            <p class="region-dock-unit">
+                {figure_text(figure, move |figure| labels::statistic_unit_string(i18n, figure.statistic))}
             </p>
-            <p class="region-dock-unit">{labels::statistic_unit(i18n, statistic)}</p>
-            {status.map(|status| view! {
-                <p class="region-dock-status">{status}</p>
-            })}
+            <p class="region-dock-status">
+                {figure_text(figure, move |figure| {
+                    figure.cell.data_status.and_then(|status| status_text(i18n, status)).unwrap_or_default()
+                })}
+            </p>
 
-            {context_rows(i18n, &series, period_start, rank)}
-            {history_section(i18n, statistic, &series, period_start)}
-            {sources_section(i18n, &sources, prose.as_ref())}
-            {about_section(i18n, statistic, prose.as_ref())}
+            {context_rows(i18n, figure)}
+            {history_section(i18n, figure)}
+            {move || figure.with(|figure| {
+                let Some(figure) = figure.as_ref()
+                else {
+                    return ().into_any();
+                };
+
+                prose.with(|prose| sources_section(i18n, &figure.detail.sources, prose.as_ref()))
+            })}
+            {move || figure.with(|figure| {
+                let Some(figure) = figure.as_ref()
+                else {
+                    return ().into_any();
+                };
+
+                prose.with(|prose| about_section(i18n, figure.statistic, prose.as_ref()))
+            })}
         </div>
         {scroll_thumb::view(thumb)}
         </aside>
     }
 }
 
-/// The figures that put the primary value in proportion. A row whose comparison the shard does not cover
-/// still renders, so the block keeps its shape as the reader scrubs.
-fn context_rows(
-    i18n: I18nContext<Locale>,
-    series: &[SeriesPointView],
-    active_period_start: NaiveDate,
-    rank: Option<RankView>,
-) -> AnyView {
-    let not_applicable: String = t_string!(i18n, detail.not_applicable).to_string();
-
-    let rank_value: String = match rank {
-        Some(rank) => format!("{} / {}", rank.position, rank.of),
-        None => not_applicable.clone(),
-    };
-    let short_change: Option<f64> = change_over_years(series, active_period_start, CHANGE_INTERVAL_IN_YEARS_SHORT);
-    let long_change: Option<f64> = change_over_years(series, active_period_start, CHANGE_INTERVAL_IN_YEARS_LONG);
-
+/// The figures that put the primary value in proportion. A row whose comparison the shard does not cover still
+/// renders, so the block keeps its shape as the reader scrubs.
+fn context_rows(i18n: I18nContext<Locale>, figure: Memo<Option<ActiveFigure>>) -> impl IntoView {
     view! {
         <dl class="region-dock-context">
-            {context_row(t!(i18n, detail.rank).into_any(), rank_value)}
+            {context_row(t!(i18n, detail.rank).into_any(), rank_text(i18n, figure))}
             {context_row(
                 t!(i18n, detail.change_over_1_period).into_any(),
-                format_change_or(short_change, &not_applicable),
+                change_text(i18n, figure, CHANGE_INTERVAL_IN_YEARS_SHORT),
             )}
             {context_row(
                 t!(i18n, detail.change_over_10_periods).into_any(),
-                format_change_or(long_change, &not_applicable),
+                change_text(i18n, figure, CHANGE_INTERVAL_IN_YEARS_LONG),
             )}
         </dl>
     }
-    .into_any()
 }
 
-fn context_row(label: AnyView, value: String) -> AnyView {
+fn context_row(label: AnyView, value: impl Fn() -> String + Send + Sync + 'static) -> impl IntoView {
     view! {
         <div class="region-dock-context-row">
             <dt>{label}</dt>
             <dd class="numeric">{value}</dd>
         </div>
     }
-    .into_any()
+}
+
+fn rank_text(i18n: I18nContext<Locale>, figure: Memo<Option<ActiveFigure>>) -> impl Fn() -> String + Copy + Send + Sync {
+    figure_text(figure, move |figure| match figure.detail.rank {
+        Some(rank) => format!("{} / {}", rank.position, rank.of),
+        None => t_string!(i18n, detail.not_applicable).to_string(),
+    })
+}
+
+fn change_text(
+    i18n: I18nContext<Locale>,
+    figure: Memo<Option<ActiveFigure>>,
+    years: i32,
+) -> impl Fn() -> String + Copy + Send + Sync {
+    figure_text(figure, move |figure| {
+        let change: Option<f64> = change_over_years(&figure.detail.series, figure.period_start, years);
+
+        format_change_or(change, t_string!(i18n, detail.not_applicable))
+    })
 }
 
 /// The difference between the active period's value and the one `years` earlier. `None` unless the shard
@@ -294,31 +342,81 @@ fn value_at(series: &[SeriesPointView], period_start: NaiveDate) -> Option<f64> 
         .map(|point| point.value)
 }
 
-/* Deliberately not erased to `AnyView`. Erasure puts an element's attributes in a `Vec<AnyAttribute>`, whose
-   rebuild removes entries it no longer finds, and an SVG geometry attribute removed rather than updated is what
-   Safari reports as an invalid empty value. A typed view can only ever set them. */
-fn history_section(
-    i18n: I18nContext<Locale>,
-    statistic: StatisticKind,
-    series: &[SeriesPointView],
-    active_period_start: NaiveDate,
-) -> impl IntoView + use<> {
+/// Everything the chart draws, as the strings its attributes take. One memo, so a republish that leaves the
+/// drawing unchanged does not touch the DOM at all, and one that changes it rewrites only the values.
+#[derive(Clone, PartialEq)]
+struct ChartGeometry {
+    is_plottable: bool,
+    polyline_points: String,
+    marker_x: String,
+    marker_y: String,
+    marker_radius: String,
+    reference_y: String,
+    reference_label: String,
+    unit_label: String,
+    first_year: String,
+    last_year: String,
+}
 
-    let scale: ChartScale = ChartScale::from_series(series, reference_value(statistic));
-    let is_plottable: bool = scale.is_plottable();
+fn chart_geometry(i18n: I18nContext<Locale>, figure: Option<&ActiveFigure>) -> ChartGeometry {
+    let Some(figure) = figure
+    else {
+        return ChartGeometry {
+            is_plottable: false,
+            polyline_points: format!("{PLOT_LEFT:.1},{PLOT_BOTTOM:.1}"),
+            marker_x: chart_unit(PLOT_LEFT),
+            marker_y: chart_unit(PLOT_BOTTOM),
+            marker_radius: chart_unit(0.0),
+            reference_y: chart_unit(PLOT_BOTTOM),
+            reference_label: String::new(),
+            unit_label: String::new(),
+            first_year: String::new(),
+            last_year: String::new(),
+        };
+    };
+
+    let series: &[SeriesPointView] = &figure.detail.series;
+    let reference: Option<f64> = reference_value(figure.statistic);
+    let scale: ChartScale = ChartScale::from_series(series, reference);
+    let marker: ActiveMarker = active_marker(series, figure.period_start, &scale);
+
+    ChartGeometry {
+        is_plottable: scale.is_plottable(),
+        polyline_points: scale.polyline_points(series),
+        marker_x: chart_unit(marker.point.x),
+        marker_y: chart_unit(marker.point.y),
+        marker_radius: chart_unit(marker.radius),
+        reference_y: chart_unit(reference.map_or(PLOT_BOTTOM, |value| scale.y(value))),
+        reference_label: reference.map(|value| format!("{value:.1}")).unwrap_or_default(),
+        unit_label: labels::statistic_unit_string(i18n, figure.statistic),
+        first_year: scale.first_period_start.year().to_string(),
+        last_year: scale.last_period_start.year().to_string(),
+    }
+}
+
+fn history_section(i18n: I18nContext<Locale>, figure: Memo<Option<ActiveFigure>>) -> impl IntoView {
+    let geometry: Memo<ChartGeometry> = Memo::new(move |_| figure.with(|figure| chart_geometry(i18n, figure.as_ref())));
 
     /* One shape whatever the series holds: a chart with nothing to draw hides, and the line explaining why
        shows. Swapping the two would tear the chart's elements down. */
     view! {
         <h3 class="region-dock-heading">{t!(i18n, detail.history)}</h3>
-        <div class="region-dock-chart-figure" class:is-empty=!is_plottable>
-            {history_chart(i18n, statistic, series, active_period_start, &scale)}
+        <div
+            class="region-dock-chart-figure"
+            class:is-empty=move || !geometry.with(|geometry| geometry.is_plottable)
+        >
+            {history_chart(geometry)}
             <p class="region-dock-chart-bounds">
-                <span class="numeric">{scale.first_period_start.year().to_string()}</span>
-                <span class="numeric">{scale.last_period_start.year().to_string()}</span>
+                <span class="numeric">{move || geometry.with(|geometry| geometry.first_year.clone())}</span>
+                <span class="numeric">{move || geometry.with(|geometry| geometry.last_year.clone())}</span>
             </p>
         </div>
-        <p class="region-dock-no-history" class:is-empty=is_plottable>{t!(i18n, detail.no_history)}</p>
+        <p
+            class="region-dock-no-history"
+            class:is-empty=move || geometry.with(|geometry| geometry.is_plottable)
+        >
+            {t!(i18n, detail.no_history)}
+        </p>
     }
 }
 
@@ -331,16 +429,9 @@ fn reference_value(statistic: StatisticKind) -> Option<f64> {
     }
 }
 
-fn history_chart(
-    i18n: I18nContext<Locale>,
-    statistic: StatisticKind,
-    series: &[SeriesPointView],
-    active_period_start: NaiveDate,
-    scale: &ChartScale,
-) -> impl IntoView + use<> {
-    let polyline_points: String = scale.polyline_points(series);
-    let marker: ActiveMarker = active_marker(series, active_period_start, scale);
-    let reference: Option<(f64, f64)> = reference_value(statistic).map(|value| (value, scale.y(value)));
+/// Built once. Every attribute below is bound to a closure, so the elements outlive every republish and only
+/// the values they hold are rewritten.
+fn history_chart(geometry: Memo<ChartGeometry>) -> impl IntoView {
     let unit_label_x: f64 = PLOT_LEFT - UNIT_LABEL_GAP;
     let unit_label_y: f64 = (PLOT_TOP + PLOT_BOTTOM) / 2.0;
 
@@ -357,25 +448,23 @@ fn history_chart(
                 text-anchor="middle"
                 transform=format!("rotate(-90, {unit_label_x}, {unit_label_y})")
             >
-                {labels::statistic_unit_string(i18n, statistic)}
+                {move || geometry.with(|geometry| geometry.unit_label.clone())}
             </text>
-            {reference.map(|(value, reference_y)| view! {
-                <line
-                    class="region-dock-chart-reference"
-                    x1=chart_unit(PLOT_LEFT)
-                    x2=chart_unit(PLOT_RIGHT)
-                    y1=chart_unit(reference_y)
-                    y2=chart_unit(reference_y)
-                />
-                <text
-                    class="region-dock-chart-reference-value numeric"
-                    x=chart_unit(PLOT_RIGHT + REFERENCE_LABEL_GAP)
-                    y=chart_unit(reference_y)
-                    dominant-baseline="middle"
-                >
-                    {format!("{value:.1}")}
-                </text>
-            })}
+            <line
+                class="region-dock-chart-reference"
+                x1=chart_unit(PLOT_LEFT)
+                x2=chart_unit(PLOT_RIGHT)
+                y1=move || geometry.with(|geometry| geometry.reference_y.clone())
+                y2=move || geometry.with(|geometry| geometry.reference_y.clone())
+            />
+            <text
+                class="region-dock-chart-reference-value numeric"
+                x=chart_unit(PLOT_RIGHT + REFERENCE_LABEL_GAP)
+                y=move || geometry.with(|geometry| geometry.reference_y.clone())
+                dominant-baseline="middle"
+            >
+                {move || geometry.with(|geometry| geometry.reference_label.clone())}
+            </text>
             <line
                 class="region-dock-chart-baseline"
                 x1=chart_unit(PLOT_LEFT)
@@ -383,17 +472,19 @@ fn history_chart(
                 y1=chart_unit(PLOT_BOTTOM)
                 y2=chart_unit(PLOT_BOTTOM)
             />
-            <polyline class="region-dock-chart-line" points=polyline_points />
+            <polyline
+                class="region-dock-chart-line"
+                points=move || geometry.with(|geometry| geometry.polyline_points.clone())
+            />
             <circle
                 class="region-dock-chart-marker"
-                cx=chart_unit(marker.point.x)
-                cy=chart_unit(marker.point.y)
-                r=chart_unit(marker.radius)
+                cx=move || geometry.with(|geometry| geometry.marker_x.clone())
+                cy=move || geometry.with(|geometry| geometry.marker_y.clone())
+                r=move || geometry.with(|geometry| geometry.marker_radius.clone())
             />
         </svg>
     }
 }
-
 
 /// An SVG attribute takes a string, and a numeric one handed to the view macro is written through a path that
 /// Safari reports an error for on every rebuild. One decimal is finer than the chart can draw.
@@ -616,6 +707,18 @@ fn format_change_or(change: Option<f64>, absent: &str) -> String {
     match change {
         Some(change) => format!("{change:+.2}"),
         None => absent.to_string(),
+    }
+}
+
+/// `None` for a confirmed figure, which qualifies nothing about the value above it.
+fn status_text(i18n: I18nContext<Locale>, data_status: DataStatus) -> Option<String> {
+    match data_status {
+        DataStatus::Final => None,
+        DataStatus::Provisional => Some(t_string!(i18n, detail.status.provisional).to_string()),
+        DataStatus::Preliminary => Some(t_string!(i18n, detail.status.preliminary).to_string()),
+        DataStatus::Projection => Some(t_string!(i18n, detail.status.projection).to_string()),
+        DataStatus::Imputed => Some(t_string!(i18n, detail.status.imputed).to_string()),
+        DataStatus::Interpolated => Some(t_string!(i18n, detail.status.interpolated).to_string()),
     }
 }
 

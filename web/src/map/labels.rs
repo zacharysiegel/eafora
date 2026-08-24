@@ -37,6 +37,15 @@ pub fn statistic_unit(i18n: I18nContext<Locale>, statistic: StatisticKind) -> An
     }
 }
 
+/// A reactive text node takes a string rather than a view, so the node updates in place instead of the element
+/// around it being rebuilt.
+pub fn statistic_label_string(i18n: I18nContext<Locale>, statistic: StatisticKind) -> String {
+    match statistic {
+        StatisticKind::Tfr => t_string!(i18n, statistic.tfr).to_string(),
+        StatisticKind::Ccf => t_string!(i18n, statistic.ccf).to_string(),
+    }
+}
+
 /// An SVG text node takes a string rather than a view.
 pub fn statistic_unit_string(i18n: I18nContext<Locale>, statistic: StatisticKind) -> String {
     match statistic {
