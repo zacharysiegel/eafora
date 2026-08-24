@@ -37,6 +37,14 @@ pub fn statistic_unit(i18n: I18nContext<Locale>, statistic: StatisticKind) -> An
     }
 }
 
+/// An SVG text node takes a string rather than a view.
+pub fn statistic_unit_string(i18n: I18nContext<Locale>, statistic: StatisticKind) -> String {
+    match statistic {
+        StatisticKind::Tfr => t_string!(i18n, statistic.tfr_unit).to_string(),
+        StatisticKind::Ccf => t_string!(i18n, statistic.ccf_unit).to_string(),
+    }
+}
+
 /// The caption for the color transform's inflection on the legend (e.g. "replacement" for TFR at 2.1), or
 /// `None` for a statistic with no meaningful threshold at its inflection.
 pub fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) -> Option<AnyView> {

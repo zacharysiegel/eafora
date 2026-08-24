@@ -20,10 +20,16 @@ const REPLACEMENT_RATE: f64 = 2.1;
 /// proportions of the drawing rather than pixels on screen.
 const CHART_WIDTH: f64 = 320.0;
 const CHART_HEIGHT: f64 = 142.6;
-const PLOT_LEFT: f64 = 3.0;
-const PLOT_RIGHT: f64 = 317.0;
 const PLOT_TOP: f64 = 8.0;
 const PLOT_BOTTOM: f64 = 133.4;
+
+/* A gutter either side of the plot: the unit's rotated title on the left, the reference line's value on the
+   right. Equal widths, so the plot stays centred in the panel. The right label is anchored to the chart's edge
+   rather than to the plot's, so a wider value encroaches on the gutter instead of being clipped away. */
+const AXIS_GUTTER_WIDTH: f64 = 25.0;
+const AXIS_LABEL_GAP: f64 = 4.0;
+const PLOT_LEFT: f64 = AXIS_GUTTER_WIDTH;
+const PLOT_RIGHT: f64 = CHART_WIDTH - AXIS_GUTTER_WIDTH;
 
 /// Half the active period's marker height, so a marker on the first or last period sits inside the drawing
 /// rather than half-clipped by its edge.
@@ -303,10 +309,10 @@ fn history_section(
 
     view! {
         {heading}
-        {history_chart(statistic, series, active_period_start, &scale)}
+        {history_chart(i18n, statistic, series, active_period_start, &scale)}
         <p class="region-dock-chart-bounds">
             <span class="numeric">{scale.first_period_start.year().to_string()}</span>
-            {reference_caption(i18n, statistic).map(|caption| view! {
+            {labels::reference_caption_string(i18n, statistic).map(|caption| view! {
                 <span class="region-dock-chart-reference-key">{caption}</span>
             })}
             <span class="numeric">{scale.last_period_start.year().to_string()}</span>
@@ -324,16 +330,8 @@ fn reference_value(statistic: StatisticKind) -> Option<f64> {
     }
 }
 
-/// The dashed line is named below the chart rather than beside itself, since a caption inside the plot lands on
-/// the series it is annotating.
-fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) -> Option<String> {
-    let value: f64 = reference_value(statistic)?;
-    let caption: String = labels::reference_caption_string(i18n, statistic)?;
-
-    Some(format!("{value:.1} {caption}"))
-}
-
 fn history_chart(
+    i18n: I18nContext<Locale>,
     statistic: StatisticKind,
     series: &[SeriesPointView],
     active_period_start: NaiveDate,
@@ -342,7 +340,9 @@ fn history_chart(
     let polyline_points: String = scale.polyline_points(series);
     let active_marker: Option<ChartPoint> = value_at(series, active_period_start)
         .map(|value| scale.point(active_period_start, value));
-    let reference_y: Option<f64> = reference_value(statistic).map(|value| scale.y(value));
+    let reference: Option<(f64, f64)> = reference_value(statistic).map(|value| (value, scale.y(value)));
+    let unit_label_x: f64 = PLOT_LEFT - AXIS_LABEL_GAP;
+    let unit_label_y: f64 = (PLOT_TOP + PLOT_BOTTOM) / 2.0;
 
     view! {
         <svg
@@ -350,31 +350,60 @@ fn history_chart(
             viewBox=format!("0 0 {CHART_WIDTH} {CHART_HEIGHT}")
             aria-hidden="true"
         >
-            {reference_y.map(|reference_y| view! {
+            <text
+                class="region-dock-chart-unit"
+                x=chart_unit(unit_label_x)
+                y=chart_unit(unit_label_y)
+                text-anchor="middle"
+                transform=format!("rotate(-90, {unit_label_x}, {unit_label_y})")
+            >
+                {labels::statistic_unit_string(i18n, statistic)}
+            </text>
+            {reference.map(|(value, reference_y)| view! {
                 <line
                     class="region-dock-chart-reference"
-                    x1=PLOT_LEFT
-                    x2=PLOT_RIGHT
-                    y1=reference_y
-                    y2=reference_y
+                    x1=chart_unit(PLOT_LEFT)
+                    x2=chart_unit(PLOT_RIGHT)
+                    y1=chart_unit(reference_y)
+                    y2=chart_unit(reference_y)
                 />
+                <text
+                    class="region-dock-chart-reference-value numeric"
+                    x=chart_unit(CHART_WIDTH - AXIS_LABEL_GAP)
+                    y=chart_unit(reference_y)
+                    text-anchor="end"
+                    dominant-baseline="middle"
+                >
+                    {format!("{value:.1}")}
+                </text>
             })}
             <line
                 class="region-dock-chart-baseline"
-                x1=PLOT_LEFT
-                x2=PLOT_RIGHT
-                y1=PLOT_BOTTOM
-                y2=PLOT_BOTTOM
+                x1=chart_unit(PLOT_LEFT)
+                x2=chart_unit(PLOT_RIGHT)
+                y1=chart_unit(PLOT_BOTTOM)
+                y2=chart_unit(PLOT_BOTTOM)
             />
             <polyline class="region-dock-chart-line" points=polyline_points />
             {active_marker.map(|marker| view! {
-                <circle class="region-dock-chart-marker" cx=marker.x cy=marker.y r=MARKER_RADIUS />
+                <circle
+                    class="region-dock-chart-marker"
+                    cx=chart_unit(marker.x)
+                    cy=chart_unit(marker.y)
+                    r=chart_unit(MARKER_RADIUS)
+                />
             })}
         </svg>
     }
     .into_any()
 }
 
+
+/// An SVG attribute takes a string, and a numeric one handed to the view macro is written through a path that
+/// Safari reports an error for on every rebuild. One decimal is finer than the chart can draw.
+fn chart_unit(value: f64) -> String {
+    format!("{value:.1}")
+}
 
 struct ChartPoint {
     x: f64,
