@@ -339,8 +339,7 @@ fn history_chart(
     scale: &ChartScale,
 ) -> AnyView {
     let polyline_points: String = scale.polyline_points(series);
-    let active_marker: Option<ChartPoint> = value_at(series, active_period_start)
-        .map(|value| scale.point(active_period_start, value));
+    let marker: ActiveMarker = active_marker(series, active_period_start, scale);
     let reference: Option<(f64, f64)> = reference_value(statistic).map(|value| (value, scale.y(value)));
     let unit_label_x: f64 = PLOT_LEFT - UNIT_LABEL_GAP;
     let unit_label_y: f64 = (PLOT_TOP + PLOT_BOTTOM) / 2.0;
@@ -385,14 +384,12 @@ fn history_chart(
                 y2=chart_unit(PLOT_BOTTOM)
             />
             <polyline class="region-dock-chart-line" points=polyline_points />
-            {active_marker.map(|marker| view! {
-                <circle
-                    class="region-dock-chart-marker"
-                    cx=chart_unit(marker.x)
-                    cy=chart_unit(marker.y)
-                    r=chart_unit(MARKER_RADIUS)
-                />
-            })}
+            <circle
+                class="region-dock-chart-marker"
+                cx=chart_unit(marker.point.x)
+                cy=chart_unit(marker.point.y)
+                r=chart_unit(marker.radius)
+            />
         </svg>
     }
     .into_any()
@@ -408,6 +405,30 @@ fn chart_unit(value: f64) -> String {
 struct ChartPoint {
     x: f64,
     y: f64,
+}
+
+struct ActiveMarker {
+    point: ChartPoint,
+    radius: f64,
+}
+
+/* A radius of zero draws nothing, which is how the marker is hidden. Rendering the element unconditionally
+   rather than only when the active period has a value keeps it mounted: Safari logs an invalid empty value for
+   every attribute Leptos removes when it tears an SVG element down, and scrubbing to a period the region does
+   not cover would tear this one down on each pass. */
+fn active_marker(series: &[SeriesPointView], active_period_start: NaiveDate, scale: &ChartScale) -> ActiveMarker {
+    let Some(value) = value_at(series, active_period_start)
+    else {
+        return ActiveMarker {
+            point: ChartPoint { x: PLOT_LEFT, y: PLOT_BOTTOM },
+            radius: 0.0,
+        };
+    };
+
+    ActiveMarker {
+        point: scale.point(active_period_start, value),
+        radius: MARKER_RADIUS,
+    }
 }
 
 /// Maps a series onto the chart's coordinate space. A period is placed by its distance in time, not by its
