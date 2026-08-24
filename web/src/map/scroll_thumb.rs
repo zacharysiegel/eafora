@@ -62,6 +62,8 @@ pub fn create_state() -> ScrollThumbState {
 pub fn view(state: ScrollThumbState) -> impl IntoView {
     view! {
         {move || state.geometry.get().map(|geometry| view! {
+            /* The bar inside is what animates; this holds the position and the pointer target, and never
+               moves or resizes, so it is hoverable even while the bar is scaled to nothing. */
             <div
                 class="region-dock-thumb"
                 class:is-held=move || state.grab.get().is_some()
@@ -71,7 +73,9 @@ pub fn view(state: ScrollThumbState) -> impl IntoView {
                 on:pointerup=move |_| state.grab.set(None)
                 on:pointercancel=move |_| state.grab.set(None)
                 on:wheel=move |event: WheelEvent| scroll_by_wheel(state, event)
-            ></div>
+            >
+                <div class="region-dock-thumb-bar"></div>
+            </div>
         })}
     }
 }
