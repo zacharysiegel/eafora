@@ -4,7 +4,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::artifact::schema_version;
-use crate::canonical::canonical_model::{impl_code_serde, DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
+use crate::canonical::canonical_model::{
+    impl_code_serde, DataSourceKind, LicenseShardClass, SourceAttribution, SourceRevision, StatisticDefinition,
+    StatisticKind,
+};
 use crate::error::AppError;
 
 pub const MANIFEST_FILENAME: &str = "manifest.json";
@@ -65,6 +68,13 @@ pub struct Manifest {
     pub geometry: ManifestEntry,
     pub statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>>,
     pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
+    /* Absent from every manifest published before these fields existed, and the schema version deliberately
+       does not move for them: a bundle already in a client's cache keeps parsing and gains the prose on its
+       next publish. */
+    #[serde(default)]
+    pub source_attribution: BTreeMap<DataSourceKind, SourceAttribution>,
+    #[serde(default)]
+    pub statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition>,
 }
 
 impl Manifest {
@@ -152,6 +162,39 @@ mod tests {
         let reparsed: Manifest = parse_manifest(produced.as_bytes()).unwrap();
         let reproduced: String = serde_json::to_string_pretty(&reparsed).unwrap();
         assert_eq!(produced, reproduced);
+    }
+
+    /// Every manifest published before the prose fields existed omits them, and the schema version did not
+    /// move, so a cached bundle has to keep parsing.
+    #[test]
+    fn parse_manifest_accepts_a_manifest_without_the_prose_fields() {
+        let manifest: Manifest = parse_manifest(valid_manifest_json().as_bytes()).unwrap();
+
+        assert!(manifest.source_attribution.is_empty());
+        assert!(manifest.statistic_definitions.is_empty());
+    }
+
+    #[test]
+    fn parse_manifest_reads_the_prose_fields_when_present() {
+        let json: String = valid_manifest_json().replace(
+            r#""source_revisions""#,
+            r#""source_attribution": { "wb_wdi": {
+                "attribution_text": "World Bank, World Development Indicators (CC BY 4.0)",
+                "license_name": "CC BY 4.0",
+                "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                "homepage_url": "https://databank.worldbank.org/source/world-development-indicators"
+            } },
+            "statistic_definitions": { "tfr": { "description": "Average number of children." } },
+            "source_revisions""#,
+        );
+
+        let manifest: Manifest = parse_manifest(json.as_bytes()).unwrap();
+
+        assert_eq!(manifest.source_attribution[&DataSourceKind::WorldBankWDI].license_name, "CC BY 4.0");
+        assert_eq!(
+            manifest.statistic_definitions[&StatisticKind::Tfr].description,
+            "Average number of children.",
+        );
     }
 
     #[test]

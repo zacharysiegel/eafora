@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use shared::artifact::bundle::StatisticShardKey;
 use shared::canonical::canonical_model::{
-    DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, NaiveDatePeriod, SourceRevision,
-    StatisticKind,
+    DataSourceKind, DataStatus, LicenseClass, LicenseShardClass, NaiveDatePeriod, SourceAttribution, SourceRevision,
+    StatisticDefinition, StatisticKind,
 };
 use shared::filesystem::{FileReference, Hashed};
 
@@ -115,6 +115,23 @@ impl PartitionedValue {
             license_shard_class: self.license_shard_class,
         }
     }
+}
+
+/// What one pass over a bundle's data sources yields: the revision each one is at, and the attribution a
+/// consumer must display for it.
+#[derive(Debug, Clone)]
+pub struct SourceFacts {
+    pub revisions: BTreeMap<DataSourceKind, SourceRevision>,
+    pub attribution: BTreeMap<DataSourceKind, SourceAttribution>,
+}
+
+/// Everything a manifest says about the data rather than about the files: where each source stood when the
+/// bundle was built, and the text a consumer must show for each source and statistic.
+#[derive(Debug, Clone)]
+pub struct BundleProvenance {
+    pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
+    pub source_attribution: BTreeMap<DataSourceKind, SourceAttribution>,
+    pub statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition>,
 }
 
 #[derive(Debug, Clone)]

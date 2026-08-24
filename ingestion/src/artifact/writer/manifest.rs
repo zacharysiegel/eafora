@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 
 use shared::artifact::manifest::{self, BundleVariant, Manifest, ManifestEntry};
-use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
+use shared::canonical::canonical_model::{LicenseShardClass, StatisticKind};
 use shared::filesystem::{FileReference, Hashed};
 
-use crate::artifact::artifact_model::StatisticShard;
+use crate::artifact::artifact_model::{BundleProvenance, StatisticShard};
 use crate::error::AppError;
 
 pub fn write_manifest(
@@ -19,11 +19,11 @@ pub fn write_manifest(
     geometry: &Hashed<FileReference>,
     version_label: &str,
     variant: BundleVariant,
-    data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
+    provenance: &BundleProvenance,
     artifact_dir: &Path,
 ) -> Result<Hashed<FileReference>, AppError> {
     let artifact_created: DateTime<Utc> = Utc::now();
-    let json: String = build_manifest_json(shards, geometry, version_label, variant, &artifact_created, data_source_revisions)?;
+    let json: String = build_manifest_json(shards, geometry, version_label, variant, &artifact_created, provenance)?;
 
     let path: PathBuf = artifact_dir.join(manifest::MANIFEST_FILENAME);
     fs::write(&path, &json)?;
@@ -39,7 +39,7 @@ fn build_manifest_json(
     version_label: &str,
     variant: BundleVariant,
     artifact_created: &DateTime<Utc>,
-    data_source_revisions: &BTreeMap<DataSourceKind, SourceRevision>,
+    provenance: &BundleProvenance,
 ) -> Result<String, AppError> {
     let geometry_entry: ManifestEntry = ManifestEntry {
         relative_path: relative_path(manifest::SUBDIR_GEOMETRY, geometry)?,
@@ -67,7 +67,9 @@ fn build_manifest_json(
         artifact_created: *artifact_created,
         geometry: geometry_entry,
         statistics,
-        source_revisions: data_source_revisions.clone(),
+        source_revisions: provenance.source_revisions.clone(),
+        source_attribution: provenance.source_attribution.clone(),
+        statistic_definitions: provenance.statistic_definitions.clone(),
     };
 
     let json: String = serde_json::to_string_pretty(&manifest)?;
@@ -90,6 +92,7 @@ mod tests {
     use super::*;
 
     use shared::artifact::bundle::StatisticShardKey;
+    use shared::canonical::canonical_model::{DataSourceKind, SourceAttribution, SourceRevision, StatisticDefinition};
 
     fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {
         let shards: Vec<StatisticShard<Hashed<FileReference>>> = vec![
@@ -143,16 +146,50 @@ mod tests {
         (shards, geometry)
     }
 
+    fn empty_provenance() -> BundleProvenance {
+        BundleProvenance {
+            source_revisions: BTreeMap::new(),
+            source_attribution: BTreeMap::new(),
+            statistic_definitions: BTreeMap::new(),
+        }
+    }
+
+    fn populated_provenance() -> BundleProvenance {
+        BundleProvenance {
+            source_revisions: BTreeMap::from([(
+                DataSourceKind::WorldBankWDI,
+                SourceRevision {
+                    revision: "2026-05-15".to_string(),
+                    published: Some("2026-05-15T00:00:00Z".parse().unwrap()),
+                    fetched: "2026-05-15T00:00:00Z".parse().unwrap(),
+                },
+            )]),
+            source_attribution: BTreeMap::from([(
+                DataSourceKind::WorldBankWDI,
+                SourceAttribution {
+                    attribution_text: "World Bank, World Development Indicators (CC BY 4.0)".to_string(),
+                    license_name: "CC BY 4.0".to_string(),
+                    license_url: "https://creativecommons.org/licenses/by/4.0/".to_string(),
+                    homepage_url: "https://databank.worldbank.org/source/world-development-indicators".to_string(),
+                },
+            )]),
+            statistic_definitions: BTreeMap::from([(
+                StatisticKind::Tfr,
+                StatisticDefinition { description: "Average number of children.".to_string() },
+            )]),
+        }
+    }
+
     /// The consumer ranks a cached bundle by this field, so a variant that never reaches the JSON would
     /// silently let a downsampled bundle be treated as complete.
     #[test]
     fn build_manifest_json_records_the_bundle_variant() {
         let (shards, geometry) = make_pre_manifest_artifacts();
-        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+        let provenance: BundleProvenance = empty_provenance();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let complete: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
-        let downsampled: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Downsampled, &artifact_created, &data_source_revisions).unwrap();
+        let complete: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance).unwrap();
+        let downsampled: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Downsampled, &artifact_created, &provenance).unwrap();
 
         assert!(complete.contains("\"variant\": \"complete\""));
         assert!(downsampled.contains("\"variant\": \"downsampled\""));
@@ -161,10 +198,10 @@ mod tests {
     #[test]
     fn build_manifest_json_includes_schema_version() {
         let (shards, geometry) = make_pre_manifest_artifacts();
-        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+        let provenance: BundleProvenance = empty_provenance();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance).unwrap();
 
         assert!(json.contains("\"manifest_schema_version\": 1"));
     }
@@ -172,25 +209,41 @@ mod tests {
     #[test]
     fn build_manifest_json_orders_statistics_by_statistic_kind() {
         let (shards, geometry) = make_pre_manifest_artifacts();
-        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
-            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2024-12-12".to_string(), published: Some("2024-12-12T00:00:00Z".parse().unwrap()), fetched: "2024-12-31T00:00:00Z".parse().unwrap() }),
-        ]);
+        let provenance: BundleProvenance = empty_provenance();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance).unwrap();
 
         let tfr_position: usize = json.find("\"tfr\"").expect("tfr present");
         let ccf_position: usize = json.find("\"ccf\"").expect("ccf present");
         assert!(tfr_position < ccf_position);
     }
 
+    /// A source's attribution is a licence obligation, so it has to survive the write rather than be dropped
+    /// as a field the writer forgot.
+    #[test]
+    fn build_manifest_json_writes_the_attribution_and_the_definitions() {
+        let (shards, geometry) = make_pre_manifest_artifacts();
+        let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
+        let provenance: BundleProvenance = populated_provenance();
+
+        let json: String =
+            build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance)
+                .unwrap();
+
+        let manifest: Manifest = manifest::parse_manifest(json.as_bytes()).unwrap();
+
+        assert_eq!(manifest.source_attribution[&DataSourceKind::WorldBankWDI].license_name, "CC BY 4.0");
+        assert_eq!(manifest.statistic_definitions[&StatisticKind::Tfr].description, "Average number of children.");
+    }
+
     #[test]
     fn build_manifest_json_orders_license_classes_by_shard_class() {
         let (shards, geometry) = make_pre_manifest_artifacts();
-        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+        let provenance: BundleProvenance = empty_provenance();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance).unwrap();
 
         let base_position: usize = json.find("\"base\"").expect("base present");
         let noncommercial_position: usize = json.find("\"noncommercial\"").expect("noncommercial present");
@@ -200,10 +253,10 @@ mod tests {
     #[test]
     fn build_manifest_json_emits_relative_paths_under_geometry_and_data() {
         let (shards, geometry) = make_pre_manifest_artifacts();
-        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+        let provenance: BundleProvenance = empty_provenance();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
+        let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance).unwrap();
 
         assert!(json.contains(&format!("\"relative_path\": \"{}/world-50m-ab12cd34.fgb\"", manifest::SUBDIR_GEOMETRY)));
         assert!(json.contains(&format!("\"relative_path\": \"{}/tfr-base-ef561234.sqlite\"", manifest::SUBDIR_DATA)));
@@ -213,13 +266,11 @@ mod tests {
     #[test]
     fn build_manifest_json_is_deterministic_byte_for_byte() {
         let (shards, geometry) = make_pre_manifest_artifacts();
-        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::from([
-            (DataSourceKind::WorldBankWDI, SourceRevision { revision: "2026-05-15".to_string(), published: Some("2026-05-15T00:00:00Z".parse().unwrap()), fetched: "2026-05-15T00:00:00Z".parse().unwrap() }),
-        ]);
+        let provenance: BundleProvenance = populated_provenance();
         let artifact_created: DateTime<Utc> = "2026-05-18T03:00:00Z".parse().unwrap();
 
-        let json_one: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
-        let json_two: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &data_source_revisions).unwrap();
+        let json_one: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance).unwrap();
+        let json_two: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance).unwrap();
 
         assert_eq!(json_one, json_two);
     }
@@ -228,10 +279,10 @@ mod tests {
     fn write_manifest_writes_file_and_returns_consistent_sha256() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, geometry) = make_pre_manifest_artifacts();
-        let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+        let provenance: BundleProvenance = empty_provenance();
 
         let manifest: Hashed<FileReference> =
-            write_manifest(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &data_source_revisions, temp_dir.path()).unwrap();
+            write_manifest(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &provenance, temp_dir.path()).unwrap();
 
         assert!(manifest.path.exists());
         let bytes_on_disk: Vec<u8> = fs::read(&manifest.path).unwrap();

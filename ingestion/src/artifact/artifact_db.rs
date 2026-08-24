@@ -4,9 +4,12 @@ use sqlx::{PgConnection, PgExecutor};
 
 use crate::artifact::artifact_model::{
     ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryMetadataProjection,
+    SourceFacts,
 };
 use crate::canonical::canonical_db;
-use shared::canonical::canonical_model::{DataSource, DataSourceKind, SourceRevision, StatisticKind};
+use shared::canonical::canonical_model::{
+    DataSource, DataSourceKind, SourceAttribution, SourceRevision, Statistic, StatisticDefinition, StatisticKind,
+};
 use crate::error::AppError;
 use crate::ingest::ingest_db;
 
@@ -93,11 +96,15 @@ pub async fn read_all_statistic_kinds<'e>(
     Ok(statistic_kinds)
 }
 
-pub async fn read_latest_revisions(
+/// Both maps come from one pass over the sources, since the attribution and the publication that dates it are
+/// read from the same `data_source` row.
+pub async fn read_source_facts(
     connection: &mut PgConnection,
     data_source_kinds: &BTreeSet<DataSourceKind>,
-) -> Result<BTreeMap<DataSourceKind, SourceRevision>, AppError> {
+) -> Result<SourceFacts, AppError> {
     let mut revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
+    let mut attribution: BTreeMap<DataSourceKind, SourceAttribution> = BTreeMap::new();
+
     for kind in data_source_kinds {
         let data_source: DataSource = canonical_db::find_data_source_by_kind(&mut *connection, *kind)
             .await?
@@ -105,10 +112,34 @@ pub async fn read_latest_revisions(
         let revision: SourceRevision = ingest_db::read_latest_publication(&mut *connection, data_source.id)
             .await?
             .ok_or_else(|| AppError::from(format!("no publication recorded for {:?}", kind)))?;
+
         revisions.insert(*kind, revision);
+        attribution.insert(*kind, SourceAttribution {
+            attribution_text: data_source.attribution_text,
+            license_name: data_source.license_name,
+            license_url: data_source.license_url,
+            homepage_url: data_source.homepage_url,
+        });
     }
 
-    Ok(revisions)
+    Ok(SourceFacts { revisions, attribution })
+}
+
+pub async fn read_statistic_definitions(
+    connection: &mut PgConnection,
+    statistic_kinds: &BTreeSet<StatisticKind>,
+) -> Result<BTreeMap<StatisticKind, StatisticDefinition>, AppError> {
+    let mut definitions: BTreeMap<StatisticKind, StatisticDefinition> = BTreeMap::new();
+
+    for kind in statistic_kinds {
+        let statistic: Statistic = canonical_db::find_statistic_by_code(&mut *connection, kind.code())
+            .await?
+            .ok_or_else(|| AppError::from(format!("statistic {:?} missing from canonical store", kind)))?;
+
+        definitions.insert(*kind, StatisticDefinition { description: statistic.description });
+    }
+
+    Ok(definitions)
 }
 
 pub async fn read_artifact_version_exists<'e>(

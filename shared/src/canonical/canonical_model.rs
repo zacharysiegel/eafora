@@ -273,6 +273,24 @@ pub struct SourceRevision {
     pub fetched: DateTime<Utc>,
 }
 
+/// What a consumer must show to redistribute a source's data. Both seeded sources carry an `attribution`
+/// licence class, so displaying `attribution_text` is a licence obligation rather than a courtesy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceAttribution {
+    /// Rendered verbatim; the canonical store calls it the exact display string for UI citations.
+    pub attribution_text: String,
+    pub license_name: String,
+    pub license_url: String,
+    pub homepage_url: String,
+}
+
+/// Prose defining what a statistic measures, curated in the canonical store so it travels with the data it
+/// describes rather than with the client that draws it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatisticDefinition {
+    pub description: String,
+}
+
 /// Half-open `[start, end)` interval matching the canonical store's
 /// `period_start` / `period_end` columns. Always paired so the two
 /// `NaiveDate` arguments can't get inverted at construction sites.

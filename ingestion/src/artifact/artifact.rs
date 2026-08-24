@@ -7,11 +7,11 @@ use chrono::NaiveDate;
 use sqlx::PgConnection;
 
 use crate::artifact::artifact_model::{
-    Artifacts, BuildReport, CandidateValue, CoupledBuildReport, PartitionedValue,
+    Artifacts, BuildReport, BundleProvenance, CandidateValue, CoupledBuildReport, PartitionedValue, SourceFacts,
 };
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
 use crate::artifact::{artifact_db, hashing, StatisticShard};
-use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, SourceRevision, StatisticKind};
+use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, StatisticDefinition, StatisticKind};
 use crate::error::AppError;
 use shared::artifact::manifest::{self, BundleVariant};
 use shared::filesystem::{self, FileReference, Hashed};
@@ -89,15 +89,26 @@ async fn build_bundle_variant(
     let (shards, data_sources): (Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>) =
         create_statistic_shards(connection, variant_dir, statistic_kinds, variant).await?;
 
+    let shard_statistic_kinds: BTreeSet<StatisticKind> =
+        shards.iter().map(|statistic_shard| statistic_shard.key.statistic_kind).collect();
+
     let geometry: Hashed<FileReference> = match shared_geometry {
         Some(existing) => copy_geometry_into(existing, variant_dir)?,
         None => create_geometry(connection, variant_dir, options).await?,
     };
 
-    let data_source_revisions: BTreeMap<DataSourceKind, SourceRevision> =
-        artifact_db::read_latest_revisions(&mut *connection, &data_sources).await?;
+    let source_facts: SourceFacts = artifact_db::read_source_facts(&mut *connection, &data_sources).await?;
+    let statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition> =
+        artifact_db::read_statistic_definitions(&mut *connection, &shard_statistic_kinds).await?;
+
+    let provenance: BundleProvenance = BundleProvenance {
+        source_revisions: source_facts.revisions,
+        source_attribution: source_facts.attribution,
+        statistic_definitions,
+    };
+
     let manifest: Hashed<FileReference> =
-        manifest_writer::write_manifest(&shards, &geometry, version_label, variant, &data_source_revisions, variant_dir)?;
+        manifest_writer::write_manifest(&shards, &geometry, version_label, variant, &provenance, variant_dir)?;
 
     Ok(BuildReport {
         artifact_dir: variant_dir.to_path_buf(),
@@ -107,7 +118,7 @@ async fn build_bundle_variant(
             geometry,
             manifest,
         },
-        data_source_revisions,
+        data_source_revisions: provenance.source_revisions,
     })
 }
 
