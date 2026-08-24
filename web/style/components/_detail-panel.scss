@@ -52,17 +52,14 @@
     margin-top: var(--space-xs);
 }
 
-/* The full-height left dock the selection opens, flush to the viewport's top, bottom, and left, so its
-   right edge is the only boundary it draws. */
+/* The expanded detail surface. It takes the same viewport inset as every other floating panel, so its top
+   edge meets the statistic picker's and it reads as one of them rather than as window chrome. */
 .region-dock {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
+    top: var(--space-chrome-inset);
+    bottom: var(--space-chrome-inset);
+    left: var(--space-chrome-inset);
     width: 25.3rem; // approx. 405px
-    border-top: 0;
-    border-bottom: 0;
-    border-left: 0;
     padding: var(--space-chrome-inset);
     overflow-y: auto;
 }
@@ -104,7 +101,6 @@
 }
 
 .region-dock-status,
-.region-dock-no-data,
 .region-dock-no-history {
     font-size: var(--type-size-bound);
     color: var(--color-ink-muted);

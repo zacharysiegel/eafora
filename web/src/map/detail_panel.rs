@@ -183,20 +183,18 @@ fn detail_dock(
                 {period_start.year().to_string()}
             </p>
 
-            {match value {
-                Some(value) => view! {
-                    <p class="region-dock-value numeric">{format_value(value)}</p>
-                    <p class="region-dock-unit">{labels::statistic_unit(i18n, statistic)}</p>
-                    {status.map(|status| view! {
-                        <p class="region-dock-status">{status}</p>
-                    })}
-                }
-                .into_any(),
-                None => view! {
-                    <p class="region-dock-no-data">{t!(i18n, detail.no_data)}</p>
-                }
-                .into_any(),
-            }}
+            /* The dock keeps the value's block whether or not there is a value, so scrubbing across a gap in
+               coverage does not move everything below it. */
+            <p class="region-dock-value numeric">
+                {match value {
+                    Some(value) => format_value(value),
+                    None => t_string!(i18n, detail.not_applicable).to_string(),
+                }}
+            </p>
+            <p class="region-dock-unit">{labels::statistic_unit(i18n, statistic)}</p>
+            {status.map(|status| view! {
+                <p class="region-dock-status">{status}</p>
+            })}
 
             {context_rows(i18n, &series, period_start, rank)}
             {history_section(i18n, statistic, &series, period_start)}
