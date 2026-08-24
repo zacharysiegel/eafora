@@ -296,25 +296,23 @@ fn value_at(series: &[SeriesPointView], period_start: NaiveDate) -> Option<f64> 
         .map(|point| point.value)
 }
 
+/* Deliberately not erased to `AnyView`. Erasure puts an element's attributes in a `Vec<AnyAttribute>`, whose
+   rebuild removes entries it no longer finds, and an SVG geometry attribute removed rather than updated is what
+   Safari reports as an invalid empty value. A typed view can only ever set them. */
 fn history_section(
     i18n: I18nContext<Locale>,
     statistic: StatisticKind,
     series: &[SeriesPointView],
     active_period_start: NaiveDate,
-) -> AnyView {
-    let heading: AnyView = view! {
-        <h3 class="region-dock-heading">{t!(i18n, detail.history)}</h3>
-    }
-    .into_any();
+) -> impl IntoView + use<> {
 
     let scale: ChartScale = ChartScale::from_series(series, reference_value(statistic));
     let is_plottable: bool = scale.is_plottable();
 
     /* One shape whatever the series holds: a chart with nothing to draw hides, and the line explaining why
-       shows. Swapping the two would tear the chart's elements down, and Safari reports an invalid empty value
-       for every attribute removed on the way out. */
+       shows. Swapping the two would tear the chart's elements down. */
     view! {
-        {heading}
+        <h3 class="region-dock-heading">{t!(i18n, detail.history)}</h3>
         <div class="region-dock-chart-figure" class:is-empty=!is_plottable>
             {history_chart(i18n, statistic, series, active_period_start, &scale)}
             <p class="region-dock-chart-bounds">
@@ -324,7 +322,6 @@ fn history_section(
         </div>
         <p class="region-dock-no-history" class:is-empty=is_plottable>{t!(i18n, detail.no_history)}</p>
     }
-    .into_any()
 }
 
 /// The value a statistic's series is read against. Both fertility measures are births per woman, so both are
@@ -342,7 +339,7 @@ fn history_chart(
     series: &[SeriesPointView],
     active_period_start: NaiveDate,
     scale: &ChartScale,
-) -> AnyView {
+) -> impl IntoView + use<> {
     let polyline_points: String = scale.polyline_points(series);
     let marker: ActiveMarker = active_marker(series, active_period_start, scale);
     let reference: Option<(f64, f64)> = reference_value(statistic).map(|value| (value, scale.y(value)));
@@ -397,7 +394,6 @@ fn history_chart(
             />
         </svg>
     }
-    .into_any()
 }
 
 
