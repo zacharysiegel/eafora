@@ -7,6 +7,12 @@
     cursor: pointer;
 }
 
+.button:hover {
+    border-color: var(--color-accent-hover);
+    color: var(--color-accent-hover);
+}
+
+// A pressed control keeps the undarkened accent: hover is feedback under the pointer, this is a state.
 .button[aria-pressed="true"],
 .button.is-active {
     border-color: var(--color-accent-active);

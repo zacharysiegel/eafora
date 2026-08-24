@@ -37,7 +37,7 @@ pub fn SettingsModal() -> impl IntoView {
             <div class="settings-scrim" on:click=move |_| surface.set(SettingsSurface::Closed)></div>
 
             <button
-                class="settings-button"
+                class="button settings-button"
                 aria-label=move || t_string!(i18n, settings.open)
                 on:click=move |_| surface.set(SettingsSurface::Open)
             >

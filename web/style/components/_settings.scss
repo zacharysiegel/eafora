@@ -5,22 +5,13 @@
     right: var(--space-chrome-inset);
 }
 
+// Square and larger than an inline button, since it is the only control on that side of the map.
 .settings-button {
     width: 2.25rem;
     height: 2.25rem;
     display: grid;
     place-items: center;
     padding: 0;
-    background: var(--color-paper);
-    color: var(--color-ink);
-    border: var(--border-ink);
-    border-radius: var(--radius-input);
-    cursor: pointer;
-}
-
-.settings-button:hover {
-    color: var(--color-accent-active);
-    border-color: var(--color-accent-active);
 }
 
 .settings-button svg {
@@ -74,7 +65,7 @@
 }
 
 .settings-close:hover {
-    color: var(--color-accent-active);
+    color: var(--color-accent-hover);
 }
 
 .settings-close svg {

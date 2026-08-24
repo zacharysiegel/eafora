@@ -101,9 +101,13 @@
     width: 3px;
 }
 
+/* Under the pointer the thumb becomes a sheet like everything else in the interface: opaque white behind one
+   hairline. The fill and border switch instantly; only the width moves. */
 .region-dock .region-dock-thumb:hover,
 .region-dock .region-dock-thumb.is-held {
     width: 7px;
+    background: var(--color-paper);
+    border: var(--border-ink);
 }
 
 .region-dock-header {
