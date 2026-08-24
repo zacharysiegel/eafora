@@ -85,7 +85,7 @@
     left: calc(100% + var(--border-width-hairline) / 2);
     transform: translateX(-50%);
     width: 0;
-    background: var(--color-ink);
+    background: var(--color-ink-soft);
     border-radius: 999px; // the one rounded thing in the interface; a 1px-wide cap cannot read as square
     transition: width var(--duration-thumb) ease;
 
