@@ -18,11 +18,11 @@ const REPLACEMENT_RATE: f64 = 2.1;
 /// The chart's coordinate space. It scales to the dock's width through the `viewBox`, so these are
 /// proportions of the drawing rather than pixels on screen.
 const CHART_WIDTH: f64 = 320.0;
-const CHART_HEIGHT: f64 = 124.0;
+const CHART_HEIGHT: f64 = 142.6;
 const PLOT_LEFT: f64 = 3.0;
 const PLOT_RIGHT: f64 = 317.0;
 const PLOT_TOP: f64 = 8.0;
-const PLOT_BOTTOM: f64 = 116.0;
+const PLOT_BOTTOM: f64 = 133.4;
 
 /// Half the active period's marker height, so a marker on the first or last period sits inside the drawing
 /// rather than half-clipped by its edge.

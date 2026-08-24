@@ -6,11 +6,15 @@ use leptos::html::Div;
 use leptos::prelude::*;
 
 /// Keeps the thumb clear of the panel's corners at its fullest extent.
-const TRACK_MARGIN: f64 = 8.0;
+const TRACK_MARGIN: f64 = 6.0;
 
 /// A thumb shorter than this cannot be grabbed, so a very long panel's thumb stops shrinking here and stops
 /// being proportional to what it represents.
 const MINIMUM_LENGTH: f64 = 24.0;
+
+/// `clientHeight` and `scrollHeight` are each rounded to whole pixels, so a panel whose content fits can still
+/// report a pixel of overflow once the browser's zoom makes the layout fractional.
+const MINIMUM_OVERFLOW: f64 = 1.0;
 
 /// Where the thumb sits and how long it is, in pixels down the panel.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -74,7 +78,7 @@ pub fn view(state: ScrollThumbState) -> impl IntoView {
 /// `None` when the content fits, which is when a thumb would be reporting nothing.
 fn geometry_for(visible_length: f64, content_length: f64, scroll_top: f64) -> Option<ThumbGeometry> {
     let scrollable: f64 = content_length - visible_length;
-    if scrollable <= 0.0 {
+    if scrollable <= MINIMUM_OVERFLOW {
         return None;
     }
 
@@ -99,7 +103,7 @@ fn scroll_top_for(
     let scrollable: f64 = content_length - visible_length;
     let travel: f64 = visible_length - 2.0 * TRACK_MARGIN - thumb_length;
 
-    if scrollable <= 0.0 || travel <= 0.0 {
+    if scrollable <= MINIMUM_OVERFLOW || travel <= 0.0 {
         return None;
     }
 
@@ -214,6 +218,14 @@ mod tests {
     fn geometry_for_is_absent_when_the_content_fits() {
         assert_eq!(geometry_for(400.0, 400.0, 0.0), None);
         assert_eq!(geometry_for(400.0, 320.0, 0.0), None);
+    }
+
+    /// Browser zoom makes the layout fractional, and the two measurements round independently, so a panel that
+    /// fits can report a pixel of overflow. A thumb then appears with nowhere to travel.
+    #[test]
+    fn geometry_for_treats_a_single_rounded_pixel_as_fitting() {
+        assert_eq!(geometry_for(538.0, 539.0, 0.0), None);
+        assert!(geometry_for(538.0, 540.0, 0.0).is_some());
     }
 
     #[test]
