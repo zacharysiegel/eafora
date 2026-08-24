@@ -1,5 +1,5 @@
 use chrono::{Datelike, NaiveDate};
-use leptos::html::Aside;
+use leptos::html::{Aside, Button};
 use leptos::prelude::*;
 use leptos_i18n::I18nContext;
 
@@ -177,27 +177,25 @@ fn detail_dock(
     let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
     let thumb: ScrollThumbState = scroll_thumb::create_state();
     let dock: NodeRef<Aside> = NodeRef::new();
+    let collapse: NodeRef<Button> = NodeRef::new();
 
     Effect::new(move |_| report_covered_surface(dock));
-    Effect::new(move |_| take_focus(thumb.scroller()));
+    Effect::new(move |_| take_focus(collapse));
     on_cleanup(|| dispatch_left_surface_inset(0.0));
 
     view! {
         <aside class="panel region-dock" node_ref=dock>
-        /* A div that scrolls is not focusable on its own, so without this a keyboard has no way to reach the
-           content below the fold. Focused, the browser's own arrow, page, home and end handling does the rest. */
         <div
             class="region-dock-scroll"
-            tabindex="0"
             node_ref=thumb.scroller()
             on:scroll=move |_| scroll_thumb::refresh(thumb)
             on:pointerenter=move |_| scroll_thumb::refresh(thumb)
-            on:focus=move |_| scroll_thumb::refresh(thumb)
         >
             <header class="region-dock-header">
                 <h2 class="region-dock-region">{label}</h2>
                 <button
                     class="button button-icon region-dock-collapse"
+                    node_ref=collapse
                     type="button"
                     aria-label=t_string!(i18n, detail.collapse)
                     on:click=move |_| surface.set(DetailSurface::Summary)
@@ -641,21 +639,22 @@ fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
 }
 
 /* The control that opened the dock is destroyed by opening it, so focus would fall to the document and the next
-   tab would skip the dock entirely. The scrolling region takes it instead, which is also what a reader wants:
-   the arrow keys work on arrival. The dock only ever mounts in response to that control, so this never steals
-   focus from a page the reader was already using. */
+   tab would skip the dock entirely. The collapse control takes it: it sits inside the scrolling element, so the
+   arrow keys scroll on arrival, and being a button it shows a ring for a keyboard activation and none for a
+   click. The dock only ever mounts in response to the expand control, so this never steals focus from a page the
+   reader was already using. */
 #[cfg(feature = "hydrate")]
-fn take_focus(scroller: NodeRef<leptos::html::Div>) {
-    let Some(scroller) = scroller.get()
+fn take_focus(collapse: NodeRef<Button>) {
+    let Some(collapse) = collapse.get()
     else {
         return;
     };
 
-    let _ = scroller.focus();
+    let _ = collapse.focus();
 }
 
 #[cfg(not(feature = "hydrate"))] // the ssr build has nothing focusable
-fn take_focus(_scroller: NodeRef<leptos::html::Div>) {}
+fn take_focus(_collapse: NodeRef<Button>) {}
 
 /// The dock covers the map's left edge, and how much depends on its stylesheet, so it measures itself rather
 /// than the camera assuming a width.

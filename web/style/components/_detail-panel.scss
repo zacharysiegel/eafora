@@ -77,16 +77,6 @@
         display: none;
     }
 
-    // The panel's own border carries the focus, so there is no outline tracing the whole interior.
-    &:focus-visible {
-        outline: none;
-    }
-}
-
-/* Keyboard focus turns the panel's edge red. It deliberately does not raise the thumb: the dock takes focus as
-   soon as it opens, so a thumb tied to focus would never retract. */
-.region-dock:has(.region-dock-scroll:focus-visible) {
-    border-color: var(--color-accent-active);
 }
 
 /* The panel's right border, thickened over the visible span. Centred on the border so it grows both ways and
