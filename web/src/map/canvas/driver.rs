@@ -287,23 +287,23 @@ impl Driver {
         bundle.shard_values_for(self.frame_state.active_statistic)
     }
 
+    /// A source the client cannot name has no label to render, so it is dropped rather than shown blank.
+    fn decode_source(source_code: &str) -> Option<DataSourceKind> {
+        DataSourceKind::try_from(source_code)
+            .map_err(|error| log::warn!("shard cell has an unrecognized data source; [code={source_code} error={error}]"))
+            .ok()
+    }
+
     fn decode_cell(cell: Option<&CellValue>) -> CellView {
         let value: Option<f64> = cell.map(|cell| cell.value);
-        let source: Option<DataSourceKind> = cell.and_then(|cell| {
-            DataSourceKind::try_from(cell.source_code.as_str())
-                .map_err(|error| log::warn!("shard cell has an unrecognized data source; [code={} error={error}]", cell.source_code))
-                .ok()
-        });
+        let source: Option<DataSourceKind> = cell.and_then(|cell| Self::decode_source(&cell.source_code));
         let data_status: Option<DataStatus> = cell.map(|cell| cell.data_status);
 
         CellView { value, source, data_status }
     }
 
-    /// A source the client cannot name would render as a blank row, so it is dropped rather than shown.
     fn decode_source_cell(cell: &CellValue, is_preferred: bool) -> Option<SourceCellView> {
-        let source: DataSourceKind = DataSourceKind::try_from(cell.source_code.as_str())
-            .map_err(|error| log::warn!("shard cell has an unrecognized data source; [code={} error={error}]", cell.source_code))
-            .ok()?;
+        let source: DataSourceKind = Self::decode_source(&cell.source_code)?;
 
         Some(SourceCellView {
             source,

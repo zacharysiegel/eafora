@@ -36,6 +36,8 @@ const CHART_RANGE_MARGIN_PROPORTION: f64 = 0.08;
 /// take a margin from.
 const FLAT_SERIES_HALF_EXTENT: f64 = 0.5;
 
+/* The `detail.change_over_*` labels state these intervals in words, so a label and its interval move
+   together. */
 const CHANGE_INTERVAL_IN_YEARS_SHORT: i32 = 1;
 const CHANGE_INTERVAL_IN_YEARS_LONG: i32 = 10;
 
@@ -217,16 +219,20 @@ fn context_rows(
         Some(rank) => format!("{} / {}", rank.position, rank.of),
         None => not_applicable.clone(),
     };
-    let short_change_value: String =
-        format_change_or(change_over_years(series, active_period_start, CHANGE_INTERVAL_IN_YEARS_SHORT), &not_applicable);
-    let long_change_value: String =
-        format_change_or(change_over_years(series, active_period_start, CHANGE_INTERVAL_IN_YEARS_LONG), &not_applicable);
+    let short_change: Option<f64> = change_over_years(series, active_period_start, CHANGE_INTERVAL_IN_YEARS_SHORT);
+    let long_change: Option<f64> = change_over_years(series, active_period_start, CHANGE_INTERVAL_IN_YEARS_LONG);
 
     view! {
         <dl class="region-dock-context">
             {context_row(t!(i18n, detail.rank).into_any(), rank_value)}
-            {context_row(t!(i18n, detail.change_over_1_period).into_any(), short_change_value)}
-            {context_row(t!(i18n, detail.change_over_10_periods).into_any(), long_change_value)}
+            {context_row(
+                t!(i18n, detail.change_over_1_period).into_any(),
+                format_change_or(short_change, &not_applicable),
+            )}
+            {context_row(
+                t!(i18n, detail.change_over_10_periods).into_any(),
+                format_change_or(long_change, &not_applicable),
+            )}
         </dl>
     }
     .into_any()
@@ -271,7 +277,7 @@ fn history_section(
     }
     .into_any();
 
-    let Some(scale) = ChartScale::from_series(series, reference_line(statistic))
+    let Some(scale) = ChartScale::from_series(series, reference_value(statistic))
     else {
         return view! {
             {heading}
@@ -291,29 +297,30 @@ fn history_section(
     .into_any()
 }
 
-/// The dashed line and the caption that says what it is. A line with no caption reads as decoration.
+/// A dashed line across the plot, captioned. An uncaptioned line reads as decoration, so the two travel
+/// together.
 struct ReferenceLine {
     y: f64,
     caption: String,
 }
 
-/// The value the line marks, then the word for it: "2.1 replacement".
-fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind, value: f64) -> String {
-    let Some(caption) = labels::reference_caption_string(i18n, statistic)
-    else {
-        return format!("{value:.1}");
-    };
-
-    format!("{value:.1} {caption}")
-}
-
-/// The value a statistic is read against, drawn as a dashed line. Both fertility measures are births per
-/// woman, so both are read against replacement.
-fn reference_line(statistic: StatisticKind) -> Option<f64> {
+/// The value a statistic's series is read against. Both fertility measures are births per woman, so both are
+/// read against replacement.
+fn reference_value(statistic: StatisticKind) -> Option<f64> {
     match statistic {
         StatisticKind::Tfr => Some(REPLACEMENT_RATE),
         StatisticKind::Ccf => Some(REPLACEMENT_RATE),
     }
+}
+
+fn reference_line(i18n: I18nContext<Locale>, statistic: StatisticKind, scale: &ChartScale) -> Option<ReferenceLine> {
+    let value: f64 = reference_value(statistic)?;
+    let caption: String = labels::reference_caption_string(i18n, statistic)?;
+
+    Some(ReferenceLine {
+        y: scale.y(value),
+        caption: format!("{value:.1} {caption}"),
+    })
 }
 
 fn history_chart(
@@ -324,12 +331,9 @@ fn history_chart(
     scale: &ChartScale,
 ) -> AnyView {
     let polyline_points: String = scale.polyline_points(series);
-    let active_marker: Option<(f64, f64)> = value_at(series, active_period_start)
-        .map(|value| (scale.x(active_period_start), scale.y(value)));
-    let reference: Option<ReferenceLine> = reference_line(statistic).map(|value| ReferenceLine {
-        y: scale.y(value),
-        caption: reference_caption(i18n, statistic, value),
-    });
+    let active_marker: Option<ChartPoint> = value_at(series, active_period_start)
+        .map(|value| scale.point(active_period_start, value));
+    let reference: Option<ReferenceLine> = reference_line(i18n, statistic, scale);
 
     view! {
         <svg
@@ -362,12 +366,17 @@ fn history_chart(
                 y2=PLOT_BOTTOM
             />
             <polyline class="region-dock-chart-line" points=polyline_points />
-            {active_marker.map(|(x, y)| view! {
-                <circle class="region-dock-chart-marker" cx=x cy=y r=MARKER_RADIUS />
+            {active_marker.map(|marker| view! {
+                <circle class="region-dock-chart-marker" cx=marker.x cy=marker.y r=MARKER_RADIUS />
             })}
         </svg>
     }
     .into_any()
+}
+
+struct ChartPoint {
+    x: f64,
+    y: f64,
 }
 
 /// Maps a series onto the chart's coordinate space. A period is placed by its distance in time, not by its
@@ -428,10 +437,18 @@ impl ChartScale {
         PLOT_BOTTOM - proportion.clamp(0.0, 1.0) * plot_height
     }
 
+    fn point(&self, period_start: NaiveDate, value: f64) -> ChartPoint {
+        ChartPoint {
+            x: self.x(period_start),
+            y: self.y(value),
+        }
+    }
+
     fn polyline_points(&self, series: &[SeriesPointView]) -> String {
         let coordinates: Vec<String> = series
             .iter()
-            .map(|point| format!("{:.1},{:.1}", self.x(point.period_start), self.y(point.value)))
+            .map(|series_point| self.point(series_point.period_start, series_point.value))
+            .map(|chart_point| format!("{:.1},{:.1}", chart_point.x, chart_point.y))
             .collect();
 
         coordinates.join(" ")
