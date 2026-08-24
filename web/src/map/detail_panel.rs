@@ -179,6 +179,7 @@ fn detail_dock(
     let dock: NodeRef<Aside> = NodeRef::new();
 
     Effect::new(move |_| report_covered_surface(dock));
+    Effect::new(move |_| take_focus(thumb.scroller()));
     on_cleanup(|| dispatch_left_surface_inset(0.0));
 
     view! {
@@ -191,6 +192,7 @@ fn detail_dock(
             node_ref=thumb.scroller()
             on:scroll=move |_| scroll_thumb::refresh(thumb)
             on:pointerenter=move |_| scroll_thumb::refresh(thumb)
+            on:focus=move |_| scroll_thumb::refresh(thumb)
         >
             <header class="region-dock-header">
                 <h2 class="region-dock-region">{label}</h2>
@@ -305,22 +307,22 @@ fn history_section(
     }
     .into_any();
 
-    let Some(scale) = ChartScale::from_series(series, reference_value(statistic))
-    else {
-        return view! {
-            {heading}
-            <p class="region-dock-no-history">{t!(i18n, detail.no_history)}</p>
-        }
-        .into_any();
-    };
+    let scale: ChartScale = ChartScale::from_series(series, reference_value(statistic));
+    let is_plottable: bool = scale.is_plottable();
 
+    /* One shape whatever the series holds: a chart with nothing to draw hides, and the line explaining why
+       shows. Swapping the two would tear the chart's elements down, and Safari reports an invalid empty value
+       for every attribute removed on the way out. */
     view! {
         {heading}
-        {history_chart(i18n, statistic, series, active_period_start, &scale)}
-        <p class="region-dock-chart-bounds">
-            <span class="numeric">{scale.first_period_start.year().to_string()}</span>
-            <span class="numeric">{scale.last_period_start.year().to_string()}</span>
-        </p>
+        <div class="region-dock-chart-figure" class:is-empty=!is_plottable>
+            {history_chart(i18n, statistic, series, active_period_start, &scale)}
+            <p class="region-dock-chart-bounds">
+                <span class="numeric">{scale.first_period_start.year().to_string()}</span>
+                <span class="numeric">{scale.last_period_start.year().to_string()}</span>
+            </p>
+        </div>
+        <p class="region-dock-no-history" class:is-empty=is_plottable>{t!(i18n, detail.no_history)}</p>
     }
     .into_any()
 }
@@ -444,15 +446,13 @@ struct ChartScale {
 }
 
 impl ChartScale {
-    /// `None` for a series confined to one period, which has no extent to scale against. `included_value`
-    /// is held inside the vertical range even when the series never reaches it.
-    fn from_series(series: &[SeriesPointView], included_value: Option<f64>) -> Option<ChartScale> {
-        let first_period_start: NaiveDate = series.first()?.period_start;
-        let last_period_start: NaiveDate = series.last()?.period_start;
-
-        if first_period_start == last_period_start {
-            return None;
-        }
+    /* Never absent. A series with too few periods to plot gets a degenerate scale rather than suppressing the
+       chart, because Leptos tears an element down when a view changes shape and Safari reports an invalid empty
+       value for every attribute removed on the way out. `included_value` is held inside the vertical range even
+       when the series never reaches it. */
+    fn from_series(series: &[SeriesPointView], included_value: Option<f64>) -> ChartScale {
+        let first_period_start: NaiveDate = series.first().map_or(NaiveDate::MIN, |point| point.period_start);
+        let last_period_start: NaiveDate = series.last().map_or(NaiveDate::MIN, |point| point.period_start);
 
         let mut low: f64 = included_value.unwrap_or(f64::INFINITY);
         let mut high: f64 = included_value.unwrap_or(f64::NEG_INFINITY);
@@ -462,6 +462,11 @@ impl ChartScale {
             high = high.max(point.value);
         }
 
+        if !low.is_finite() || !high.is_finite() {
+            low = 0.0;
+            high = 0.0;
+        }
+
         let extent: f64 = high - low;
         let margin: f64 = if extent > 0.0 {
             extent * CHART_RANGE_MARGIN_PROPORTION
@@ -469,16 +474,25 @@ impl ChartScale {
             FLAT_SERIES_HALF_EXTENT
         };
 
-        Some(ChartScale {
+        ChartScale {
             first_period_start,
             last_period_start,
             low: low - margin,
             high: high + margin,
-        })
+        }
+    }
+
+    /// A series confined to one period, or none, has nothing to draw a line between.
+    fn is_plottable(&self) -> bool {
+        self.first_period_start != self.last_period_start
     }
 
     fn x(&self, period_start: NaiveDate) -> f64 {
         let total_days: f64 = (self.last_period_start - self.first_period_start).num_days() as f64;
+        if total_days <= 0.0 {
+            return PLOT_LEFT;
+        }
+
         let elapsed_days: f64 = (period_start - self.first_period_start).num_days() as f64;
         let plot_width: f64 = PLOT_RIGHT - PLOT_LEFT;
 
@@ -499,12 +513,18 @@ impl ChartScale {
         }
     }
 
+    /// One coordinate for a series with nothing to plot, rather than an empty list: an empty attribute is the
+    /// same defect as a removed one, and a single-point polyline draws nothing.
     fn polyline_points(&self, series: &[SeriesPointView]) -> String {
         let coordinates: Vec<String> = series
             .iter()
             .map(|series_point| self.point(series_point.period_start, series_point.value))
             .map(|chart_point| format!("{:.1},{:.1}", chart_point.x, chart_point.y))
             .collect();
+
+        if coordinates.is_empty() {
+            return format!("{PLOT_LEFT:.1},{PLOT_BOTTOM:.1}");
+        }
 
         coordinates.join(" ")
     }
@@ -624,6 +644,23 @@ fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
     }
 }
 
+/* The control that opened the dock is destroyed by opening it, so focus would fall to the document and the next
+   tab would skip the dock entirely. The scrolling region takes it instead, which is also what a reader wants:
+   the arrow keys work on arrival. The dock only ever mounts in response to that control, so this never steals
+   focus from a page the reader was already using. */
+#[cfg(feature = "hydrate")]
+fn take_focus(scroller: NodeRef<leptos::html::Div>) {
+    let Some(scroller) = scroller.get()
+    else {
+        return;
+    };
+
+    let _ = scroller.focus();
+}
+
+#[cfg(not(feature = "hydrate"))] // the ssr build has nothing focusable
+fn take_focus(_scroller: NodeRef<leptos::html::Div>) {}
+
 /// The dock covers the map's left edge, and how much depends on its stylesheet, so it measures itself rather
 /// than the camera assuming a width.
 #[cfg(feature = "hydrate")]
@@ -709,15 +746,34 @@ mod tests {
         assert_eq!(format_change_or(None, "N/A"), "N/A");
     }
 
+    /// A one-period series still yields a scale, because suppressing the chart would change the view's shape.
+    /// It reports that it has nothing to plot instead.
     #[test]
-    fn chart_scale_is_absent_for_a_series_confined_to_one_period() {
-        assert!(ChartScale::from_series(&series_of(&[(2024, 1.20)]), None).is_none());
+    fn chart_scale_reports_a_series_confined_to_one_period_as_unplottable() {
+        assert!(!ChartScale::from_series(&series_of(&[(2024, 1.20)]), None).is_plottable());
+        assert!(!ChartScale::from_series(&[], None).is_plottable());
+        assert!(ChartScale::from_series(&series_of(&[(2000, 1.5), (2024, 1.2)]), None).is_plottable());
+    }
+
+    /// An empty attribute is the same defect as a removed one, so the points list is never empty.
+    #[test]
+    fn polyline_points_are_never_empty() {
+        let scale: ChartScale = ChartScale::from_series(&[], None);
+
+        assert_eq!(scale.polyline_points(&[]), format!("{PLOT_LEFT:.1},{PLOT_BOTTOM:.1}"));
+    }
+
+    #[test]
+    fn chart_scale_places_a_lone_period_at_the_plot_s_left() {
+        let scale: ChartScale = ChartScale::from_series(&series_of(&[(2024, 1.20)]), None);
+
+        assert_eq!(scale.x(january(2024)), PLOT_LEFT);
     }
 
     #[test]
     fn chart_scale_spans_the_plot_from_the_first_period_to_the_last() {
         let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2012, 1.4), (2024, 1.2)]);
-        let scale: ChartScale = ChartScale::from_series(&series, None).unwrap();
+        let scale: ChartScale = ChartScale::from_series(&series, None);
 
         assert_eq!(scale.x(january(2000)), PLOT_LEFT);
         assert_eq!(scale.x(january(2024)), PLOT_RIGHT);
@@ -728,7 +784,7 @@ mod tests {
     #[test]
     fn chart_scale_places_a_period_by_its_distance_in_time() {
         let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2018, 1.4), (2024, 1.2)]);
-        let scale: ChartScale = ChartScale::from_series(&series, None).unwrap();
+        let scale: ChartScale = ChartScale::from_series(&series, None);
 
         let plot_midpoint: f64 = (PLOT_LEFT + PLOT_RIGHT) / 2.0;
 
@@ -738,7 +794,7 @@ mod tests {
     #[test]
     fn chart_scale_holds_the_reference_line_inside_the_range() {
         let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2024, 1.2)]);
-        let scale: ChartScale = ChartScale::from_series(&series, Some(REPLACEMENT_RATE)).unwrap();
+        let scale: ChartScale = ChartScale::from_series(&series, Some(REPLACEMENT_RATE));
 
         let reference_y: f64 = scale.y(REPLACEMENT_RATE);
 
@@ -749,7 +805,7 @@ mod tests {
     #[test]
     fn chart_scale_draws_a_flat_series_inside_the_plot() {
         let series: Vec<SeriesPointView> = series_of(&[(2000, 1.4), (2024, 1.4)]);
-        let scale: ChartScale = ChartScale::from_series(&series, None).unwrap();
+        let scale: ChartScale = ChartScale::from_series(&series, None);
 
         let flat_y: f64 = scale.y(1.4);
 
@@ -760,7 +816,7 @@ mod tests {
     #[test]
     fn polyline_points_carries_one_coordinate_per_period() {
         let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2012, 1.4), (2024, 1.2)]);
-        let scale: ChartScale = ChartScale::from_series(&series, None).unwrap();
+        let scale: ChartScale = ChartScale::from_series(&series, None);
 
         let points: String = scale.polyline_points(&series);
 

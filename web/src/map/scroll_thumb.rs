@@ -130,8 +130,8 @@ mod dom {
 
     use super::{geometry_for, scroll_top_for, Grab, ScrollThumbState, ThumbGeometry};
 
-    /// Recomputed on scroll and on the pointer entering the panel. Entering covers a viewport resize, since
-    /// the thumb cannot be reached without it.
+    /// Recomputed on scroll, on the pointer entering the panel, and on the panel taking focus. The latter two
+    /// cover a viewport resize, since the thumb cannot be reached without one of them happening first.
     pub fn refresh(state: ScrollThumbState) {
         let Some(scroller) = state.scroller().get()
         else {
