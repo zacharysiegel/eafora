@@ -1,4 +1,5 @@
 use chrono::{Datelike, NaiveDate};
+use leptos::html::Aside;
 use leptos::prelude::*;
 use leptos_i18n::I18nContext;
 
@@ -19,17 +20,18 @@ const REPLACEMENT_RATE: f64 = 2.1;
 /// proportions of the drawing rather than pixels on screen.
 const CHART_WIDTH: f64 = 320.0;
 const CHART_HEIGHT: f64 = 142.6;
-const PLOT_LEFT: f64 = 3.0;
 const PLOT_RIGHT: f64 = 317.0;
 const PLOT_TOP: f64 = 8.0;
 const PLOT_BOTTOM: f64 = 133.4;
 
+/// Room at the chart's left for the axis labels, and the gap between a label and the axis it labels.
+const AXIS_LABEL_WIDTH: f64 = 22.0;
+const AXIS_LABEL_GAP: f64 = 5.0;
+const PLOT_LEFT: f64 = AXIS_LABEL_WIDTH + AXIS_LABEL_GAP;
+
 /// Half the active period's marker height, so a marker on the first or last period sits inside the drawing
 /// rather than half-clipped by its edge.
 const MARKER_RADIUS: f64 = 4.0;
-
-/// Gap between the reference line and the caption naming it.
-const REFERENCE_CAPTION_OFFSET: f64 = 4.0;
 
 /// Headroom above and below the series, as a proportion of its extent, so a peak does not touch the top of
 /// the plot.
@@ -168,9 +170,13 @@ fn detail_dock(
     let CellView { value, source: _, data_status } = cell;
     let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
     let thumb: ScrollThumbState = scroll_thumb::create_state();
+    let dock: NodeRef<Aside> = NodeRef::new();
+
+    Effect::new(move |_| report_covered_surface(dock));
+    on_cleanup(|| dispatch_left_surface_inset(0.0));
 
     view! {
-        <aside class="panel region-dock">
+        <aside class="panel region-dock" node_ref=dock>
         <div
             class="region-dock-scroll"
             node_ref=thumb.scroller()
@@ -301,20 +307,16 @@ fn history_section(
 
     view! {
         {heading}
-        {history_chart(i18n, statistic, series, active_period_start, &scale)}
+        {history_chart(statistic, series, active_period_start, &scale)}
         <p class="region-dock-chart-bounds">
             <span class="numeric">{scale.first_period_start.year().to_string()}</span>
+            {reference_caption(i18n, statistic).map(|caption| view! {
+                <span class="region-dock-chart-reference-key">{caption}</span>
+            })}
             <span class="numeric">{scale.last_period_start.year().to_string()}</span>
         </p>
     }
     .into_any()
-}
-
-/// A dashed line across the plot, captioned. An uncaptioned line reads as decoration, so the two travel
-/// together.
-struct ReferenceLine {
-    y: f64,
-    caption: String,
 }
 
 /// The value a statistic's series is read against. Both fertility measures are births per woman, so both are
@@ -326,18 +328,16 @@ fn reference_value(statistic: StatisticKind) -> Option<f64> {
     }
 }
 
-fn reference_line(i18n: I18nContext<Locale>, statistic: StatisticKind, scale: &ChartScale) -> Option<ReferenceLine> {
+/// The dashed line is named below the chart rather than beside itself, since a caption inside the plot lands on
+/// the series it is annotating.
+fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) -> Option<String> {
     let value: f64 = reference_value(statistic)?;
     let caption: String = labels::reference_caption_string(i18n, statistic)?;
 
-    Some(ReferenceLine {
-        y: scale.y(value),
-        caption: format!("{value:.1} {caption}"),
-    })
+    Some(format!("{value:.1} {caption}"))
 }
 
 fn history_chart(
-    i18n: I18nContext<Locale>,
     statistic: StatisticKind,
     series: &[SeriesPointView],
     active_period_start: NaiveDate,
@@ -346,7 +346,7 @@ fn history_chart(
     let polyline_points: String = scale.polyline_points(series);
     let active_marker: Option<ChartPoint> = value_at(series, active_period_start)
         .map(|value| scale.point(active_period_start, value));
-    let reference: Option<ReferenceLine> = reference_line(i18n, statistic, scale);
+    let reference_y: Option<f64> = reference_value(statistic).map(|value| scale.y(value));
 
     view! {
         <svg
@@ -354,22 +354,32 @@ fn history_chart(
             viewBox=format!("0 0 {CHART_WIDTH} {CHART_HEIGHT}")
             aria-hidden="true"
         >
-            {reference.map(|reference| view! {
+            <line
+                class="region-dock-chart-axis"
+                x1=PLOT_LEFT
+                x2=PLOT_LEFT
+                y1=PLOT_TOP
+                y2=PLOT_BOTTOM
+            />
+            {scale.axis_labels().into_iter().map(|label| view! {
+                <text
+                    class="region-dock-chart-axis-label"
+                    x=AXIS_LABEL_WIDTH
+                    y=label.y
+                    text-anchor="end"
+                    dominant-baseline="middle"
+                >
+                    {label.text}
+                </text>
+            }).collect::<Vec<_>>()}
+            {reference_y.map(|reference_y| view! {
                 <line
                     class="region-dock-chart-reference"
                     x1=PLOT_LEFT
                     x2=PLOT_RIGHT
-                    y1=reference.y
-                    y2=reference.y
+                    y1=reference_y
+                    y2=reference_y
                 />
-                <text
-                    class="region-dock-chart-reference-caption"
-                    x=PLOT_RIGHT
-                    y=reference.y - REFERENCE_CAPTION_OFFSET
-                    text-anchor="end"
-                >
-                    {reference.caption}
-                </text>
             })}
             <line
                 class="region-dock-chart-baseline"
@@ -385,6 +395,12 @@ fn history_chart(
         </svg>
     }
     .into_any()
+}
+
+/// One value written beside the vertical axis, at the height it sits.
+struct AxisLabel {
+    y: f64,
+    text: String,
 }
 
 struct ChartPoint {
@@ -455,6 +471,14 @@ impl ChartScale {
             x: self.x(period_start),
             y: self.y(value),
         }
+    }
+
+    /// The range's ends, which is what the axis spans. One decimal, matching the legend's ticks.
+    fn axis_labels(&self) -> Vec<AxisLabel> {
+        vec![
+            AxisLabel { y: self.y(self.high), text: format!("{:.1}", self.high) },
+            AxisLabel { y: self.y(self.low), text: format!("{:.1}", self.low) },
+        ]
     }
 
     fn polyline_points(&self, series: &[SeriesPointView]) -> String {
@@ -581,6 +605,31 @@ fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
         DataSourceKind::HumanFertilityDatabase => t!(i18n, source.hfd).into_any(),
     }
 }
+
+/// The dock covers the map's left edge, and how much depends on its stylesheet, so it measures itself rather
+/// than the camera assuming a width.
+#[cfg(feature = "hydrate")]
+fn report_covered_surface(dock: NodeRef<Aside>) {
+    let Some(dock) = dock.get()
+    else {
+        return;
+    };
+
+    let device_pixel_ratio: f64 = window().device_pixel_ratio();
+
+    dispatch_left_surface_inset(dock.get_bounding_client_rect().right() * device_pixel_ratio);
+}
+
+#[cfg(not(feature = "hydrate"))] // the ssr build has no laid-out element to measure
+fn report_covered_surface(_dock: NodeRef<Aside>) {}
+
+#[cfg(feature = "hydrate")]
+fn dispatch_left_surface_inset(inset: f64) {
+    crate::map::canvas::driver::apply_left_surface_inset(inset);
+}
+
+#[cfg(not(feature = "hydrate"))] // the ssr build has no driver to dispatch to
+fn dispatch_left_surface_inset(_inset: f64) {}
 
 /// Arrows toward opposite corners, and toward each other to collapse.
 fn expand_icon() -> impl IntoView {

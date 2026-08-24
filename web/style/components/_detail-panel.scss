@@ -207,11 +207,16 @@
     stroke-dasharray: 3 3;
 }
 
+.region-dock-chart-axis {
+    stroke: var(--color-rule);
+    stroke-width: 1;
+}
+
 /* The chart's viewBox is close to 1:1 with its rendered width, so this size is in effect pixels. Text takes
    fill rather than color in SVG. */
-.region-dock-chart-reference-caption {
-    font-family: var(--font-sans);
-    font-size: 10px;
+.region-dock-chart-axis-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
     fill: var(--color-ink-muted);
 }
 
@@ -220,6 +225,16 @@
     justify-content: space-between;
     font-size: var(--type-size-bound);
     color: var(--color-ink-muted);
+}
+
+// Names the dashed line, which carries no label of its own.
+.region-dock-chart-reference-key::before {
+    content: "";
+    display: inline-block;
+    width: 1.25rem;
+    border-top: 1px dashed var(--color-ink-muted);
+    vertical-align: 0.25em;
+    margin-right: var(--space-xs);
 }
 
 .region-dock-sources {

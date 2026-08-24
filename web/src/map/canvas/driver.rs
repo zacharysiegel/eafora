@@ -123,6 +123,8 @@ struct Driver {
     surface_dimensions: SurfaceDimensions,
     frame_state: FrameState,
     signals: DriverSignals,
+    /// Surface pixels of the left edge covered by chrome, which the zoom-to-country framing works around.
+    left_surface_inset: f64,
     selection: Option<SelectionView>,
     redraw_pending: bool,
     gesture: Gesture,
@@ -255,15 +257,36 @@ impl Driver {
         let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
         let min_height: f64 = zoom_to_country_min_height();
 
-        Viewport::fit_bounds(
+        /* Framed against the uncovered region so a wide country clears the chrome, then rebuilt at the full
+           surface's aspect, since the map still draws behind the chrome. */
+        let fitted: Viewport = Viewport::fit_bounds(
             framing.min.x, framing.max.x, framing.min.y, framing.max.y,
-            framing.centroid, ZOOM_TO_COUNTRY_MARGIN_PROPORTION, min_height, ceiling, self.surface_dimensions,
-        )
-        .clamp_vertical_balanced(
-            framing.min, framing.max, home_min_y, home_max_y,
-            ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN, self.surface_dimensions,
-        )
-        .normalize_longitude_turns()
+            framing.centroid, ZOOM_TO_COUNTRY_MARGIN_PROPORTION, min_height, ceiling, self.uncovered_dimensions(),
+        );
+
+        fitted
+            .at_surface_aspect(self.surface_dimensions, ceiling)
+            .clamp_vertical_balanced(
+                framing.min, framing.max, home_min_y, home_max_y,
+                ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN, self.surface_dimensions,
+            )
+            .offset_for_left_inset(self.left_surface_inset, self.surface_dimensions)
+            .normalize_longitude_turns()
+    }
+
+    /// The surface minus the chrome covering its left edge. One pixel wide at minimum, so a chrome measurement
+    /// as wide as the surface cannot produce a zero aspect.
+    fn uncovered_dimensions(&self) -> SurfaceDimensions {
+        let covered: u32 = self.left_surface_inset.max(0.0) as u32;
+
+        SurfaceDimensions {
+            width: self.surface_dimensions.width.saturating_sub(covered).max(1),
+            height: self.surface_dimensions.height,
+        }
+    }
+
+    fn set_left_surface_inset(&mut self, inset: f64) {
+        self.left_surface_inset = inset;
     }
 
     fn region_at(&self, surface_point: SurfacePoint) -> Option<RegionHit> {
@@ -782,6 +805,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Res
         surface_dimensions: SurfaceDimensions { width, height },
         frame_state,
         signals,
+        left_surface_inset: 0.0,
         selection: None,
         redraw_pending: false,
         gesture: Gesture::Idle,
@@ -1240,6 +1264,12 @@ pub fn apply_statistic(statistic: StatisticKind) {
 
 pub fn apply_period(period_start: NaiveDate) {
     publish_mutation(|driver| driver.scrub_to_period(period_start));
+}
+
+/// Reported by the chrome that does the covering, in surface pixels, so the framing does not have to know
+/// which panel is open or how wide its stylesheet makes it.
+pub fn apply_left_surface_inset(inset: f64) {
+    with_driver(|driver| driver.set_left_surface_inset(inset));
 }
 
 pub fn apply_regions_expand_on_hover(enabled: bool) {

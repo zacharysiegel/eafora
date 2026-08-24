@@ -209,6 +209,25 @@ impl Viewport {
         seed.zoom_to_height(padded_height, max_height, surface)
     }
 
+    /// This viewport at the same zoom, rebuilt to `surface`'s aspect. A framing computed against a narrower
+    /// region than the one being drawn to has the right height and the wrong width.
+    pub fn at_surface_aspect(&self, surface: SurfaceDimensions, max_height: f64) -> Viewport {
+        self.zoom_to_height(self.height(), max_height, surface)
+    }
+
+    /// This viewport slid so its content sits at the centre of the region left visible when chrome covers
+    /// `inset` pixels of the surface's left edge. The viewport still spans the whole surface, because the map
+    /// draws under the chrome; only what the centre means changes.
+    pub fn offset_for_left_inset(&self, inset: f64, surface: SurfaceDimensions) -> Viewport {
+        let world_per_surface_pixel: f64 = self.height() / surface.height as f64;
+        let shift: f64 = inset / 2.0 * world_per_surface_pixel;
+
+        Viewport {
+            min: ProjectedPoint { x: self.min.x - shift, y: self.min.y },
+            max: ProjectedPoint { x: self.max.x - shift, y: self.max.y },
+        }
+    }
+
     /// This viewport blended toward `target` by eased `t` in `[0, 1]`, interpolating the center and the
     /// visible height and re-deriving the width from the surface aspect so no intermediate frame is
     /// stretched. Height blends geometrically (constant perceived zoom rate); center linearly. The
@@ -548,6 +567,38 @@ mod tests {
 
     fn viewport_aspect(viewport: Viewport) -> f64 {
         (viewport.max.x - viewport.min.x) / (viewport.max.y - viewport.min.y)
+    }
+
+    /// A country centred in the surface sits under chrome covering the surface's left edge, so the offset has to
+    /// put it at the centre of what is left.
+    #[test]
+    fn offset_for_left_inset_centres_the_content_in_the_uncovered_region() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 1000, height: 500 };
+        let centred: Viewport = Viewport {
+            min: ProjectedPoint { x: -1.0, y: -0.5 },
+            max: ProjectedPoint { x: 1.0, y: 0.5 },
+        };
+        let inset: f64 = 400.0;
+
+        let offset: Viewport = centred.offset_for_left_inset(inset, surface);
+
+        let surface_x_of_origin =
+            |viewport: Viewport| (0.0 - viewport.min.x) / (viewport.max.x - viewport.min.x) * surface.width as f64;
+        let uncovered_centre: f64 = inset + (surface.width as f64 - inset) / 2.0;
+
+        assert!((surface_x_of_origin(centred) - surface.width as f64 / 2.0).abs() < TOLERANCE);
+        assert!((surface_x_of_origin(offset) - uncovered_centre).abs() < TOLERANCE);
+    }
+
+    #[test]
+    fn offset_for_left_inset_leaves_the_viewport_alone_when_nothing_is_covered() {
+        let surface: SurfaceDimensions = SurfaceDimensions { width: 1000, height: 500 };
+        let viewport: Viewport = Viewport {
+            min: ProjectedPoint { x: -1.0, y: -0.5 },
+            max: ProjectedPoint { x: 1.0, y: 0.5 },
+        };
+
+        assert_eq!(viewport.offset_for_left_inset(0.0, surface), viewport);
     }
 
     #[test]
