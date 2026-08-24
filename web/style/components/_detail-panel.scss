@@ -79,35 +79,58 @@
    never covers the text, and absent until the pointer is in the panel, since a reader not scrolling has no use
    for it. */
 .region-dock-thumb {
+    /* The width is the interior, not the box, so the two borders can meet and enclose nothing: with the pointer
+       in the panel the thumb is border only, and the white the held state shows is squeezed out by the shrink.
+       Coming and going is a horizontal scale rather than a change of width, because a hairline border cannot be
+       interpolated: it is one pixel or none. */
+    box-sizing: content-box;
+    --thumb-interior-held: 5px;
+    --thumb-box-idle: calc(var(--border-width-hairline) * 2);
+    --thumb-box-held: calc(var(--thumb-interior-held) + var(--border-width-hairline) * 2);
+
     position: absolute;
     /* `left: 100%` lands on the padding box, which stops at the border's inner edge, so half a border further
        out puts the thumb's centre on the border's centre. */
     left: calc(100% + var(--border-width-hairline) / 2);
-    transform: translateX(-50%);
     width: 0;
-    background: var(--color-ink-soft);
+    border: var(--border-width-hairline) solid var(--color-ink);
+    background: var(--color-ink);
     border-radius: 999px; // the one rounded thing in the interface; a 1px-wide cap cannot read as square
-    transition: width var(--duration-thumb) ease;
+    /* Half the box as a length, not a percentage: a percentage in a transform is resolved once when the
+       transition starts, so it would hold the narrow box's offset while the box grew and then jump. */
+    transform: translateX(calc(var(--thumb-box-idle) / -2)) scaleX(0);
 
-    /* A three-pixel bar is not a pointer target, so the hit area reaches past it without drawing. */
+    /* Entered when the pointer leaves the panel. The fill darkens on a curve that is nearly flat at first, so
+       the white thins and dims together rather than the last sliver of it being erased. */
+    transition:
+        width var(--duration-thumb) ease,
+        transform var(--duration-thumb) ease,
+        background-color var(--duration-thumb) cubic-bezier(0.7, 0, 0.84, 0);
+
+    /* A two-pixel bar is not a pointer target, so the hit area reaches past it without drawing. */
     &::before {
         content: "";
         position: absolute;
-        inset: 0 -7px;
+        inset: 0 calc(-1 * var(--thumb-interior-held));
     }
 }
 
 .region-dock:hover .region-dock-thumb {
-    width: 3px;
+    transform: translateX(calc(var(--thumb-box-idle) / -2)) scaleX(1);
 }
 
 /* Under the pointer the thumb becomes a sheet like everything else in the interface: opaque white behind one
-   hairline. The fill and border switch instantly; only the width moves. */
+   hairline. Arriving, the fill changes at once and the opening interior is what lets it show. */
 .region-dock .region-dock-thumb:hover,
 .region-dock .region-dock-thumb.is-held {
-    width: 7px;
+    width: var(--thumb-interior-held);
     background: var(--color-paper);
-    border: var(--border-ink);
+    transform: translateX(calc(var(--thumb-box-held) / -2)) scaleX(1);
+
+    transition:
+        width var(--duration-thumb) ease,
+        transform var(--duration-thumb) ease,
+        background-color 0s;
 }
 
 .region-dock-header {

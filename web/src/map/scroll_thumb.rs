@@ -1,7 +1,7 @@
 // Only the `dom` submodule measures anything, and the ssr build does not compile it.
 #![cfg_attr(not(feature = "hydrate"), allow(dead_code))]
 
-use leptos::ev::PointerEvent;
+use leptos::ev::{PointerEvent, WheelEvent};
 use leptos::html::Div;
 use leptos::prelude::*;
 
@@ -70,6 +70,7 @@ pub fn view(state: ScrollThumbState) -> impl IntoView {
                 on:pointermove=move |event: PointerEvent| drag_to(state, geometry, event)
                 on:pointerup=move |_| state.grab.set(None)
                 on:pointercancel=move |_| state.grab.set(None)
+                on:wheel=move |event: WheelEvent| scroll_by_wheel(state, event)
             ></div>
         })}
     }
@@ -117,7 +118,7 @@ pub use dom::*;
 
 #[cfg(feature = "hydrate")] // measures live elements
 mod dom {
-    use leptos::ev::PointerEvent;
+    use leptos::ev::{PointerEvent, WheelEvent};
     use leptos::prelude::*;
     use wasm_bindgen::JsCast;
     use web_sys::Element;
@@ -164,6 +165,19 @@ mod dom {
         event.prevent_default();
     }
 
+    /// The thumb sits over the panel's border rather than inside the scrolling element, so a wheel over it has
+    /// nothing to scroll and the gesture is handed to the scroller the thumb represents.
+    pub fn scroll_by_wheel(state: ScrollThumbState, event: WheelEvent) {
+        let Some(scroller) = state.scroller().get()
+        else {
+            return;
+        };
+
+        scroller.set_scroll_top(scroller.scroll_top() + event.delta_y() as i32);
+
+        event.prevent_default();
+    }
+
     pub fn drag_to(state: ScrollThumbState, geometry: ThumbGeometry, event: PointerEvent) {
         let Some(grab) = state.grab.get()
         else {
@@ -199,11 +213,13 @@ pub use ssr::*;
 
 #[cfg(not(feature = "hydrate"))] // the ssr build has no element to measure or drag
 mod ssr {
-    use leptos::ev::PointerEvent;
+    use leptos::ev::{PointerEvent, WheelEvent};
 
     use super::{ScrollThumbState, ThumbGeometry};
 
     pub fn refresh(_state: ScrollThumbState) {}
+
+    pub fn scroll_by_wheel(_state: ScrollThumbState, _event: WheelEvent) {}
 
     pub fn take_hold(_state: ScrollThumbState, _geometry: ThumbGeometry, _event: PointerEvent) {}
 
