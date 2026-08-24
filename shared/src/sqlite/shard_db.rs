@@ -20,6 +20,16 @@ pub struct CellValue {
     pub source_revision: String,
 }
 
+/// One period of a region's series, carrying the value a map would draw for it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SeriesPoint {
+    pub period_start: NaiveDate,
+    pub period_end: NaiveDate,
+    pub value: f64,
+    pub data_status: DataStatus,
+    pub source_code: String,
+}
+
 /// A shard holds every source's value for a cell, so a consumer can present an alternative to the one
 /// preference picks. Keyed by `region.code` and period start, with the value and period ranges precomputed
 /// over the preferred value of each cell, which is what a map draws.
@@ -60,6 +70,40 @@ impl ShardValues {
         self.cells(region_code, period_start)
             .iter()
             .find(|cell| cell.source_code == source_code)
+    }
+
+    /// Oldest period first, so a consumer plots without sorting. Each point is the value a map draws, so a
+    /// series and the map never disagree about which source supplied a period.
+    pub fn series(&self, region_code: &str) -> Vec<SeriesPoint> {
+        let Some(by_period) = self.by_region.get(region_code)
+        else {
+            return Vec::new();
+        };
+
+        let mut series: Vec<SeriesPoint> = Vec::with_capacity(by_period.len());
+
+        for (period_start, cells) in by_period {
+            let Some(preferred) = preferred_cell(cells, &self.preference_rank_by_source)
+            else {
+                continue;
+            };
+            let Some(period_end) = self.period_end(*period_start)
+            else {
+                continue;
+            };
+
+            series.push(SeriesPoint {
+                period_start: *period_start,
+                period_end,
+                value: preferred.value,
+                data_status: preferred.data_status,
+                source_code: preferred.source_code.clone(),
+            });
+        }
+
+        series.sort_by_key(|point| point.period_start);
+
+        series
     }
 
     pub fn value_range(&self) -> Option<(f64, f64)> {
@@ -709,6 +753,61 @@ mod tests {
         let cell: &CellValue = shard.cell("deu", NaiveDate::from_ymd_opt(2018, 1, 1).unwrap()).unwrap();
 
         assert_eq!(cell.source_code, WORLD_BANK);
+    }
+
+    #[test]
+    fn series_orders_periods_oldest_first() {
+        let shard: ShardValues = read_shard(&sourced_shard_bytes(
+            &[
+                ("deu", "2018-01-01", "2019-01-01", 1.57, "final", WORLD_BANK),
+                ("deu", "2016-01-01", "2017-01-01", 1.6, "final", WORLD_BANK),
+                ("deu", "2017-01-01", "2018-01-01", 1.58, "final", WORLD_BANK),
+            ],
+            &[(WORLD_BANK, 100)],
+        ))
+        .unwrap();
+
+        let series: Vec<SeriesPoint> = shard.series("deu");
+
+        let period_starts: Vec<NaiveDate> = series.iter().map(|point| point.period_start).collect();
+        assert_eq!(
+            period_starts,
+            vec![
+                NaiveDate::from_ymd_opt(2016, 1, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2017, 1, 1).unwrap(),
+                NaiveDate::from_ymd_opt(2018, 1, 1).unwrap(),
+            ],
+        );
+    }
+
+    /// A chart and the map read the same shard, so a contested period must resolve identically in both.
+    #[test]
+    fn series_takes_the_preferred_source_for_each_period() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        let series: Vec<SeriesPoint> = shard.series("deu");
+
+        assert_eq!(series.len(), 2);
+        assert_eq!(series[0].source_code, HUMAN_FERTILITY_DATABASE);
+        assert_eq!(series[0].value, 1.597);
+        assert_eq!(series[1].source_code, WORLD_BANK);
+        assert_eq!(series[1].value, 1.57);
+    }
+
+    #[test]
+    fn series_carries_the_ending_of_each_period() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        let series: Vec<SeriesPoint> = shard.series("deu");
+
+        assert_eq!(series[0].period_end, NaiveDate::from_ymd_opt(2017, 1, 1).unwrap());
+    }
+
+    #[test]
+    fn series_is_empty_for_a_region_the_shard_does_not_cover() {
+        let shard: ShardValues = read_shard(&contested_shard_bytes()).unwrap();
+
+        assert!(shard.series("jpn").is_empty());
     }
 
     /// The legend reads this range, so an alternative source's value must not stretch it.
