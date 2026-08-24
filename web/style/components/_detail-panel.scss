@@ -87,7 +87,7 @@
 .region-dock-thumb {
     --thumb-interior-held: 5px;
     --thumb-box-held: calc(var(--thumb-interior-held) + var(--border-width-hairline) * 2);
-    --thumb-grab-margin: 5px;
+    --thumb-grab-margin: 4px;
 
     position: absolute;
     /* `left: 100%` lands on the padding box, which stops at the border's inner edge, so half a border further
