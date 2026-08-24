@@ -312,9 +312,6 @@ fn history_section(
         {history_chart(i18n, statistic, series, active_period_start, &scale)}
         <p class="region-dock-chart-bounds">
             <span class="numeric">{scale.first_period_start.year().to_string()}</span>
-            {labels::reference_caption_string(i18n, statistic).map(|caption| view! {
-                <span class="region-dock-chart-reference-key">{caption}</span>
-            })}
             <span class="numeric">{scale.last_period_start.year().to_string()}</span>
         </p>
     }

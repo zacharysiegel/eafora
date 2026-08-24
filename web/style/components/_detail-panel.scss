@@ -214,15 +214,6 @@
     color: var(--color-ink-muted);
 }
 
-// Names the dashed line, which carries no label of its own.
-.region-dock-chart-reference-key::before {
-    content: "";
-    display: inline-block;
-    width: 1.25rem;
-    border-top: 1px dashed var(--color-ink-muted);
-    vertical-align: 0.25em;
-    margin-right: var(--space-xs);
-}
 
 .region-dock-sources {
     margin-top: var(--space-md);
