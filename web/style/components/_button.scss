@@ -12,3 +12,18 @@
     border-color: var(--color-accent-active);
     color: var(--color-accent-active);
 }
+
+// A glyph has no reading direction wanting extra side room, so an icon-only button is square.
+.button-icon {
+    padding: var(--space-xs);
+    line-height: 0;
+}
+
+.button .icon {
+    display: block;
+    width: 13px;
+    height: 13px;
+    stroke: currentColor;
+    stroke-width: 1.25;
+    fill: none;
+}

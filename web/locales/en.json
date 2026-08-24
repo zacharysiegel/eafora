@@ -1,49 +1,59 @@
 {
-    "controls": {
-        "loading": "Loading data…"
+  "controls": {
+    "loading": "Loading data…"
+  },
+  "map": {
+    "unsupported": "This browser is missing features Eafora requires: WebGPU or WebGL2 graphics, and Origin Private File System storage.",
+    "data_unavailable": "The map data could not be loaded."
+  },
+  "detail": {
+    "no_data": "No data for this region.",
+    "source": "Source",
+    "world": "Global",
+    "status": {
+      "provisional": "Provisional figure, subject to revision.",
+      "preliminary": "Preliminary figure, subject to revision.",
+      "projection": "Projected figure, not an observation.",
+      "imputed": "Imputed figure, not directly reported.",
+      "interpolated": "Interpolated between reported figures."
     },
-    "map": {
-        "unsupported": "This browser is missing features Eafora requires: WebGPU or WebGL2 graphics, and Origin Private File System storage.",
-        "data_unavailable": "The map data could not be loaded."
-    },
-    "detail": {
-        "no_data": "No data for this region.",
-        "source": "Source",
-        "world": "Global",
-        "status": {
-            "provisional": "Provisional figure, subject to revision.",
-            "preliminary": "Preliminary figure, subject to revision.",
-            "projection": "Projected figure, not an observation.",
-            "imputed": "Imputed figure, not directly reported.",
-            "interpolated": "Interpolated between reported figures."
-        }
-    },
-    "statistic": {
-        "tfr": "Total fertility rate",
-        "tfr_unit": "births per woman",
-        "ccf": "Completed cohort fertility",
-        "ccf_unit": "children per woman",
-        "picker_label": "Statistic"
-    },
-    "scrubber": {
-        "label": "Year",
-        "cohort_label": "Birth cohort"
-    },
-    "legend": {
-        "no_data": "No data",
-        "replacement": "replacement"
-    },
-    "source": {
-        "wb_wdi": "World Bank WDI",
-        "hfd": "Human Fertility Database"
-    },
-    "settings": {
-        "title": "Settings",
-        "open": "Settings",
-        "close": "Close settings",
-        "regions_expand_on_hover": "Regions expand on hover"
-    },
-    "live": {
-        "load_failed": "The latest data could not be loaded."
-    }
+    "expand": "Expand to the full detail.",
+    "collapse": "Collapse the detail.",
+    "rank": "Rank, lowest to highest",
+    "change_over_1_period": "Past year",
+    "change_over_10_periods": "Past 10 years",
+    "not_applicable": "N/A",
+    "history": "History",
+    "no_history": "No other periods are covered for this region.",
+    "sources": "Data sources",
+    "source_preferred": "Prioritized"
+  },
+  "statistic": {
+    "tfr": "Total fertility rate",
+    "tfr_unit": "births per woman",
+    "ccf": "Completed cohort fertility",
+    "ccf_unit": "children per woman",
+    "picker_label": "Statistic"
+  },
+  "scrubber": {
+    "label": "Year",
+    "cohort_label": "Birth cohort"
+  },
+  "legend": {
+    "no_data": "No data",
+    "replacement": "replacement"
+  },
+  "source": {
+    "wb_wdi": "World Bank WDI",
+    "hfd": "Human Fertility Database"
+  },
+  "settings": {
+    "title": "Settings",
+    "open": "Settings",
+    "close": "Close settings",
+    "regions_expand_on_hover": "Regions expand on hover"
+  },
+  "live": {
+    "load_failed": "The latest data could not be loaded."
+  }
 }

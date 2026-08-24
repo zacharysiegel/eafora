@@ -1,54 +1,138 @@
-use chrono::Datelike;
+use chrono::{Datelike, NaiveDate};
 use leptos::prelude::*;
 use leptos_i18n::I18nContext;
 
 use shared::canonical::{DataSourceKind, DataStatus, StatisticKind};
 
 use crate::i18n::*;
-use crate::map::canvas::{CellView, GlobalView, SelectionView};
+use crate::map::canvas::{CellView, GlobalView, RegionDetail, RankView, SelectionView, SeriesPointView, SourceCellView};
 use crate::map::labels;
+
+/// Births per woman at which a generation replaces itself. Drawn as the line a fertility series is read
+/// against, so it is the one value on the chart that does not come from the data.
+const REPLACEMENT_RATE: f64 = 2.1;
+
+/// The chart's coordinate space. It scales to the dock's width through the `viewBox`, so these are
+/// proportions of the drawing rather than pixels on screen.
+const CHART_WIDTH: f64 = 320.0;
+const CHART_HEIGHT: f64 = 124.0;
+const PLOT_LEFT: f64 = 3.0;
+const PLOT_RIGHT: f64 = 317.0;
+const PLOT_TOP: f64 = 8.0;
+const PLOT_BOTTOM: f64 = 116.0;
+
+/// Half the active period's marker height, so a marker on the first or last period sits inside the drawing
+/// rather than half-clipped by its edge.
+const MARKER_RADIUS: f64 = 4.0;
+
+/// Gap between the reference line and the caption naming it.
+const REFERENCE_CAPTION_OFFSET: f64 = 4.0;
+
+/// Headroom above and below the series, as a proportion of its extent, so a peak does not touch the top of
+/// the plot.
+const CHART_RANGE_MARGIN_PROPORTION: f64 = 0.08;
+
+/// Half-extent of the range given to a series whose values are all equal, which has no extent of its own to
+/// take a margin from.
+const FLAT_SERIES_HALF_EXTENT: f64 = 0.5;
+
+const CHANGE_INTERVAL_IN_YEARS_SHORT: i32 = 1;
+const CHANGE_INTERVAL_IN_YEARS_LONG: i32 = 10;
+
+/// Which detail surface is up. Independent of the selection, so collapsing leaves the region selected and
+/// outlined.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailSurface {
+    Summary,
+    Expanded,
+}
 
 #[component]
 pub fn RegionDetailPanel() -> impl IntoView {
     let selection: RwSignal<Option<SelectionView>> = expect_context();
     let global: RwSignal<Option<GlobalView>> = expect_context();
+    let surface: RwSignal<DetailSurface> = expect_context();
     let i18n = use_i18n();
 
-    move || match selection.get() {
-        Some(selection_view) => {
-            let SelectionView { region_code: _, name_en, statistic, period_start, cell } = selection_view;
+    move || {
+        let figure: ActiveFigure = active_figure(i18n, selection.get(), global.get())?;
 
-            Some(detail_panel(i18n, name_en.into_any(), statistic, period_start.year(), cell))
-        },
-        None => global.get().map(|global_view| {
-            let GlobalView { statistic, period_start, cell } = global_view;
+        let view: AnyView = match surface.get() {
+            DetailSurface::Summary => summary_panel(i18n, figure, surface).into_any(),
+            DetailSurface::Expanded => detail_dock(i18n, figure, surface).into_any(),
+        };
 
-            detail_panel(i18n, t!(i18n, detail.world).into_any(), statistic, period_start.year(), cell)
-        }),
+        Some(view)
     }
 }
 
-fn detail_panel(
-    i18n: I18nContext<Locale>,
-    region_label: AnyView,
+/// The figure both surfaces render, whichever of the two the driver published. The world is the figure
+/// whenever no region is selected.
+struct ActiveFigure {
+    label: AnyView,
     statistic: StatisticKind,
-    year: i32,
+    period_start: NaiveDate,
     cell: CellView,
+    detail: RegionDetail,
+}
+
+fn active_figure(
+    i18n: I18nContext<Locale>,
+    selection: Option<SelectionView>,
+    global: Option<GlobalView>,
+) -> Option<ActiveFigure> {
+    if let Some(selection) = selection {
+        let SelectionView { region_code: _, name_en, statistic, period_start, cell, detail } = selection;
+
+        return Some(ActiveFigure {
+            label: name_en.into_any(),
+            statistic,
+            period_start,
+            cell,
+            detail,
+        });
+    }
+
+    let GlobalView { statistic, period_start, cell, detail } = global?;
+
+    Some(ActiveFigure {
+        label: t!(i18n, detail.world).into_any(),
+        statistic,
+        period_start,
+        cell,
+        detail,
+    })
+}
+
+/// The small top-left figure: the value and its source, and the control that expands to the dock.
+fn summary_panel(
+    i18n: I18nContext<Locale>,
+    figure: ActiveFigure,
+    surface: RwSignal<DetailSurface>,
 ) -> impl IntoView {
+    let ActiveFigure { label, statistic, period_start, cell, detail: _ } = figure;
     let CellView { value, source, data_status } = cell;
     let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
 
     view! {
         <aside class="panel detail-panel">
-            <p class="detail-panel-region">{region_label}</p>
+            <button
+                class="button button-icon detail-panel-expand"
+                type="button"
+                aria-label=t_string!(i18n, detail.expand)
+                on:click=move |_| surface.set(DetailSurface::Expanded)
+            >
+                {expand_icon()}
+            </button>
+            <p class="detail-panel-region">{label}</p>
             <p class="detail-panel-statistic">
                 {labels::statistic_label(i18n, statistic)}
                 " · "
-                {year.to_string()}
+                {period_start.year().to_string()}
             </p>
             {match value {
                 Some(value) => view! {
-                    <p class="detail-panel-value numeric">{format!("{value:.2}")}</p>
+                    <p class="detail-panel-value numeric">{format_value(value)}</p>
                     <p class="detail-panel-unit">{labels::statistic_unit(i18n, statistic)}</p>
                     {source.map(|source| view! {
                         <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
@@ -64,6 +148,346 @@ fn detail_panel(
                 .into_any(),
             }}
         </aside>
+    }
+}
+
+fn detail_dock(
+    i18n: I18nContext<Locale>,
+    figure: ActiveFigure,
+    surface: RwSignal<DetailSurface>,
+) -> impl IntoView {
+    let ActiveFigure { label, statistic, period_start, cell, detail } = figure;
+    let RegionDetail { series, sources, rank } = detail;
+    let CellView { value, source: _, data_status } = cell;
+    let status: Option<AnyView> = data_status.and_then(|data_status| status_label(i18n, data_status));
+
+    view! {
+        <aside class="panel region-dock">
+            <header class="region-dock-header">
+                <h2 class="region-dock-region">{label}</h2>
+                <button
+                    class="button button-icon region-dock-collapse"
+                    type="button"
+                    aria-label=t_string!(i18n, detail.collapse)
+                    on:click=move |_| surface.set(DetailSurface::Summary)
+                >
+                    {collapse_icon()}
+                </button>
+            </header>
+
+            <p class="region-dock-statistic">
+                {labels::statistic_label(i18n, statistic)}
+                " · "
+                {period_start.year().to_string()}
+            </p>
+
+            {match value {
+                Some(value) => view! {
+                    <p class="region-dock-value numeric">{format_value(value)}</p>
+                    <p class="region-dock-unit">{labels::statistic_unit(i18n, statistic)}</p>
+                    {status.map(|status| view! {
+                        <p class="region-dock-status">{status}</p>
+                    })}
+                }
+                .into_any(),
+                None => view! {
+                    <p class="region-dock-no-data">{t!(i18n, detail.no_data)}</p>
+                }
+                .into_any(),
+            }}
+
+            {context_rows(i18n, &series, period_start, rank)}
+            {history_section(i18n, statistic, &series, period_start)}
+            {sources_section(i18n, &sources)}
+        </aside>
+    }
+}
+
+/// The figures that put the primary value in proportion. A row whose comparison the shard does not cover
+/// still renders, so the block keeps its shape as the reader scrubs.
+fn context_rows(
+    i18n: I18nContext<Locale>,
+    series: &[SeriesPointView],
+    active_period_start: NaiveDate,
+    rank: Option<RankView>,
+) -> AnyView {
+    let not_applicable: String = t_string!(i18n, detail.not_applicable).to_string();
+
+    let rank_value: String = match rank {
+        Some(rank) => format!("{} / {}", rank.position, rank.of),
+        None => not_applicable.clone(),
+    };
+    let short_change_value: String =
+        format_change_or(change_over_years(series, active_period_start, CHANGE_INTERVAL_IN_YEARS_SHORT), &not_applicable);
+    let long_change_value: String =
+        format_change_or(change_over_years(series, active_period_start, CHANGE_INTERVAL_IN_YEARS_LONG), &not_applicable);
+
+    view! {
+        <dl class="region-dock-context">
+            {context_row(t!(i18n, detail.rank).into_any(), rank_value)}
+            {context_row(t!(i18n, detail.change_over_1_period).into_any(), short_change_value)}
+            {context_row(t!(i18n, detail.change_over_10_periods).into_any(), long_change_value)}
+        </dl>
+    }
+    .into_any()
+}
+
+fn context_row(label: AnyView, value: String) -> AnyView {
+    view! {
+        <div class="region-dock-context-row">
+            <dt>{label}</dt>
+            <dd class="numeric">{value}</dd>
+        </div>
+    }
+    .into_any()
+}
+
+/// The difference between the active period's value and the one `years` earlier. `None` unless the shard
+/// covers both, so a gap yields nothing rather than a difference over the wrong interval.
+fn change_over_years(series: &[SeriesPointView], active_period_start: NaiveDate, years: i32) -> Option<f64> {
+    let earlier_period_start: NaiveDate = active_period_start.with_year(active_period_start.year() - years)?;
+
+    let active_value: f64 = value_at(series, active_period_start)?;
+    let earlier_value: f64 = value_at(series, earlier_period_start)?;
+
+    Some(active_value - earlier_value)
+}
+
+fn value_at(series: &[SeriesPointView], period_start: NaiveDate) -> Option<f64> {
+    series
+        .iter()
+        .find(|point| point.period_start == period_start)
+        .map(|point| point.value)
+}
+
+fn history_section(
+    i18n: I18nContext<Locale>,
+    statistic: StatisticKind,
+    series: &[SeriesPointView],
+    active_period_start: NaiveDate,
+) -> AnyView {
+    let heading: AnyView = view! {
+        <h3 class="region-dock-heading">{t!(i18n, detail.history)}</h3>
+    }
+    .into_any();
+
+    let Some(scale) = ChartScale::from_series(series, reference_line(statistic))
+    else {
+        return view! {
+            {heading}
+            <p class="region-dock-no-history">{t!(i18n, detail.no_history)}</p>
+        }
+        .into_any();
+    };
+
+    view! {
+        {heading}
+        {history_chart(i18n, statistic, series, active_period_start, &scale)}
+        <p class="region-dock-chart-bounds">
+            <span class="numeric">{scale.first_period_start.year().to_string()}</span>
+            <span class="numeric">{scale.last_period_start.year().to_string()}</span>
+        </p>
+    }
+    .into_any()
+}
+
+/// The dashed line and the caption that says what it is. A line with no caption reads as decoration.
+struct ReferenceLine {
+    y: f64,
+    caption: String,
+}
+
+/// The value the line marks, then the word for it: "2.1 replacement".
+fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind, value: f64) -> String {
+    let Some(caption) = labels::reference_caption_string(i18n, statistic)
+    else {
+        return format!("{value:.1}");
+    };
+
+    format!("{value:.1} {caption}")
+}
+
+/// The value a statistic is read against, drawn as a dashed line. Both fertility measures are births per
+/// woman, so both are read against replacement.
+fn reference_line(statistic: StatisticKind) -> Option<f64> {
+    match statistic {
+        StatisticKind::Tfr => Some(REPLACEMENT_RATE),
+        StatisticKind::Ccf => Some(REPLACEMENT_RATE),
+    }
+}
+
+fn history_chart(
+    i18n: I18nContext<Locale>,
+    statistic: StatisticKind,
+    series: &[SeriesPointView],
+    active_period_start: NaiveDate,
+    scale: &ChartScale,
+) -> AnyView {
+    let polyline_points: String = scale.polyline_points(series);
+    let active_marker: Option<(f64, f64)> = value_at(series, active_period_start)
+        .map(|value| (scale.x(active_period_start), scale.y(value)));
+    let reference: Option<ReferenceLine> = reference_line(statistic).map(|value| ReferenceLine {
+        y: scale.y(value),
+        caption: reference_caption(i18n, statistic, value),
+    });
+
+    view! {
+        <svg
+            class="region-dock-chart"
+            viewBox=format!("0 0 {CHART_WIDTH} {CHART_HEIGHT}")
+            aria-hidden="true"
+        >
+            {reference.map(|reference| view! {
+                <line
+                    class="region-dock-chart-reference"
+                    x1=PLOT_LEFT
+                    x2=PLOT_RIGHT
+                    y1=reference.y
+                    y2=reference.y
+                />
+                <text
+                    class="region-dock-chart-reference-caption"
+                    x=PLOT_RIGHT
+                    y=reference.y - REFERENCE_CAPTION_OFFSET
+                    text-anchor="end"
+                >
+                    {reference.caption}
+                </text>
+            })}
+            <line
+                class="region-dock-chart-baseline"
+                x1=PLOT_LEFT
+                x2=PLOT_RIGHT
+                y1=PLOT_BOTTOM
+                y2=PLOT_BOTTOM
+            />
+            <polyline class="region-dock-chart-line" points=polyline_points />
+            {active_marker.map(|(x, y)| view! {
+                <circle class="region-dock-chart-marker" cx=x cy=y r=MARKER_RADIUS />
+            })}
+        </svg>
+    }
+    .into_any()
+}
+
+/// Maps a series onto the chart's coordinate space. A period is placed by its distance in time, not by its
+/// index in the series, so a gap in coverage reads as a gap.
+struct ChartScale {
+    first_period_start: NaiveDate,
+    last_period_start: NaiveDate,
+    low: f64,
+    high: f64,
+}
+
+impl ChartScale {
+    /// `None` for a series confined to one period, which has no extent to scale against. `included_value`
+    /// is held inside the vertical range even when the series never reaches it.
+    fn from_series(series: &[SeriesPointView], included_value: Option<f64>) -> Option<ChartScale> {
+        let first_period_start: NaiveDate = series.first()?.period_start;
+        let last_period_start: NaiveDate = series.last()?.period_start;
+
+        if first_period_start == last_period_start {
+            return None;
+        }
+
+        let mut low: f64 = included_value.unwrap_or(f64::INFINITY);
+        let mut high: f64 = included_value.unwrap_or(f64::NEG_INFINITY);
+
+        for point in series {
+            low = low.min(point.value);
+            high = high.max(point.value);
+        }
+
+        let extent: f64 = high - low;
+        let margin: f64 = if extent > 0.0 {
+            extent * CHART_RANGE_MARGIN_PROPORTION
+        } else {
+            FLAT_SERIES_HALF_EXTENT
+        };
+
+        Some(ChartScale {
+            first_period_start,
+            last_period_start,
+            low: low - margin,
+            high: high + margin,
+        })
+    }
+
+    fn x(&self, period_start: NaiveDate) -> f64 {
+        let total_days: f64 = (self.last_period_start - self.first_period_start).num_days() as f64;
+        let elapsed_days: f64 = (period_start - self.first_period_start).num_days() as f64;
+        let plot_width: f64 = PLOT_RIGHT - PLOT_LEFT;
+
+        PLOT_LEFT + elapsed_days / total_days * plot_width
+    }
+
+    fn y(&self, value: f64) -> f64 {
+        let plot_height: f64 = PLOT_BOTTOM - PLOT_TOP;
+        let proportion: f64 = (value - self.low) / (self.high - self.low);
+
+        PLOT_BOTTOM - proportion.clamp(0.0, 1.0) * plot_height
+    }
+
+    fn polyline_points(&self, series: &[SeriesPointView]) -> String {
+        let coordinates: Vec<String> = series
+            .iter()
+            .map(|point| format!("{:.1},{:.1}", self.x(point.period_start), self.y(point.value)))
+            .collect();
+
+        coordinates.join(" ")
+    }
+}
+
+/// Every source covering the active period, so a reader can see that sources disagree and by how much.
+fn sources_section(i18n: I18nContext<Locale>, sources: &[SourceCellView]) -> AnyView {
+    if sources.is_empty() {
+        return ().into_any();
+    }
+
+    let is_contested: bool = sources.len() > 1;
+    let rows: Vec<AnyView> = sources
+        .iter()
+        .map(|source_cell| source_row(i18n, source_cell, is_contested))
+        .collect();
+
+    view! {
+        <h3 class="region-dock-heading">{t!(i18n, detail.sources)}</h3>
+        <div class="region-dock-sources">{rows}</div>
+    }
+    .into_any()
+}
+
+/// `is_contested` gates the tag: with one source there is nothing for a priority to have decided.
+fn source_row(i18n: I18nContext<Locale>, source_cell: &SourceCellView, is_contested: bool) -> AnyView {
+    let status: Option<AnyView> = status_label(i18n, source_cell.data_status);
+    let is_tagged: bool = source_cell.is_preferred && is_contested;
+
+    view! {
+        <div class="region-dock-source-row">
+            <span class="region-dock-source-name">
+                {source_label(i18n, source_cell.source)}
+                {is_tagged.then(|| view! {
+                    <span class="tag tag-ink">{t!(i18n, detail.source_preferred)}</span>
+                })}
+            </span>
+            <span class="region-dock-source-value numeric">{format_value(source_cell.value)}</span>
+            {status.map(|status| view! {
+                <span class="region-dock-source-status">{status}</span>
+            })}
+        </div>
+    }
+    .into_any()
+}
+
+fn format_value(value: f64) -> String {
+    format!("{value:.2}")
+}
+
+/// Signed, since the reader is being shown a direction rather than a magnitude.
+fn format_change_or(change: Option<f64>, absent: &str) -> String {
+    match change {
+        Some(change) => format!("{change:+.2}"),
+        None => absent.to_string(),
     }
 }
 
@@ -83,5 +507,124 @@ fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
     match source {
         DataSourceKind::WorldBankWDI => t!(i18n, source.wb_wdi).into_any(),
         DataSourceKind::HumanFertilityDatabase => t!(i18n, source.hfd).into_any(),
+    }
+}
+
+/// Arrows toward opposite corners, and toward each other to collapse.
+fn expand_icon() -> impl IntoView {
+    view! {
+        <svg class="icon" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M8 2 H12 V6 M12 2 L8 6 M6 12 H2 V8 M2 12 L6 8" />
+        </svg>
+    }
+}
+
+fn collapse_icon() -> impl IntoView {
+    view! {
+        <svg class="icon" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M12 6 H8 V2 M8 6 L12 2 M2 8 H6 V12 M6 8 L2 12" />
+        </svg>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn series_of(points: &[(i32, f64)]) -> Vec<SeriesPointView> {
+        points
+            .iter()
+            .map(|(year, value)| SeriesPointView {
+                period_start: NaiveDate::from_ymd_opt(*year, 1, 1).unwrap(),
+                value: *value,
+            })
+            .collect()
+    }
+
+    fn january(year: i32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(year, 1, 1).unwrap()
+    }
+
+    /// The interval is passed rather than read from the constants, so retuning which intervals the dock shows
+    /// does not rewrite the lookup's test.
+    #[test]
+    fn change_over_years_reads_the_period_that_many_years_earlier() {
+        let series: Vec<SeriesPointView> = series_of(&[(2014, 1.50), (2019, 1.60), (2024, 1.20)]);
+
+        let change: f64 = change_over_years(&series, january(2024), 5).unwrap();
+
+        assert!((change - -0.40).abs() < 1e-9);
+    }
+
+    #[test]
+    fn change_over_years_is_absent_when_the_earlier_period_is_uncovered() {
+        let series: Vec<SeriesPointView> = series_of(&[(2019, 1.60), (2024, 1.20)]);
+
+        assert_eq!(change_over_years(&series, january(2024), 10), None);
+    }
+
+    #[test]
+    fn format_change_or_signs_a_change_and_falls_back_when_absent() {
+        assert_eq!(format_change_or(Some(-0.4), "N/A"), "-0.40");
+        assert_eq!(format_change_or(Some(0.08), "N/A"), "+0.08");
+        assert_eq!(format_change_or(None, "N/A"), "N/A");
+    }
+
+    #[test]
+    fn chart_scale_is_absent_for_a_series_confined_to_one_period() {
+        assert!(ChartScale::from_series(&series_of(&[(2024, 1.20)]), None).is_none());
+    }
+
+    #[test]
+    fn chart_scale_spans_the_plot_from_the_first_period_to_the_last() {
+        let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2012, 1.4), (2024, 1.2)]);
+        let scale: ChartScale = ChartScale::from_series(&series, None).unwrap();
+
+        assert_eq!(scale.x(january(2000)), PLOT_LEFT);
+        assert_eq!(scale.x(january(2024)), PLOT_RIGHT);
+    }
+
+    /// A gap in coverage has to read as a gap, so an unevenly spaced period lands off the midpoint its index
+    /// would have put it on.
+    #[test]
+    fn chart_scale_places_a_period_by_its_distance_in_time() {
+        let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2018, 1.4), (2024, 1.2)]);
+        let scale: ChartScale = ChartScale::from_series(&series, None).unwrap();
+
+        let plot_midpoint: f64 = (PLOT_LEFT + PLOT_RIGHT) / 2.0;
+
+        assert!(scale.x(january(2018)) > plot_midpoint);
+    }
+
+    #[test]
+    fn chart_scale_holds_the_reference_line_inside_the_range() {
+        let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2024, 1.2)]);
+        let scale: ChartScale = ChartScale::from_series(&series, Some(REPLACEMENT_RATE)).unwrap();
+
+        let reference_y: f64 = scale.y(REPLACEMENT_RATE);
+
+        assert!(reference_y > PLOT_TOP);
+        assert!(reference_y < PLOT_BOTTOM);
+    }
+
+    #[test]
+    fn chart_scale_draws_a_flat_series_inside_the_plot() {
+        let series: Vec<SeriesPointView> = series_of(&[(2000, 1.4), (2024, 1.4)]);
+        let scale: ChartScale = ChartScale::from_series(&series, None).unwrap();
+
+        let flat_y: f64 = scale.y(1.4);
+
+        assert!(flat_y > PLOT_TOP);
+        assert!(flat_y < PLOT_BOTTOM);
+    }
+
+    #[test]
+    fn polyline_points_carries_one_coordinate_per_period() {
+        let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2012, 1.4), (2024, 1.2)]);
+        let scale: ChartScale = ChartScale::from_series(&series, None).unwrap();
+
+        let points: String = scale.polyline_points(&series);
+
+        assert_eq!(points.split(' ').count(), 3);
     }
 }

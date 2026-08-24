@@ -29,6 +29,42 @@ pub struct CellView {
     pub data_status: Option<DataStatus>,
 }
 
+/// One period of a region's series, carrying only what a chart plots.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SeriesPointView {
+    pub period_start: NaiveDate,
+    pub value: f64,
+}
+
+/// One source's reading of the active cell.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceCellView {
+    pub source: DataSourceKind,
+    pub value: f64,
+    pub data_status: DataStatus,
+    /// Set on the source the map drew from, which is the highest-priority one covering the cell.
+    pub is_preferred: bool,
+}
+
+/// A region's standing among every region covered at the active period, counted from the lowest value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RankView {
+    pub position: usize,
+    pub of: usize,
+}
+
+/// What the expanded detail surface renders beyond the primary value, for a country or for the world.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RegionDetail {
+    /// Oldest period first. Empty when the shard covers the region at no period.
+    pub series: Vec<SeriesPointView>,
+    /// Preferred source first. Empty when the shard carries no cell for the active period.
+    pub sources: Vec<SourceCellView>,
+    /// Absent for a region with no value at the active period, and for the world, which is not a peer of the
+    /// countries it summarizes.
+    pub rank: Option<RankView>,
+}
+
 /// Published by the driver so a consumer can render the selection without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectionView {
@@ -37,6 +73,7 @@ pub struct SelectionView {
     pub statistic: StatisticKind,
     pub period_start: NaiveDate,
     pub cell: CellView,
+    pub detail: RegionDetail,
 }
 
 /// Published by the driver so a consumer can render the empty-state world figure without bundle access.
@@ -45,6 +82,7 @@ pub struct GlobalView {
     pub statistic: StatisticKind,
     pub period_start: NaiveDate,
     pub cell: CellView,
+    pub detail: RegionDetail,
 }
 
 /// Published by the driver so the controls render without bundle access.

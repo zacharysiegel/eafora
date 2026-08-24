@@ -44,3 +44,10 @@ pub fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) ->
         StatisticKind::Tfr | StatisticKind::Ccf => Some(t!(i18n, legend.replacement).into_any()),
     }
 }
+
+/// An SVG text node takes a string rather than a view.
+pub fn reference_caption_string(i18n: I18nContext<Locale>, statistic: StatisticKind) -> Option<String> {
+    match statistic {
+        StatisticKind::Tfr | StatisticKind::Ccf => Some(t_string!(i18n, legend.replacement).to_string()),
+    }
+}

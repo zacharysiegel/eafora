@@ -16,7 +16,7 @@ use shared::license::DistributionContext;
 use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
 use shared::map::projection;
-use shared::sqlite::shard_db::{CellValue, ShardValues};
+use shared::sqlite::shard_db::{CellValue, SeriesPoint, ShardValues};
 
 use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
@@ -24,7 +24,7 @@ use crate::distribution;
 use crate::live_resolve;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
-use super::{CellView, RenderStatus, GlobalView, LegendView, SelectionView, ViewControls};
+use super::{CellView, RankView, RegionDetail, RenderStatus, GlobalView, LegendView, SelectionView, SeriesPointView, SourceCellView, ViewControls};
 
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
@@ -299,29 +299,130 @@ impl Driver {
         CellView { value, source, data_status }
     }
 
+    /// A source the client cannot name would render as a blank row, so it is dropped rather than shown.
+    fn decode_source_cell(cell: &CellValue, is_preferred: bool) -> Option<SourceCellView> {
+        let source: DataSourceKind = DataSourceKind::try_from(cell.source_code.as_str())
+            .map_err(|error| log::warn!("shard cell has an unrecognized data source; [code={} error={error}]", cell.source_code))
+            .ok()?;
+
+        Some(SourceCellView {
+            source,
+            value: cell.value,
+            data_status: cell.data_status,
+            is_preferred,
+        })
+    }
+
+    fn decode_sources(cells: &[CellValue], preferred: Option<&CellValue>) -> Vec<SourceCellView> {
+        let preferred_source_code: Option<&str> = preferred.map(|cell| cell.source_code.as_str());
+        let mut source_cells: Vec<SourceCellView> = cells
+            .iter()
+            .filter_map(|cell| {
+                let is_preferred: bool = Some(cell.source_code.as_str()) == preferred_source_code;
+
+                Self::decode_source_cell(cell, is_preferred)
+            })
+            .collect();
+
+        source_cells.sort_by_key(|source_cell| (!source_cell.is_preferred, source_cell.source.code()));
+
+        source_cells
+    }
+
+    fn decode_series(shard_values: Option<&ShardValues>, region_code: &str) -> Vec<SeriesPointView> {
+        let Some(shard_values) = shard_values
+        else {
+            return Vec::new();
+        };
+
+        shard_values
+            .series(region_code)
+            .into_iter()
+            .map(|point: SeriesPoint| SeriesPointView {
+                period_start: point.period_start,
+                value: point.value,
+            })
+            .collect()
+    }
+
+    /// The World aggregate is not a peer of the countries it summarizes, so it is excluded from both the
+    /// position and the count it is counted against.
+    fn resolve_rank(
+        shard_values: Option<&ShardValues>,
+        region_code: &str,
+        period_start: NaiveDate,
+    ) -> Option<RankView> {
+        let comparable_values: Vec<(&str, f64)> = shard_values?
+            .preferred_values_at(period_start)
+            .into_iter()
+            .filter(|(code, _value)| *code != WORLD_REGION_CODE)
+            .collect();
+
+        let selected_value: f64 = comparable_values
+            .iter()
+            .find(|(code, _value)| *code == region_code)
+            .map(|(_code, value)| *value)?;
+
+        let lower_value_count: usize = comparable_values
+            .iter()
+            .filter(|(_code, value)| *value < selected_value)
+            .count();
+
+        Some(RankView {
+            position: lower_value_count + 1,
+            of: comparable_values.len(),
+        })
+    }
+
+    fn resolve_region_detail(
+        shard_values: Option<&ShardValues>,
+        region_code: &str,
+        period_start: NaiveDate,
+        rank: Option<RankView>,
+    ) -> RegionDetail {
+        let cells: &[CellValue] = shard_values
+            .map(|shard_values| shard_values.cells(region_code, period_start))
+            .unwrap_or_default();
+        let cell: Option<&CellValue> = shard_values
+            .and_then(|shard_values| shard_values.cell(region_code, period_start));
+
+        RegionDetail {
+            series: Self::decode_series(shard_values, region_code),
+            sources: Self::decode_sources(cells, cell),
+            rank,
+        }
+    }
+
     fn resolve_selection_view(&self, bundle: &Bundle, region_code: &str, name_en: &str) -> SelectionView {
-        let cell: Option<&CellValue> = self
-            .active_shard_values(bundle)
-            .and_then(|shard_values| shard_values.cell(region_code, self.frame_state.active_period_start));
+        let shard_values: Option<&ShardValues> = self.active_shard_values(bundle);
+        let period_start: NaiveDate = self.frame_state.active_period_start;
+
+        let cell: Option<&CellValue> = shard_values
+            .and_then(|shard_values| shard_values.cell(region_code, period_start));
+        let rank: Option<RankView> = Self::resolve_rank(shard_values, region_code, period_start);
 
         SelectionView {
             region_code: region_code.to_string(),
             name_en: name_en.to_string(),
             statistic: self.frame_state.active_statistic,
-            period_start: self.frame_state.active_period_start,
+            period_start,
             cell: Self::decode_cell(cell),
+            detail: Self::resolve_region_detail(shard_values, region_code, period_start, rank),
         }
     }
 
     fn resolve_global_view(&self, bundle: &Bundle) -> GlobalView {
-        let cell: Option<&CellValue> = self
-            .active_shard_values(bundle)
-            .and_then(|shard_values| shard_values.cell(WORLD_REGION_CODE, self.frame_state.active_period_start));
+        let shard_values: Option<&ShardValues> = self.active_shard_values(bundle);
+        let period_start: NaiveDate = self.frame_state.active_period_start;
+
+        let cell: Option<&CellValue> = shard_values
+            .and_then(|shard_values| shard_values.cell(WORLD_REGION_CODE, period_start));
 
         GlobalView {
             statistic: self.frame_state.active_statistic,
-            period_start: self.frame_state.active_period_start,
+            period_start,
             cell: Self::decode_cell(cell),
+            detail: Self::resolve_region_detail(shard_values, WORLD_REGION_CODE, period_start, None),
         }
     }
 

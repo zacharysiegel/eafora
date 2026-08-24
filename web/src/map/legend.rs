@@ -6,6 +6,7 @@ use shared::map::color::{self, StatisticColorTransform, Rgba};
 
 use crate::i18n::*;
 use crate::map::canvas::LegendView;
+use crate::map::detail_panel::DetailSurface;
 use crate::map::labels;
 
 const LEGEND_GRADIENT_STOPS: usize = 24;
@@ -13,9 +14,15 @@ const LEGEND_GRADIENT_STOPS: usize = 24;
 #[component]
 pub fn Legend() -> impl IntoView {
     let legend: RwSignal<Option<LegendView>> = expect_context();
+    let surface: RwSignal<DetailSurface> = expect_context();
     let i18n = use_i18n();
 
+    // The expanded dock occupies the legend's corner, so the legend yields to it.
     move || {
+        if surface.get() == DetailSurface::Expanded {
+            return None;
+        }
+
         legend.get().map(|legend_view| {
             let LegendView { statistic, value_range } = legend_view;
 

@@ -1,0 +1,24 @@
+/* A bordered uppercase word carrying a categorical value. Never a number and never a sentence: the border
+   says "category", so a figure in one reads as a label rather than as data. */
+.tag {
+    display: inline-block;
+    font-size: 0.625rem; // approx. 10px; a tag labels a value, so it sits below the smallest type token
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    line-height: 1.4;
+    padding: 1px var(--space-xs);
+    border: var(--border-rule);
+    border-radius: var(--radius-default);
+    color: var(--color-ink-muted);
+    white-space: nowrap;
+}
+
+.tag-ink {
+    border-color: var(--color-ink);
+    color: var(--color-ink);
+}
+
+.tag-accent {
+    border-color: var(--color-accent-active);
+    color: var(--color-accent-active);
+}

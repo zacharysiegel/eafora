@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use crate::i18n::*;
 use crate::map::canvas::{GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
 use crate::map::controls::Controls;
-use crate::map::detail_panel::RegionDetailPanel;
+use crate::map::detail_panel::{DetailSurface, RegionDetailPanel};
 use crate::map::legend::Legend;
 use crate::map::settings::SettingsModal;
 
@@ -23,6 +23,9 @@ pub fn MapView() -> impl IntoView {
 
     let live_load_failed: RwSignal<bool> = RwSignal::new(false);
     provide_context(live_load_failed);
+
+    let detail_surface: RwSignal<DetailSurface> = RwSignal::new(DetailSurface::Summary);
+    provide_context(detail_surface);
 
     let i18n = use_i18n();
 

@@ -6,9 +6,16 @@
     width: 20rem; // approx. 320px
 }
 
+.detail-panel-expand {
+    position: absolute;
+    top: var(--space-md);
+    right: var(--space-md);
+}
+
 .detail-panel-region {
     font-size: 1rem; // approx. 16px
     font-weight: 600;
+    padding-right: 1.75rem; // clears the expand control in the same corner
 }
 
 .detail-panel-statistic {
@@ -43,4 +50,163 @@
 // A status only renders when the figure is not confirmed, so it reads as a qualification of the value above.
 .detail-panel-status {
     margin-top: var(--space-xs);
+}
+
+/* The full-height left dock the selection opens, flush to the viewport's top, bottom, and left, so its
+   right edge is the only boundary it draws. */
+.region-dock {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 25.3rem; // approx. 405px
+    border-top: 0;
+    border-bottom: 0;
+    border-left: 0;
+    padding: var(--space-chrome-inset);
+    overflow-y: auto;
+}
+
+.region-dock-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-sm);
+}
+
+.region-dock-region {
+    font-size: 1.125rem; // approx. 18px
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.region-dock-collapse {
+    flex-shrink: 0;
+}
+
+.region-dock-statistic {
+    font-size: var(--type-size-data);
+    color: var(--color-ink-muted);
+    margin-top: var(--space-xs);
+}
+
+.region-dock-value {
+    font-size: 3rem; // approx. 48px
+    line-height: 1;
+    letter-spacing: -0.01em;
+    margin-top: var(--space-md);
+}
+
+.region-dock-unit {
+    font-size: var(--type-size-bound);
+    color: var(--color-ink-muted);
+    margin-top: var(--space-xs);
+}
+
+.region-dock-status,
+.region-dock-no-data,
+.region-dock-no-history {
+    font-size: var(--type-size-bound);
+    color: var(--color-ink-muted);
+    margin-top: var(--space-sm);
+}
+
+.region-dock-heading {
+    font-size: var(--type-size-bound);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+    border-bottom: var(--border-ink);
+    padding-bottom: var(--space-sm);
+    margin-top: var(--space-lg);
+}
+
+.region-dock-context {
+    margin-top: var(--space-md);
+}
+
+.region-dock-context-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    border-bottom: var(--border-rule);
+    padding: var(--space-sm) 0;
+    font-size: var(--type-size-data);
+
+    dt {
+        color: var(--color-ink-muted);
+    }
+}
+
+.region-dock-chart {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-top: var(--space-md);
+}
+
+.region-dock-chart-line {
+    fill: none;
+    stroke: var(--color-accent-active);
+    stroke-width: 1.5;
+}
+
+.region-dock-chart-marker {
+    fill: var(--color-accent-active);
+}
+
+.region-dock-chart-baseline {
+    stroke: var(--color-ink);
+    stroke-width: 1;
+}
+
+// Dashed, so the reference reads as an annotation rather than as a second series.
+.region-dock-chart-reference {
+    stroke: var(--color-ink-muted);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+
+/* The chart's viewBox is close to 1:1 with its rendered width, so this size is in effect pixels. Text takes
+   fill rather than color in SVG. */
+.region-dock-chart-reference-caption {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    fill: var(--color-ink-muted);
+}
+
+.region-dock-chart-bounds {
+    display: flex;
+    justify-content: space-between;
+    font-size: var(--type-size-bound);
+    color: var(--color-ink-muted);
+}
+
+.region-dock-sources {
+    margin-top: var(--space-md);
+}
+
+.region-dock-source-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+    border-bottom: var(--border-rule);
+    padding: var(--space-sm) 0;
+    font-size: var(--type-size-data);
+}
+
+.region-dock-source-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.region-dock-source-status {
+    flex-basis: 100%;
+    font-size: var(--type-size-bound);
+    color: var(--color-ink-muted);
 }
