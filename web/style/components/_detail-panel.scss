@@ -207,19 +207,6 @@
     stroke-dasharray: 3 3;
 }
 
-.region-dock-chart-axis {
-    stroke: var(--color-rule);
-    stroke-width: 1;
-}
-
-/* The chart's viewBox is close to 1:1 with its rendered width, so this size is in effect pixels. Text takes
-   fill rather than color in SVG. */
-.region-dock-chart-axis-label {
-    font-family: var(--font-mono);
-    font-size: 9px;
-    fill: var(--color-ink-muted);
-}
-
 .region-dock-chart-bounds {
     display: flex;
     justify-content: space-between;

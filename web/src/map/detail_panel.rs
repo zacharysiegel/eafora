@@ -20,14 +20,10 @@ const REPLACEMENT_RATE: f64 = 2.1;
 /// proportions of the drawing rather than pixels on screen.
 const CHART_WIDTH: f64 = 320.0;
 const CHART_HEIGHT: f64 = 142.6;
+const PLOT_LEFT: f64 = 3.0;
 const PLOT_RIGHT: f64 = 317.0;
 const PLOT_TOP: f64 = 8.0;
 const PLOT_BOTTOM: f64 = 133.4;
-
-/// Room at the chart's left for the axis labels, and the gap between a label and the axis it labels.
-const AXIS_LABEL_WIDTH: f64 = 22.0;
-const AXIS_LABEL_GAP: f64 = 5.0;
-const PLOT_LEFT: f64 = AXIS_LABEL_WIDTH + AXIS_LABEL_GAP;
 
 /// Half the active period's marker height, so a marker on the first or last period sits inside the drawing
 /// rather than half-clipped by its edge.
@@ -354,24 +350,6 @@ fn history_chart(
             viewBox=format!("0 0 {CHART_WIDTH} {CHART_HEIGHT}")
             aria-hidden="true"
         >
-            <line
-                class="region-dock-chart-axis"
-                x1=PLOT_LEFT
-                x2=PLOT_LEFT
-                y1=PLOT_TOP
-                y2=PLOT_BOTTOM
-            />
-            {scale.axis_labels().into_iter().map(|label| view! {
-                <text
-                    class="region-dock-chart-axis-label"
-                    x=AXIS_LABEL_WIDTH
-                    y=label.y
-                    text-anchor="end"
-                    dominant-baseline="middle"
-                >
-                    {label.text}
-                </text>
-            }).collect::<Vec<_>>()}
             {reference_y.map(|reference_y| view! {
                 <line
                     class="region-dock-chart-reference"
@@ -397,11 +375,6 @@ fn history_chart(
     .into_any()
 }
 
-/// One value written beside the vertical axis, at the height it sits.
-struct AxisLabel {
-    y: f64,
-    text: String,
-}
 
 struct ChartPoint {
     x: f64,
@@ -471,14 +444,6 @@ impl ChartScale {
             x: self.x(period_start),
             y: self.y(value),
         }
-    }
-
-    /// The range's ends, which is what the axis spans. One decimal, matching the legend's ticks.
-    fn axis_labels(&self) -> Vec<AxisLabel> {
-        vec![
-            AxisLabel { y: self.y(self.high), text: format!("{:.1}", self.high) },
-            AxisLabel { y: self.y(self.low), text: format!("{:.1}", self.low) },
-        ]
     }
 
     fn polyline_points(&self, series: &[SeriesPointView]) -> String {
