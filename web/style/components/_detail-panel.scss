@@ -52,13 +52,13 @@
     margin-top: var(--space-xs);
 }
 
-/* The expanded detail surface. It takes the same viewport inset as every other floating panel, so its top
-   edge meets the statistic picker's and it reads as one of them rather than as window chrome. */
+/* The expanded detail surface. It floats clear of the viewport's edge, so it reads as one of the sheets
+   rather than as window chrome, at half the chrome inset the smaller panels take. */
 .region-dock {
     position: absolute;
-    top: var(--space-chrome-inset);
-    bottom: var(--space-chrome-inset);
-    left: var(--space-chrome-inset);
+    top: var(--space-dock-inset);
+    bottom: var(--space-dock-inset);
+    left: var(--space-dock-inset);
     width: 25.3rem; // approx. 405px
     padding: var(--space-chrome-inset);
     overflow-y: auto;
