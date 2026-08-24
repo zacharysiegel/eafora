@@ -28,7 +28,10 @@ const PLOT_BOTTOM: f64 = 133.4;
    grow away from it, so the gap holds whatever the label says and a long one runs out of the chart rather than
    over the series. */
 const AXIS_GUTTER_WIDTH: f64 = 27.0;
-const AXIS_LABEL_GAP: f64 = 6.0;
+/* The unit's title is rotated, so it needs only the height of its type and can stand further off the plot than
+   the value on the right, which needs the width of its digits. */
+const UNIT_LABEL_GAP: f64 = 8.0;
+const REFERENCE_LABEL_GAP: f64 = 6.0;
 const PLOT_LEFT: f64 = AXIS_GUTTER_WIDTH;
 const PLOT_RIGHT: f64 = CHART_WIDTH - AXIS_GUTTER_WIDTH;
 
@@ -339,7 +342,7 @@ fn history_chart(
     let active_marker: Option<ChartPoint> = value_at(series, active_period_start)
         .map(|value| scale.point(active_period_start, value));
     let reference: Option<(f64, f64)> = reference_value(statistic).map(|value| (value, scale.y(value)));
-    let unit_label_x: f64 = PLOT_LEFT - AXIS_LABEL_GAP;
+    let unit_label_x: f64 = PLOT_LEFT - UNIT_LABEL_GAP;
     let unit_label_y: f64 = (PLOT_TOP + PLOT_BOTTOM) / 2.0;
 
     view! {
@@ -367,7 +370,7 @@ fn history_chart(
                 />
                 <text
                     class="region-dock-chart-reference-value numeric"
-                    x=chart_unit(PLOT_RIGHT + AXIS_LABEL_GAP)
+                    x=chart_unit(PLOT_RIGHT + REFERENCE_LABEL_GAP)
                     y=chart_unit(reference_y)
                     dominant-baseline="middle"
                 >
