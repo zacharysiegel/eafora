@@ -9,6 +9,7 @@ Companion artifacts in this directory:
   ./stub-desktop.html — desktop reference frame (map, ranking, scrubber)
   ./stub-mobile.html  — mobile reference frames (empty, peek, list, detail)
   ./tag-specimen.html — the bordered categorical tag, isolated for reuse
+  ./scroll-thumb-specimen.html — the gutterless scroll thumb, with a working demo and its browser gotchas
 -->
 
 ## One-line summary
@@ -22,6 +23,7 @@ and cartographic, not consumer-app.
 Two static HTML stubs sit alongside this doc and render the language end-to-end. Open them in a browser to evaluate any proposed change against the established baseline; treat them as the visual ground truth that this prose describes.
 
 - `./stub-desktop.html` — single-frame desktop layout: map with selected region (Japan), top-left detail panel, top-right ranking table, bottom time scrubber, full continent choropleth.
+- `./scroll-thumb-specimen.html` — the detail dock's scroll thumb: what it is, the states it has, a live demo of the whole control, and the browser behaviours it works around. Written to be liftable into another project, which is why the demo carries its own port of the geometry.
 - `./tag-specimen.html` — the tag idiom on its own: a 1px-bordered uppercase word carrying a categorical value, in three weights, with the cases it must not be used for.
 - `./stub-mobile.html` — four mobile frames at iPhone 14 Pro logical size: (00) empty map with choropleth legend and tap prompt; (01) selected region with full bottom sheet (region name, primary stat, metadata grid, source citation); (02) ranked list; (03) region detail with history chart and sources.
 

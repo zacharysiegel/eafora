@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Eafora · scroll thumb specimen</title>
+<!-- No webfont: web/ loads none, so these stacks fall back to system-ui exactly as the product does. -->
+<style>
+:root {
+    --color-paper:           #ffffff;
+    --color-ink:             #000000;
+    --color-accent-active:   #d50000;
+    --color-accent-hover:    #b50000;
+    --color-rule:            #d4d4d4;
+    --color-ink-muted:       #555555;
+
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 2rem;
+
+    --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+    --type-size-body:  0.875rem;
+    --type-size-data:  0.8125rem;
+    --type-size-bound: 0.6875rem;
+
+    --border-width-hairline: 1px;
+    --border-ink:  var(--border-width-hairline) solid var(--color-ink);
+    --border-rule: var(--border-width-hairline) solid var(--color-rule);
+
+    --duration-thumb: 120ms;
+}
+
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    padding: var(--space-lg) var(--space-lg) 6rem;
+    font-family: var(--font-sans);
+    font-size: var(--type-size-body);
+    line-height: 1.5;
+    color: var(--color-ink);
+    background: var(--color-paper);
+}
+main { max-width: 58rem; }
+h1 { font-size: 1.375rem; font-weight: 600; margin: 0 0 var(--space-xs); }
+.lede { color: var(--color-ink-muted); margin: 0 0 var(--space-md); max-width: 42rem; }
+h2 {
+    font-size: var(--type-size-bound);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: var(--border-ink);
+    padding-bottom: var(--space-sm);
+    margin: 3rem 0 var(--space-md);
+}
+h3 { font-size: 0.9375rem; font-weight: 600; margin: var(--space-lg) 0 var(--space-xs); }
+p, li { max-width: 42rem; }
+code { font-family: var(--font-mono); font-size: 0.85em; }
+.note { color: var(--color-ink-muted); font-size: var(--type-size-data); max-width: 42rem; }
+.canonical {
+    border-left: var(--border-width-hairline) solid var(--color-accent-active);
+    padding-left: var(--space-md);
+    margin: var(--space-md) 0 var(--space-lg);
+}
+
+dl.states { margin: var(--space-md) 0; }
+dl.states > div {
+    display: grid;
+    grid-template-columns: 11rem 1fr;
+    gap: var(--space-md);
+    border-bottom: var(--border-rule);
+    padding: var(--space-sm) 0;
+}
+dl.states dt { font-weight: 600; font-size: var(--type-size-data); }
+dl.states dd { margin: 0; font-size: var(--type-size-data); color: var(--color-ink-muted); }
+
+.gotcha {
+    border-top: var(--border-ink);
+    padding-top: var(--space-sm);
+    margin-top: var(--space-lg);
+}
+.gotcha-symptom { font-weight: 600; }
+.gotcha-cause { margin-top: var(--space-xs); }
+.gotcha-fix { margin-top: var(--space-xs); }
+.gotcha-label {
+    font-size: 0.625rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+    display: inline-block;
+    width: 4.5rem;
+}
+
+pre {
+    background: var(--color-paper);
+    border: var(--border-rule);
+    padding: var(--space-md);
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1.5;
+    max-width: 42rem;
+}
+
+/* ---------------------------------------------------------------------------
+   THE DEMO. Everything below reproduces the shipped control; the panel and its
+   contents exist only to give the thumb something to scroll.
+   --------------------------------------------------------------------------- */
+.demo-row { display: flex; gap: var(--space-lg); align-items: flex-start; flex-wrap: wrap; }
+
+.demo-stage {
+    position: relative;
+    background: #e8848f; /* stands in for the map behind the panel */
+    padding: 10px;
+    /* Whole pixels: see the rasterisation gotcha. 10 + 320 + 10 = 340. */
+    width: 340px;
+    height: 22rem;
+}
+
+.panel {
+    position: absolute;
+    inset: 10px;
+    width: 320px;
+    background: var(--color-paper);
+    border: var(--border-ink);
+    padding: 0;
+}
+
+.panel-scroll {
+    height: 100%;
+    padding: var(--space-md);
+    overflow-y: auto;
+    scrollbar-width: none; // the thumb replaces it
+
+    &::-webkit-scrollbar { display: none; }
+}
+.panel-scroll::-webkit-scrollbar { display: none; }
+.panel-scroll h4 { margin: 0 0 var(--space-sm); font-size: var(--type-size-data); }
+.panel-scroll p { font-size: var(--type-size-data); margin: 0 0 var(--space-md); }
+
+/* The thumb is two elements. This one holds the position and the pointer target: its box never changes, so it
+   is hoverable even while the bar inside is scaled to nothing, and its offset from the panel's border is a
+   constant that no transition touches. */
+.panel-thumb {
+    --thumb-interior-held: 5px;
+    --thumb-box-held: calc(var(--thumb-interior-held) + var(--border-width-hairline) * 2);
+    --thumb-grab-margin: 4px;
+
+    position: absolute;
+    /* `left: 100%` lands on the padding box, which stops at the border's inner edge, so half a border further
+       out puts the thumb's centre on the border's centre. */
+    left: calc(100% + var(--border-width-hairline) / 2);
+    width: calc(var(--thumb-box-held) + var(--thumb-grab-margin) * 2);
+    transform: translateX(-50%);
+    display: grid;
+    place-items: center;
+}
+
+/* The width is the interior, not the box, so the two borders can meet and enclose nothing. */
+.panel-thumb-bar {
+    box-sizing: content-box;
+    width: 0;
+    height: 100%;
+    border: var(--border-width-hairline) solid var(--color-ink);
+    background: var(--color-ink);
+    border-radius: 999px;
+    transform: scaleX(0);
+
+    transition:
+        width var(--duration-thumb) ease,
+        transform var(--duration-thumb) ease,
+        background-color var(--duration-thumb) cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+.panel:hover .panel-thumb-bar {
+    transform: scaleX(1);
+}
+
+.panel-thumb:hover .panel-thumb-bar,
+.panel-thumb.is-held .panel-thumb-bar {
+    width: var(--thumb-interior-held);
+    background: var(--color-paper);
+    transform: scaleX(1);
+
+    transition:
+        width var(--duration-thumb) ease,
+        transform var(--duration-thumb) ease,
+        background-color 0s;
+}
+
+/* Inspection aids, not part of the control. */
+.show-hit-area .panel-thumb { outline: 1px dashed var(--color-accent-active); }
+.demo-controls { display: flex; flex-direction: column; gap: var(--space-sm); font-size: var(--type-size-data); }
+.demo-controls label { display: flex; gap: var(--space-sm); align-items: center; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Scroll thumb</h1>
+<p class="lede">A scrollbar for a floating panel that reserves no width: the panel's own right border thickens to report position, and becomes a small sheet when you reach for it. Built for Eafora's detail dock, written up here because the interesting parts are the half-dozen browser behaviours it has to work around, and those are the same in any project.</p>
+
+<div class="canonical">
+  <p style="margin: 0"><strong>The shipped code is the definition, not this page.</strong> The control lives in <code>web/src/map/scroll_thumb.rs</code> (geometry, drag, wheel) and <code>web/style/components/_detail-panel.scss</code> (the two elements and their states). The CSS below is a faithful copy and the JavaScript is a port of the Rust, so the demo stands alone and can be lifted into another project; if the two ever disagree, the Rust and SCSS win.</p>
+</div>
+
+<h2>Demo</h2>
+<p class="note">Move the pointer into a panel to raise the thumb, onto the thumb to open it, and drag it. A wheel over the thumb scrolls the panel. The left panel overflows by a little and the right by a lot, which is what changes the thumb's length.</p>
+
+<div class="demo-row">
+  <div class="demo-stage" id="stage-short"></div>
+  <div class="demo-stage" id="stage-long"></div>
+  <div class="demo-controls">
+    <label><input type="checkbox" id="toggle-held"> hold both thumbs open</label>
+    <label><input type="checkbox" id="toggle-hit-area"> show the pointer target</label>
+    <label><input type="checkbox" id="toggle-slow"> slow the transitions to 1.2s</label>
+  </div>
+</div>
+
+<h2>What it is</h2>
+<p>The constraint that produced it: a scrollbar must not take a column from the panel's text. A reserved gutter shifts every line left by its width, and on a text-dense panel that is the most expensive nine pixels on screen. So the indicator lives on the boundary the panel already draws, and on the ten pixels of map between the panel and the viewport edge, neither of which is anyone's content.</p>
+
+<p>It has three states and a fourth that only a pointer sees:</p>
+
+<dl class="states">
+  <div><dt>Pointer outside the panel</dt><dd>Nothing is drawn. A reader who is not scrolling has no use for a scroll position.</dd></div>
+  <div><dt>Pointer in the panel</dt><dd>A two-pixel bar of ink, centred on the panel's right border, its length proportional to how much of the content is visible and its position to how far down you are.</dd></div>
+  <div><dt>Pointer on the thumb</dt><dd>Seven pixels wide, opaque white behind one hairline, with circular caps. It becomes a sheet, which is what everything else in this interface is.</dd></div>
+  <div><dt>Held</dt><dd>The same as hovered, and it stays that way while the drag continues even after the cursor has left the seven pixels, which it will immediately.</dd></div>
+</dl>
+
+<h3>The design decisions worth keeping</h3>
+<ul>
+  <li><strong>Round caps, in an interface with square corners everywhere else.</strong> A cap on a two-pixel bar cannot read as square; at that size the corner is the whole shape. This is the one rounded thing.</li>
+  <li><strong>It grows outward and inward equally</strong>, centred on the border, so it never covers a glyph.</li>
+  <li><strong>A margin at both ends of the track</strong>, so a thumb at either extreme does not touch the panel's corner.</li>
+  <li><strong>A minimum length.</strong> Below about twenty-four pixels a thumb cannot be grabbed, so on very long content it stops being proportional rather than becoming unusable.</li>
+  <li><strong>Two properties animate, and only on the way out.</strong> Arriving, the sheet appears at once. Leaving, the width closes and the fill darkens together. Nothing else in the control moves: the thumb's position along the track cuts instantly to wherever the content is.</li>
+</ul>
+
+<h2>Implementation, and the parts that fought back</h2>
+<p>The geometry is four lines of arithmetic. Everything below is a browser behaviour that had to be worked around, in the order they were hit.</p>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> The thumb drew a couple of pixels right of the border, then snapped left at the end of the transition.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> <code>transform: translateX(-50%)</code>. A percentage inside a transform is resolved <em>once, when the transition starts</em>, so it held the narrow box's offset while the box grew, then jumped when the computed style took over.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> Express the offset as a length. Half the box interpolates in step with the width, because box width is linear in the interior width. Or, as here, put the offset on a wrapper whose box never changes, so nothing interpolates at all.</div>
+</div>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> The thumb appeared instantly on entering the panel but animated on leaving.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> The only property changing between absent and present was a hairline border, and a hairline is one pixel or none. There is nothing between to interpolate, so it stepped.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> Appearing and disappearing is a horizontal scale, which has a continuous range. Attempting to close the border smoothly instead does not work either: border widths are quantised for rasterisation, so a 1px-to-1.5px animation steps late rather than gliding.</div>
+</div>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> Entering the panel directly onto the thumb raised it, but it would not open until the pointer moved again.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> At <code>scaleX(0)</code> the element has no hit area, and a browser re-tests what is under the pointer only when the pointer <em>moves</em>. Growing under a stationary cursor never fires <code>:hover</code>.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> Two elements. A wrapper carries the position and the pointer target and never changes size, so it is hoverable before anything is visible; the bar inside it is the only thing that scales. This is why the control is not one <code>div</code>.</div>
+</div>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> A visible sideways shimmy on every open and close.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> Not layout: the measured centre held to four thousandths of a pixel throughout. The containing panel's width was <code>27.83rem</code>, or 445.28px, so its right border sat on a fractional pixel and the thumb's hairline rasterised onto a different device pixel from frame to frame as it grew.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> Put the container on whole pixels. Any hairline centred on a fractional edge will do this; the control cannot fix it from the inside.</div>
+</div>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> Closing the thumb ended with a thin white line being erased in a single frame.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> The fill changed from white to ink at one instant, and at the moment it changed there was still a sliver of white enclosed by the border.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> Two halves. <code>box-sizing: content-box</code> makes <code>width</code> the interior, so closing it to zero lets the two borders meet and squeeze the white out. And the fill darkens over the same span on <code>cubic-bezier(0.7, 0, 0.84, 0)</code>, nearly flat at first, so the two finish together.</div>
+</div>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> A wheel with the pointer over the thumb scrolled nothing.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> The thumb is a sibling of the scrolling element, not a child, so a wheel over it has no scrollable ancestor: the panel does not scroll and neither does the page.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> Forward the event's <code>deltaY</code> to the scroller the thumb represents, and prevent the default.</div>
+</div>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> A drag stopped the instant the cursor left the thumb, which was immediately.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> Seven pixels is narrower than a hand can hold a straight line.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> <code>setPointerCapture</code> on <code>pointerdown</code>, and record where along the thumb the grab landed so the thumb moves <em>with</em> the cursor instead of jumping its top to it.</div>
+</div>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> A panel whose content fits showed a thumb anyway, but only at some browser zoom levels.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> <code>clientHeight</code> and <code>scrollHeight</code> are integers, each rounded from a fractional layout independently, so they can land a pixel apart when nothing actually scrolls.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> Treat one pixel of reported overflow as fitting. One is the exact bound: each measurement is off by at most half a pixel, so the spurious difference can never exceed it.</div>
+</div>
+
+<div class="gotcha">
+  <div class="gotcha-symptom"><span class="gotcha-label">Symptom</span> The thumb was hard to grab.</div>
+  <div class="gotcha-cause"><span class="gotcha-label">Cause</span> A two-pixel bar is not a pointer target.</div>
+  <div class="gotcha-fix"><span class="gotcha-label">Fix</span> The wrapper is four pixels wider than the bar on each side. Turn on "show the pointer target" above to see it.</div>
+</div>
+
+<h2>The geometry</h2>
+<p>Two pure functions, tested on their own away from the DOM. <code>length</code> is proportional to the visible fraction with a floor, and <code>top</code> puts it along a track inset at both ends:</p>
+
+<pre>const TRACK_MARGIN = 6;      // clear of the panel's corners at either extreme
+const MINIMUM_LENGTH = 24;   // below this a thumb cannot be grabbed
+const MINIMUM_OVERFLOW = 1;  // a rounded pixel is not overflow
+
+function geometryFor(visibleLength, contentLength, scrollTop) {
+    const scrollable = contentLength - visibleLength;
+    if (scrollable &lt;= MINIMUM_OVERFLOW) {
+        return null;
+    }
+
+    const track = visibleLength - 2 * TRACK_MARGIN;
+    const length = Math.max(track * visibleLength / contentLength, MINIMUM_LENGTH);
+    const travelled = Math.min(Math.max(scrollTop / scrollable, 0), 1);
+
+    return { top: TRACK_MARGIN + travelled * (track - length), length };
+}
+
+function scrollTopFor(requestedTop, visibleLength, contentLength, thumbLength) {
+    const scrollable = contentLength - visibleLength;
+    const travel = visibleLength - 2 * TRACK_MARGIN - thumbLength;
+    if (scrollable &lt;= MINIMUM_OVERFLOW || travel &lt;= 0) {
+        return null;
+    }
+
+    const travelled = Math.min(Math.max((requestedTop - TRACK_MARGIN) / travel, 0), 1);
+
+    return travelled * scrollable;
+}</pre>
+
+<p class="note">Recompute on <code>scroll</code>, and again when the pointer enters the panel. The second covers a viewport resize without a resize listener, because the thumb cannot be reached without entering the panel first.</p>
+
+<h2>What it costs</h2>
+<p>A browser scrollbar is free because the browser positions it. This is an element the client positions itself from a <code>scroll</code> listener, and it is not reported to assistive technology as a scrollbar. Native keyboard scrolling of the panel is unaffected, since the panel is still a real scrolling element; only the visible indicator is replaced. Firefox is not a special case here, because nothing depends on <code>::-webkit-scrollbar</code>; the native bar is hidden with <code>scrollbar-width: none</code>, which Firefox does support.</p>
+
+<script>
+const TRACK_MARGIN = 6;
+const MINIMUM_LENGTH = 24;
+const MINIMUM_OVERFLOW = 1;
+
+function geometryFor(visibleLength, contentLength, scrollTop) {
+    const scrollable = contentLength - visibleLength;
+    if (scrollable <= MINIMUM_OVERFLOW) {
+        return null;
+    }
+
+    const track = visibleLength - 2 * TRACK_MARGIN;
+    const length = Math.max(track * visibleLength / contentLength, MINIMUM_LENGTH);
+    const travelled = Math.min(Math.max(scrollTop / scrollable, 0), 1);
+
+    return { top: TRACK_MARGIN + travelled * (track - length), length };
+}
+
+function scrollTopFor(requestedTop, visibleLength, contentLength, thumbLength) {
+    const scrollable = contentLength - visibleLength;
+    const travel = visibleLength - 2 * TRACK_MARGIN - thumbLength;
+    if (scrollable <= MINIMUM_OVERFLOW || travel <= 0) {
+        return null;
+    }
+
+    const travelled = Math.min(Math.max((requestedTop - TRACK_MARGIN) / travel, 0), 1);
+
+    return travelled * scrollable;
+}
+
+function paragraphs(count) {
+    const sentences = [
+        "The average number of children which would be born to a woman over her lifetime if she experienced the current age-specific fertility rates throughout her reproductive years.",
+        "A cohort measure counts births which actually occurred to a real cohort rather than combining one year's age-specific rates into a hypothetical woman.",
+        "Replacement is a little above two because not every child born survives to reproduce, and because slightly more boys are born than girls.",
+    ];
+    let markup = "";
+    for (let index = 0; index < count; index += 1) {
+        markup += `<p>${sentences[index % sentences.length]}</p>`;
+    }
+    return markup;
+}
+
+function buildPanel(stage, paragraphCount) {
+    stage.innerHTML = `
+        <div class="panel">
+            <div class="panel-scroll">
+                <h4>History</h4>
+                ${paragraphs(paragraphCount)}
+            </div>
+            <div class="panel-thumb"><div class="panel-thumb-bar"></div></div>
+        </div>`;
+
+    const panel = stage.querySelector('.panel');
+    const scroller = stage.querySelector('.panel-scroll');
+    const thumb = stage.querySelector('.panel-thumb');
+    let grab = null;
+
+    const refresh = () => {
+        const geometry = geometryFor(scroller.clientHeight, scroller.scrollHeight, scroller.scrollTop);
+        if (!geometry) {
+            thumb.style.display = 'none';
+            return;
+        }
+        thumb.style.display = '';
+        thumb.style.top = `${geometry.top.toFixed(1)}px`;
+        thumb.style.height = `${geometry.length.toFixed(1)}px`;
+    };
+
+    scroller.addEventListener('scroll', refresh);
+    panel.addEventListener('pointerenter', refresh);
+
+    thumb.addEventListener('pointerdown', (event) => {
+        const thumbTop = scroller.getBoundingClientRect().top + thumb.offsetTop;
+        grab = { pointerId: event.pointerId, offsetInThumb: event.clientY - thumbTop };
+        thumb.setPointerCapture(event.pointerId);
+        thumb.classList.add('is-held');
+        event.preventDefault();
+    });
+
+    thumb.addEventListener('pointermove', (event) => {
+        if (!grab || grab.pointerId !== event.pointerId) {
+            return;
+        }
+        const requestedTop = event.clientY - grab.offsetInThumb - scroller.getBoundingClientRect().top;
+        const scrollTop = scrollTopFor(requestedTop, scroller.clientHeight, scroller.scrollHeight, thumb.offsetHeight);
+        if (scrollTop !== null) {
+            scroller.scrollTop = scrollTop;
+        }
+    });
+
+    const release = () => {
+        grab = null;
+        thumb.classList.remove('is-held');
+    };
+    thumb.addEventListener('pointerup', release);
+    thumb.addEventListener('pointercancel', release);
+
+    thumb.addEventListener('wheel', (event) => {
+        scroller.scrollTop += event.deltaY;
+        event.preventDefault();
+    }, { passive: false });
+
+    refresh();
+    return thumb;
+}
+
+const thumbs = [
+    buildPanel(document.getElementById('stage-short'), 4),
+    buildPanel(document.getElementById('stage-long'), 24),
+];
+
+document.getElementById('toggle-held').addEventListener('change', (event) => {
+    thumbs.forEach((thumb) => thumb.classList.toggle('is-held', event.target.checked));
+});
+document.getElementById('toggle-hit-area').addEventListener('change', (event) => {
+    document.body.classList.toggle('show-hit-area', event.target.checked);
+});
+document.getElementById('toggle-slow').addEventListener('change', (event) => {
+    document.documentElement.style.setProperty('--duration-thumb', event.target.checked ? '1200ms' : '120ms');
+});
+</script>
+
+</main>
+</body>
+</html>
