@@ -53,7 +53,7 @@ mod tests {
 
         let error: AppError = parse_discovery_document(json.as_bytes()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown schema_version 2"));
+        assert!(error.to_string().contains("schema_version 2 comes from a newer build"));
     }
 
     #[test]

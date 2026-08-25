@@ -1,5 +1,6 @@
 use const_format::formatcp;
 
+use crate::artifact::schema_version;
 use crate::error::AppError;
 
 /// ASCII "EAFO"; written to SQLite's `application_id` PRAGMA so hex viewers and `file(1)` can identify
@@ -85,8 +86,8 @@ pub fn validate_shard_header(bytes: &[u8]) -> Result<(), AppError> {
     let schema_version: i32 = read_header_i32(bytes, SCHEMA_VERSION_OFFSET)?;
     if schema_version != SCHEMA_VERSION {
         return Err(AppError::from(format!(
-            "sqlite shard: unknown schema_version {} (expected {})",
-            schema_version, SCHEMA_VERSION,
+            "sqlite shard: {}",
+            schema_version::describe_mismatch("schema_version", schema_version, SCHEMA_VERSION),
         )));
     }
 
@@ -181,7 +182,7 @@ mod tests {
 
             let error: AppError = validate_shard_header(&bytes).unwrap_err();
 
-            assert!(error.to_string().contains("sqlite shard: unknown schema_version"));
+            assert!(error.to_string().contains("sqlite shard: schema_version"));
         }
     }
 

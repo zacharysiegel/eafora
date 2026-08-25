@@ -183,16 +183,16 @@ mod tests {
     }
 
     #[test]
-    fn parse_manifest_rejects_unknown_schema_version() {
-        let unknown_version: u32 = MANIFEST_SCHEMA_VERSION + 1;
+    fn parse_manifest_rejects_a_schema_version_this_build_does_not_read() {
+        let newer_version: u32 = MANIFEST_SCHEMA_VERSION + 1;
         let json: String = valid_manifest_json().replace(
             &format!("\"manifest_schema_version\": {MANIFEST_SCHEMA_VERSION}"),
-            &format!("\"manifest_schema_version\": {unknown_version}"),
+            &format!("\"manifest_schema_version\": {newer_version}"),
         );
 
         let error: AppError = parse_manifest(json.as_bytes()).unwrap_err();
 
-        assert!(error.to_string().contains(&format!("unknown manifest_schema_version {unknown_version}")));
+        assert!(error.to_string().contains(&format!("manifest_schema_version {newer_version} comes from a newer build")));
     }
 
     #[test]

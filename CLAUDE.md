@@ -68,6 +68,10 @@ These take precedence over Singularity's conventions where they diverge (per
 the doc's "Where Eafora diverges" notes). The constitution (`.specify/memory/constitution.md`)
 holds principles; these docs operationalize them.
 
+## Scripts
+
+`scripts/` holds the repository's wrapper scripts. Invoke the wrapper, never the tool it wraps, and check for one before writing any raw tool command — including commands written out for the owner to run. `./scripts/db/dbmate.sh down` carries the connection URL, the migrations and schema paths, and the follow-up `cargo sqlx prepare`; a bare `dbmate down` silently skips all of it.
+
 ## Decisions locked
 
 - **Name**: Eafora (Old English for *son, descendant, heir*).
