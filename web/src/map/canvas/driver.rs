@@ -971,11 +971,11 @@ fn backend_from_query() -> RendererBackend {
 /// panning; the wraparound places the prime meridian at the middle with the world continuing across the
 /// seam. Framing a fixed content band rather than the ±85° world keeps the empty ocean below the
 /// southernmost land off-screen.
-fn home_viewport(surface: SurfaceDimensions) -> Viewport {
+fn home_viewport(surface_dimensions: SurfaceDimensions) -> Viewport {
     let center_x: f64 = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon).x;
     let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
 
-    Viewport::fill_height(center_x, min_y, max_y, surface)
+    Viewport::fill_height(center_x, min_y, max_y, surface_dimensions)
 }
 
 /// The home latitude range's lower and upper bounds in projected space, the vertical limits pan and
@@ -999,10 +999,10 @@ fn zoom_to_country_min_height() -> f64 {
 /// exceeds one world turn. On a surface wider than the range allows within one turn the cap wins, and the
 /// furthest zoom-out shows the full world width with a vertical slice of the range rather than the whole
 /// of it.
-fn zoom_out_ceiling_height(surface: SurfaceDimensions) -> f64 {
+fn zoom_out_ceiling_height(surface_dimensions: SurfaceDimensions) -> f64 {
     let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
     let home_height: f64 = max_y - min_y;
-    let width_cap_height: f64 = std::f64::consts::TAU * (surface.height as f64 / surface.width as f64);
+    let width_cap_height: f64 = std::f64::consts::TAU * (surface_dimensions.height as f64 / surface_dimensions.width as f64);
 
     home_height.min(width_cap_height)
 }

@@ -28,7 +28,7 @@ impl ViewportTransition {
     /// (or for a non-positive duration) it returns `target` verbatim with `Finished`, so the final frame
     /// is bit-identical to the caller's clamped target and a tab backgrounded mid-transition snaps to the
     /// end on its first frame back.
-    pub fn sample(&self, now_ms: f64, surface: SurfaceDimensions) -> (Viewport, AnimationProgress) {
+    pub fn sample(&self, now_ms: f64, surface_dimensions: SurfaceDimensions) -> (Viewport, AnimationProgress) {
         let elapsed_ms: f64 = now_ms - self.start_time_ms;
 
         if self.duration_ms <= 0.0 || elapsed_ms >= self.duration_ms {
@@ -37,7 +37,7 @@ impl ViewportTransition {
 
         let eased_t: f64 = math::cubic_ease_in_out((elapsed_ms / self.duration_ms).clamp(0.0, 1.0));
 
-        (self.from.interpolate_to(self.target, eased_t, surface), AnimationProgress::Animating)
+        (self.from.interpolate_to(self.target, eased_t, surface_dimensions), AnimationProgress::Animating)
     }
 }
 
