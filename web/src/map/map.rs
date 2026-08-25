@@ -1,6 +1,10 @@
+use std::collections::BTreeMap;
+
 use leptos::prelude::*;
 
-use crate::map::canvas::{BundleProseView, GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
+use shared::canonical::{DataSourceKind, SourceAttribution};
+
+use crate::map::canvas::{GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
 use crate::map::controls::Controls;
 use crate::map::detail_panel::{DetailSurface, RegionDetailPanel};
 use crate::map::escape::{self, DismissableSurfaces};
@@ -28,8 +32,9 @@ pub fn MapView() -> impl IntoView {
     let detail_surface: RwSignal<DetailSurface> = RwSignal::new(DetailSurface::Summary);
     provide_context(detail_surface);
 
-    let bundle_prose: RwSignal<Option<BundleProseView>> = RwSignal::new(None);
-    provide_context(bundle_prose);
+    let source_attribution: RwSignal<BTreeMap<DataSourceKind, SourceAttribution>> =
+        RwSignal::new(BTreeMap::new());
+    provide_context(source_attribution);
 
     let settings_surface: RwSignal<SettingsSurface> = RwSignal::new(SettingsSurface::Closed);
     provide_context(settings_surface);

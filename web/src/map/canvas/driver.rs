@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::NaiveDate;
@@ -11,7 +12,7 @@ use leptos::prelude::*;
 
 use shared::AppError;
 use shared::artifact::Bundle;
-use shared::canonical::{DataSourceKind, DataStatus, StatisticKind};
+use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, StatisticKind};
 use shared::license::DistributionContext;
 use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
@@ -24,7 +25,7 @@ use crate::distribution;
 use crate::live_resolve;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
-use super::{BundleProseView, CellView, RankView, RegionDetail, RenderStatus, GlobalView, LegendView, SelectionView, SeriesPointView, SourceCellView, ViewControls};
+use super::{CellView, RankView, RegionDetail, RenderStatus, GlobalView, LegendView, SelectionView, SeriesPointView, SourceCellView, ViewControls};
 
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
@@ -711,12 +712,6 @@ enum StartupError {
     BrowserUnsupported(AppError),
 }
 
-fn bundle_prose_view(bundle: &Bundle) -> BundleProseView {
-    BundleProseView {
-        source_attribution: bundle.manifest.source_attribution.clone(),
-    }
-}
-
 /// The reactive signals wiring the map component to the driver.
 #[derive(Clone, Copy)]
 pub struct DriverSignals {
@@ -725,7 +720,7 @@ pub struct DriverSignals {
     pub global_view: WriteSignal<Option<GlobalView>>,
     pub view_controls: WriteSignal<Option<ViewControls>>,
     pub legend: WriteSignal<Option<LegendView>>,
-    pub bundle_prose: WriteSignal<Option<BundleProseView>>,
+    pub source_attribution: WriteSignal<BTreeMap<DataSourceKind, SourceAttribution>>,
     pub live_load_notice_shown: WriteSignal<bool>,
 }
 
@@ -827,7 +822,8 @@ async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Res
     let initial_controls: ViewControls = driver.view_controls(&published_bundle);
     let initial_legend: LegendView = driver.legend_view(&published_bundle);
     let initial_global: GlobalView = driver.resolve_global_view(&published_bundle);
-    let initial_prose: BundleProseView = bundle_prose_view(&published_bundle);
+    let initial_attribution: BTreeMap<DataSourceKind, SourceAttribution> =
+        published_bundle.manifest.source_attribution.clone();
     log::info!(
         "initial global figure resolved; [period_start={} value={:?} source={:?} data_status={:?}]",
         initial_global.period_start,
@@ -844,7 +840,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Res
     signals.view_controls.set(Some(initial_controls));
     signals.legend.set(Some(initial_legend));
     signals.global_view.set(Some(initial_global));
-    signals.bundle_prose.set(Some(initial_prose));
+    signals.source_attribution.set(initial_attribution);
 
     leptos::task::spawn_local(async move {
         upgrade_to_live_bundle(cache, distribution_context, live_bundle_sender, signals).await;
@@ -883,25 +879,26 @@ fn apply_live_bundle(live_bundle_sender: watch::Sender<Arc<Bundle>>, bundle: Bun
         return;
     }
 
-    let published: Option<(RepublishedViews, BundleProseView)> = DRIVER.with_borrow_mut(|driver_slot| {
+    let published: Option<(RepublishedViews, BTreeMap<DataSourceKind, SourceAttribution>)> =
+        DRIVER.with_borrow_mut(|driver_slot| {
         let driver: &mut Driver = driver_slot.as_mut()?;
 
         let bundle: Arc<Bundle> = driver.current_bundle();
         reset_active_period_if_uncovered(driver, &bundle);
 
         let views: RepublishedViews = driver.republish(&bundle);
-        let prose: BundleProseView = bundle_prose_view(&bundle);
+        let attribution: BTreeMap<DataSourceKind, SourceAttribution> = bundle.manifest.source_attribution.clone();
         driver.request_redraw();
 
-        Some((views, prose))
+        Some((views, attribution))
     });
 
-    if let Some((views, prose)) = published {
+    if let Some((views, attribution)) = published {
         signals.view_controls.set(Some(views.view_controls));
         signals.legend.set(Some(views.legend));
         signals.selection_view.set(views.selection);
         signals.global_view.set(Some(views.global));
-        signals.bundle_prose.set(Some(prose));
+        signals.source_attribution.set(attribution);
     }
 }
 

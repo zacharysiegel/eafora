@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use chrono::{Datelike, NaiveDate};
 use leptos::html::{Aside, Button};
 use leptos::prelude::*;
@@ -7,7 +9,7 @@ use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, Statistic
 
 use crate::i18n::*;
 use crate::map::canvas::{
-    BundleProseView, CellView, GlobalView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
+    CellView, GlobalView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
 };
 use crate::map::labels;
 use crate::map::scroll_thumb::{self, ScrollThumbState};
@@ -65,7 +67,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
     let selection: RwSignal<Option<SelectionView>> = expect_context();
     let global: RwSignal<Option<GlobalView>> = expect_context();
     let surface: RwSignal<DetailSurface> = expect_context();
-    let prose: RwSignal<Option<BundleProseView>> = expect_context();
+    let attribution: RwSignal<BTreeMap<DataSourceKind, SourceAttribution>> = expect_context();
     let i18n = use_i18n();
 
     let figure: Memo<Option<ActiveFigure>> = Memo::new(move |_| active_figure(i18n, selection.get(), global.get()));
@@ -81,7 +83,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
             {summary_panel(i18n, figure, surface, expanded_by_keyboard)}
         </Show>
         <Show when=move || surface.get() == DetailSurface::Expanded && figure.with(Option::is_some)>
-            {detail_dock(i18n, figure, surface, prose, expanded_by_keyboard)}
+            {detail_dock(i18n, figure, surface, attribution, expanded_by_keyboard)}
         </Show>
     }
 }
@@ -211,7 +213,7 @@ fn detail_dock(
     i18n: I18nContext<Locale>,
     figure: Memo<Option<ActiveFigure>>,
     surface: RwSignal<DetailSurface>,
-    prose: RwSignal<Option<BundleProseView>>,
+    attribution: RwSignal<BTreeMap<DataSourceKind, SourceAttribution>>,
     expanded_by_keyboard: RwSignal<bool>,
 ) -> impl IntoView {
     let thumb: ScrollThumbState = scroll_thumb::create_state();
@@ -274,7 +276,7 @@ fn detail_dock(
                     return ().into_any();
                 };
 
-                prose.with(|prose| sources_section(i18n, &figure.detail.sources, prose.as_ref()))
+                attribution.with(|attribution| sources_section(i18n, &figure.detail.sources, attribution))
             })}
             <h3 class="region-dock-heading">{t!(i18n, detail.about)}</h3>
             <p class="region-dock-about">
@@ -645,7 +647,11 @@ impl ChartScale {
 }
 
 /// Every source covering the active period, so a reader can see that sources disagree and by how much.
-fn sources_section(i18n: I18nContext<Locale>, sources: &[SourceCellView], prose: Option<&BundleProseView>) -> AnyView {
+fn sources_section(
+    i18n: I18nContext<Locale>,
+    sources: &[SourceCellView],
+    attribution: &BTreeMap<DataSourceKind, SourceAttribution>,
+) -> AnyView {
     if sources.is_empty() {
         return ().into_any();
     }
@@ -654,10 +660,9 @@ fn sources_section(i18n: I18nContext<Locale>, sources: &[SourceCellView], prose:
     let rows: Vec<AnyView> = sources
         .iter()
         .map(|source_cell| {
-            let attribution: Option<&SourceAttribution> =
-                prose.and_then(|prose| prose.source_attribution.get(&source_cell.source));
+            let source_attribution: Option<&SourceAttribution> = attribution.get(&source_cell.source);
 
-            source_row(i18n, source_cell, is_contested, attribution)
+            source_row(i18n, source_cell, is_contested, source_attribution)
         })
         .collect();
 

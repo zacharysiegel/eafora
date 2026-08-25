@@ -1,10 +1,15 @@
-use std::collections::BTreeMap;
-
 use chrono::NaiveDate;
 use leptos::html::Canvas;
 use leptos::prelude::*;
 
-use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, StatisticKind};
+use shared::canonical::{DataSourceKind, DataStatus, StatisticKind};
+
+/* Only the driver the signals below are handed to reads the attribution map, and it does not run in the ssr
+   build. */
+#[cfg(feature = "hydrate")]
+use std::collections::BTreeMap;
+#[cfg(feature = "hydrate")]
+use shared::canonical::SourceAttribution;
 
 use crate::i18n::*;
 
@@ -87,13 +92,6 @@ pub struct GlobalView {
     pub detail: RegionDetail,
 }
 
-/// The producer-owned text the active bundle carries. Published when a bundle is opened rather than with the
-/// view state, since it changes only when the bundle does.
-#[derive(Debug, Clone, PartialEq)]
-pub struct BundleProseView {
-    pub source_attribution: BTreeMap<DataSourceKind, SourceAttribution>,
-}
-
 /// Published by the driver so the controls render without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewControls {
@@ -123,7 +121,7 @@ pub fn MapCanvas() -> impl IntoView {
             let global: RwSignal<Option<GlobalView>> = expect_context();
             let view_controls: RwSignal<Option<ViewControls>> = expect_context();
             let legend: RwSignal<Option<LegendView>> = expect_context();
-            let bundle_prose: RwSignal<Option<BundleProseView>> = expect_context();
+            let source_attribution: RwSignal<BTreeMap<DataSourceKind, SourceAttribution>> = expect_context();
             let live_load_notice_shown: RwSignal<bool> = expect_context();
             super::driver::start(
                 canvas,
@@ -133,7 +131,7 @@ pub fn MapCanvas() -> impl IntoView {
                     global_view: global.write_only(),
                     view_controls: view_controls.write_only(),
                     legend: legend.write_only(),
-                    bundle_prose: bundle_prose.write_only(),
+                    source_attribution: source_attribution.write_only(),
                     live_load_notice_shown: live_load_notice_shown.write_only(),
                 },
             );
