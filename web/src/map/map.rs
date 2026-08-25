@@ -22,8 +22,8 @@ pub fn MapView() -> impl IntoView {
     let global: RwSignal<Option<GlobalView>> = RwSignal::new(None);
     provide_context(global);
 
-    let live_notice_shown: RwSignal<bool> = RwSignal::new(false);
-    provide_context(live_notice_shown);
+    let live_load_notice_shown: RwSignal<bool> = RwSignal::new(false);
+    provide_context(live_load_notice_shown);
 
     let detail_surface: RwSignal<DetailSurface> = RwSignal::new(DetailSurface::Summary);
     provide_context(detail_surface);
