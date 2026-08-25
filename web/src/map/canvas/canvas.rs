@@ -63,9 +63,9 @@ pub struct RankView {
 /// What the expanded detail surface renders beyond the primary value, for a country or for the world.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegionDetail {
-    /// Oldest period first. Empty when the shard covers the region at no period.
+    /// The region's every period, oldest first.
     pub series: Vec<SeriesPointView>,
-    /// Preferred source first. Empty when the shard carries no cell for the active period.
+    /// What each source says about the active period, preferred source first.
     pub sources: Vec<SourceCellView>,
     /// Absent for a region with no value at the active period, and for the world, which is not a peer of the
     /// countries it summarizes.

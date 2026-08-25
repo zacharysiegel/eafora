@@ -1,5 +1,6 @@
-//! Load a statistic shard's bytes into an in-memory `(region, period_start) -> cell` map with its
-//! value and period ranges precomputed.
+//! Load a statistic shard's bytes into an in-memory `(region, period_start) -> every source's cell` map,
+//! with the value range and period bounds computed at load. Which of a cell's sources wins is decided per
+//! read, from the shard's own preference ranks.
 //!
 //! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
 //! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::ro_memory_vfs`. Each is
@@ -106,8 +107,8 @@ impl ShardValues {
         series
     }
 
-    /// Every region the shard covers for one period, each with the value a map draws. Unordered, since a
-    /// caller ranking these decides its own direction.
+    /// Each pair is a region code and that region's value at `period_start`. Unordered, since a caller
+    /// ranking these decides its own direction.
     pub fn preferred_values_at(&self, period_start: NaiveDate) -> Vec<(&str, f64)> {
         let mut region_values: Vec<(&str, f64)> = Vec::new();
 
