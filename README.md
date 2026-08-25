@@ -9,8 +9,8 @@ Total fertility rate across the globe in 2024.
 
 ![Global choropleth of total fertility rate](./docs/screenshots/map-global.png)
 
-A single region's detail dock, showing its history, the sources behind the selected value, and how the statistic is defined.
+A single region's detail panel, showing its history, the sources behind the selected value, and how the statistic is defined.
 
-![Belarus detail dock for 1991](./docs/screenshots/region-detail.png)
+![Belarus detail panel for 1991](./docs/screenshots/region-detail.png)
 
 </details>
