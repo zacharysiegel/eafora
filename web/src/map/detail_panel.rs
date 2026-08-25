@@ -69,16 +69,19 @@ pub fn RegionDetailPanel() -> impl IntoView {
     let i18n = use_i18n();
 
     let figure: Memo<Option<ActiveFigure>> = Memo::new(move |_| active_figure(i18n, selection.get(), global.get()));
+    /* Whether the expand control was reached by keyboard, which decides whether the dock takes focus: moving
+       focus for a mouse click puts a focus ring on a control the reader did not ask to be on. */
+    let expanded_by_keyboard: RwSignal<bool> = RwSignal::new(false);
 
     /* Each surface is built once, when it becomes the one showing, and its values then update through the
        closures below. Reading the figure here instead would rebuild the whole panel on every republish, which
        means rebuilding the chart's elements on every scrub tick. */
     view! {
         <Show when=move || surface.get() == DetailSurface::Summary && figure.with(Option::is_some)>
-            {summary_panel(i18n, figure, surface)}
+            {summary_panel(i18n, figure, surface, expanded_by_keyboard)}
         </Show>
         <Show when=move || surface.get() == DetailSurface::Expanded && figure.with(Option::is_some)>
-            {detail_dock(i18n, figure, surface, prose)}
+            {detail_dock(i18n, figure, surface, prose, expanded_by_keyboard)}
         </Show>
     }
 }
@@ -147,6 +150,7 @@ fn summary_panel(
     i18n: I18nContext<Locale>,
     figure: Memo<Option<ActiveFigure>>,
     surface: RwSignal<DetailSurface>,
+    expanded_by_keyboard: RwSignal<bool>,
 ) -> impl IntoView {
     view! {
         <aside class="panel detail-panel">
@@ -154,7 +158,10 @@ fn summary_panel(
                 class="button button-icon detail-panel-expand"
                 type="button"
                 aria-label=t_string!(i18n, detail.expand)
-                on:click=move |_| surface.set(DetailSurface::Expanded)
+                on:click=move |event| {
+                    expanded_by_keyboard.set(activated_by_keyboard(&event));
+                    surface.set(DetailSurface::Expanded);
+                }
             >
                 {expand_icon()}
             </button>
@@ -205,13 +212,18 @@ fn detail_dock(
     figure: Memo<Option<ActiveFigure>>,
     surface: RwSignal<DetailSurface>,
     prose: RwSignal<Option<BundleProseView>>,
+    expanded_by_keyboard: RwSignal<bool>,
 ) -> impl IntoView {
     let thumb: ScrollThumbState = scroll_thumb::create_state();
     let dock: NodeRef<Aside> = NodeRef::new();
     let collapse: NodeRef<Button> = NodeRef::new();
 
     Effect::new(move |_| report_covered_surface(dock));
-    Effect::new(move |_| take_focus(collapse));
+    Effect::new(move |_| {
+        if expanded_by_keyboard.get_untracked() {
+            take_focus(collapse);
+        }
+    });
     on_cleanup(|| dispatch_left_surface_inset(0.0));
 
     let value_text = figure_text(figure, move |figure| match figure.cell.value {
@@ -682,14 +694,14 @@ fn source_row(
             {status.map(|status| view! {
                 <span class="region-dock-source-status">{status}</span>
             })}
-            {attribution.map(|attribution| attribution_lines(i18n, attribution))}
+            {attribution.map(attribution_lines)}
         </div>
     }
     .into_any()
 }
 
 /// The citation is rendered verbatim because the source's licence asks for exactly that string.
-fn attribution_lines(i18n: I18nContext<Locale>, attribution: &SourceAttribution) -> AnyView {
+fn attribution_lines(attribution: &SourceAttribution) -> AnyView {
     view! {
         <span class="region-dock-source-attribution">{attribution.attribution_text.clone()}</span>
         <span class="region-dock-source-links">
@@ -698,7 +710,7 @@ fn attribution_lines(i18n: I18nContext<Locale>, attribution: &SourceAttribution)
             </a>
             " · "
             <a href=attribution.homepage_url.clone() target="_blank" rel="noopener noreferrer">
-                {t!(i18n, detail.homepage)}
+                {link_host(&attribution.homepage_url)}
             </a>
         </span>
     }
@@ -717,6 +729,15 @@ fn about_section(i18n: I18nContext<Locale>, statistic: StatisticKind, prose: Opt
         <p class="region-dock-about">{definition.description.clone()}</p>
     }
     .into_any()
+}
+
+/// The host a link points at, which says where it goes without claiming it is a "home" page and without a word
+/// to translate. The whole URL is the fallback, since a link is more useful mislabelled than unlabelled.
+fn link_host(url: &str) -> String {
+    let without_scheme: &str = url.split("://").nth(1).unwrap_or(url);
+    let host: &str = without_scheme.split('/').next().unwrap_or(without_scheme);
+
+    host.strip_prefix("www.").unwrap_or(host).to_string()
 }
 
 fn format_value(value: f64) -> String {
@@ -762,11 +783,26 @@ fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
     }
 }
 
-/* The control that opened the dock is destroyed by opening it, so focus would fall to the document and the next
-   tab would skip the dock entirely. The collapse control takes it: it sits inside the scrolling element, so the
-   arrow keys scroll on arrival, and being a button it shows a ring for a keyboard activation and none for a
-   click. The dock only ever mounts in response to the expand control, so this never steals focus from a page the
-   reader was already using. */
+/// A control activated by keyboard has a visible focus ring; one activated by pointer does not.
+#[cfg(feature = "hydrate")]
+fn activated_by_keyboard(event: &leptos::ev::MouseEvent) -> bool {
+    use wasm_bindgen::JsCast;
+
+    event
+        .current_target()
+        .and_then(|target| target.dyn_into::<web_sys::Element>().ok())
+        .and_then(|element| element.matches(":focus-visible").ok())
+        .unwrap_or(false)
+}
+
+#[cfg(not(feature = "hydrate"))] // the ssr build has no element to interrogate
+fn activated_by_keyboard(_event: &leptos::ev::MouseEvent) -> bool {
+    false
+}
+
+/* Opening the dock destroys the control that opened it, so a keyboard reader's focus would fall to the document
+   and the next tab would skip the dock. The collapse control takes it, and only for a keyboard activation: it
+   sits inside the scrolling element so the arrow keys scroll on arrival. */
 #[cfg(feature = "hydrate")]
 fn take_focus(collapse: NodeRef<Button>) {
     let Some(collapse) = collapse.get()
@@ -856,6 +892,16 @@ mod tests {
         let series: Vec<SeriesPointView> = series_of(&[(2019, 1.60), (2024, 1.20)]);
 
         assert_eq!(change_over_years(&series, january(2024), 10), None);
+    }
+
+    #[test]
+    fn link_host_keeps_only_where_the_link_goes() {
+        assert_eq!(link_host("https://www.humanfertility.org/"), "humanfertility.org");
+        assert_eq!(
+            link_host("https://databank.worldbank.org/source/world-development-indicators"),
+            "databank.worldbank.org",
+        );
+        assert_eq!(link_host("not a url"), "not a url");
     }
 
     #[test]
