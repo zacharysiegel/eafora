@@ -1,11 +1,11 @@
 use leptos::prelude::*;
 
-use crate::i18n::*;
 use crate::map::canvas::{BundleProseView, GlobalView, LegendView, MapCanvas, SelectionView, ViewControls};
 use crate::map::controls::Controls;
 use crate::map::detail_panel::{DetailSurface, RegionDetailPanel};
 use crate::map::escape::{self, DismissableSurfaces};
 use crate::map::legend::Legend;
+use crate::map::live_banner::LiveBanner;
 use crate::map::settings::{SettingsModal, SettingsSurface};
 
 #[component]
@@ -39,8 +39,6 @@ pub fn MapView() -> impl IntoView {
         detail: detail_surface,
     });
 
-    let i18n = use_i18n();
-
     view! {
         <main id="map-view">
             <MapCanvas />
@@ -48,14 +46,7 @@ pub fn MapView() -> impl IntoView {
             <Controls />
             <Legend />
             <SettingsModal />
-            {move || if live_load_failed.get() {
-                view! {
-                    <div class="map-live-banner panel" role="status">{t!(i18n, live.load_failed)}</div>
-                }
-                .into_any()
-            } else {
-                ().into_any()
-            }}
+            <LiveBanner />
         </main>
     }
 }

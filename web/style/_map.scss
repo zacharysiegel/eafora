@@ -30,6 +30,34 @@
     transform: translateX(-50%);
     max-width: 24rem;
     padding: var(--space-sm) var(--space-md);
-    text-align: center;
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
     pointer-events: none;
+}
+
+.map-live-banner-close {
+    width: 0.875rem;
+    height: 0.875rem;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--color-ink);
+    cursor: pointer;
+    // The banner passes pointer events through to the map; only its control accepts them.
+    pointer-events: auto;
+}
+
+.map-live-banner-close:hover,
+.map-live-banner-close:focus-visible {
+    color: var(--color-accent-hover);
+    outline: none;
+}
+
+.map-live-banner-close svg {
+    width: 14px;
+    height: 14px;
+    display: block;
 }

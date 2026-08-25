@@ -58,6 +58,7 @@
     "regions_expand_on_hover": "Regions expand on hover"
   },
   "live": {
-    "load_failed": "The latest data could not be loaded."
+    "load_failed": "The latest data could not be loaded.",
+    "dismiss": "Dismiss this notice."
   }
 }
