@@ -4,7 +4,7 @@ use sqlx::{PgConnection, PgExecutor};
 
 use crate::artifact::artifact_model::{
     ArtifactVersion, ArtifactVersionEntity, CandidateValue, CandidateValueProjection, CountryMetadataProjection,
-    SourceFacts,
+    SourceDetail,
 };
 use crate::canonical::canonical_db;
 use shared::canonical::canonical_model::{
@@ -98,10 +98,10 @@ pub async fn read_all_statistic_kinds<'e>(
 
 /// Both maps come from one pass over the sources, since the attribution and the publication that dates it are
 /// read from the same `data_source` row.
-pub async fn read_source_facts(
+pub async fn read_source_detail(
     connection: &mut PgConnection,
     data_source_kinds: &BTreeSet<DataSourceKind>,
-) -> Result<SourceFacts, AppError> {
+) -> Result<SourceDetail, AppError> {
     let mut revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
     let mut attribution: BTreeMap<DataSourceKind, SourceAttribution> = BTreeMap::new();
 
@@ -122,7 +122,7 @@ pub async fn read_source_facts(
         });
     }
 
-    Ok(SourceFacts { revisions, attribution })
+    Ok(SourceDetail { revisions, attribution })
 }
 
 pub async fn read_statistic_definitions(

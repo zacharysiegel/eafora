@@ -120,7 +120,7 @@ impl PartitionedValue {
 /// What one pass over a bundle's data sources yields: the revision each one is at, and the attribution a
 /// consumer must display for it.
 #[derive(Debug, Clone)]
-pub struct SourceFacts {
+pub struct SourceDetail {
     pub revisions: BTreeMap<DataSourceKind, SourceRevision>,
     pub attribution: BTreeMap<DataSourceKind, SourceAttribution>,
 }

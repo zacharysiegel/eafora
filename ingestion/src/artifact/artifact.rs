@@ -7,7 +7,7 @@ use chrono::NaiveDate;
 use sqlx::PgConnection;
 
 use crate::artifact::artifact_model::{
-    Artifacts, BuildReport, BundleProvenance, CandidateValue, CoupledBuildReport, PartitionedValue, SourceFacts,
+    Artifacts, BuildReport, BundleProvenance, CandidateValue, CoupledBuildReport, PartitionedValue, SourceDetail,
 };
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
 use crate::artifact::{artifact_db, hashing, StatisticShard};
@@ -97,13 +97,13 @@ async fn build_bundle_variant(
         None => create_geometry(connection, variant_dir, options).await?,
     };
 
-    let source_facts: SourceFacts = artifact_db::read_source_facts(&mut *connection, &data_sources).await?;
+    let source_detail: SourceDetail = artifact_db::read_source_detail(&mut *connection, &data_sources).await?;
     let statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition> =
         artifact_db::read_statistic_definitions(&mut *connection, &shard_statistic_kinds).await?;
 
     let provenance: BundleProvenance = BundleProvenance {
-        source_revisions: source_facts.revisions,
-        source_attribution: source_facts.attribution,
+        source_revisions: source_detail.revisions,
+        source_attribution: source_detail.attribution,
         statistic_definitions,
     };
 
