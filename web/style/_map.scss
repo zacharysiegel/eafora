@@ -33,8 +33,6 @@
     display: flex;
     align-items: center;
     gap: var(--space-md);
-    font-size: var(--type-size-data);
-    pointer-events: none;
 }
 
 .map-live-banner-close {
@@ -47,8 +45,6 @@
     border: none;
     color: var(--color-ink);
     cursor: pointer;
-    // The banner passes pointer events through to the map; only its control accepts them.
-    pointer-events: auto;
 }
 
 .map-live-banner-close:hover,
