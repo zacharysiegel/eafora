@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select id, code, name_en, description, units, created, modified\n        from statistic\n        where code = $1\n        ",
+  "query": "\n        select id, code, name_en, units, created, modified\n        from statistic\n        where code = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -20,21 +20,16 @@
       },
       {
         "ordinal": 3,
-        "name": "description",
-        "type_info": "Text"
-      },
-      {
-        "ordinal": 4,
         "name": "units",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "created",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "modified",
         "type_info": "Timestamptz"
       }
@@ -50,9 +45,8 @@
       false,
       false,
       false,
-      false,
       false
     ]
   },
-  "hash": "8a49504d2c4453a1cc7293bca161efb6a607a88421feb59fdff59441fe8a9516"
+  "hash": "9c878d7a59ab5f671264325fc5e5a1b8ab44219fa3500fb7f847ee3b897dde1c"
 }

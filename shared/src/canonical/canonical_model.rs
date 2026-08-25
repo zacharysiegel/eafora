@@ -49,7 +49,6 @@ pub struct Statistic {
     pub id: Uuid,
     pub code: String,
     pub name_en: String,
-    pub description: String,
     pub units: String,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,

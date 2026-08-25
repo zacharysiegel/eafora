@@ -51,7 +51,7 @@ pub async fn find_statistic_by_code<'e>(
     let statistic_entity: Option<StatisticEntity> = sqlx::query_as!(
         StatisticEntity,
         r#"
-        select id, code, name_en, description, units, created, modified
+        select id, code, name_en, units, created, modified
         from statistic
         where code = $1
         "#,

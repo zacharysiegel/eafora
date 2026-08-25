@@ -248,7 +248,6 @@ CREATE TABLE public.statistic (
     id uuid DEFAULT uuidv7() NOT NULL,
     code text NOT NULL,
     name_en text NOT NULL,
-    description text NOT NULL,
     units text NOT NULL,
     created timestamp with time zone DEFAULT now() NOT NULL,
     modified timestamp with time zone DEFAULT now() NOT NULL,
@@ -559,4 +558,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260819140100'),
     ('20260822120000'),
     ('20260822140000'),
-    ('20260824120000');
+    ('20260824120000'),
+    ('20260825120000');
