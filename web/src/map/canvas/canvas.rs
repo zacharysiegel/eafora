@@ -124,7 +124,7 @@ pub fn MapCanvas() -> impl IntoView {
             let view_controls: RwSignal<Option<ViewControls>> = expect_context();
             let legend: RwSignal<Option<LegendView>> = expect_context();
             let bundle_prose: RwSignal<Option<BundleProseView>> = expect_context();
-            let live_load_failed: RwSignal<bool> = expect_context();
+            let live_notice_shown: RwSignal<bool> = expect_context();
             super::driver::start(
                 canvas,
                 super::driver::DriverSignals {
@@ -134,7 +134,7 @@ pub fn MapCanvas() -> impl IntoView {
                     view_controls: view_controls.write_only(),
                     legend: legend.write_only(),
                     bundle_prose: bundle_prose.write_only(),
-                    live_load_failed: live_load_failed.write_only(),
+                    live_notice_shown: live_notice_shown.write_only(),
                 },
             );
         }

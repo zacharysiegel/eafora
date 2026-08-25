@@ -726,7 +726,7 @@ pub struct DriverSignals {
     pub view_controls: WriteSignal<Option<ViewControls>>,
     pub legend: WriteSignal<Option<LegendView>>,
     pub bundle_prose: WriteSignal<Option<BundleProseView>>,
-    pub live_load_failed: WriteSignal<bool>,
+    pub live_notice_shown: WriteSignal<bool>,
 }
 
 pub fn start(canvas: HtmlCanvasElement, signals: DriverSignals) {
@@ -863,7 +863,7 @@ async fn upgrade_to_live_bundle(
         Ok(static_base) => static_base,
         Err(error) => {
             log::warn!("reading the static repository base failed; [error={error}]");
-            signals.live_load_failed.set(true);
+            signals.live_notice_shown.set(true);
             return;
         }
     };
@@ -872,7 +872,7 @@ async fn upgrade_to_live_bundle(
         Ok(bundle) => apply_live_bundle(live_bundle_sender, bundle, signals),
         Err(error) => {
             log::warn!("loading the live bundle failed; [error={error}]");
-            signals.live_load_failed.set(true);
+            signals.live_notice_shown.set(true);
         }
     }
 }
