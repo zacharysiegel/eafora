@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -11,7 +11,7 @@ use crate::artifact::artifact_model::{
 };
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
 use crate::artifact::{artifact_db, hashing, StatisticShard};
-use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, StatisticDefinition, StatisticKind};
+use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 use shared::artifact::manifest::{self, BundleVariant};
 use shared::filesystem::{self, FileReference, Hashed};
@@ -89,22 +89,16 @@ async fn build_bundle_variant(
     let (shards, data_sources): (Vec<StatisticShard<Hashed<FileReference>>>, BTreeSet<DataSourceKind>) =
         create_statistic_shards(connection, variant_dir, statistic_kinds, variant).await?;
 
-    let shard_statistic_kinds: BTreeSet<StatisticKind> =
-        shards.iter().map(|statistic_shard| statistic_shard.key.statistic_kind).collect();
-
     let geometry: Hashed<FileReference> = match shared_geometry {
         Some(existing) => copy_geometry_into(existing, variant_dir)?,
         None => create_geometry(connection, variant_dir, options).await?,
     };
 
     let source_detail: SourceDetail = artifact_db::read_source_detail(&mut *connection, &data_sources).await?;
-    let statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition> =
-        artifact_db::read_statistic_definitions(&mut *connection, &shard_statistic_kinds).await?;
 
     let provenance: BundleProvenance = BundleProvenance {
         source_revisions: source_detail.revisions,
         source_attribution: source_detail.attribution,
-        statistic_definitions,
     };
 
     let manifest: Hashed<FileReference> =

@@ -4,7 +4,7 @@ use chrono::NaiveDate;
 use leptos::html::Canvas;
 use leptos::prelude::*;
 
-use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, StatisticDefinition, StatisticKind};
+use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, StatisticKind};
 
 use crate::i18n::*;
 
@@ -92,7 +92,6 @@ pub struct GlobalView {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BundleProseView {
     pub source_attribution: BTreeMap<DataSourceKind, SourceAttribution>,
-    pub statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition>,
 }
 
 /// Published by the driver so the controls render without bundle access.

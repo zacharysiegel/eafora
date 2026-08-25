@@ -276,14 +276,10 @@ fn detail_dock(
 
                 prose.with(|prose| sources_section(i18n, &figure.detail.sources, prose.as_ref()))
             })}
-            {move || figure.with(|figure| {
-                let Some(figure) = figure.as_ref()
-                else {
-                    return ().into_any();
-                };
-
-                prose.with(|prose| about_section(i18n, figure.statistic, prose.as_ref()))
-            })}
+            <h3 class="region-dock-heading">{t!(i18n, detail.about)}</h3>
+            <p class="region-dock-about">
+                {figure_text(figure, move |figure| labels::statistic_description(i18n, figure.statistic))}
+            </p>
         </div>
         {scroll_thumb::view(thumb)}
         </aside>
@@ -713,20 +709,6 @@ fn attribution_lines(attribution: &SourceAttribution) -> AnyView {
                 {link_host(&attribution.homepage_url)}
             </a>
         </span>
-    }
-    .into_any()
-}
-
-/// The statistic's own definition, last, for the reader who wants to know what the figure above measures.
-fn about_section(i18n: I18nContext<Locale>, statistic: StatisticKind, prose: Option<&BundleProseView>) -> AnyView {
-    let Some(definition) = prose.and_then(|prose| prose.statistic_definitions.get(&statistic))
-    else {
-        return ().into_any();
-    };
-
-    view! {
-        <h3 class="region-dock-heading">{t!(i18n, detail.about)}</h3>
-        <p class="region-dock-about">{definition.description.clone()}</p>
     }
     .into_any()
 }

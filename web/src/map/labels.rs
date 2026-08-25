@@ -54,6 +54,13 @@ pub fn statistic_unit_string(i18n: I18nContext<Locale>, statistic: StatisticKind
     }
 }
 
+pub fn statistic_description(i18n: I18nContext<Locale>, statistic: StatisticKind) -> String {
+    match statistic {
+        StatisticKind::Tfr => t_string!(i18n, statistic.tfr_description).to_string(),
+        StatisticKind::Ccf => t_string!(i18n, statistic.ccf_description).to_string(),
+    }
+}
+
 /// The caption for the color transform's inflection on the legend (e.g. "replacement" for TFR at 2.1), or
 /// `None` for a statistic with no meaningful threshold at its inflection.
 pub fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) -> Option<AnyView> {

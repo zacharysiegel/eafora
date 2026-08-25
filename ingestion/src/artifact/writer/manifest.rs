@@ -69,7 +69,6 @@ fn build_manifest_json(
         statistics,
         source_revisions: provenance.source_revisions.clone(),
         source_attribution: provenance.source_attribution.clone(),
-        statistic_definitions: provenance.statistic_definitions.clone(),
     };
 
     let json: String = serde_json::to_string_pretty(&manifest)?;
@@ -92,7 +91,7 @@ mod tests {
     use super::*;
 
     use shared::artifact::bundle::StatisticShardKey;
-    use shared::canonical::canonical_model::{DataSourceKind, SourceAttribution, SourceRevision, StatisticDefinition};
+    use shared::canonical::canonical_model::{DataSourceKind, SourceAttribution, SourceRevision};
 
     fn make_pre_manifest_artifacts() -> (Vec<StatisticShard<Hashed<FileReference>>>, Hashed<FileReference>) {
         let shards: Vec<StatisticShard<Hashed<FileReference>>> = vec![
@@ -150,7 +149,6 @@ mod tests {
         BundleProvenance {
             source_revisions: BTreeMap::new(),
             source_attribution: BTreeMap::new(),
-            statistic_definitions: BTreeMap::new(),
         }
     }
 
@@ -172,10 +170,6 @@ mod tests {
                     license_url: "https://creativecommons.org/licenses/by/4.0/".to_string(),
                     homepage_url: "https://databank.worldbank.org/source/world-development-indicators".to_string(),
                 },
-            )]),
-            statistic_definitions: BTreeMap::from([(
-                StatisticKind::Tfr,
-                StatisticDefinition { description: "Average number of children.".to_string() },
             )]),
         }
     }
@@ -234,7 +228,6 @@ mod tests {
         let manifest: Manifest = manifest::parse_manifest(json.as_bytes()).unwrap();
 
         assert_eq!(manifest.source_attribution[&DataSourceKind::WorldBankWDI].license_name, "CC BY 4.0");
-        assert_eq!(manifest.statistic_definitions[&StatisticKind::Tfr].description, "Average number of children.");
     }
 
     #[test]

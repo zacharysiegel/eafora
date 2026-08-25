@@ -284,13 +284,6 @@ pub struct SourceAttribution {
     pub homepage_url: String,
 }
 
-/// Prose defining what a statistic measures, curated in the canonical store so it travels with the data it
-/// describes rather than with the client that draws it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StatisticDefinition {
-    pub description: String,
-}
-
 /// Half-open `[start, end)` interval matching the canonical store's
 /// `period_start` / `period_end` columns. Always paired so the two
 /// `NaiveDate` arguments can't get inverted at construction sites.

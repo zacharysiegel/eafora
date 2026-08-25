@@ -8,7 +8,7 @@ use crate::artifact::artifact_model::{
 };
 use crate::canonical::canonical_db;
 use shared::canonical::canonical_model::{
-    DataSource, DataSourceKind, SourceAttribution, SourceRevision, Statistic, StatisticDefinition, StatisticKind,
+    DataSource, DataSourceKind, SourceAttribution, SourceRevision, StatisticKind,
 };
 use crate::error::AppError;
 use crate::ingest::ingest_db;
@@ -123,23 +123,6 @@ pub async fn read_source_detail(
     }
 
     Ok(SourceDetail { revisions, attribution })
-}
-
-pub async fn read_statistic_definitions(
-    connection: &mut PgConnection,
-    statistic_kinds: &BTreeSet<StatisticKind>,
-) -> Result<BTreeMap<StatisticKind, StatisticDefinition>, AppError> {
-    let mut definitions: BTreeMap<StatisticKind, StatisticDefinition> = BTreeMap::new();
-
-    for kind in statistic_kinds {
-        let statistic: Statistic = canonical_db::find_statistic_by_code(&mut *connection, kind.code())
-            .await?
-            .ok_or_else(|| AppError::from(format!("statistic {:?} missing from canonical store", kind)))?;
-
-        definitions.insert(*kind, StatisticDefinition { description: statistic.description });
-    }
-
-    Ok(definitions)
 }
 
 pub async fn read_artifact_version_exists<'e>(

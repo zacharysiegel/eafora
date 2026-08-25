@@ -714,7 +714,6 @@ enum StartupError {
 fn bundle_prose_view(bundle: &Bundle) -> BundleProseView {
     BundleProseView {
         source_attribution: bundle.manifest.source_attribution.clone(),
-        statistic_definitions: bundle.manifest.statistic_definitions.clone(),
     }
 }
 

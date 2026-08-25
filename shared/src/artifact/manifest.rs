@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::artifact::schema_version;
 use crate::canonical::canonical_model::{
-    impl_code_serde, DataSourceKind, LicenseShardClass, SourceAttribution, SourceRevision, StatisticDefinition,
-    StatisticKind,
+    impl_code_serde, DataSourceKind, LicenseShardClass, SourceAttribution, SourceRevision, StatisticKind,
 };
 use crate::error::AppError;
 
@@ -63,7 +62,6 @@ pub struct Manifest {
     pub statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>>,
     pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
     pub source_attribution: BTreeMap<DataSourceKind, SourceAttribution>,
-    pub statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition>,
 }
 
 impl Manifest {
@@ -134,8 +132,7 @@ mod tests {
   "geometry": {{ "relative_path": "geometry/world-50m-{sha}.fgb", "size_bytes": 4380000, "sha256": "{sha}" }},
   "statistics": {{ "tfr": {{ "base": {{ "relative_path": "data/tfr-base-{sha}.sqlite", "size_bytes": 89000, "sha256": "{sha}" }} }} }},
   "source_revisions": {{ "wb_wdi": {{ "revision": "2024-12-12", "published": "2024-12-12T00:00:00Z", "fetched": "2024-12-31T00:00:00Z" }} }},
-  "source_attribution": {{}},
-  "statistic_definitions": {{}}
+  "source_attribution": {{}}
 }}"#,
             sha = valid_sha256(),
         )
@@ -157,29 +154,20 @@ mod tests {
     }
 
     #[test]
-    fn parse_manifest_reads_the_prose_fields_when_present() {
-        let json: String = valid_manifest_json()
-            .replace(
-                r#""source_attribution": {}"#,
-                r#""source_attribution": { "wb_wdi": {
+    fn parse_manifest_reads_the_attribution_a_license_obliges_a_consumer_to_show() {
+        let json: String = valid_manifest_json().replace(
+            r#""source_attribution": {}"#,
+            r#""source_attribution": { "wb_wdi": {
                     "attribution_text": "World Bank, World Development Indicators (CC BY 4.0)",
                     "license_name": "CC BY 4.0",
                     "license_url": "https://creativecommons.org/licenses/by/4.0/",
                     "homepage_url": "https://databank.worldbank.org/source/world-development-indicators"
                 } }"#,
-            )
-            .replace(
-                r#""statistic_definitions": {}"#,
-                r#""statistic_definitions": { "tfr": { "description": "Average number of children." } }"#,
-            );
+        );
 
         let manifest: Manifest = parse_manifest(json.as_bytes()).unwrap();
 
         assert_eq!(manifest.source_attribution[&DataSourceKind::WorldBankWDI].license_name, "CC BY 4.0");
-        assert_eq!(
-            manifest.statistic_definitions[&StatisticKind::Tfr].description,
-            "Average number of children.",
-        );
     }
 
     #[test]
