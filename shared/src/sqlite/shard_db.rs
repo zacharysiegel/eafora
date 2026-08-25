@@ -73,8 +73,8 @@ impl ShardValues {
             .find(|cell| cell.source_code == source_code)
     }
 
-    /// Oldest period first, so a consumer plots without sorting. Each point is the value a map draws, so a
-    /// series and the map never disagree about which source supplied a period.
+    /// The region's value at every period the shard covers it, oldest first, each from the source the map
+    /// draws.
     pub fn series(&self, region_code: &str) -> Vec<SeriesPoint> {
         let Some(by_period) = self.by_region.get(region_code)
         else {
