@@ -107,7 +107,7 @@ pub fn Controls() -> impl IntoView {
                                     type="range"
                                     aria-label=move || active_statistic
                                         .get()
-                                        .map(|statistic| labels::period_axis_label_text(i18n, statistic))
+                                        .map(|statistic| labels::period_axis_label(i18n, statistic))
                                     min=move || earliest_year.get()
                                     max=move || latest_year.get()
                                     value=move || active_year.get()

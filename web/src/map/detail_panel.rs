@@ -139,7 +139,7 @@ fn figure_heading(figure: Memo<Option<ActiveFigure>>, i18n: I18nContext<Locale>)
     figure_text(figure, move |figure| {
         format!(
             "{} · {}",
-            labels::statistic_label_string(i18n, figure.statistic),
+            labels::statistic_label(i18n, figure.statistic),
             figure.period_start.year(),
         )
     })
@@ -258,7 +258,7 @@ fn detail_dock(
                coverage does not move everything below it. */
             <p class="region-dock-value numeric">{value_text}</p>
             <p class="region-dock-unit">
-                {figure_text(figure, move |figure| labels::statistic_unit_string(i18n, figure.statistic))}
+                {figure_text(figure, move |figure| labels::statistic_unit(i18n, figure.statistic))}
             </p>
             <p class="region-dock-status">
                 {figure_text(figure, move |figure| {
@@ -417,7 +417,7 @@ fn chart_geometry(i18n: I18nContext<Locale>, figure: Option<&ActiveFigure>) -> C
         marker_radius: chart_unit(marker.radius),
         reference_y: chart_unit(reference.map_or(PLOT_BOTTOM, |value| scale.y(value))),
         reference_label: reference.map(|value| format!("{value:.1}")).unwrap_or_default(),
-        unit_label: labels::statistic_unit_string(i18n, figure.statistic),
+        unit_label: labels::statistic_unit(i18n, figure.statistic),
         first_year: scale.first_period_start.year().to_string(),
         last_year: scale.last_period_start.year().to_string(),
     }
