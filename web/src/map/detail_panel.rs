@@ -305,11 +305,32 @@ fn context_row(label: AnyView, value: impl Fn() -> String + Send + Sync + 'stati
     }
 }
 
+/// "22nd lowest of 217", which states the direction rather than leaving the reader to infer it from a sorting
+/// convention. The ordinal is English, so the phrase is assembled here; a second locale wants the whole phrase
+/// interpolated in the locale file instead.
 fn rank_text(i18n: I18nContext<Locale>, figure: Memo<Option<ActiveFigure>>) -> impl Fn() -> String + Copy + Send + Sync {
     figure_text(figure, move |figure| match figure.detail.rank {
-        Some(rank) => format!("{} / {}", rank.position, rank.of),
+        Some(rank) => format!(
+            "{} {} {}",
+            ordinal(rank.position),
+            t_string!(i18n, detail.rank_lowest_of),
+            rank.of,
+        ),
         None => t_string!(i18n, detail.not_applicable).to_string(),
     })
+}
+
+/// Eleven, twelve and thirteen take "th" despite their final digit, and so does any number ending in them.
+fn ordinal(position: usize) -> String {
+    let suffix: &str = match (position % 100, position % 10) {
+        (11 | 12 | 13, _) => "th",
+        (_, 1) => "st",
+        (_, 2) => "nd",
+        (_, 3) => "rd",
+        (_, _) => "th",
+    };
+
+    format!("{position}{suffix}")
 }
 
 fn change_text(
@@ -835,6 +856,22 @@ mod tests {
         let series: Vec<SeriesPointView> = series_of(&[(2019, 1.60), (2024, 1.20)]);
 
         assert_eq!(change_over_years(&series, january(2024), 10), None);
+    }
+
+    #[test]
+    fn ordinal_takes_th_for_the_teens_whatever_their_final_digit() {
+        let ordinals: Vec<String> = [1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101, 111, 112, 113, 217]
+            .into_iter()
+            .map(ordinal)
+            .collect();
+
+        assert_eq!(
+            ordinals,
+            vec![
+                "1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "101st", "111th",
+                "112th", "113th", "217th",
+            ],
+        );
     }
 
     #[test]

@@ -19,7 +19,7 @@
     },
     "expand": "Expand to the full detail.",
     "collapse": "Collapse the detail.",
-    "rank": "Rank, lowest to highest",
+    "rank": "Rank",
     "change_over_1_period": "Past year",
     "change_over_10_periods": "Past 10 years",
     "not_applicable": "N/A",
@@ -29,7 +29,8 @@
     "source_preferred": "Prioritized",
     "about": "About this statistic",
     "license": "Licence",
-    "homepage": "Homepage"
+    "homepage": "Homepage",
+    "rank_lowest_of": "lowest of"
   },
   "statistic": {
     "tfr": "Total fertility rate",
