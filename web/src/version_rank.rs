@@ -69,28 +69,4 @@ mod tests {
 
         assert!(rank_cached_version(Some(&downsampled)) > rank_cached_version(None));
     }
-
-    /// A bundle published before the manifest carried a variant reads as complete, so an existing cached
-    /// complete bundle keeps outranking the onboard one rather than being demoted by the upgrade.
-    #[test]
-    fn a_manifest_without_a_variant_ranks_as_complete() {
-        let json_without_variant: String = format!(
-            r#"{{
-                "manifest_schema_version": 1,
-                "version": "2026-08-14+macdiarmid",
-                "artifact_created": "2026-08-14T20:31:54Z",
-                "geometry": {{ "relative_path": "geometry/world.fgb", "size_bytes": 1, "sha256": "{}" }},
-                "statistics": {{}},
-                "source_revisions": {{}}
-            }}"#,
-            "ab".repeat(32),
-        );
-
-        let without_variant: Manifest = manifest::parse_manifest(json_without_variant.as_bytes()).unwrap();
-
-        assert_eq!(without_variant.variant, BundleVariant::Complete);
-
-        let newer_downsampled: Manifest = manifest_of(BundleVariant::Downsampled, "2026-08-16T05:16:20Z");
-        assert!(rank_cached_version(Some(&without_variant)) > rank_cached_version(Some(&newer_downsampled)));
-    }
 }

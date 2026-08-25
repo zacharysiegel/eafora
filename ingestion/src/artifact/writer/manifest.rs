@@ -203,7 +203,7 @@ mod tests {
 
         let json: String = build_manifest_json(&shards, &geometry, "2026-05-18", BundleVariant::Complete, &artifact_created, &provenance).unwrap();
 
-        assert!(json.contains("\"manifest_schema_version\": 1"));
+        assert!(json.contains(&format!("\"manifest_schema_version\": {}", manifest::MANIFEST_SCHEMA_VERSION)));
     }
 
     #[test]

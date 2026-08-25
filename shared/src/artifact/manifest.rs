@@ -11,7 +11,7 @@ use crate::canonical::canonical_model::{
 use crate::error::AppError;
 
 pub const MANIFEST_FILENAME: &str = "manifest.json";
-pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const MANIFEST_SCHEMA_VERSION: u32 = 2;
 pub const SUBDIR_GEOMETRY: &str = "geometry";
 pub const SUBDIR_DATA: &str = "data";
 
@@ -52,28 +52,17 @@ impl TryFrom<&str> for BundleVariant {
 
 impl_code_serde!(BundleVariant, code);
 
-/// Bundles published before the manifest carried a variant are complete: the downsampled tree has only
-/// ever been embedded in a client, never published for a consumer to cache.
-fn variant_when_absent() -> BundleVariant {
-    BundleVariant::Complete
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub manifest_schema_version: u32,
     pub version: String,
-    #[serde(default = "variant_when_absent")]
     pub variant: BundleVariant,
     pub artifact_created: DateTime<Utc>,
     pub geometry: ManifestEntry,
     pub statistics: BTreeMap<StatisticKind, BTreeMap<LicenseShardClass, ManifestEntry>>,
     pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
-    /* Absent from every manifest published before these fields existed, and the schema version deliberately
-       does not move for them: a bundle already in a client's cache keeps parsing and gains the prose on its
-       next publish. */
-    #[serde(default)]
     pub source_attribution: BTreeMap<DataSourceKind, SourceAttribution>,
-    #[serde(default)]
     pub statistic_definitions: BTreeMap<StatisticKind, StatisticDefinition>,
 }
 
@@ -138,12 +127,15 @@ mod tests {
     fn valid_manifest_json() -> String {
         format!(
             r#"{{
-  "manifest_schema_version": 1,
+  "manifest_schema_version": 2,
   "version": "2026-05-18+laureate",
+  "variant": "complete",
   "artifact_created": "2026-05-18T03:00:00Z",
   "geometry": {{ "relative_path": "geometry/world-50m-{sha}.fgb", "size_bytes": 4380000, "sha256": "{sha}" }},
   "statistics": {{ "tfr": {{ "base": {{ "relative_path": "data/tfr-base-{sha}.sqlite", "size_bytes": 89000, "sha256": "{sha}" }} }} }},
-  "source_revisions": {{ "wb_wdi": {{ "revision": "2024-12-12", "published": "2024-12-12T00:00:00Z", "fetched": "2024-12-31T00:00:00Z" }} }}
+  "source_revisions": {{ "wb_wdi": {{ "revision": "2024-12-12", "published": "2024-12-12T00:00:00Z", "fetched": "2024-12-31T00:00:00Z" }} }},
+  "source_attribution": {{}},
+  "statistic_definitions": {{}}
 }}"#,
             sha = valid_sha256(),
         )
@@ -153,7 +145,7 @@ mod tests {
     fn parse_manifest_round_trips_fixture_set() {
         let manifest: Manifest = parse_manifest(valid_manifest_json().as_bytes()).unwrap();
 
-        assert_eq!(manifest.manifest_schema_version, 1);
+        assert_eq!(manifest.manifest_schema_version, 2);
         assert_eq!(manifest.version, "2026-05-18+laureate");
         assert!(manifest.statistics.contains_key(&StatisticKind::Tfr));
         assert_eq!(manifest.source_revisions[&DataSourceKind::WorldBankWDI].revision, "2024-12-12");
@@ -164,29 +156,22 @@ mod tests {
         assert_eq!(produced, reproduced);
     }
 
-    /// Every manifest published before the prose fields existed omits them, and the schema version did not
-    /// move, so a cached bundle has to keep parsing.
-    #[test]
-    fn parse_manifest_accepts_a_manifest_without_the_prose_fields() {
-        let manifest: Manifest = parse_manifest(valid_manifest_json().as_bytes()).unwrap();
-
-        assert!(manifest.source_attribution.is_empty());
-        assert!(manifest.statistic_definitions.is_empty());
-    }
-
     #[test]
     fn parse_manifest_reads_the_prose_fields_when_present() {
-        let json: String = valid_manifest_json().replace(
-            r#""source_revisions""#,
-            r#""source_attribution": { "wb_wdi": {
-                "attribution_text": "World Bank, World Development Indicators (CC BY 4.0)",
-                "license_name": "CC BY 4.0",
-                "license_url": "https://creativecommons.org/licenses/by/4.0/",
-                "homepage_url": "https://databank.worldbank.org/source/world-development-indicators"
-            } },
-            "statistic_definitions": { "tfr": { "description": "Average number of children." } },
-            "source_revisions""#,
-        );
+        let json: String = valid_manifest_json()
+            .replace(
+                r#""source_attribution": {}"#,
+                r#""source_attribution": { "wb_wdi": {
+                    "attribution_text": "World Bank, World Development Indicators (CC BY 4.0)",
+                    "license_name": "CC BY 4.0",
+                    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                    "homepage_url": "https://databank.worldbank.org/source/world-development-indicators"
+                } }"#,
+            )
+            .replace(
+                r#""statistic_definitions": {}"#,
+                r#""statistic_definitions": { "tfr": { "description": "Average number of children." } }"#,
+            );
 
         let manifest: Manifest = parse_manifest(json.as_bytes()).unwrap();
 
@@ -199,11 +184,15 @@ mod tests {
 
     #[test]
     fn parse_manifest_rejects_unknown_schema_version() {
-        let json: String = valid_manifest_json().replace("\"manifest_schema_version\": 1", "\"manifest_schema_version\": 2");
+        let unknown_version: u32 = MANIFEST_SCHEMA_VERSION + 1;
+        let json: String = valid_manifest_json().replace(
+            &format!("\"manifest_schema_version\": {MANIFEST_SCHEMA_VERSION}"),
+            &format!("\"manifest_schema_version\": {unknown_version}"),
+        );
 
         let error: AppError = parse_manifest(json.as_bytes()).unwrap_err();
 
-        assert!(error.to_string().contains("unknown manifest_schema_version 2"));
+        assert!(error.to_string().contains(&format!("unknown manifest_schema_version {unknown_version}")));
     }
 
     #[test]
