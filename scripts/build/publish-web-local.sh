@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# publish-local.sh: publish an artifact set into the web client's static repository tree.
+# publish-web-local.sh: publish an artifact set into the web client's static repository tree.
 #
 # `ingestion publish local` writes object keys under a destination root and records an
 # artifact_version row pointing at a public URL prefix. The two values below are the ones the
@@ -12,7 +12,7 @@
 # and prefers the newest it can open.
 #
 # Usage:
-#   ./scripts/build/publish-local.sh [--build]
+#   ./scripts/build/publish-web-local.sh [--build]
 #
 #   --build  build a new artifact set first; without it, the newest existing build under
 #            $EAFORA_ARTIFACTS_DIR is published
