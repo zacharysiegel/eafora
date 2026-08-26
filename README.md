@@ -11,6 +11,6 @@ Total fertility rate across the globe in 2024.
 
 A single region's detail panel, showing its history, the sources behind the selected value, and how the statistic is defined.
 
-![Belarus detail panel for 1991](./docs/screenshots/region-detail.png)
+![Poland detail panel for 2024](./docs/screenshots/region-detail.png)
 
 </details>
