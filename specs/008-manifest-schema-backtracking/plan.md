@@ -8,11 +8,9 @@ Every publish writes the just-built manifest to one extra key, `latest/manifest.
 
 The whole producer half is one `put_file` call reusing a source path the manifest is already uploaded from twice. The whole client half is one pure decision function in `shared`, one generalized fetch signature, and a three-line branch at one call site. There is no new trait surface, no new dependency, no schema column, and no interface change.
 
-Three PRs on a linear stack, plus one prerequisite off `master`.
+One PR, revised from the three-PR stack this plan first proposed. The contract this feature adds is a filename, and the producer that writes it and the client that reads it must build it from the same function; a split diff shows only one end of that contract at a time, and the producer half alone changes nothing a reader can observe. The whole change is approximately 75 lines of production code.
 
-- **Prerequisite.** Repair ingestion/tests/publish_integration.rs, which does not compile on `master`. Own PR off `master`, because the breakage predates this feature and the only test target that can prove Phase A is dead until it lands.
-- **A, the producer writes the pointer.** The key builder in `shared`, the added upload in `publish_artifacts`, and the two publish integration assertions.
-- **B, the client reads it.** The version read extracted, the fallback decision, the generalized manifest fetch, and the branch in `load_live_bundle`.
+The prerequisite repair of ingestion/tests/publish_integration.rs, which did not compile on `master`, is folded into the same branch as its first commit rather than taking a PR of its own.
 
 Affected repositories: this monorepo only (`/Users/singularity/eafora`).
 

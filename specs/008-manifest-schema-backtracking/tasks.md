@@ -4,7 +4,7 @@
 
 **Input**: [spec.md](spec.md), [plan.md](plan.md)
 
-Organized by the plan's phasing: one prerequisite PR off `master`, then two phases on a linear stack, each its own PR. Test-first throughout for the pure functions, per Constitution Principle VII. Every numbered task is one commit unless it says otherwise.
+Organized by the plan's phasing. The three PRs this list first proposed became one, for the reason recorded in plan.md: the feature's contract is a filename that producer and client must build from the same function, and a split diff shows only one end of it. Test-first throughout for the pure functions, per Constitution Principle VII. Every numbered task is one commit unless it says otherwise.
 
 Read `docs/conventions/logging.md` before writing the log lines and `docs/conventions/types.md` before naming anything.
 
@@ -82,4 +82,8 @@ Branch `manifest-schema-fallback`, stacked on `manifest-schema-pointer`. Rebase 
 
 ## Deviations
 
-Recorded as the phases land.
+- **One PR, not three.** The prerequisite, Phase A, and Phase B landed on one branch. The owner's objection was that the producer half has no observable effect and the two halves have to ship together; the sharper reason is that the shared filename is a contract neither split diff would show both ends of.
+- **T017 through T021 grew.** Two dormant test defects surfaced while hoisting the field-name constant, both caused by a fixture pinning a schema version the constant had since moved past. `parse_manifest_ignores_unknown_fields` declared a `replace` needle that no longer occurred, so it re-parsed an unmutated fixture and asserted nothing; it now mutates a needle that exists and asserts the mutation happened. `manifest_json` in web/src/client/load.rs claimed schema 1, so every version it seeded failed to parse, leaving `version_labels_newest_first_orders_same_date_labels_by_artifact_created` ranking two unrankable versions and passing only because the labels happen to sort the intended way. Both fixtures now interpolate `MANIFEST_SCHEMA_VERSION` and cannot go stale on a bump.
+- **T023's shape.** The branch became a named function, `readable_manifest_bytes`, rather than inline statements in `load_live_bundle`, so the fallback reads as one decision and phase 0.2 can move it whole.
+- **T025 passed.** With the served tree's `latest/manifest.json` edited to claim schema 3 and a hand-made `latest/manifest.2.json` holding the real schema-2 manifest, the client logged `the repository is at a newer schema version; [pointer=latest/manifest.2.json]`, loaded the bundle, and showed no notice. The tree was restored afterward.
+- **A one-character fix outside the feature.** An em dash in schema_version.rs's module doc, against the project's own rule, removed while editing that file.

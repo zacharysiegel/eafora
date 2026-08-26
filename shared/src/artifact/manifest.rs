@@ -11,6 +11,7 @@ use crate::error::AppError;
 
 pub const MANIFEST_FILENAME: &str = "manifest.json";
 pub const MANIFEST_SCHEMA_VERSION: u32 = 2;
+pub const MANIFEST_SCHEMA_VERSION_FIELD: &str = "manifest_schema_version";
 pub const SUBDIR_GEOMETRY: &str = "geometry";
 pub const SUBDIR_DATA: &str = "data";
 
@@ -89,7 +90,7 @@ pub struct ManifestEntry {
 /// Peeks only the version field so a shape change in a future schema version is
 /// rejected with a clear message before the full (possibly incompatible) parse.
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError> {
-    schema_version::require_schema_version(bytes, "manifest_schema_version", MANIFEST_SCHEMA_VERSION)?;
+    schema_version::require_schema_version(bytes, MANIFEST_SCHEMA_VERSION_FIELD, MANIFEST_SCHEMA_VERSION)?;
 
     let manifest: Manifest = serde_json::from_slice(bytes)?;
 
@@ -101,6 +102,19 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError> {
     }
 
     Ok(manifest)
+}
+
+/// The pointer key a consumer should try when it cannot read `MANIFEST_LATEST_KEY`, or `None` when the
+/// document is not a manifest from a newer schema version. A document at the reader's own version, one below
+/// it, or one whose version cannot be read is a fault to surface rather than a reason to serve older data.
+pub fn schema_fallback_key(latest_manifest_bytes: &[u8]) -> Option<String> {
+    let found: u64 = schema_version::read_schema_version(latest_manifest_bytes, MANIFEST_SCHEMA_VERSION_FIELD).ok()?;
+
+    if found <= u64::from(MANIFEST_SCHEMA_VERSION) {
+        return None;
+    }
+
+    Some(schema_pointer_key(MANIFEST_SCHEMA_VERSION))
 }
 
 fn validate_entry(entry: &ManifestEntry) -> Result<(), AppError> {
@@ -140,7 +154,7 @@ mod tests {
     fn valid_manifest_json() -> String {
         format!(
             r#"{{
-  "manifest_schema_version": 2,
+  "manifest_schema_version": {schema_version},
   "version": "2026-05-18+laureate",
   "variant": "complete",
   "artifact_created": "2026-05-18T03:00:00Z",
@@ -149,6 +163,7 @@ mod tests {
   "source_revisions": {{ "wb_wdi": {{ "revision": "2024-12-12", "published": "2024-12-12T00:00:00Z", "fetched": "2024-12-31T00:00:00Z" }} }},
   "source_attribution": {{}}
 }}"#,
+            schema_version = MANIFEST_SCHEMA_VERSION,
             sha = valid_sha256(),
         )
     }
@@ -183,6 +198,41 @@ mod tests {
         let manifest: Manifest = parse_manifest(json.as_bytes()).unwrap();
 
         assert_eq!(manifest.source_attribution[&DataSourceKind::WorldBankWDI].license_name, "CC BY 4.0");
+    }
+
+    #[test]
+    fn schema_fallback_key_offers_the_readers_own_pointer_for_a_newer_document() {
+        let json: String = valid_manifest_json().replace(
+            &format!("\"manifest_schema_version\": {MANIFEST_SCHEMA_VERSION}"),
+            &format!("\"manifest_schema_version\": {}", MANIFEST_SCHEMA_VERSION + 1),
+        );
+
+        assert_eq!(
+            schema_fallback_key(json.as_bytes()),
+            Some(schema_pointer_key(MANIFEST_SCHEMA_VERSION)),
+        );
+    }
+
+    /// A document the reader can read needs no fallback, and one it cannot read for any other reason is a
+    /// producer or transport fault that must surface rather than be served older data.
+    #[test]
+    fn schema_fallback_key_declines_every_case_but_a_newer_document() {
+        let matching: String = valid_manifest_json();
+        assert_eq!(schema_fallback_key(matching.as_bytes()), None);
+
+        let older: String = valid_manifest_json().replace(
+            &format!("\"manifest_schema_version\": {MANIFEST_SCHEMA_VERSION}"),
+            "\"manifest_schema_version\": 1",
+        );
+        assert_eq!(schema_fallback_key(older.as_bytes()), None);
+
+        let missing_field: String = valid_manifest_json().replace(
+            &format!("\"manifest_schema_version\": {MANIFEST_SCHEMA_VERSION},"),
+            "",
+        );
+        assert_eq!(schema_fallback_key(missing_field.as_bytes()), None);
+
+        assert_eq!(schema_fallback_key(b"<html>a proxy error page</html>"), None);
     }
 
     #[test]
@@ -222,9 +272,11 @@ mod tests {
     #[test]
     fn parse_manifest_ignores_unknown_fields() {
         let json: String = valid_manifest_json().replace(
-            "\"manifest_schema_version\": 1,",
-            "\"manifest_schema_version\": 1,\n  \"field_added_in_a_future_v1_revision\": \"ignored\",",
+            r#""version": "2026-05-18+laureate","#,
+            r#""version": "2026-05-18+laureate",
+  "field_added_in_a_later_revision": "ignored","#,
         );
+        assert!(json.contains("field_added_in_a_later_revision"), "the fixture was not mutated");
 
         let manifest: Manifest = parse_manifest(json.as_bytes()).unwrap();
 

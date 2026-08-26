@@ -136,14 +136,43 @@ pub async fn load_live_bundle(
     distribution_context: DistributionContext,
 ) -> Result<Bundle, AppError> {
     let resolved_repository: ResolvedRepository = resolve_repository(static_base).await?;
+    let manifest_bytes: Vec<u8> = readable_manifest_bytes(&resolved_repository).await;
 
     open_fetched_live_bundle(
         cache,
         &resolved_repository.base_url,
-        &resolved_repository.manifest_bytes,
+        &manifest_bytes,
         distribution_context,
     )
     .await
+}
+
+/// The repository's manifest when this build can read it, and otherwise the newest manifest published at the
+/// schema version it does read. A pointer that cannot be fetched leaves the resolved bytes in place, so the
+/// version mismatch is what the caller reports.
+async fn readable_manifest_bytes(resolved_repository: &ResolvedRepository) -> Vec<u8> {
+    let fallback_key: Option<String> = manifest::schema_fallback_key(&resolved_repository.manifest_bytes);
+
+    let Some(fallback_key) = fallback_key
+    else {
+        return resolved_repository.manifest_bytes.clone();
+    };
+
+    let fetched: Result<Vec<u8>, AppError> =
+        fetch::fetch_manifest_at_key(&resolved_repository.base_url, &fallback_key).await;
+
+    match fetched {
+        Ok(fallback_bytes) => {
+            log::info!("the repository is at a newer schema version; [pointer={fallback_key}]");
+
+            fallback_bytes
+        }
+        Err(error) => {
+            log::warn!("fetching the schema pointer failed; [pointer={fallback_key} error={error}]");
+
+            resolved_repository.manifest_bytes.clone()
+        }
+    }
 }
 
 /// Reconciles the discovery document against the static base. The static base's manifest is requested
@@ -304,18 +333,19 @@ mod tests {
     fn manifest_json(version_label: &str, artifact_created: &str) -> Vec<u8> {
         format!(
             r#"{{
-                "manifest_schema_version": 1,
+                "manifest_schema_version": {schema_version},
                 "version": "{version_label}",
                 "artifact_created": "{artifact_created}",
                 "geometry": {{
                     "relative_path": "geometry/world.fgb",
                     "size_bytes": 1,
-                    "sha256": "{}"
+                    "sha256": "{sha256}"
                 }},
                 "statistics": {{}},
                 "source_revisions": {{}}
             }}"#,
-            "ab".repeat(32),
+            schema_version = manifest::MANIFEST_SCHEMA_VERSION,
+            sha256 = "ab".repeat(32),
         )
         .into_bytes()
     }

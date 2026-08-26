@@ -51,8 +51,12 @@ pub async fn fetch_discovery(discovery_url: &str) -> Result<Vec<u8>, AppError> {
 }
 
 pub async fn fetch_manifest(repository_base_url: &str) -> Result<Vec<u8>, AppError> {
+    fetch_manifest_at_key(repository_base_url, manifest::MANIFEST_LATEST_KEY).await
+}
+
+pub async fn fetch_manifest_at_key(repository_base_url: &str, key: &str) -> Result<Vec<u8>, AppError> {
     let base: &str = repository_base_url.trim_end_matches('/');
-    let url: String = format!("{base}/{}", manifest::MANIFEST_LATEST_KEY);
+    let url: String = format!("{base}/{key}");
 
     fetch_bytes(&HttpRequest {
         method: HttpMethod::Get,
