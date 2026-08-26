@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::artifact::cache::ArtifactCache;
+use crate::artifact::compression;
 use crate::artifact::geometry::{self, GeometryLayer};
 use crate::artifact::manifest::{self, Manifest};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
@@ -51,7 +52,9 @@ impl Bundle {
 
         let geometry_bytes: Vec<u8> = get_required(cache, version_label, &manifest.geometry.relative_path).await?;
         filesystem::verify_sha256(&geometry_bytes, &manifest.geometry.sha256)?;
-        let geometry: GeometryLayer = geometry::parse_geometry_layer(geometry_bytes)?;
+        let plain_geometry_bytes: Vec<u8> =
+            decompress_artifact(&geometry_bytes, &manifest.geometry.relative_path)?;
+        let geometry: GeometryLayer = geometry::parse_geometry_layer(plain_geometry_bytes)?;
 
         let mut shard_values: BTreeMap<StatisticShardKey, ShardValues> = BTreeMap::new();
         let authorized_classes: &[LicenseShardClass] = distribution_context.authorized_classes();
@@ -63,8 +66,9 @@ impl Bundle {
 
                 let shard_bytes: Vec<u8> = get_required(cache, version_label, &entry.relative_path).await?;
                 filesystem::verify_sha256(&shard_bytes, &entry.sha256)?;
+                let plain_shard_bytes: Vec<u8> = decompress_artifact(&shard_bytes, &entry.relative_path)?;
 
-                let statistic_shard_values: ShardValues = shard_db::read_shard(&shard_bytes)?;
+                let statistic_shard_values: ShardValues = shard_db::read_shard(&plain_shard_bytes)?;
 
                 let key: StatisticShardKey = StatisticShardKey {
                     statistic_kind: *statistic_kind,
@@ -96,6 +100,13 @@ impl Bundle {
                 })
             })
     }
+}
+
+/// A digest match followed by a decode failure means the producer published the wrong form, so the message
+/// names the artifact rather than only the codec.
+fn decompress_artifact(compressed_bytes: &[u8], relative_path: &str) -> Result<Vec<u8>, AppError> {
+    compression::decompress(compressed_bytes)
+        .map_err(|error| AppError::from(format!("decoding {relative_path} failed; [error={error}]")))
 }
 
 async fn get_required(cache: &impl ArtifactCache, version_label: &str, relative_path: &str) -> Result<Vec<u8>, AppError> {
@@ -160,10 +171,12 @@ mod tests {
     }
 
     /// Seed a mock cache with a valid manifest + geometry + Base and NonCommercial Tfr shards.
+    /// Seeds what a published version holds, which is the compressed form, so every case below exercises the
+    /// decode the real cache demands.
     async fn seeded_mock() -> MockArtifactCache {
-        let geometry_bytes: Vec<u8> = one_feature_fgb_bytes();
-        let base_shard: Vec<u8> = sample_shard_bytes();
-        let noncommercial_shard: Vec<u8> = sample_shard_bytes();
+        let geometry_bytes: Vec<u8> = compression::compress(&one_feature_fgb_bytes()).unwrap();
+        let base_shard: Vec<u8> = compression::compress(&sample_shard_bytes()).unwrap();
+        let noncommercial_shard: Vec<u8> = compression::compress(&sample_shard_bytes()).unwrap();
 
         let statistics = tfr_statistic(&entry(BASE_SHARD_PATH, &base_shard), &entry(NONCOMMERCIAL_SHARD_PATH, &noncommercial_shard));
         let manifest: Manifest = build_manifest(entry(GEOMETRY_PATH, &geometry_bytes), statistics);
@@ -176,6 +189,36 @@ mod tests {
         cache.insert(VERSION, NONCOMMERCIAL_SHARD_PATH, noncommercial_shard).await;
 
         cache
+    }
+
+    /// The digest is checked before the decoder runs, so bytes nobody vouched for never reach it.
+    #[tokio::test]
+    async fn bundle_open_reports_a_digest_mismatch_before_it_decodes() {
+        let geometry_bytes: Vec<u8> = compression::compress(&one_feature_fgb_bytes()).unwrap();
+        let base_shard: Vec<u8> = compression::compress(&sample_shard_bytes()).unwrap();
+
+        let mut geometry_entry: ManifestEntry = entry(GEOMETRY_PATH, &geometry_bytes);
+        geometry_entry.sha256 = filesystem::sha256_hex(b"a digest of something else");
+
+        let statistics = tfr_statistic(&entry(BASE_SHARD_PATH, &base_shard), &entry(NONCOMMERCIAL_SHARD_PATH, &base_shard));
+        let manifest: Manifest = build_manifest(geometry_entry, statistics);
+
+        let cache: MockArtifactCache = MockArtifactCache::new();
+        cache.insert(VERSION, manifest::MANIFEST_FILENAME, serde_json::to_vec(&manifest).unwrap()).await;
+        cache.insert(VERSION, GEOMETRY_PATH, geometry_bytes).await;
+        cache.insert(VERSION, BASE_SHARD_PATH, base_shard.clone()).await;
+        cache.insert(VERSION, NONCOMMERCIAL_SHARD_PATH, base_shard).await;
+
+        let opened: Result<Bundle, AppError> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
+
+        let Err(error) = opened
+        else {
+            panic!("a bundle with a wrong digest opened");
+        };
+
+        let message: String = error.to_string();
+        assert!(message.contains("sha256 mismatch"));
+        assert!(!message.contains("brotli"));
     }
 
     #[tokio::test]
