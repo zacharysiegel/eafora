@@ -24,6 +24,7 @@ flatgeobuf = { workspace = true }
 shapefile = { workspace = true }
 zip = { workspace = true }
 sha2 = { workspace = true }
+brotli = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-config = { workspace = true }
 bytes = { workspace = true }

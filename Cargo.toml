@@ -26,6 +26,7 @@ flatgeobuf = "4.6.*"
 shapefile = { version = "0.7.*", features = ["geo-types"] }
 zip = "4.5.*"
 sha2 = "0.10.*"
+brotli = "8.0.*"
 aws-sdk-s3 = "1.135.*"
 aws-config = "1.8.*"
 bytes = "1.11.*"
