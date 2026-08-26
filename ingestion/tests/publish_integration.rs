@@ -62,6 +62,13 @@ async fn publish_artifacts_uploads_every_file_to_local_repository_and_inserts_ar
     assert!(latest_destination.exists());
     assert_eq!(fs::read(&latest_destination).unwrap(), fs::read(&manifest_destination).unwrap());
 
+    let schema_pointer_destination: PathBuf = destination_dir
+        .path()
+        .join(manifest::schema_pointer_key(manifest::MANIFEST_SCHEMA_VERSION));
+    assert!(schema_pointer_destination.exists());
+    assert_eq!(fs::read(&schema_pointer_destination).unwrap(), fs::read(&manifest_destination).unwrap());
+    assert_eq!(fs::read(&schema_pointer_destination).unwrap(), fs::read(&latest_destination).unwrap());
+
     delete_artifact_version(&pool, &version_label).await;
 }
 
@@ -134,6 +141,12 @@ async fn publish_local_keeps_only_the_two_newest_version_directories() {
         fs::read(&latest_destination).unwrap(),
         fs::read(&third_manifest_destination).unwrap(),
     );
+
+    /* The pointer lives inside `latest/`, which retention never enumerates, so three publishes leave it. */
+    let schema_pointer_destination: PathBuf = destination_dir
+        .path()
+        .join(manifest::schema_pointer_key(manifest::MANIFEST_SCHEMA_VERSION));
+    assert!(schema_pointer_destination.exists());
 
     let first_version_dir: PathBuf = destination_dir.path().join(first_label);
     let second_version_dir: PathBuf = destination_dir.path().join(second_label);

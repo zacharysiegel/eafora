@@ -31,8 +31,8 @@ Branch `manifest-schema-pointer`, stacked on the prerequisite branch. Rebase `--
 
 ### The key
 
-- [ ] T008 Write the failing test first, in `shared/src/artifact/manifest.rs`'s existing `#[cfg(test)] mod tests`: `schema_pointer_key(2)` equals the literal `"latest/manifest.schema-2.json"`, and `schema_pointer_key(11)` ends in `"schema-11.json"`. Use literals, not `MANIFEST_SCHEMA_VERSION`, so the assertion keeps pinning the wire contract after the constant bumps. Run `cargo test -p shared schema_pointer_key`. Expected: does not compile, the function does not exist.
-- [ ] T009 Add `pub fn schema_pointer_key(manifest_schema_version: u32) -> String` to shared/src/artifact/manifest.rs, directly beside `MANIFEST_LATEST_KEY` at :20, returning `format!("latest/manifest.schema-{manifest_schema_version}.json")`. Parameter typed `u32` to match `MANIFEST_SCHEMA_VERSION` at :13. Give it a doc comment stating only what the pointer is for and that it freezes when the constant bumps; do not restate the format string. Run `cargo test -p shared`. Expected: PASS.
+- [ ] T008 Write the failing test first, in `shared/src/artifact/manifest.rs`'s existing `#[cfg(test)] mod tests`: `schema_pointer_key(2)` equals the literal `"latest/manifest.2.json"`, and `schema_pointer_key(11)` equals `"latest/manifest.11.json"`. Use literals, not `MANIFEST_SCHEMA_VERSION`, so the assertion keeps pinning the wire contract after the constant bumps. Run `cargo test -p shared schema_pointer_key`. Expected: does not compile, the function does not exist.
+- [ ] T009 Add `pub fn schema_pointer_key(manifest_schema_version: u32) -> String` to shared/src/artifact/manifest.rs, directly beside `MANIFEST_LATEST_KEY` at :20, returning `format!("latest/manifest.{manifest_schema_version}.json")`. Parameter typed `u32` to match `MANIFEST_SCHEMA_VERSION` at :13. Give it a doc comment stating only what the pointer is for and that it freezes when the constant bumps; do not restate the format string. Run `cargo test -p shared`. Expected: PASS.
 
 ### The upload
 

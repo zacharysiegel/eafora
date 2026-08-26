@@ -19,6 +19,14 @@ pub const SUBDIR_DATA: &str = "data";
 /// `<repository_base_url>/<MANIFEST_LATEST_KEY>` at startup.
 pub const MANIFEST_LATEST_KEY: &str = "latest/manifest.json";
 
+/// Stable-pointer key for one manifest schema version, which a consumer that cannot read
+/// `MANIFEST_LATEST_KEY` fetches instead. Every publish refreshes the key for the schema version it is
+/// publishing, so the key for a superseded version holds the last manifest published while that version was
+/// current.
+pub fn schema_pointer_key(manifest_schema_version: u32) -> String {
+    format!("latest/manifest.{manifest_schema_version}.json")
+}
+
 /// Which resolution a bundle carries. `Complete` has every period and every authorized source and is what
 /// the CDN serves; `Downsampled` collapses to the reference year and is the onboard bundle clients embed
 /// for first paint. A consumer holding both must never prefer the downsampled one.
@@ -117,6 +125,13 @@ fn validate_entry(entry: &ManifestEntry) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Literals rather than the constant, so the assertion keeps pinning the wire contract after a bump.
+    #[test]
+    fn schema_pointer_key_renders_the_published_key() {
+        assert_eq!(schema_pointer_key(2), "latest/manifest.2.json");
+        assert_eq!(schema_pointer_key(11), "latest/manifest.11.json");
+    }
 
     fn valid_sha256() -> String {
         "ab12cd34".repeat(8)

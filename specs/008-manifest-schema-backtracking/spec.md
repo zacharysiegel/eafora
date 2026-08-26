@@ -18,7 +18,7 @@ Nothing on the destination enumerates published versions. Cloudflare R2 exposes 
 
 ## The mechanism
 
-Every publish writes the just-built manifest to a third key alongside the two it already writes: `latest/manifest.schema-<N>.json`, where N is the producer's own compile-time `MANIFEST_SCHEMA_VERSION`. While N is current that key and `latest/manifest.json` hold identical bytes. When the constant bumps to N+1 the producer starts refreshing the pointer for N+1 and never touches N's again, so N's pointer is left holding the last manifest published at schema N. Nothing detects the bump, nothing reads the destination, and no key is ever deleted.
+Every publish writes the just-built manifest to a third key alongside the two it already writes: `latest/manifest.<N>.json`, where N is the producer's own compile-time `MANIFEST_SCHEMA_VERSION`. While N is current that key and `latest/manifest.json` hold identical bytes. When the constant bumps to N+1 the producer starts refreshing the pointer for N+1 and never touches N's again, so N's pointer is left holding the last manifest published at schema N. Nothing detects the bump, nothing reads the destination, and no key is ever deleted.
 
 A client that finds `latest/manifest.json` reporting a schema version above its own constructs its own version's pointer key directly, fetches that one key, and hands the bytes to the existing load path. A manifest locates its own files from `manifest.version` inside the document (web/src/client/load.rs:215 into web/src/client/fetch.rs:71), so a copy served from `latest/` resolves `{base}/{version}/{relative_path}` exactly as the copy at `latest/manifest.json` does.
 
@@ -26,7 +26,7 @@ A client that finds `latest/manifest.json` reporting a schema version above its 
 
 ### A client older than the published manifest
 
-A visitor's client reads manifest schema 2. The producer has since bumped to schema 3 and published. The client fetches `latest/manifest.json`, finds schema 3, fetches `latest/manifest.schema-2.json`, and loads the bundle that pointer names: the last complete bundle published while schema 2 was current. The map gains every period that bundle carries. The visitor sees no notice, because nothing failed.
+A visitor's client reads manifest schema 2. The producer has since bumped to schema 3 and published. The client fetches `latest/manifest.json`, finds schema 3, fetches `latest/manifest.2.json`, and loads the bundle that pointer names: the last complete bundle published while schema 2 was current. The map gains every period that bundle carries. The visitor sees no notice, because nothing failed.
 
 ### A client and repository at the same schema version
 
@@ -85,12 +85,12 @@ The producer uploads the shards, the geometry, and the versioned manifest, inser
 
 ### Key entities
 
-- **Schema pointer**: one repository object at `latest/manifest.schema-<N>.json`, holding a byte-for-byte copy of a published manifest. Refreshed by every publish while N is the producer's current schema version, frozen thereafter, never deleted.
+- **Schema pointer**: one repository object at `latest/manifest.<N>.json`, holding a byte-for-byte copy of a published manifest. Refreshed by every publish while N is the producer's current schema version, frozen thereafter, never deleted.
 - **Fallback decision**: the reader's answer to whether the document it fetched is too new for it, and if so which key to try. A pure function over the fetched bytes and the reader's own constant.
 
 ## Naming the key
 
-The backlog records the owner's proposed shape as `latest/manifest.deprecated.<schema_version>.json`. This feature uses `latest/manifest.schema-<N>.json` instead, and the reason is that the mechanism and the name have to be decided together rather than separately.
+The backlog records the owner's proposed shape as `latest/manifest.deprecated.<schema_version>.json`. This feature uses `latest/manifest.<N>.json` instead, and the reason is that the mechanism and the name have to be decided together rather than separately.
 
 Under this mechanism the producer writes the key from its own compile-time constant, so `manifest.deprecated.2.json` is created on the first publish at schema 2, while 2 is current and while the object is byte-identical to `latest/manifest.json`. The name would be false for the entire supported life of the schema version, and an operator listing a bucket that deletes nothing would read "deprecated" as permission to remove the one object older clients depend on. The owner's spelling is honest under the copy-aside mechanism, which writes the key only once the version has actually been superseded; that mechanism is rejected in the plan for unrelated reasons, and renaming the key is the whole of what recovering its honesty costs.
 
@@ -99,16 +99,17 @@ Spellings considered and rejected:
 - `manifest.v2.json`: `v` and `version` already mean the artifact version label throughout this codebase (`Manifest.version`, the version directories, `version_label`), so `v2` invites reading "artifact version 2".
 - `latest/schema-2/manifest.json`: works mechanically, since local `put_file` creates parent directories and retention never enumerates inside `latest/`, but it puts the qualifier before the noun against the most-significant-noun-first rule and hides the pointers from a flat listing of `latest/`.
 - `manifest-schema-2.json`: breaks the `manifest.<qualifier>.json` dotted-suffix shape, so it reads as an unrelated filename rather than as a variant of `manifest.json`.
-- `manifest.schema-version-2.json`: the extra word adds nothing, since `2` already reads as a version.
+- `manifest.schema-2.json` and `manifest.schema-version-2.json`: both name the field the number comes from, which the surrounding key does not need, since `latest/` holds nothing else a bare integer could be counting.
+- `manifest.deprecated.<N>.json`, the shape first proposed: false while N is the schema version being published, which under this mechanism is the whole of the pointer's active life.
 
-The chosen spelling states a fact about the bytes that is true the instant they are written and never becomes false, sorts adjacent to `manifest.json` in any listing, keeps `.json` last, and reuses the document's own vocabulary, so one search for `schema` finds the constant, the gate, and the key.
+The chosen spelling states a fact about the bytes that is true the instant they are written and never becomes false, sorts adjacent to `manifest.json` in any listing, and keeps `.json` last.
 
 ## Success criteria
 
 - **SC-001**: A publish into an empty destination leaves the schema pointer present and byte-identical to both the versioned manifest and `latest/manifest.json`.
 - **SC-002**: The schema pointer is still present after enough publishes to prune every version directory but the two newest.
 - **SC-003**: A dry publish writes no files and still reports the pointer upload in its output.
-- **SC-004**: The pointer key rendered for schema 2 is `latest/manifest.schema-2.json`, asserted against that literal.
+- **SC-004**: The pointer key rendered for schema 2 is `latest/manifest.2.json`, asserted against that literal.
 - **SC-005**: The fallback decision returns the reader's own pointer key for a document one schema version above the reader, and returns nothing for a document at the reader's version, a document below it, a document missing the field, and a body that is not JSON.
 - **SC-006**: Extracting the version read changes no error message: the existing schema-version and manifest tests pass unmodified.
 - **SC-007**: A client whose `latest/manifest.json` is one schema version too new loads the bundle its own pointer names, and shows no notice.

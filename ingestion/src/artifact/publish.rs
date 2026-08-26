@@ -66,6 +66,10 @@ pub async fn publish_artifacts(
     .await?;
     log::info!("inserted artifact_version; [id={} version_label={}]", artifact_version.id, artifact_version.version_label);
 
+    let schema_pointer_key: String = manifest::schema_pointer_key(manifest::MANIFEST_SCHEMA_VERSION);
+    repository.put_file(&schema_pointer_key, &build_report.artifacts.manifest.path, bundle::CONTENT_TYPE_MANIFEST).await?;
+    log::debug!("uploaded schema pointer; [key={}]", schema_pointer_key);
+
     repository.put_file(manifest::MANIFEST_LATEST_KEY, &build_report.artifacts.manifest.path, bundle::CONTENT_TYPE_MANIFEST).await?;
     log::debug!("uploaded latest manifest; [key={}]", manifest::MANIFEST_LATEST_KEY);
 

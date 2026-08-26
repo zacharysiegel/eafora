@@ -4,7 +4,7 @@
 
 ## Summary
 
-Every publish writes the just-built manifest to one extra key, `latest/manifest.schema-<N>.json`, where N is the producer's own compile-time `MANIFEST_SCHEMA_VERSION`. Nothing detects a bump: the producer refreshes only its own version's pointer, so when the constant moves to N+1 the pointer for N stops being refreshed and is left holding the last manifest published at schema N. A client that finds `latest/manifest.json` reporting a schema version above its own builds its own version's key directly, fetches that one object, and hands the bytes to the existing load path unchanged.
+Every publish writes the just-built manifest to one extra key, `latest/manifest.<N>.json`, where N is the producer's own compile-time `MANIFEST_SCHEMA_VERSION`. Nothing detects a bump: the producer refreshes only its own version's pointer, so when the constant moves to N+1 the pointer for N stops being refreshed and is left holding the last manifest published at schema N. A client that finds `latest/manifest.json` reporting a schema version above its own builds its own version's key directly, fetches that one object, and hands the bytes to the existing load path unchanged.
 
 The whole producer half is one `put_file` call reusing a source path the manifest is already uploaded from twice. The whole client half is one pure decision function in `shared`, one generalized fetch signature, and a three-line branch at one call site. There is no new trait surface, no new dependency, no schema column, and no interface change.
 
@@ -63,7 +63,7 @@ Place it immediately before ingestion/src/artifact/publish.rs:69, not after, so 
 
 ### The key is a function, not a `formatcp!` constant
 
-Both production call sites pass the compile-time constant, so a constant would work. A function is chosen so a test can assert `schema_pointer_key(2)` against the literal `"latest/manifest.schema-2.json"` and keep pinning the wire contract after the constant bumps. A constant could only be compared against itself. The parameter is `u32`, matching `MANIFEST_SCHEMA_VERSION` at shared/src/artifact/manifest.rs:13; choosing this mechanism makes the u32-versus-u64 question moot, because the key is only ever built from the caller's own constant and never from a version read out of a foreign document.
+Both production call sites pass the compile-time constant, so a constant would work. A function is chosen so a test can assert `schema_pointer_key(2)` against the literal `"latest/manifest.2.json"` and keep pinning the wire contract after the constant bumps. A constant could only be compared against itself. The parameter is `u32`, matching `MANIFEST_SCHEMA_VERSION` at shared/src/artifact/manifest.rs:13; choosing this mechanism makes the u32-versus-u64 question moot, because the key is only ever built from the caller's own constant and never from a version read out of a foreign document.
 
 ## Module layout
 
@@ -126,7 +126,7 @@ Host unit tests in `shared`, written before the implementation per Constitution 
 
 - `read_schema_version` returns the found value for a document whose version does not match, and errors for a missing field and for a field that is not an integer.
 - The five existing `require_schema_version` and manifest version tests pass verbatim, which is the proof the extraction changed no message. shared/src/artifact/schema_version.rs:53-59 asserts a full message string and shared/src/artifact/manifest.rs:174-184 asserts the newer-build wording; neither may be edited.
-- `schema_pointer_key(2)` equals `"latest/manifest.schema-2.json"`, and `schema_pointer_key(11)` ends in `schema-11.json`. Literals rather than the constant, so the assertion keeps pinning the wire contract after a bump instead of decaying into a tautology.
+- `schema_pointer_key(2)` equals `"latest/manifest.2.json"`, and `schema_pointer_key(11)` ends in `schema-11.json`. Literals rather than the constant, so the assertion keeps pinning the wire contract after a bump instead of decaying into a tautology.
 - `schema_fallback_key` as a truth table over `valid_manifest_json()` (shared/src/artifact/manifest.rs:125-139) mutated by `replace`: a newer version yields the reader's own pointer key, and equal, older, a missing field, and a body that is not JSON all yield nothing. Write the `replace` needle by interpolating `MANIFEST_SCHEMA_VERSION` the way manifest.rs:177 already does, not by hardcoding `2`.
 - Repair `parse_manifest_ignores_unknown_fields` (shared/src/artifact/manifest.rs:208-217) in the same commit. Its needle is `"manifest_schema_version": 1,` while the fixture emits `2`, so no substitution happens, no unknown field is ever inserted, and the test re-parses the untouched valid fixture and passes without exercising anything. The correct pattern is the sibling at shared/src/artifact/discovery.rs:73-85, which declares a separate literal carrying the extra field.
 
@@ -156,7 +156,7 @@ The target asserts five publish behaviours, including the byte-equality of `late
 
 Publishes a stable manifest pointer per manifest schema version, so a client too old to read `latest/manifest.json` has an address it can read.
 
-Every publish now uploads the just-built manifest to `latest/manifest.schema-<N>.json` for the producer's own schema version, immediately before `latest/manifest.json`. When the constant bumps, the producer starts refreshing the new version's pointer and leaves the old one holding the last manifest published at that version, so no code has to detect the bump. The key is derived in `shared` beside `latest/manifest.json`'s, both sides import it from there, and the repository trait is unchanged: this is one more upload of a file the manifest is already uploaded from twice.
+Every publish now uploads the just-built manifest to `latest/manifest.<N>.json` for the producer's own schema version, immediately before `latest/manifest.json`. When the constant bumps, the producer starts refreshing the new version's pointer and leaves the old one holding the last manifest published at that version, so no code has to detect the bump. The key is derived in `shared` beside `latest/manifest.json`'s, both sides import it from there, and the repository trait is unchanged: this is one more upload of a file the manifest is already uploaded from twice.
 
 ## PR description, Phase B
 
