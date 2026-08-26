@@ -91,16 +91,14 @@ pub fn Controls() -> impl IntoView {
                         </label>
                         <div class="controls-scrubber-row">
                             {bound_label(earliest_year, active_year)}
-                            <div class="controls-scrubber-track">
-                                <span
-                                    class="controls-span"
-                                    style=move || format!(
-                                        "--thumb-proportion: {}; --span-proportion: {}",
-                                        thumb_offset.get(),
-                                        span_width.get(),
-                                    )
-                                    aria-hidden="true"
-                                ></span>
+                            <div
+                                class="controls-scrubber-track"
+                                style=move || format!(
+                                    "--thumb-proportion: {}; --span-proportion: {}",
+                                    thumb_offset.get(),
+                                    span_width.get(),
+                                )
+                            >
                                 <input
                                     class="controls-scrubber"
                                     class:grabbing=move || grabbing.get()
@@ -116,14 +114,14 @@ pub fn Controls() -> impl IntoView {
                                     on:pointerdown=move |_| grabbing.set(true)
                                     on:pointerup=move |_| grabbing.set(false)
                                     on:pointercancel=move |_| grabbing.set(false)
-                                    // A release outside the input leaves no pointerup here, so the enlarged
-                                    // thumb would stay enlarged; losing capture ends the grab either way.
+                                    // A release outside the input leaves no pointerup here, so the swollen
+                                    // capsule would stay swollen; losing capture ends the grab either way.
                                     on:lostpointercapture=move |_| grabbing.set(false)
                                 />
+                                <span class="controls-period" aria-hidden="true"></span>
                                 <input
                                     class="controls-year numeric"
                                     id=YEAR_INPUT_ID
-                                    style=move || format!("--thumb-proportion: {}", thumb_offset.get())
                                     type="number"
                                     min=move || earliest_year.get()
                                     max=move || latest_year.get()

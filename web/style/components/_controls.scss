@@ -7,11 +7,16 @@
     gap: var(--space-md);
     width: 18rem;
 
-    /* The scrubber thumb's diameter, and the height reserved above the rail for the floating year. Declared
-    here so the thumb rules, the bound labels, and the year's horizontal offset all derive from one value;
-    the offset is a CSS calc, so nothing outside this file needs to know the geometry. */
-    --scrubber-thumb-size: 14px;
+    /* The width of the scrubber's grab area, and the height reserved above the rail for the floating year.
+    Declared here so the capsule rules, the bound labels, and the year's horizontal offset all derive from one
+    value; the offset is a CSS calc, so nothing outside this file needs to know the geometry. */
+    --scrubber-grab-width: 15px;
     --scrubber-value-row-height: 1.35rem;
+
+    /* How far the capsule grows past the period at each end while the pointer is on it. */
+    --scrubber-capsule-swell: 5px;
+    /* A one-year period is a few pixels of rail, so the capsule is floored to stay a capsule. */
+    --scrubber-capsule-minimum-length: 3px;
 }
 
 .controls-field {
@@ -59,6 +64,17 @@
     position: relative;
     flex: 1;
     padding-top: var(--scrubber-value-row-height);
+
+    /* The capsule's own box travels the rail's whole width rather than the inset a native thumb's centre
+    travels, so the period sits flush with the rail's end at either extreme instead of stopping short of it by
+    an amount that differs between the two ends. Declared here because the capsule and the year both position
+    from it. */
+    --scrubber-capsule-length: max(
+        var(--scrubber-capsule-minimum-length),
+        calc(var(--span-proportion) * 100%)
+    );
+    --scrubber-capsule-box: calc(var(--scrubber-capsule-length) + var(--border-width-hairline) * 2);
+    --scrubber-capsule-travel: calc(100% - var(--scrubber-capsule-box));
 }
 
 .controls-bound {
@@ -75,24 +91,7 @@
     color: var(--color-rule);
 }
 
-// The extent of the active period on the rail, so a value reads as the span it describes rather than as a
-// point. Begins at the thumb's centre, which marks the period's start, and extends right. The two
-// thumb-size terms match `.controls-year` so the span aligns with the thumb it belongs to.
-.controls-span {
-    position: absolute;
-    top: calc(var(--scrubber-value-row-height) + 11px);
-    left: calc(
-        var(--scrubber-thumb-size) / 2 +
-        var(--thumb-proportion) * (100% - var(--scrubber-thumb-size))
-    );
-    width: calc(var(--span-proportion) * (100% - var(--scrubber-thumb-size)));
-    min-width: 2px;
-    height: 3px;
-    background: var(--color-accent-active);
-    pointer-events: none;
-}
-
-// A 1px line under a 24px-tall click band, so the thumb is easy to grab.
+// A 1px line under a 24px-tall click band, so the capsule is easy to grab.
 .controls-scrubber {
     width: 100%;
     height: 24px;
@@ -113,47 +112,80 @@
     background: var(--color-ink);
 }
 
+/* The native thumb is the hit area and nothing else: transparent, the full height of the band, and wider than
+   the capsule ever gets, so the browser keeps the drag and the keyboard while `.controls-period` carries the
+   whole appearance. */
 .controls-scrubber::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: var(--scrubber-thumb-size);
-    height: var(--scrubber-thumb-size);
-    margin-top: 5px; // center the thumb in the 24px track
-    border-radius: 50%;
-    background: var(--color-accent-active);
-    border: var(--border-active);
+    width: var(--scrubber-grab-width);
+    height: 24px;
+    background: transparent;
+    border: none;
 }
 
 .controls-scrubber::-moz-range-thumb {
-    width: var(--scrubber-thumb-size);
-    height: var(--scrubber-thumb-size);
-    border-radius: 50%;
-    background: var(--color-accent-active);
-    border: var(--border-active);
+    width: var(--scrubber-grab-width);
+    height: 24px;
+    background: transparent;
+    border: none;
 }
 
-// grabbing = the pointer is down on the slider; expand the thumb
-.controls-scrubber.grabbing::-webkit-slider-thumb {
-    width: 18px;
-    height: 18px;
-    margin-top: 3px;
+// The capsule's swell is the focus cue, so the ring would be a second one saying the same thing.
+.controls-scrubber:focus-visible {
+    outline: none;
 }
 
-.controls-scrubber.grabbing::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
+/* The active period as a capsule on the rail, so a value reads as the span it describes rather than as a
+   point. It begins at the period's start and runs to its end, and the two grab-width terms match
+   `.controls-year` so the capsule and the year agree on where the period starts. Rounded because a capsule a
+   few pixels long cannot read as square. */
+.controls-period {
+    box-sizing: content-box;
+    position: absolute;
+    top: calc(var(--scrubber-value-row-height) + 6px);
+    left: calc(var(--thumb-proportion) * var(--scrubber-capsule-travel));
+    width: var(--scrubber-capsule-length);
+    height: 10px;
+    margin-left: 0;
+    border: var(--border-ink);
+    background: var(--color-ink);
+    border-radius: 999px;
+    pointer-events: none;
+
+    /* Leaving, the fill darkens on a curve that is nearly flat at first, so the white thins and dims together
+       rather than the last sliver of it being erased. */
+    transition:
+        width var(--duration-thumb) ease,
+        margin-left var(--duration-thumb) ease,
+        background-color var(--duration-thumb) cubic-bezier(0.7, 0, 0.84, 0);
 }
 
-// Tracks the thumb. `--thumb-proportion` is the active year's position within the range, set inline by the
-// component, so the geometry stays here as a calc and the component supplies only the proportion. A range
-// input's thumb centre travels from half a thumb in to half a thumb short of the end, which is what the
-// two thumb-size terms account for.
+/* Under the pointer the capsule becomes a sheet like everything else in the interface: opaque white behind one
+   hairline. The negative margin matches the growth, so both ends travel outward and the centre stays put.
+   Arriving, the fill changes at once and the opening interior is what lets it show. */
+.controls-scrubber:hover ~ .controls-period,
+.controls-scrubber:focus-visible ~ .controls-period,
+.controls-scrubber.grabbing ~ .controls-period {
+    width: calc(var(--scrubber-capsule-length) + var(--scrubber-capsule-swell) * 2);
+    margin-left: calc(-1 * var(--scrubber-capsule-swell));
+    background: var(--color-paper);
+
+    transition:
+        width var(--duration-thumb) ease,
+        margin-left var(--duration-thumb) ease,
+        background-color 0s;
+}
+
+// Centred over the capsule, so the two travel together. `--thumb-proportion` is the active year's position
+// within the range, set inline by the component, so the geometry stays here as a calc and the component
+// supplies only the proportion.
 .controls-year {
     position: absolute;
     top: 0;
     left: calc(
-        var(--scrubber-thumb-size) / 2 +
-        var(--thumb-proportion) * (100% - var(--scrubber-thumb-size))
+        var(--thumb-proportion) * var(--scrubber-capsule-travel) +
+        var(--scrubber-capsule-box) / 2
     );
     transform: translateX(-50%);
     width: 4.5ch;
