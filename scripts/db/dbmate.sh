@@ -11,4 +11,6 @@ DBMATE_GLOBAL_OPTIONS=(--migrations-dir './ingestion/db/migrations' --schema-fil
 dbmate "${DBMATE_GLOBAL_OPTIONS[@]}" "${@}"
 
 echo "Regenerating sqlx caches"
-cargo sqlx prepare --workspace
+# --all-targets so integration-test queries are cached too; without it an offline --all-targets check fails on
+# cache misses and hides real compile errors in tests/.
+cargo sqlx prepare --workspace -- --all-targets

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "delete from artifact_version where version_label = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a50e7a32c0bb9e4325426fac1376ac66e98e9f5898db08afeda98e14592083de"
+}

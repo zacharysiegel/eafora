@@ -16,7 +16,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use ingestion::artifact;
-use ingestion::artifact::artifact_model::{Artifacts, BuildReport, StatisticShard};
+use ingestion::artifact::artifact_model::{Artifacts, BuildReport, BundleProvenance, StatisticShard};
 use shared::artifact::bundle::StatisticShardKey;
 use shared::artifact::manifest::BundleVariant;
 use ingestion::artifact::publish::PublishReport;
@@ -229,12 +229,17 @@ fn write_synthetic_bundle(artifact_dir: &Path, version_label: &str) -> BuildRepo
         SourceRevision { revision: "2024-12-12".to_string(), published: Some(published), fetched },
     );
 
+    let provenance: BundleProvenance = BundleProvenance {
+        source_revisions: data_source_revisions.clone(),
+        source_attribution: BTreeMap::new(),
+    };
+
     let manifest_hashed: Hashed<FileReference> = artifact::writer::manifest::write_manifest(
         &shards,
         &geometry_hashed,
         version_label,
         BundleVariant::Complete,
-        &data_source_revisions,
+        &provenance,
         artifact_dir,
     )
     .expect("manifest writes");
