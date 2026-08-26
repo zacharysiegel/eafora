@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use shared::canonical::StatisticKind;
 
 use crate::i18n::*;
-use crate::map::canvas::ViewControls;
+use crate::map::canvas::{self, ViewControls};
 use crate::map::labels;
 
 /// Ties the `YEAR` label to the editable year, which the range input cannot also claim; the range carries
@@ -66,7 +66,7 @@ pub fn Controls() -> impl IntoView {
                         class="controls-picker"
                         on:change=move |event| {
                             if let Ok(statistic) = StatisticKind::try_from(event_target_value(&event).as_str()) {
-                                dispatch_statistic(statistic);
+                                canvas::dispatch_statistic(statistic);
                             }
                         }
                     >
@@ -202,7 +202,7 @@ fn apply_year(event: &leptos::ev::Event, earliest_year: Option<i32>, latest_year
     }
 
     if let Some(period_start) = NaiveDate::from_ymd_opt(year, 1, 1) {
-        dispatch_period(period_start);
+        canvas::dispatch_period(period_start);
     }
 }
 
@@ -236,22 +236,6 @@ fn overwrite_year_field(event: &leptos::ev::Event, year: i32) {
 
 #[cfg(not(feature = "hydrate"))] // no DOM to write to
 fn overwrite_year_field(_event: &leptos::ev::Event, _year: i32) {}
-
-#[cfg(feature = "hydrate")]
-fn dispatch_statistic(statistic: StatisticKind) {
-    crate::map::canvas::driver::apply_statistic(statistic);
-}
-
-#[cfg(not(feature = "hydrate"))] // the ssr build has no driver to dispatch to
-fn dispatch_statistic(_statistic: StatisticKind) {}
-
-#[cfg(feature = "hydrate")]
-fn dispatch_period(period_start: NaiveDate) {
-    crate::map::canvas::driver::apply_period(period_start);
-}
-
-#[cfg(not(feature = "hydrate"))] // the ssr build has no driver to dispatch to
-fn dispatch_period(_period_start: NaiveDate) {}
 
 #[cfg(test)]
 mod tests {

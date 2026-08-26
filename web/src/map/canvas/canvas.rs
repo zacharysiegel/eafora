@@ -92,6 +92,22 @@ pub struct GlobalView {
     pub detail: RegionDetail,
 }
 
+#[cfg(feature = "hydrate")]
+pub fn dispatch_statistic(statistic: StatisticKind) {
+    super::driver::apply_statistic(statistic);
+}
+
+#[cfg(not(feature = "hydrate"))] // the ssr build has no driver to dispatch to
+pub fn dispatch_statistic(_statistic: StatisticKind) {}
+
+#[cfg(feature = "hydrate")]
+pub fn dispatch_period(period_start: NaiveDate) {
+    super::driver::apply_period(period_start);
+}
+
+#[cfg(not(feature = "hydrate"))] // the ssr build has no driver to dispatch to
+pub fn dispatch_period(_period_start: NaiveDate) {}
+
 /// Published by the driver so the controls render without bundle access.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewControls {

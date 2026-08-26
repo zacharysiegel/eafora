@@ -9,7 +9,7 @@ use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, Statistic
 
 use crate::i18n::*;
 use crate::map::canvas::{
-    CellView, GlobalView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
+    self, CellView, GlobalView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
 };
 use crate::map::labels;
 use crate::map::scroll_thumb::{self, ScrollThumbState};
@@ -40,6 +40,9 @@ const PLOT_RIGHT: f64 = CHART_WIDTH - AXIS_GUTTER_WIDTH;
 /// Half the active period's marker height, so a marker on the first or last period sits inside the drawing
 /// rather than half-clipped by its edge.
 const MARKER_RADIUS: f64 = 4.0;
+
+/// How far across the plot the cursor has to be before its readout crosses to the line's other side.
+const READOUT_FLIP_PROPORTION: f64 = 0.62;
 
 /// Headroom above and below the series, as a proportion of its extent, so a peak does not touch the top of
 /// the plot.
@@ -436,7 +439,7 @@ fn history_section(i18n: I18nContext<Locale>, figure: Memo<Option<ActiveFigure>>
             class="region-dock-chart-figure"
             class:is-empty=move || !geometry.with(|geometry| geometry.is_plottable)
         >
-            {history_chart(geometry)}
+            {history_chart(geometry, figure)}
             <p class="region-dock-chart-bounds">
                 <span class="numeric">{move || geometry.with(|geometry| geometry.first_year.clone())}</span>
                 <span class="numeric">{move || geometry.with(|geometry| geometry.last_year.clone())}</span>
@@ -460,17 +463,111 @@ fn reference_value(statistic: StatisticKind) -> Option<f64> {
     }
 }
 
+/// The period a pointer is resting on in the chart, with the plot coordinates its marks are drawn at.
+#[derive(Clone, Copy, PartialEq)]
+struct ChartCursor {
+    period_start: NaiveDate,
+    value: f64,
+    x: f64,
+    y: f64,
+}
+
+/// The plotted point nearest `plot_x`, so a pointer between two periods resolves to one of them rather than to
+/// an interpolation the series does not contain.
+#[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // only the pointer handler calls it, and ssr has no pointer
+fn nearest_point(series: &[SeriesPointView], scale: &ChartScale, plot_x: f64) -> Option<SeriesPointView> {
+    series.iter().copied().min_by(|left, right| {
+        let left_distance: f64 = (scale.x(left.period_start) - plot_x).abs();
+        let right_distance: f64 = (scale.x(right.period_start) - plot_x).abs();
+
+        left_distance.total_cmp(&right_distance)
+    })
+}
+
+#[cfg(feature = "hydrate")] // reads the pointer's position against the rendered element
+fn cursor_at(figure: Option<&ActiveFigure>, event: &leptos::ev::PointerEvent) -> Option<ChartCursor> {
+    use wasm_bindgen::JsCast;
+
+    let figure: &ActiveFigure = figure?;
+    let scale: ChartScale = ChartScale::from_series(&figure.detail.series, reference_value(figure.statistic));
+    if !scale.is_plottable() {
+        return None;
+    }
+
+    let plot: web_sys::Element = event.current_target()?.dyn_into().ok()?;
+    let plot_box: web_sys::DomRect = plot.get_bounding_client_rect();
+    if plot_box.width() <= 0.0 {
+        return None;
+    }
+
+    let plot_x: f64 = (f64::from(event.client_x()) - plot_box.left()) / plot_box.width() * CHART_WIDTH;
+    let point: SeriesPointView = nearest_point(&figure.detail.series, &scale, plot_x)?;
+
+    Some(ChartCursor {
+        period_start: point.period_start,
+        value: point.value,
+        x: scale.x(point.period_start),
+        y: scale.y(point.value),
+    })
+}
+
+#[cfg(not(feature = "hydrate"))] // there are no pointers to read without a browser
+fn cursor_at(_figure: Option<&ActiveFigure>, _event: &leptos::ev::PointerEvent) -> Option<ChartCursor> {
+    None
+}
+
+#[cfg(feature = "hydrate")] // retargets the pointer's events at the plot
+fn capture_pointer(event: &leptos::ev::PointerEvent) {
+    use wasm_bindgen::JsCast;
+
+    let plot: Option<web_sys::Element> =
+        event.current_target().and_then(|target| target.dyn_into().ok());
+
+    if let Some(plot) = plot {
+        let _ = plot.set_pointer_capture(event.pointer_id());
+    }
+}
+
+#[cfg(not(feature = "hydrate"))] // there is no pointer to capture without a browser
+fn capture_pointer(_event: &leptos::ev::PointerEvent) {}
+
 /// Built once. Every attribute below is bound to a closure, so the elements outlive every republish and only
 /// the values they hold are rewritten.
-fn history_chart(geometry: Memo<ChartGeometry>) -> impl IntoView {
+fn history_chart(geometry: Memo<ChartGeometry>, figure: Memo<Option<ActiveFigure>>) -> impl IntoView {
     let unit_label_x: f64 = PLOT_LEFT - UNIT_LABEL_GAP;
     let unit_label_y: f64 = (PLOT_TOP + PLOT_BOTTOM) / 2.0;
+    let cursor: RwSignal<Option<ChartCursor>> = RwSignal::new(None);
+    let dragging: RwSignal<bool> = RwSignal::new(false);
 
     view! {
+        <div class="region-dock-chart-plot">
         <svg
             class="region-dock-chart"
             viewBox=format!("0 0 {CHART_WIDTH} {CHART_HEIGHT}")
             aria-hidden="true"
+            on:pointerdown=move |event| {
+                event.prevent_default();
+                dragging.set(true);
+                capture_pointer(&event);
+                cursor.set(rest_and_commit(figure, &event, Commit::Yes));
+            }
+            on:pointermove=move |event| {
+                let commit: Commit = match dragging.get_untracked() {
+                    true => Commit::Yes,
+                    false => Commit::No,
+                };
+
+                cursor.set(rest_and_commit(figure, &event, commit));
+            }
+            on:pointerup=move |_| dragging.set(false)
+            on:pointercancel=move |_| dragging.set(false)
+            on:lostpointercapture=move |_| dragging.set(false)
+            on:pointerleave=move |_| {
+                // A drag continues past the plot's edge, so only an idle pointer leaving clears the marks.
+                if !dragging.get_untracked() {
+                    cursor.set(None);
+                }
+            }
         >
             <text
                 class="region-dock-chart-unit"
@@ -503,6 +600,14 @@ fn history_chart(geometry: Memo<ChartGeometry>) -> impl IntoView {
                 y1=chart_unit(PLOT_BOTTOM)
                 y2=chart_unit(PLOT_BOTTOM)
             />
+            <line
+                class="region-dock-chart-cursor"
+                class:is-visible=move || cursor.with(Option::is_some)
+                x1=move || cursor_unit(cursor, |cursor| cursor.x)
+                x2=move || cursor_unit(cursor, |cursor| cursor.x)
+                y1=chart_unit(PLOT_TOP)
+                y2=chart_unit(PLOT_BOTTOM)
+            />
             <polyline
                 class="region-dock-chart-line"
                 points=move || geometry.with(|geometry| geometry.polyline_points.clone())
@@ -514,7 +619,64 @@ fn history_chart(geometry: Memo<ChartGeometry>) -> impl IntoView {
                 r=move || geometry.with(|geometry| geometry.marker_radius.clone())
             />
         </svg>
+        <span
+            class="region-dock-chart-readout panel numeric"
+            class:is-visible=move || cursor.with(Option::is_some)
+            class:is-flipped=move || cursor.with(|cursor| {
+                cursor.is_some_and(|cursor| cursor.x > CHART_WIDTH * READOUT_FLIP_PROPORTION)
+            })
+            style=move || cursor.with(|cursor| {
+                let Some(cursor) = cursor
+                else {
+                    return String::new();
+                };
+
+                format!(
+                    "--cursor-x-proportion: {}; --cursor-y-proportion: {}",
+                    cursor.x / CHART_WIDTH,
+                    cursor.y / CHART_HEIGHT,
+                )
+            })
+        >
+            {move || cursor.with(|cursor| {
+                cursor.map_or_else(String::new, |cursor| {
+                    format!("{} · {}", cursor.period_start.year(), format_value(cursor.value))
+                })
+            })}
+        </span>
+        </div>
     }
+}
+
+/// Whether the period under the pointer becomes the active one, which a drag does on every step and an idle
+/// pointer never does.
+#[derive(Clone, Copy, PartialEq)]
+enum Commit {
+    Yes,
+    No,
+}
+
+/// The period under the pointer, dispatched to the driver when the caller is dragging and it is not already
+/// the active one, so a drag across a wide period does not republish the same year on every step.
+fn rest_and_commit(
+    figure: Memo<Option<ActiveFigure>>,
+    event: &leptos::ev::PointerEvent,
+    commit: Commit,
+) -> Option<ChartCursor> {
+    let (resting_on, active_period_start): (Option<ChartCursor>, Option<NaiveDate>) =
+        figure.with(|figure| (cursor_at(figure.as_ref(), event), figure.as_ref().map(|figure| figure.period_start)));
+    let cursor: ChartCursor = resting_on?;
+
+    if commit == Commit::Yes && Some(cursor.period_start) != active_period_start {
+        canvas::dispatch_period(cursor.period_start);
+    }
+
+    Some(cursor)
+}
+
+/// Keeps the last coordinate when the pointer has left, so an attribute is never written empty.
+fn cursor_unit(cursor: RwSignal<Option<ChartCursor>>, read: impl Fn(&ChartCursor) -> f64) -> String {
+    chart_unit(cursor.with(|cursor| cursor.as_ref().map_or(PLOT_LEFT, read)))
 }
 
 /// An SVG attribute takes a string, and a numeric one handed to the view macro is written through a path that
@@ -848,6 +1010,36 @@ fn collapse_icon() -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nearest_point_snaps_to_whichever_period_the_pointer_is_closer_to() {
+        let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2010, 1.4), (2020, 1.2)]);
+        let scale: ChartScale = ChartScale::from_series(&series, None);
+        let midpoint: f64 = (scale.x(series[0].period_start) + scale.x(series[1].period_start)) / 2.0;
+
+        let just_after: SeriesPointView = nearest_point(&series, &scale, midpoint + 1.0).unwrap();
+        let just_before: SeriesPointView = nearest_point(&series, &scale, midpoint - 1.0).unwrap();
+
+        assert_eq!(just_after.period_start, series[1].period_start);
+        assert_eq!(just_before.period_start, series[0].period_start);
+    }
+
+    /// The pointer can sit in the axis gutters either side of the plot, which belong to no period.
+    #[test]
+    fn nearest_point_resolves_a_pointer_outside_the_plot_to_the_nearer_end() {
+        let series: Vec<SeriesPointView> = series_of(&[(2000, 1.5), (2020, 1.2)]);
+        let scale: ChartScale = ChartScale::from_series(&series, None);
+
+        assert_eq!(nearest_point(&series, &scale, -400.0).unwrap().period_start, series[0].period_start);
+        assert_eq!(nearest_point(&series, &scale, CHART_WIDTH * 4.0).unwrap().period_start, series[1].period_start);
+    }
+
+    #[test]
+    fn nearest_point_reports_nothing_for_a_series_with_no_points() {
+        let scale: ChartScale = ChartScale::from_series(&[], None);
+
+        assert!(nearest_point(&[], &scale, 100.0).is_none());
+    }
 
     fn series_of(points: &[(i32, f64)]) -> Vec<SeriesPointView> {
         points
