@@ -95,7 +95,7 @@ impl StatisticKind {
         }
     }
 
-    pub fn code(self) -> &'static str {
+    pub const fn code(self) -> &'static str {
         match self {
             StatisticKind::Tfr => "tfr",
             StatisticKind::Ccf => "ccf",
@@ -127,7 +127,7 @@ pub enum DataSourceKind {
 }
 
 impl DataSourceKind {
-    pub fn code(self) -> &'static str {
+    pub const fn code(self) -> &'static str {
         match self {
             DataSourceKind::WorldBankWDI => "wb_wdi",
             DataSourceKind::HumanFertilityDatabase => "hfd",

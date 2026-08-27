@@ -11,7 +11,14 @@ use std::collections::HashMap;
 use chrono::NaiveDate;
 
 use crate::canonical::canonical_model::DataStatus;
+#[cfg(test)] // both target-gated test modules assert against the source codes below
+use crate::canonical::canonical_model::DataSourceKind;
 use crate::error::AppError;
+
+#[cfg(test)]
+const WORLD_BANK: &str = DataSourceKind::WorldBankWDI.code();
+#[cfg(test)]
+const HUMAN_FERTILITY_DATABASE: &str = DataSourceKind::HumanFertilityDatabase.code();
 
 #[derive(Debug, Clone)]
 pub struct CellValue {
@@ -546,9 +553,6 @@ mod tests {
 
     use crate::error::AppError;
     use crate::sqlite::schema;
-
-    const WORLD_BANK: &str = "wb_wdi";
-    const HUMAN_FERTILITY_DATABASE: &str = "hfd";
 
     /// Build a real shard in memory via the shared DDL, then serialize it to bytes. The loader
     /// round-trip is then tested against the actual schema without committing an opaque binary.
