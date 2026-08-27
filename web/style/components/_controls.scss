@@ -138,14 +138,16 @@
 .controls-period {
     box-sizing: content-box;
     position: absolute;
-    top: calc(var(--scrubber-value-row-height) + 7px);
+    /* The rail's line sits at the centre of its 24px band, and the capsule centres on it, so its height is
+    free to change without a matching offset here. */
+    top: calc(var(--scrubber-value-row-height) + 12px);
     /* Centred on the period's position, so it overhangs the rail's end by half its width at either extreme
     rather than being held inside. The browser insets the native thumb by half its width at each end, so a
     value sits at `grab / 2 + proportion * (width - grab)`; the container percentage stays plain and the inset
     is corrected in pixels, because Chrome resolves a percentage with a length subtracted from it inside a
     custom property against a basis that disagrees with the rendered box under fractional browser zoom. */
     left: calc(var(--thumb-proportion) * 100%);
-    transform: translateX(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-grab-width)));
+    transform: translate(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-grab-width)), -50%);
     width: var(--scrubber-capsule-length);
     height: 8px;
     border: var(--border-ink);
@@ -183,10 +185,9 @@
     top: 0;
     left: calc(var(--thumb-proportion) * 100%);
     transform: translateX(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-grab-width)));
-    /* Four digits and slack. Two units because Chrome's minimum-font-size clamp raises the size the digits
-    are drawn at without raising the size `ch` resolves against, which left the box half the width of its own
-    text at 50% zoom; the wider of the two is the one that fits. */
-    width: max(4.5ch, 2.8em);
+    /* Four digits and slack, in `em` because `ch` tracks the browser's zoom rather than the size the digits
+    are drawn at: it resolved to half the zero advance at 50% zoom, and overshot it zoomed in. */
+    width: 2.8em;
     text-align: center;
     appearance: none;
     -webkit-appearance: none;
