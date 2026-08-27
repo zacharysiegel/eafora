@@ -162,7 +162,7 @@ impl Renderer {
             .map_err(|error| AppError::from(format!("requesting a GPU device failed: {error}")))?;
 
         let bundle: Arc<Bundle> = bundle_receiver.borrow().clone();
-        let country_geometry: CountryGeometry = upload_country_geometry(&device, &bundle)?;
+        let country_geometry: CountryGeometry = create_country_geometry(&device, &bundle)?;
         let map_binding: MapBinding = create_map_binding(&device);
         let fill_colors: FillColors = FillColors {
             buffer: create_fill_color_buffer(&device, country_geometry.positions.count),
@@ -424,7 +424,7 @@ impl Renderer {
             bundle.manifest.geometry.relative_path,
         );
 
-        self.country_geometry = upload_country_geometry(&self.device, bundle)?;
+        self.country_geometry = create_country_geometry(&self.device, bundle)?;
         self.fill_colors = FillColors {
             buffer: create_fill_color_buffer(&self.device, self.country_geometry.positions.count),
             key: None,
@@ -524,7 +524,7 @@ fn create_map_binding(device: &Device) -> MapBinding {
     MapBinding { viewport_buffer, country_state_buffer, bind_group, layout }
 }
 
-fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
+fn create_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
     let country_meshes: Vec<CountryMesh> = country_mesh::build_country_meshes(&bundle.geometry)?;
 
     if country_meshes.len() > COUNTRY_STATE_ARRAY_LEN {
