@@ -41,8 +41,8 @@ const PLOT_RIGHT: f64 = CHART_WIDTH - AXIS_GUTTER_WIDTH;
 /// rather than half-clipped by its edge.
 const MARKER_RADIUS: f64 = 4.0;
 
-/// How far across the plot the cursor has to be before its readout crosses to the line's other side.
-const READOUT_FLIP_PROPORTION: f64 = 0.62;
+/// The readout's box height, which the view reserves whether or not a readout is showing.
+const READOUT_HEIGHT: f64 = 15.0;
 
 /// Headroom above and below the series, as a proportion of its extent, so a peak does not touch the top of
 /// the plot.
@@ -489,12 +489,63 @@ fn reference_value(statistic: StatisticKind) -> Option<f64> {
 }
 
 /// The period a pointer is resting on in the chart, with the plot coordinates its marks are drawn at.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct ChartCursor {
     period_start: NaiveDate,
-    value: f64,
     x: f64,
     y: f64,
+    readout: ChartReadout,
+}
+
+/// The readout's text and the box behind it, already in chart units, so the view only places what it is given.
+#[derive(Clone, PartialEq)]
+struct ChartReadout {
+    text: String,
+    text_x: String,
+    text_y: String,
+    box_x: String,
+    box_y: String,
+    box_width: String,
+    anchor: &'static str,
+}
+
+#[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // only the pointer handler builds a readout
+mod readout_geometry {
+    use super::{chart_unit, ChartReadout, CHART_WIDTH, PLOT_BOTTOM, PLOT_TOP, READOUT_HEIGHT};
+
+    /// How far across the plot the cursor has to be before its readout crosses to the line's other side.
+    const FLIP_PROPORTION: f64 = 0.62;
+
+    /* The box is sized here rather than by layout, because an SVG box cannot be sized by its content. The type
+       size matches `--type-size-bound`, which the chart's other labels use, and a monospace glyph advances by a
+       fixed proportion of it. */
+    const TYPE_SIZE: f64 = 11.0;
+    const MONOSPACE_ADVANCE_PROPORTION: f64 = 0.6;
+    const PADDING: f64 = 4.0;
+    const GAP: f64 = 5.0;
+
+    pub fn build(text: String, x: f64, y: f64) -> ChartReadout {
+        let text_width: f64 = text.chars().count() as f64 * TYPE_SIZE * MONOSPACE_ADVANCE_PROPORTION;
+        let box_width: f64 = text_width + PADDING * 2.0;
+        let crosses_to_the_left: bool = x > CHART_WIDTH * FLIP_PROPORTION;
+
+        let (box_x, text_x, anchor): (f64, f64, &'static str) = match crosses_to_the_left {
+            true => (x - GAP - box_width, x - GAP - PADDING, "end"),
+            false => (x + GAP, x + GAP + PADDING, "start"),
+        };
+
+        let box_y: f64 = (y - READOUT_HEIGHT / 2.0).clamp(PLOT_TOP, PLOT_BOTTOM - READOUT_HEIGHT);
+
+        ChartReadout {
+            text,
+            text_x: chart_unit(text_x),
+            text_y: chart_unit(box_y + READOUT_HEIGHT / 2.0),
+            box_x: chart_unit(box_x),
+            box_y: chart_unit(box_y),
+            box_width: chart_unit(box_width),
+            anchor,
+        }
+    }
 }
 
 /// The plotted point nearest `plot_x`, so a pointer between two periods resolves to one of them rather than to
@@ -528,11 +579,15 @@ fn cursor_at(figure: Option<&ActiveFigure>, event: &leptos::ev::PointerEvent) ->
     let plot_x: f64 = (f64::from(event.client_x()) - plot_box.left()) / plot_box.width() * CHART_WIDTH;
     let point: SeriesPointView = nearest_point(&figure.detail.series, &scale, plot_x)?;
 
+    let x: f64 = scale.x(point.period_start);
+    let y: f64 = scale.y(point.value);
+    let label: String = format!("{} · {}", point.period_start.year(), format_value(point.value));
+
     Some(ChartCursor {
         period_start: point.period_start,
-        value: point.value,
-        x: scale.x(point.period_start),
-        y: scale.y(point.value),
+        x,
+        y,
+        readout: readout_geometry::build(label, x, y),
     })
 }
 
@@ -565,7 +620,6 @@ fn history_chart(geometry: Memo<ChartGeometry>, figure: Memo<Option<ActiveFigure
     let dragging: RwSignal<bool> = RwSignal::new(false);
 
     view! {
-        <div class="region-dock-chart-plot">
         <svg
             class="region-dock-chart"
             viewBox=format!("0 0 {CHART_WIDTH} {CHART_HEIGHT}")
@@ -643,34 +697,31 @@ fn history_chart(geometry: Memo<ChartGeometry>, figure: Memo<Option<ActiveFigure
                 cy=move || geometry.with(|geometry| geometry.marker_y.clone())
                 r=move || geometry.with(|geometry| geometry.marker_radius.clone())
             />
+            <rect
+                class="region-dock-chart-readout-panel"
+                class:is-visible=move || cursor.with(Option::is_some)
+                x=move || readout_text(cursor, |readout| readout.box_x.clone())
+                y=move || readout_text(cursor, |readout| readout.box_y.clone())
+                width=move || readout_text(cursor, |readout| readout.box_width.clone())
+                height=chart_unit(READOUT_HEIGHT)
+            />
+            <text
+                class="region-dock-chart-readout numeric"
+                class:is-visible=move || cursor.with(Option::is_some)
+                x=move || readout_text(cursor, |readout| readout.text_x.clone())
+                y=move || readout_text(cursor, |readout| readout.text_y.clone())
+                text-anchor=move || readout_text(cursor, |readout| readout.anchor.to_string())
+                dominant-baseline="middle"
+            >
+                {move || readout_text(cursor, |readout| readout.text.clone())}
+            </text>
         </svg>
-        <span
-            class="region-dock-chart-readout panel numeric"
-            class:is-visible=move || cursor.with(Option::is_some)
-            class:is-flipped=move || cursor.with(|cursor| {
-                cursor.is_some_and(|cursor| cursor.x > CHART_WIDTH * READOUT_FLIP_PROPORTION)
-            })
-            style=move || cursor.with(|cursor| {
-                let Some(cursor) = cursor
-                else {
-                    return String::new();
-                };
-
-                format!(
-                    "--cursor-x-proportion: {}; --cursor-y-proportion: {}",
-                    cursor.x / CHART_WIDTH,
-                    cursor.y / CHART_HEIGHT,
-                )
-            })
-        >
-            {move || cursor.with(|cursor| {
-                cursor.map_or_else(String::new, |cursor| {
-                    format!("{} · {}", cursor.period_start.year(), format_value(cursor.value))
-                })
-            })}
-        </span>
-        </div>
     }
+}
+
+/// Keeps the last value when the pointer has left, so an attribute is never written empty.
+fn readout_text(cursor: RwSignal<Option<ChartCursor>>, read: impl Fn(&ChartReadout) -> String) -> String {
+    cursor.with(|cursor| cursor.as_ref().map(|cursor| read(&cursor.readout)).unwrap_or_default())
 }
 
 /// Whether the period under the pointer becomes the active one, which a drag does on every step and an idle

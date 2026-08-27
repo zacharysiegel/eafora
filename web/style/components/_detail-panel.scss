@@ -253,10 +253,6 @@
     stroke-dasharray: 3 3;
 }
 
-.region-dock-chart-plot {
-    position: relative;
-}
-
 // Dashed like the reference line, so both read as annotations over the series rather than as data.
 .region-dock-chart-cursor {
     stroke: var(--color-ink-muted);
@@ -269,28 +265,25 @@
     visibility: visible;
 }
 
-/* Positioned from proportions of the plot rather than from the drawing's own units, because the chart scales to
-   the panel's width. `pointer-events: none` so the readout cannot take the pointer from the plot it reports on,
-   which would make it flicker at the edges. */
-.region-dock-chart-readout {
-    position: absolute;
-    left: calc(var(--cursor-x-proportion, 0) * 100%);
-    top: calc(var(--cursor-y-proportion, 0) * 100%);
-    transform: translate(var(--space-xs), -50%);
-    padding: 0 var(--space-xs);
-    font-size: var(--type-size-bound);
-    white-space: nowrap;
+/* Drawn inside the chart rather than as an element over it: an absolutely positioned panel moving across the
+   plot left fragments of the cursor line behind on a pointer reversal, which is a paint the browser failed to
+   invalidate rather than anything drawn twice. */
+.region-dock-chart-readout-panel {
+    fill: var(--color-paper);
+    stroke: var(--color-ink);
+    stroke-width: 1;
     visibility: hidden;
-    pointer-events: none;
 }
 
+.region-dock-chart-readout {
+    font-size: var(--type-size-bound);
+    fill: var(--color-ink);
+    visibility: hidden;
+}
+
+.region-dock-chart-readout-panel.is-visible,
 .region-dock-chart-readout.is-visible {
     visibility: visible;
-}
-
-// Past the flip point the readout would run out of the panel, so it crosses to the line's other side.
-.region-dock-chart-readout.is-flipped {
-    transform: translate(calc(-100% - var(--space-xs)), -50%);
 }
 
 .region-dock-chart-bounds {
