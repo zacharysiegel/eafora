@@ -64,13 +64,15 @@ pub struct Renderer {
     _not_send: PhantomData<*const ()>,
 }
 
-/// Uploaded to the GPU once at construction and never rebuilt.
 struct CountryGeometry {
     positions: CountedBuffer,
     emphasis: Buffer,
     fill: CountedBuffer,
     boundary: CountedBuffer,
     spans: Vec<CountrySpan>,
+    /// The content-addressed path of the layer these buffers were built from, compared against a swapped-in
+    /// bundle's to know they are stale.
+    geometry_relative_path: String,
 }
 
 /// A GPU buffer paired with the number of elements it holds.
@@ -162,13 +164,10 @@ impl Renderer {
         let bundle: Arc<Bundle> = bundle_receiver.borrow().clone();
         let country_geometry: CountryGeometry = upload_country_geometry(&device, &bundle)?;
         let map_binding: MapBinding = create_map_binding(&device);
-        let fill_color_buffer: Buffer = device.create_buffer(&BufferDescriptor {
-            label: Some("eafora-fill-colors"),
-            size: country_geometry.positions.count as BufferAddress * std::mem::size_of::<FillVertexAttributes>() as BufferAddress,
-            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let fill_colors: FillColors = FillColors { buffer: fill_color_buffer, key: None };
+        let fill_colors: FillColors = FillColors {
+            buffer: create_fill_color_buffer(&device, country_geometry.positions.count),
+            key: None,
+        };
 
         Ok(Renderer {
             instance,
@@ -225,6 +224,7 @@ impl Renderer {
 
     pub fn draw_frame(&mut self, viewport: Viewport, frame_state: &FrameState) -> Result<(), AppError> {
         let bundle: Arc<Bundle> = self.bundle_receiver.borrow_and_update().clone();
+        self.refresh_country_geometry(&bundle)?;
         self.refresh_fill_colors(&bundle, frame_state);
 
         let Some(surface_texture) = self.acquire_surface_texture()? else {
@@ -414,6 +414,28 @@ impl Renderer {
     /// Rewrites the fill-color buffer in place only when its inputs (active statistic, period, or the
     /// bundle) have changed since the last frame. A pan, zoom, or hover leaves them untouched, so the
     /// buffer keeps whatever was last uploaded.
+    /// The buffers and their spans come from one bundle's geometry layer, and a hot-swap can bring a
+    /// different one. Both the choropleth and the hover emphasis key on the region codes the spans carry, so
+    /// keeping stale buffers renders a map that disagrees with what the hit-test reports.
+    fn refresh_country_geometry(&mut self, bundle: &Bundle) -> Result<(), AppError> {
+        if self.country_geometry.geometry_relative_path == bundle.manifest.geometry.relative_path {
+            return Ok(());
+        }
+
+        log::info!(
+            "rebuilding country geometry for a swapped-in bundle; [geometry={}]",
+            bundle.manifest.geometry.relative_path,
+        );
+
+        self.country_geometry = upload_country_geometry(&self.device, bundle)?;
+        self.fill_colors = FillColors {
+            buffer: create_fill_color_buffer(&self.device, self.country_geometry.positions.count),
+            key: None,
+        };
+
+        Ok(())
+    }
+
     fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) {
         let key: FillColorKey = FillColorKey {
             statistic_kind: frame_state.active_statistic,
@@ -565,6 +587,16 @@ fn upload_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         fill: CountedBuffer { buffer: fill_index_buffer, count: fill_indices.len() as u32 },
         boundary: CountedBuffer { buffer: boundary_index_buffer, count: boundary_indices.len() as u32 },
         spans,
+        geometry_relative_path: bundle.manifest.geometry.relative_path.clone(),
+    })
+}
+
+fn create_fill_color_buffer(device: &Device, vertex_count: u32) -> Buffer {
+    device.create_buffer(&BufferDescriptor {
+        label: Some("eafora-fill-colors"),
+        size: vertex_count as BufferAddress * std::mem::size_of::<FillVertexAttributes>() as BufferAddress,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
     })
 }
 
