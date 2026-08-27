@@ -70,9 +70,7 @@ struct CountryGeometry {
     fill: CountedBuffer,
     boundary: CountedBuffer,
     spans: Vec<CountrySpan>,
-    /// The content-addressed path of the layer these buffers were built from, compared against a swapped-in
-    /// bundle's to know they are stale.
-    geometry_relative_path: String,
+    built_from_geometry_path: String,
 }
 
 /// A GPU buffer paired with the number of elements it holds.
@@ -415,7 +413,7 @@ impl Renderer {
     /// different one. Both the choropleth and the hover emphasis key on the region codes the spans carry, so
     /// keeping stale buffers renders a map that disagrees with what the hit-test reports.
     fn refresh_country_geometry(&mut self, bundle: &Bundle) -> Result<(), AppError> {
-        if self.country_geometry.geometry_relative_path == bundle.manifest.geometry.relative_path {
+        if self.country_geometry.built_from_geometry_path == bundle.manifest.geometry.relative_path {
             return Ok(());
         }
 
@@ -587,7 +585,7 @@ fn create_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGe
         fill: CountedBuffer { buffer: fill_index_buffer, count: fill_indices.len() as u32 },
         boundary: CountedBuffer { buffer: boundary_index_buffer, count: boundary_indices.len() as u32 },
         spans,
-        geometry_relative_path: bundle.manifest.geometry.relative_path.clone(),
+        built_from_geometry_path: bundle.manifest.geometry.relative_path.clone(),
     })
 }
 
