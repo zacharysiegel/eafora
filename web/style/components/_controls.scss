@@ -139,12 +139,12 @@
     box-sizing: content-box;
     position: absolute;
     top: calc(var(--scrubber-value-row-height) + 6px);
-    /* Positioned by one percentage of the rail and pulled back by the same proportion of its own width, so it
-    is flush at either end without subtracting a length from a percentage. Chrome resolves such a subtraction
-    inside a custom property against a basis that disagrees with the rendered box under fractional browser
-    zoom, which threw the capsule past the rail's end. */
+    /* Centred on the period's position, so it overhangs the rail's end by half its width at either extreme
+    rather than being held inside. Positioned by one plain percentage: Chrome resolves a percentage with a
+    length subtracted from it inside a custom property against a basis that disagrees with the rendered box
+    under fractional browser zoom, which threw the capsule past the rail's end entirely. */
     left: calc(var(--thumb-proportion) * 100%);
-    transform: translateX(calc(var(--thumb-proportion) * -100%));
+    transform: translateX(-50%);
     width: var(--scrubber-capsule-length);
     height: 10px;
     border: var(--border-ink);
@@ -153,9 +153,8 @@
     pointer-events: none;
 
     /* Leaving, the fill darkens on a curve that is nearly flat at first, so the white thins and dims together
-       rather than the last sliver of it being erased. */
-    /* The transform follows the width on its own, since it is a proportion of the element's own box, so the
-    swell splits between the two ends by where the capsule sits and stays inside the rail at either end. */
+       rather than the last sliver of it being erased. The centring transform is a proportion of the element's
+       own box, so the swell grows symmetrically at every position with nothing to keep in step. */
     transition:
         width var(--duration-thumb) ease,
         background-color var(--duration-thumb) cubic-bezier(0.7, 0, 0.84, 0);
@@ -182,9 +181,7 @@
     position: absolute;
     top: 0;
     left: calc(var(--thumb-proportion) * 100%);
-    /* The same self-relative pull as the capsule, which centres it at the middle of the range and keeps it
-    inside the rail at either end, where centring it would have overrun the bound label beside it. */
-    transform: translateX(calc(var(--thumb-proportion) * -100%));
+    transform: translateX(-50%);
     width: 4.5ch;
     text-align: center;
     appearance: none;
