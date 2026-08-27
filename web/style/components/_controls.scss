@@ -65,16 +65,11 @@
     flex: 1;
     padding-top: var(--scrubber-value-row-height);
 
-    /* The capsule's own box travels the rail's whole width rather than the inset a native thumb's centre
-    travels, so the period sits flush with the rail's end at either extreme instead of stopping short of it by
-    an amount that differs between the two ends. Declared here because the capsule and the year both position
-    from it. */
+    /* The capsule's length is the active period, floored so a one-year period stays a capsule. */
     --scrubber-capsule-length: max(
         var(--scrubber-capsule-minimum-length),
         calc(var(--span-proportion) * 100%)
     );
-    --scrubber-capsule-box: calc(var(--scrubber-capsule-length) + var(--border-width-hairline) * 2);
-    --scrubber-capsule-travel: calc(100% - var(--scrubber-capsule-box));
 }
 
 .controls-bound {
@@ -144,7 +139,12 @@
     box-sizing: content-box;
     position: absolute;
     top: calc(var(--scrubber-value-row-height) + 6px);
-    left: calc(var(--thumb-proportion) * var(--scrubber-capsule-travel));
+    /* Positioned by one percentage of the rail and pulled back by the same proportion of its own width, so it
+    is flush at either end without subtracting a length from a percentage. Chrome resolves such a subtraction
+    inside a custom property against a basis that disagrees with the rendered box under fractional browser
+    zoom, which threw the capsule past the rail's end. */
+    left: calc(var(--thumb-proportion) * 100%);
+    transform: translateX(calc(var(--thumb-proportion) * -100%));
     width: var(--scrubber-capsule-length);
     height: 10px;
     margin-left: 0;
@@ -169,6 +169,8 @@
 .controls-scrubber.grabbing ~ .controls-period {
     width: calc(var(--scrubber-capsule-length) + var(--scrubber-capsule-swell) * 2);
     margin-left: calc(-1 * var(--scrubber-capsule-swell));
+    /* Restated because the swell sets no transform of its own and would otherwise drop the offset. */
+    transform: translateX(calc(var(--thumb-proportion) * -100%));
     background: var(--color-paper);
 
     transition:
@@ -183,11 +185,10 @@
 .controls-year {
     position: absolute;
     top: 0;
-    left: calc(
-        var(--thumb-proportion) * var(--scrubber-capsule-travel) +
-        var(--scrubber-capsule-box) / 2
-    );
-    transform: translateX(-50%);
+    left: calc(var(--thumb-proportion) * 100%);
+    /* The same self-relative pull as the capsule, which centres it at the middle of the range and keeps it
+    inside the rail at either end, where centring it would have overrun the bound label beside it. */
+    transform: translateX(calc(var(--thumb-proportion) * -100%));
     width: 4.5ch;
     text-align: center;
     appearance: none;
