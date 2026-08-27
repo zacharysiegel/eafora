@@ -12,11 +12,11 @@ use crate::filesystem;
 use crate::license::DistributionContext;
 use crate::sqlite::shard_db::{self, ShardValues};
 
-/// Content-Type the producer sets when uploading each artifact-bundle file kind; the CDN edge,
-/// the browser HTTP cache, and Accept-header negotiation depend on them.
+/// Content-Type the producer sets when uploading each artifact-bundle file kind. Every artifact but the
+/// manifest is a brotli stream, so one type covers them: the bytes served are the compressed ones, and no
+/// `Content-Encoding` is set, since the client decodes them itself against a digest taken over that form.
 pub const CONTENT_TYPE_MANIFEST: &str = "application/json";
-pub const CONTENT_TYPE_FLATGEOBUF: &str = "application/octet-stream";
-pub const CONTENT_TYPE_SQLITE: &str = "application/vnd.sqlite3";
+pub const CONTENT_TYPE_ARTIFACT: &str = "application/octet-stream";
 
 /// Cache-Control the producer sets per file kind. Manifest is short-cached so re-platforms
 /// propagate within minutes.

@@ -38,7 +38,8 @@ DOWNSAMPLED_DIR="$EAFORA_ARTIFACTS_DIR/latest/downsampled"
 
 if [[ ! -d "$DOWNSAMPLED_DIR" ]]; then
     echo "no build found at $DOWNSAMPLED_DIR; running 'ingestion build' first" >&2
-    (cd "$REPO_ROOT" && cargo run --quiet -p ingestion -- build)
+    # Release, because the brotli encode at quality 11 is an order of magnitude slower in a debug build.
+    (cd "$REPO_ROOT" && cargo run --quiet --release -p ingestion -- build)
 fi
 
 if [[ ! -d "$DOWNSAMPLED_DIR" ]]; then

@@ -41,14 +41,14 @@ pub async fn publish_artifacts(
     for shard in &build_report.artifacts.shards {
         let filename: &str = filesystem::filename_of(&shard.file.path)?;
         let key: String = format!("{}/{}/{}", version_label, manifest::SUBDIR_DATA, filename);
-        repository.put_file(&key, &shard.file.path, bundle::CONTENT_TYPE_SQLITE).await?;
+        repository.put_file(&key, &shard.file.path, bundle::CONTENT_TYPE_ARTIFACT).await?;
         log::debug!("uploaded shard; [key={}]", key);
     }
     let shards_published: usize = build_report.artifacts.shards.len();
 
     let geometry_filename: &str = filesystem::filename_of(&build_report.artifacts.geometry.path)?;
     let geometry_key: String = format!("{}/{}/{}", version_label, manifest::SUBDIR_GEOMETRY, geometry_filename);
-    repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, bundle::CONTENT_TYPE_FLATGEOBUF).await?;
+    repository.put_file(&geometry_key, &build_report.artifacts.geometry.path, bundle::CONTENT_TYPE_ARTIFACT).await?;
     log::debug!("uploaded geometry; [key={}]", geometry_key);
 
     let manifest_key: String = format!("{}/{}", version_label, manifest::MANIFEST_FILENAME);

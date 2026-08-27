@@ -26,6 +26,12 @@ function fail {
     exit 1
 }
 
+for required_program in brotli jq sqlite3; do
+    if ! command -v "$required_program" > /dev/null 2>&1; then
+        fail "${required_program} is required to verify a site tree"
+    fi
+done
+
 if [[ ! -d "$SITE_DIR" ]]; then
     fail "${SITE_DIR} does not exist; run ./scripts/build/build-site.sh"
 fi
@@ -69,24 +75,36 @@ if [[ "$repository_base_url" != https://* ]]; then
 fi
 
 # The embedded bundle is refreshed by sync-embedded-bundle.sh rather than by a site build, so a shard schema
-# change leaves a tree whose first paint the client cannot read.
+# change leaves a tree whose first paint the client cannot read. The shards are brotli at rest, so the pragma
+# is read from a decoded copy.
 expected_schema_version="$(grep -oE 'SCHEMA_VERSION: i32 = [0-9]+' "$SHARD_SCHEMA_SOURCE" | grep -oE '[0-9]+$')"
 
 if [[ -z "$expected_schema_version" ]]; then
     fail "could not read the shard schema version from ${SHARD_SCHEMA_SOURCE}"
 fi
 
+# A plain shard here is a tree synced before the producer began compressing, which reaches the client as a
+# decode failure rather than as anything this script would otherwise notice.
+plain_shard_count=$(find "$EMBEDDED_DATA_DIR" -name '*.sqlite' 2>/dev/null | wc -l | tr -d ' ')
+
+if [[ "$plain_shard_count" -ne 0 ]]; then
+    fail "${EMBEDDED_DATA_DIR} holds ${plain_shard_count} uncompressed shard(s); run ./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts"
+fi
+
 embedded_shard_count=0
 
 while IFS= read -r shard_path; do
-    shard_schema_version="$(sqlite3 "$shard_path" 'pragma user_version;')"
+    plain_shard_path="$(mktemp -t eafora-shard)"
+    brotli -d -f -c "$shard_path" > "$plain_shard_path"
+    shard_schema_version="$(sqlite3 "$plain_shard_path" 'pragma user_version;')"
+    rm -f "$plain_shard_path"
 
     if [[ "$shard_schema_version" != "$expected_schema_version" ]]; then
         fail "${shard_path} is shard schema ${shard_schema_version} and this build reads ${expected_schema_version}; run ./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts"
     fi
 
     embedded_shard_count=$((embedded_shard_count + 1))
-done < <(find "$EMBEDDED_DATA_DIR" -name '*.sqlite' 2>/dev/null)
+done < <(find "$EMBEDDED_DATA_DIR" -name '*.sqlite.br' 2>/dev/null)
 
 if [[ "$embedded_shard_count" -eq 0 ]]; then
     fail "${EMBEDDED_DATA_DIR} holds no shard, so first paint would show no data; run ./scripts/build/sync-embedded-bundle.sh ./web/static/embedded_artifacts"

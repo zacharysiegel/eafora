@@ -3,18 +3,14 @@
 //! and the feature dropped: Natural Earth ships entries we intentionally omit, like Antarctica,
 //! uninhabited islets, and the Siachen Glacier.
 //!
-//! Output is uncompressed. FlatGeobuf is already a packed binary format, but
-//! a brotli pass over the finished `.fgb` still nets ~50-65% reduction
-//! because coordinate sequences and the R-tree have residual structural
-//! redundancy. The right place to add that is at publish time via HTTP
-//! `Content-Encoding: br` (transparent to the browser, no client change);
-//! not at write time, since the local artifact on disk is more useful as a
-//! plain `.fgb` (loadable in QGIS, inspectable with `fgb info`). The
-//! trade-off is that `Content-Encoding`-compressed bodies break FlatGeobuf's
-//! HTTP-range-request streaming mode; v1 downloads the whole geometry shard
-//! at startup so this doesn't bite. Worth revisiting if the 1:50m geometry
-//! starts looking too coarse and we want to step up to 1:10m (approx. 5x
-//! larger pre-compression).
+//! Output is a plain `.fgb`, which `artifact::compression` then replaces with a brotli sibling before the file
+//! is content-addressed, so the published artifact and the file on disk are both the compressed form. This
+//! module's earlier plan was to compress at publish time through `Content-Encoding: br` and keep a plain
+//! `.fgb` locally for QGIS and `fgb info`; a probe deploy refuted the first half, since Cloudflare Workers
+//! Assets compresses only content types on a fixed list holding no generic binary type and returned a 1.5 MB
+//! `.fgb` whole. Local inspection now goes through `brotli -d`. FlatGeobuf's HTTP-range streaming mode is
+//! unavailable either way, which costs nothing while the whole geometry is fetched at startup, and the
+//! measured saving is 3.4x on this geometry.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};

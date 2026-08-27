@@ -432,7 +432,7 @@ Properties:
 - `manifest_schema_version` is the FIRST key, `1` for v1; consumers reject manifests with an unknown version (forward-compat gate for v2+ shape changes). See `docs/architecture/client.md` §Manifest schema (consumer view) for the consumer-side contract.
 - Filenames are content-hashed → `Cache-Control: public, max-age=31536000, immutable`. Repeat fetches are free.
 - `manifest.json` itself is short-cached (e.g., `max-age=300`). Clients fetch the manifest on launch, compare versions against their local cache, fetch only what changed.
-- Brotli compression at the CDN; SQLite typically compresses 70%+; FlatGeobuf compresses similarly under brotli (typed binary with run-length-friendly attribute encoding).
+- Brotli compression applied by the producer, since neither CDN compresses a generic binary type; a statistic shard measures 13.0x and the geometry 3.4x, so the transferred artifact is a fraction of what the store holds. See `specs/009-artifact-compression/`.
 - Per-statistic SQLite files mean adding statistics in v2 doesn't bloat v1's payload.
 
 ### License-segmented SQLite shards (v2+)

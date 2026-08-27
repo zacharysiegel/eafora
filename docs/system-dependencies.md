@@ -84,8 +84,9 @@ It is equivalent to `cd shared && wasm-pack test --headless --chrome`.
 
 ## Web site build and deploy
 
-- `brotli` — the perf-budget report pipes assets through it to estimate transfer size; it writes no
-  compressed file. Install with `brew install brotli`.
+- `brotli` — the deploy gate needs it: `scripts/build/verify-site-tree.sh` decodes each embedded shard to read
+  its schema version, and the perf-budget report pipes the remaining assets through it to estimate transfer
+  size. Neither writes a compressed file into the tree. Install with `brew install brotli`.
 - `jq` — the same report reads the built manifests with it. Install with `brew install jq`.
 - `node` — only for `npx wrangler`, which `scripts/build/deploy-site.sh` invokes to upload the site.
   Install with `brew install node`, then authenticate once with `npx wrangler login`.

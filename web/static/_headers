@@ -27,13 +27,15 @@
   Cache-Control: public, max-age=31536000, immutable
 
 /embedded_artifacts/geometry/*
-  # FlatGeobuf has no registered media type. Scoped to this subdirectory rather than all of
-  # embedded_artifacts because these filenames carry the SHA-256 the manifest verifies, while the
-  # manifest's own name is stable.
+  # These bodies are brotli, encoded by the producer, and the client decodes them itself. No Content-Encoding:
+  # declaring one would have the browser decode them before the client sees them, and the digest the manifest
+  # carries is over the compressed bytes. Scoped to this subdirectory rather than all of embedded_artifacts
+  # because these filenames carry the SHA-256 the manifest verifies, while the manifest's own name is stable.
   Content-Type: application/octet-stream
   Cache-Control: public, max-age=31536000, immutable
 
 /embedded_artifacts/data/*
-  # Content-hashed filenames as above. application/vnd.sqlite3 is the registered type for a SQLite 3 file.
-  Content-Type: application/vnd.sqlite3
+  # Content-hashed filenames and brotli bodies as above, so the type describes the compressed stream rather
+  # than the SQLite file inside it.
+  Content-Type: application/octet-stream
   Cache-Control: public, max-age=31536000, immutable

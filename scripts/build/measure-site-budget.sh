@@ -9,9 +9,11 @@
 # size is a consequence of the framework and the renderer rather than of a data decision.
 #
 # A file counts at its brotli -q 11 size when Cloudflare's content-type list says the edge compresses it,
-# and at its full size otherwise, which is the case for the geometry and statistic shards. Compression is
-# computed here and streamed to stdout, leaving the tree untouched. Still an approximation: the edge picks
-# its own algorithm and quality per plan, which we cannot read from a built tree.
+# and at its full size otherwise. The geometry and the statistic shards fall in the second case and are
+# already brotli on disk, encoded by the producer, so their full size is what a client transfers and no
+# approximation is involved. For the rest, compression is computed here and streamed to stdout, leaving the
+# tree untouched, and remains an approximation: the edge picks its own algorithm and quality per plan, which
+# we cannot read from a built tree.
 #
 # The targets are targets, not contracts, so no measurement outcome reaches the exit code: an overage, a
 # failed build, and a tree missing the files to measure all print their verdict and exit zero. Only the two
@@ -207,11 +209,12 @@ function find_first_absent_relative_path {
     return 0
 }
 
-# A .br or .gz sibling is the same bytes measured twice, and .DS_Store is Finder metadata no client fetches.
+# The artifacts are brotli at rest, so a .br file here is an artifact a client fetches rather than a sibling of
+# one. .DS_Store is Finder metadata no client fetches.
 function sum_transfer_size_of_fetched_files_in {
     local directory="$1"
 
-    find "$directory" -type f ! -name '*.br' ! -name '*.gz' ! -name '.DS_Store' -print0 | sum_transfer_size_of_stream
+    find "$directory" -type f ! -name '*.gz' ! -name '.DS_Store' -print0 | sum_transfer_size_of_stream
 }
 
 # Megabytes are decimal so the printed components sum to the printed total: 612 KB + 38 KB + ... reads as
@@ -527,5 +530,6 @@ fi
 
 echo "  - Sizes are what a client transfers: brotli -q 11 for the types Cloudflare compresses (wasm, js,"
 echo "    css, html, json), and the full file size for the rest. The geometry and statistic shards are"
-echo "    served with content types absent from Cloudflare's auto-compress list, so they transfer whole."
+echo "    served with content types absent from that list, and are brotli on disk already, so their full"
+echo "    size is the transferred size and the figure is the producer's own encoder output."
 echo "  - Decimal megabytes: 1 MB is 1000 KB."
