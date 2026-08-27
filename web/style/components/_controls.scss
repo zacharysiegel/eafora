@@ -140,11 +140,12 @@
     position: absolute;
     top: calc(var(--scrubber-value-row-height) + 7px);
     /* Centred on the period's position, so it overhangs the rail's end by half its width at either extreme
-    rather than being held inside. Positioned by one plain percentage: Chrome resolves a percentage with a
-    length subtracted from it inside a custom property against a basis that disagrees with the rendered box
-    under fractional browser zoom, which threw the capsule past the rail's end entirely. */
+    rather than being held inside. The browser insets the native thumb by half its width at each end, so a
+    value sits at `grab / 2 + proportion * (width - grab)`; the container percentage stays plain and the inset
+    is corrected in pixels, because Chrome resolves a percentage with a length subtracted from it inside a
+    custom property against a basis that disagrees with the rendered box under fractional browser zoom. */
     left: calc(var(--thumb-proportion) * 100%);
-    transform: translateX(-50%);
+    transform: translateX(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-grab-width)));
     width: var(--scrubber-capsule-length);
     height: 8px;
     border: var(--border-ink);
@@ -181,7 +182,7 @@
     position: absolute;
     top: 0;
     left: calc(var(--thumb-proportion) * 100%);
-    transform: translateX(-50%);
+    transform: translateX(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-grab-width)));
     width: 4.5ch;
     text-align: center;
     appearance: none;
