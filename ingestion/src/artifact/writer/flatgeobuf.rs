@@ -31,7 +31,7 @@ use crate::artifact::compression::PlainArtifact;
 const ADM0_A3_FIELD: &str = "ADM0_A3";
 /* Antarctica lies south of every latitude the clients let the viewport reach, so its polygon would be paid
    for in every bundle and never drawn. */
-const EXCLUDED_ADM0_A3: &[&str] = &["ATA"];
+const EXCLUDED_ADM0_A3_CODES: &[&str] = &["ATA"];
 pub const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 const COLUMN_NAME_EN: Column = Column { index: 0, name: geometry::FEATURE_COLUMN_NAME_EN };
 const COLUMN_REGION_CODE: Column = Column { index: 1, name: geometry::FEATURE_COLUMN_REGION_CODE };
@@ -85,7 +85,7 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
         let Some(adm0_a3) = read_character_field(&record, ADM0_A3_FIELD) else {
             continue;
         };
-        if EXCLUDED_ADM0_A3.contains(&adm0_a3.as_str()) {
+        if EXCLUDED_ADM0_A3_CODES.contains(&adm0_a3.as_str()) {
             continue;
         }
 
