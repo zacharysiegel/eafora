@@ -9,7 +9,7 @@ use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, Statistic
 
 use crate::i18n::*;
 use crate::map::canvas::{
-    self, CellView, GlobalView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
+    self, CellView, GlobalView, RankView, RegionDetail, SelectionView, SeriesPointView, SourceCellView,
 };
 use crate::map::labels;
 use crate::map::scroll_thumb::{self, ScrollThumbState};
@@ -318,19 +318,44 @@ fn context_row(label: AnyView, value: impl Fn() -> String + Send + Sync + 'stati
     }
 }
 
-/// "22nd lowest of 217", which states the direction rather than leaving the reader to infer it from a sorting
-/// convention. The ordinal is English, so the phrase is assembled here; a second locale wants the whole phrase
-/// interpolated in the locale file instead.
+/// "Lowest of 217", "Highest of 217", or "22nd lowest of 217" between them, which states the direction rather
+/// than leaving the reader to infer it from a sorting convention. The ordinal is English, so the phrase is
+/// assembled here; a second locale wants the whole phrase interpolated in the locale file instead.
 fn rank_text(i18n: I18nContext<Locale>, figure: Memo<Option<ActiveFigure>>) -> impl Fn() -> String + Copy + Send + Sync {
     figure_text(figure, move |figure| match figure.detail.rank {
-        Some(rank) => format!(
-            "{} {} {}",
-            ordinal(rank.position),
-            t_string!(i18n, detail.rank_lowest_of),
-            rank.of,
-        ),
+        Some(rank) => match rank_phrase(rank) {
+            RankPhrase::Lowest => format!("{} {}", t_string!(i18n, detail.rank_lowest_of), rank.of),
+            RankPhrase::Highest => format!("{} {}", t_string!(i18n, detail.rank_highest_of), rank.of),
+            RankPhrase::Ordinal => format!(
+                "{} {} {}",
+                ordinal(rank.position),
+                t_string!(i18n, detail.rank_ordinal_lowest_of),
+                rank.of,
+            ),
+        },
         None => t_string!(i18n, detail.not_applicable).to_string(),
     })
+}
+
+/// Which of the three phrasings a rank takes. An ordinal reads wrong at either end, where "1st lowest" and
+/// "217th lowest of 217" say plainly what "Lowest" and "Highest" say well.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RankPhrase {
+    Lowest,
+    Highest,
+    Ordinal,
+}
+
+fn rank_phrase(rank: RankView) -> RankPhrase {
+    if rank.position <= 1 {
+        return RankPhrase::Lowest;
+    }
+
+    if rank.position >= rank.of {
+        return RankPhrase::Highest;
+    }
+
+    RankPhrase::Ordinal
 }
 
 /// Eleven, twelve and thirteen take "th" despite their final digit, and so does any number ending in them.
@@ -1081,6 +1106,21 @@ mod tests {
             "databank.worldbank.org",
         );
         assert_eq!(link_host("not a url"), "not a url");
+    }
+
+    #[test]
+    fn rank_phrase_names_the_extremes_and_numbers_everything_between() {
+        assert_eq!(rank_phrase(RankView { position: 1, of: 217 }), RankPhrase::Lowest);
+        assert_eq!(rank_phrase(RankView { position: 217, of: 217 }), RankPhrase::Highest);
+        assert_eq!(rank_phrase(RankView { position: 2, of: 217 }), RankPhrase::Ordinal);
+        assert_eq!(rank_phrase(RankView { position: 216, of: 217 }), RankPhrase::Ordinal);
+    }
+
+    /// One region covered at a period is both ends at once, and reading as the lowest is the less odd of the
+    /// two.
+    #[test]
+    fn rank_phrase_calls_a_lone_region_the_lowest() {
+        assert_eq!(rank_phrase(RankView { position: 1, of: 1 }), RankPhrase::Lowest);
     }
 
     #[test]

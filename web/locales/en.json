@@ -28,7 +28,9 @@
     "sources": "Data sources",
     "source_preferred": "Prioritized",
     "about": "About this statistic",
-    "rank_lowest_of": "lowest of"
+    "rank_ordinal_lowest_of": "lowest of",
+    "rank_lowest_of": "Lowest of",
+    "rank_highest_of": "Highest of"
   },
   "statistic": {
     "tfr": "Total fertility rate",
