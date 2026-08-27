@@ -147,7 +147,6 @@
     transform: translateX(calc(var(--thumb-proportion) * -100%));
     width: var(--scrubber-capsule-length);
     height: 10px;
-    margin-left: 0;
     border: var(--border-ink);
     background: var(--color-ink);
     border-radius: 999px;
@@ -155,9 +154,10 @@
 
     /* Leaving, the fill darkens on a curve that is nearly flat at first, so the white thins and dims together
        rather than the last sliver of it being erased. */
+    /* The transform follows the width on its own, since it is a proportion of the element's own box, so the
+    swell splits between the two ends by where the capsule sits and stays inside the rail at either end. */
     transition:
         width var(--duration-thumb) ease,
-        margin-left var(--duration-thumb) ease,
         background-color var(--duration-thumb) cubic-bezier(0.7, 0, 0.84, 0);
 }
 
@@ -168,14 +168,10 @@
 .controls-scrubber:focus-visible ~ .controls-period,
 .controls-scrubber.grabbing ~ .controls-period {
     width: calc(var(--scrubber-capsule-length) + var(--scrubber-capsule-swell) * 2);
-    margin-left: calc(-1 * var(--scrubber-capsule-swell));
-    /* Restated because the swell sets no transform of its own and would otherwise drop the offset. */
-    transform: translateX(calc(var(--thumb-proportion) * -100%));
     background: var(--color-paper);
 
     transition:
         width var(--duration-thumb) ease,
-        margin-left var(--duration-thumb) ease,
         background-color 0s;
 }
 
