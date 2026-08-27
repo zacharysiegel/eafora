@@ -7,10 +7,14 @@
     gap: var(--space-md);
     width: 18rem;
 
-    /* The width of the scrubber's grab area, and the height reserved above the rail for the floating year.
-    Declared here so the capsule rules, the bound labels, and the year's horizontal offset all derive from one
-    value; the offset is a CSS calc, so nothing outside this file needs to know the geometry. */
-    --scrubber-grab-width: 15px;
+    /* The native thumb's width, and the height reserved above the rail for the floating year. Declared here
+    so the capsule rules, the bound labels, and the year's horizontal offset all derive from one value; the
+    offset is a CSS calc, so nothing outside this file needs to know the geometry.
+
+    The thumb is a hairline because the browser confines the value to `[thumb / 2, width - thumb / 2]`, and a
+    wider one keeps the capsule that far from each end of the rail. A press anywhere on the rail's band starts
+    a drag, so the thumb is not what has to be hit. */
+    --scrubber-thumb-width: 1px;
     --scrubber-value-row-height: 1.1rem;
 
     /* How far the capsule grows past the period at each end while the pointer is on it. */
@@ -107,20 +111,19 @@
     background: var(--color-ink);
 }
 
-/* The native thumb is the hit area and nothing else: transparent, the full height of the band, and wider than
-   the capsule ever gets, so the browser keeps the drag and the keyboard while `.controls-period` carries the
-   whole appearance. */
+/* The native thumb carries no appearance, so `.controls-period` is the whole of what a reader sees. It keeps
+   the band's full height, which is what the browser drags and focuses. */
 .controls-scrubber::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: var(--scrubber-grab-width);
+    width: var(--scrubber-thumb-width);
     height: 24px;
     background: transparent;
     border: none;
 }
 
 .controls-scrubber::-moz-range-thumb {
-    width: var(--scrubber-grab-width);
+    width: var(--scrubber-thumb-width);
     height: 24px;
     background: transparent;
     border: none;
@@ -147,7 +150,7 @@
     is corrected in pixels, because Chrome resolves a percentage with a length subtracted from it inside a
     custom property against a basis that disagrees with the rendered box under fractional browser zoom. */
     left: calc(var(--thumb-proportion) * 100%);
-    transform: translate(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-grab-width)), -50%);
+    transform: translate(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-thumb-width)), -50%);
     width: var(--scrubber-capsule-length);
     height: 8px;
     border: var(--border-ink);
@@ -184,7 +187,7 @@
     position: absolute;
     top: 0;
     left: calc(var(--thumb-proportion) * 100%);
-    transform: translateX(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-grab-width)));
+    transform: translateX(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-thumb-width)));
     /* Four digits and slack, in `em` because `ch` tracks the browser's zoom rather than the size the digits
     are drawn at: it resolved to half the zero advance at 50% zoom, and overshot it zoomed in. */
     width: 2.8em;
