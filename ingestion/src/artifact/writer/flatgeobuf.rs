@@ -1,7 +1,6 @@
 //! A Natural Earth feature is matched to a seeded country by its `ADM0_A3` code (translated to canonical
-//! ISO3 first; see `natural_earth::canonical_iso3`). A code with no seeded country gets a warning logged
-//! and the feature dropped: Natural Earth ships entries we intentionally omit, like Antarctica,
-//! uninhabited islets, and the Siachen Glacier.
+//! ISO3 first; see `natural_earth::canonical_iso3`). A code with no seeded country is emitted under the
+//! unattributed region code, so the land still fills.
 //!
 //! Output is a plain `.fgb` that `artifact::compression` replaces with a brotli sibling before the file is
 //! content-addressed, so inspecting one locally goes through `brotli -d`.
@@ -30,6 +29,9 @@ use crate::http;
 use crate::artifact::compression::PlainArtifact;
 
 const ADM0_A3_FIELD: &str = "ADM0_A3";
+/* Antarctica lies south of every latitude the clients let the viewport reach, so its polygon would be paid
+   for in every bundle and never drawn. */
+const EXCLUDED_ADM0_A3: &[&str] = &["ATA"];
 pub const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
 const COLUMN_NAME_EN: Column = Column { index: 0, name: geometry::FEATURE_COLUMN_NAME_EN };
 const COLUMN_REGION_CODE: Column = Column { index: 1, name: geometry::FEATURE_COLUMN_REGION_CODE };
@@ -83,29 +85,39 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
         let Some(adm0_a3) = read_character_field(&record, ADM0_A3_FIELD) else {
             continue;
         };
-        let iso3: String = natural_earth::canonical_iso3(&adm0_a3).to_string();
-        if !iso3_to_metadata.contains_key(&iso3) {
-            log::warn!(
-                "dropping Natural Earth feature with no seeded country; [adm0_a3={}]",
-                adm0_a3,
-            );
+        if EXCLUDED_ADM0_A3.contains(&adm0_a3.as_str()) {
             continue;
         }
 
+        let iso3: String = natural_earth::canonical_iso3(&adm0_a3).to_string();
         let geometry: geo_types::Geometry<f64> = geo_types::Geometry::try_from(shape)?;
-        let grouped: &mut GroupedGeometry = geometry_by_iso3.entry(iso3)
+
+        /* Land Natural Earth attributes to no country (the Siachen Glacier is the visible one) is still land,
+           and dropping it left a hole in the map. Each such feature keeps its own key, so unrelated ones stay
+           separate features with tight bounding boxes. */
+        let region_key: String = if iso3_to_metadata.contains_key(&iso3) {
+            iso3
+        } else {
+            log::info!("land with no seeded country; [adm0_a3={adm0_a3}]");
+
+            adm0_a3.clone()
+        };
+
+        let grouped: &mut GroupedGeometry = geometry_by_iso3.entry(region_key)
             .or_insert_with(|| GroupedGeometry { polygons: Vec::new(), source_feature_count: 0 });
         grouped.polygons.extend(polygons_of(geometry));
         grouped.source_feature_count += 1;
     }
 
-    for (iso3, grouped) in &geometry_by_iso3 {
-        let metadata: &CountryMetadataProjection = iso3_to_metadata.get(iso3)
-            .expect("iso3 was validated present when grouping");
+    for (region_key, grouped) in &geometry_by_iso3 {
+        let (name_en, region_code): (&str, &str) = match iso3_to_metadata.get(region_key) {
+            Some(metadata) => (&metadata.name_en, &metadata.region_code),
+            None => (geometry::UNATTRIBUTED_REGION_NAME, geometry::UNATTRIBUTED_REGION_CODE),
+        };
 
-        // A folded territory contributes a second, adjacent source feature; union the polygons so the
-        // region renders as one outline instead of two sharing an internal border. Single-source regions
-        // are emitted unchanged.
+        /* A folded territory contributes a second, adjacent source feature; union the polygons so the region
+           renders as one outline instead of two sharing an internal border. Single-source regions are emitted
+           unchanged. */
         let feature_polygons: geo_types::MultiPolygon<f64> = if grouped.source_feature_count > 1 {
             union_polygons(&grouped.polygons)
         } else {
@@ -113,8 +125,8 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
         };
 
         writer.add_feature_geom(geo_types::Geometry::MultiPolygon(feature_polygons), |feature| {
-            feature.property(COLUMN_NAME_EN.index, COLUMN_NAME_EN.name, &ColumnValue::String(&metadata.name_en)).ok();
-            feature.property(COLUMN_REGION_CODE.index, COLUMN_REGION_CODE.name, &ColumnValue::String(&metadata.region_code)).ok();
+            feature.property(COLUMN_NAME_EN.index, COLUMN_NAME_EN.name, &ColumnValue::String(name_en)).ok();
+            feature.property(COLUMN_REGION_CODE.index, COLUMN_REGION_CODE.name, &ColumnValue::String(region_code)).ok();
         })?;
     }
 

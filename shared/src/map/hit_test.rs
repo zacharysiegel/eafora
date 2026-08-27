@@ -3,7 +3,7 @@
 //! layer), and apply pan, wheel-zoom, and two-finger pinch gestures to the viewport. The gesture math is
 //! pure and shares one surface normalization with the hit-test.
 
-use crate::artifact::geometry::{BoundingBox, CountryFeature, GeometryLayer, Polygon};
+use crate::artifact::geometry::{self, BoundingBox, CountryFeature, GeometryLayer, Polygon};
 use crate::map::projection::{self, GeoPoint, ProjectedPoint};
 use crate::map::{RegionCode, SurfacePoint, SurfaceDimensions, Viewport};
 
@@ -51,6 +51,7 @@ pub fn region_at_point(
     let candidate_features: Vec<CountryFeature> = geometry.features_intersecting_bbox(query_bbox).ok()?;
     let hit_feature: &CountryFeature = candidate_features
         .iter()
+        .filter(|candidate_feature| is_selectable(candidate_feature))
         .find(|candidate_feature| candidate_feature.contains(geo_point))?;
 
     Some(RegionHit {
@@ -282,6 +283,11 @@ pub fn pinch(
         .normalize_longitude_turns()
 }
 
+/// Unattributed land carries no region, so a point inside it is a miss.
+fn is_selectable(feature: &CountryFeature) -> bool {
+    feature.region_code != geometry::UNATTRIBUTED_REGION_CODE
+}
+
 fn wrap_longitude(lon: f64) -> f64 {
     (lon + 180.0).rem_euclid(360.0) - 180.0
 }
@@ -323,6 +329,22 @@ mod tests {
             region_at_point(&geometry, viewport, SURFACE_DIMENSIONS, SurfacePoint { x: 110.0, y: 100.0 });
 
         assert_is_testland(result);
+    }
+
+    #[test]
+    fn region_at_point_treats_unattributed_land_as_a_miss() {
+        let unattributed_bytes: Vec<u8> = geometry::tests::build_one_feature_fgb_bytes(
+            geometry::UNATTRIBUTED_REGION_NAME,
+            geometry::UNATTRIBUTED_REGION_CODE,
+        );
+        let unattributed_layer: GeometryLayer = parse_geometry_layer(unattributed_bytes).unwrap();
+        let viewport: Viewport = latitude_band_viewport(-10.0, 10.0);
+
+        // The point that resolves to Testland when the one feature carries a country's region code.
+        let result: Option<RegionHit> =
+            region_at_point(&unattributed_layer, viewport, SURFACE_DIMENSIONS, SurfacePoint { x: 110.0, y: 100.0 });
+
+        assert!(result.is_none());
     }
 
     #[test]

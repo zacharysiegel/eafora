@@ -375,9 +375,10 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
     }
 
     // Grouping by canonical ISO3 emits one feature per country, so Somaliland and Northern Cyprus do not
-    // produce a second feature sharing their sovereign's region_code.
+    // produce a second feature sharing their sovereign's region_code. Unattributed land is exempt: each such
+    // feature keeps its own key, so several share that one code.
     let mut seen_region_codes: BTreeSet<&str> = BTreeSet::new();
-    for region_code in &region_codes {
+    for region_code in region_codes.iter().filter(|region_code| **region_code != geometry::UNATTRIBUTED_REGION_CODE) {
         assert!(
             seen_region_codes.insert(region_code),
             "region_code {} emitted more than once",
@@ -412,6 +413,50 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
     };
     assert_eq!(polygon_count("som"), 1, "Somalia and Somaliland must dissolve into one polygon");
     assert_eq!(polygon_count("cyp"), 1, "Cyprus and Northern Cyprus must dissolve into one polygon");
+
+    transaction.rollback().await.unwrap();
+}
+
+/// Natural Earth attributes the Siachen Glacier to no country, and dropping it left an unfilled wedge
+/// between the Indian, Pakistani and Chinese boundaries which read as a rendering fault. It must be emitted
+/// under the unattributed region code, and must not be selectable.
+#[tokio::test]
+async fn write_flatgeobuf_fills_land_no_country_is_attributed() {
+    /// Inside the wedge, on the glacier.
+    const SIACHEN: GeoPoint = GeoPoint { lat: 35.5, lon: 77.0 };
+
+    let pool: PgPool = test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let zip_bytes: Vec<u8> = fs::read(BUNDLED_NATURAL_EARTH_ZIP).unwrap();
+    let shapefile_bytes: ShapefileBytes = natural_earth::extract_shapefile_from_zip(&zip_bytes).unwrap();
+
+    let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let written_geometry: PlainArtifact =
+        write_flatgeobuf_from_shapefile(&mut *transaction, &shapefile_bytes, temp_dir.path())
+            .await
+            .expect("offline geometry shard emitted");
+
+    let layer: geometry::GeometryLayer =
+        geometry::parse_geometry_layer(fs::read(&written_geometry.file.path).unwrap()).unwrap();
+    let covering_features: Vec<geometry::CountryFeature> = layer
+        .features_intersecting_bbox(geometry::BoundingBox::from_point(SIACHEN))
+        .unwrap()
+        .into_iter()
+        .filter(|country_feature| country_feature.contains(SIACHEN))
+        .collect();
+    let covering_region_codes: Vec<&str> = covering_features.iter()
+        .map(|country_feature| country_feature.region_code.as_str())
+        .collect();
+
+    assert_eq!(covering_region_codes, vec![geometry::UNATTRIBUTED_REGION_CODE]);
+
+    // Antarctica is excluded outright, so no unattributed feature reaches the far south.
+    let antarctic_features: Vec<geometry::CountryFeature> = layer
+        .features_intersecting_bbox(geometry::BoundingBox::from_point(GeoPoint { lat: -75.0, lon: 0.0 }))
+        .unwrap();
+
+    assert!(antarctic_features.is_empty());
 
     transaction.rollback().await.unwrap();
 }

@@ -25,6 +25,11 @@ pub const FEATURE_COLUMN_NAME_EN: &str = "name_en";
 /// FlatGeobuf feature column carrying the `region.code` slug of the region the country belongs to.
 pub const FEATURE_COLUMN_REGION_CODE: &str = "region_code";
 
+/// Stands in for a `region.code` on land the geometry source attributes to no country, which no seeded
+/// region will ever match.
+pub const UNATTRIBUTED_REGION_CODE: &str = "unattributed";
+pub const UNATTRIBUTED_REGION_NAME: &str = "Unattributed";
+
 pub const SHARD_FILENAME_EXTENSION: &str = "sqlite";
 pub const GEOMETRY_FILENAME_EXTENSION: &str = "fgb";
 
@@ -252,12 +257,9 @@ pub(crate) mod tests {
         include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/one-feature.fgb")).to_vec()
     }
 
-    /// Regenerates the committed one-feature sample. There is no producer path for a synthetic
-    /// feature, so the writer is exercised here directly; run after changing the feature columns.
-    #[test]
-    #[ignore = "run manually to regenerate tests/samples/one-feature.fgb"]
-    #[cfg(not(target_arch = "wasm32"))] // not for wasm32: writes the committed sample via std::fs
-    fn dump_one_feature_fgb() {
+    /// One feature covering the same rectangle as the committed sample, under the caller's name and region
+    /// code.
+    pub(crate) fn build_one_feature_fgb_bytes(name_en: &str, region_code: &str) -> Vec<u8> {
         use flatgeobuf::{ColumnType, FgbWriter, GeometryType};
         use geozero::{ColumnValue, PropertyProcessor};
 
@@ -274,13 +276,24 @@ pub(crate) mod tests {
 
         writer
             .add_feature_geom(geometry, |feature| {
-                feature.property(0, FEATURE_COLUMN_NAME_EN, &ColumnValue::String("Testland")).ok();
-                feature.property(1, FEATURE_COLUMN_REGION_CODE, &ColumnValue::String("testland")).ok();
+                feature.property(0, FEATURE_COLUMN_NAME_EN, &ColumnValue::String(name_en)).ok();
+                feature.property(1, FEATURE_COLUMN_REGION_CODE, &ColumnValue::String(region_code)).ok();
             })
             .unwrap();
 
         let mut bytes: Vec<u8> = Vec::new();
         writer.write(&mut bytes).unwrap();
+
+        bytes
+    }
+
+    /// Regenerates the committed one-feature sample. There is no producer path for a synthetic
+    /// feature, so the writer is exercised here directly; run after changing the feature columns.
+    #[test]
+    #[ignore = "run manually to regenerate tests/samples/one-feature.fgb"]
+    #[cfg(not(target_arch = "wasm32"))] // not for wasm32: writes the committed sample via std::fs
+    fn dump_one_feature_fgb() {
+        let bytes: Vec<u8> = build_one_feature_fgb_bytes("Testland", "testland");
         std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/one-feature.fgb"), bytes).unwrap();
     }
 
