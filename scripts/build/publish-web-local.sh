@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# publish-web-local.sh: publish an artifact set into the web client's static repository tree.
+# publish-web-local.sh: publish an artifact set into the web client's static repository tree, then refresh
+# the client's first-paint bundle from the same build.
 #
 # `ingestion publish local` writes object keys under a destination root and records an
-# artifact_version row pointing at a public URL prefix. The two values below are the ones the
+# artifact_version row pointing at a public URL prefix. The three values below are the ones the
 # web client's dev server and Cloudflare Pages build both serve, so they are not left to the
-# caller: the destination is the client's static tree, and the prefix is the path that tree is
-# mounted at. $EAFORA_LOCAL_REPOSITORY_ROOT (the CLI's own default root) is a scratch directory
-# no client serves.
+# caller: the destination is the client's static tree, the prefix is the path that tree is
+# mounted at, and the embedded destination is where first paint reads from.
+# $EAFORA_LOCAL_REPOSITORY_ROOT (the CLI's own default root) is a scratch directory no client serves.
 #
 # The tree keeps every version published into it, because the client ranks the versions it finds
 # and prefers the newest it can open.
@@ -21,6 +22,7 @@ set -euo pipefail
 
 DESTINATION_ROOT="./web/static/repository/"
 PUBLIC_BASE_URL="/repository"
+EMBEDDED_DESTINATION="./web/static/embedded_artifacts"
 
 BUILD_FIRST=false
 
@@ -63,6 +65,11 @@ else
     PUBLISH_ARGS+=("$ARTIFACT_DIR")
 fi
 
-cargo run -p ingestion -- "${PUBLISH_ARGS[@]}"
+# Release, because the brotli encode at quality 11 is an order of magnitude slower in a debug build.
+cargo run --release -p ingestion -- "${PUBLISH_ARGS[@]}"
 
 echo "published into $DESTINATION_ROOT, served at $PUBLIC_BASE_URL" >&2
+
+# The live tree and the first-paint bundle come from the same build, and refreshing one alone leaves the
+# client serving two different artifact sets.
+./scripts/build/sync-embedded-bundle.sh "$EMBEDDED_DESTINATION"
