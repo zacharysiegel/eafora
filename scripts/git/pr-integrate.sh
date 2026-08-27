@@ -13,8 +13,8 @@
 #                                                                         checked-out branch)
 #   ./scripts/git/pr-integrate.sh <branch> --from <former-parent-branch>     (for a stacked branch
 #                                                                         whose parent already merged)
-#   ./scripts/git/pr-integrate.sh <branch> --skip-budget                     (skip the build and the
-#                                                                         perf-budget report)
+#   ./scripts/git/pr-integrate.sh <branch> --budget                          (build the site and report
+#                                                                         the perf budget)
 #
 # Behavior:
 #   1. Validate: working tree is clean; <branch> exists locally and on origin.
@@ -22,9 +22,9 @@
 #   3. Update branch atop latest master:
 #        non-stacked: `git checkout <branch> && git rebase master`
 #        stacked:     `git checkout <branch> && git rebase --onto master <former-parent> <branch>`
-#   4. Build the site and report the perf budget when the branch touched anything the deployed site is
-#      built from, standing in for the hosted CI check that does not exist yet. The report itself never
-#      fails the integration, but a build failure does, before anything is pushed.
+#   4. With --budget, build the site and report the perf budget when the branch touched anything the
+#      deployed site is built from, standing in for the hosted CI check that does not exist yet. The report
+#      itself never fails the integration, but a build failure does, before anything is pushed.
 #   5. Force-push branch (`git push --force-with-lease`).
 #   6. Fast-forward master to branch tip via `git rebase <branch>` (consistent
 #      with the rebase-family preference; equivalent to `merge --ff-only`).
@@ -40,7 +40,7 @@ readonly BUDGET_RELEVANT_PATH_PATTERN='^(web/|shared/|Cargo\.lock$|Cargo\.toml$)
 BRANCH=""
 FROM_BRANCH=""
 USE_CURRENT_BRANCH=false
-RUN_BUDGET_REPORT=true
+RUN_BUDGET_REPORT=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -57,8 +57,8 @@ while [[ $# -gt 0 ]]; do
             USE_CURRENT_BRANCH=true
             shift
             ;;
-        --skip-budget)
-            RUN_BUDGET_REPORT=false
+        --budget)
+            RUN_BUDGET_REPORT=true
             shift
             ;;
         -h|--help)
@@ -94,7 +94,7 @@ if [[ "$USE_CURRENT_BRANCH" == true ]]; then
 fi
 
 if [[ -z "$BRANCH" ]]; then
-    echo "usage: $0 (<branch> | --current) [--from <former-parent-branch>] [--skip-budget]" >&2
+    echo "usage: $0 (<branch> | --current) [--from <former-parent-branch>] [--budget]" >&2
     exit 64
 fi
 
