@@ -402,6 +402,21 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
         "Cyprus must cover Northern Cyprus (Kyrenia) after the merge",
     );
 
+    // Natural Earth ships Australia's two Indian Ocean dependencies as their own features, named with a
+    // SOVEREIGNT of Australia. Each must render as part of Australia rather than be dropped.
+    assert!(
+        sovereign_contains("aus", GeoPoint { lat: -10.4930, lon: 105.7136 }),
+        "Australia must cover Christmas Island",
+    );
+    assert!(
+        sovereign_contains("aus", GeoPoint { lat: -12.1883, lon: 96.9167 }),
+        "Australia must cover the Cocos (Keeling) Islands",
+    );
+    assert!(
+        sovereign_contains("aus", GeoPoint { lat: -12.4299, lon: 123.5838 }),
+        "Australia must cover Ashmore and Cartier Islands",
+    );
+
     // The fold dissolves the shared border rather than concatenating: Somalia+Somaliland (one contiguous
     // landmass) and Cyprus+Northern Cyprus (one island) each collapse from two source polygons to one.
     let polygon_count = |region_code: &str| -> usize {

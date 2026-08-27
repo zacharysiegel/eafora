@@ -14,8 +14,8 @@ const NATURAL_EARTH_URL: &str = concatcp!(
 );
 
 /// Natural Earth's `ADM0_A3` diverges from ISO 3166-1 alpha-3 for a few disputed or newly independent
-/// states, and Natural Earth ships two unrecognized territories as their own features that we render as
-/// part of their internationally recognized sovereign. Each pair maps the Natural Earth code to the
+/// states, and Natural Earth ships unrecognized territories and dependencies as their own features that we
+/// render as part of the sovereign it names in `SOVEREIGNT`. Each pair maps the Natural Earth code to the
 /// canonical ISO3 the seed keys on; a code not listed here already equals its ISO3.
 const ADM0_A3_TO_CANONICAL_ISO3: &[(&str, &str)] = &[
     ("SDS", "SSD"), // South Sudan
@@ -25,6 +25,8 @@ const ADM0_A3_TO_CANONICAL_ISO3: &[(&str, &str)] = &[
     ("KOS", "XKX"), // Kosovo has no ISO 3166-1 code; XKX is the code the World Bank uses, matched so its data joins
     ("SOL", "SOM"), // Somaliland, folded into Somalia
     ("CYN", "CYP"), // Northern Cyprus, folded into Cyprus
+    ("ATC", "AUS"), // Ashmore and Cartier Islands, an Australian dependency
+    ("IOA", "AUS"), // Christmas Island and the Cocos (Keeling) Islands, an Australian dependency
 ];
 
 #[derive(Debug, Clone)]
