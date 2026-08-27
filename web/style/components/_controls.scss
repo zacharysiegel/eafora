@@ -11,7 +11,7 @@
     Declared here so the capsule rules, the bound labels, and the year's horizontal offset all derive from one
     value; the offset is a CSS calc, so nothing outside this file needs to know the geometry. */
     --scrubber-grab-width: 15px;
-    --scrubber-value-row-height: 1.35rem;
+    --scrubber-value-row-height: 1.1rem;
 
     /* How far the capsule grows past the period at each end while the pointer is on it. */
     --scrubber-capsule-swell: 5px;
@@ -138,7 +138,7 @@
 .controls-period {
     box-sizing: content-box;
     position: absolute;
-    top: calc(var(--scrubber-value-row-height) + 6px);
+    top: calc(var(--scrubber-value-row-height) + 7px);
     /* Centred on the period's position, so it overhangs the rail's end by half its width at either extreme
     rather than being held inside. Positioned by one plain percentage: Chrome resolves a percentage with a
     length subtracted from it inside a custom property against a basis that disagrees with the rendered box
@@ -146,7 +146,7 @@
     left: calc(var(--thumb-proportion) * 100%);
     transform: translateX(-50%);
     width: var(--scrubber-capsule-length);
-    height: 10px;
+    height: 8px;
     border: var(--border-ink);
     background: var(--color-ink);
     border-radius: 999px;
