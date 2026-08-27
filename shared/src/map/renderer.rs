@@ -411,9 +411,6 @@ impl Renderer {
         encoder.finish()
     }
 
-    /// Rewrites the fill-color buffer in place only when its inputs (active statistic, period, or the
-    /// bundle) have changed since the last frame. A pan, zoom, or hover leaves them untouched, so the
-    /// buffer keeps whatever was last uploaded.
     /// The buffers and their spans come from one bundle's geometry layer, and a hot-swap can bring a
     /// different one. Both the choropleth and the hover emphasis key on the region codes the spans carry, so
     /// keeping stale buffers renders a map that disagrees with what the hit-test reports.
@@ -436,6 +433,9 @@ impl Renderer {
         Ok(())
     }
 
+    /// Rewrites the fill-color buffer in place only when its inputs (active statistic, period, or the
+    /// bundle) have changed since the last frame. A pan, zoom, or hover leaves them untouched, so the
+    /// buffer keeps whatever was last uploaded.
     fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) {
         let key: FillColorKey = FillColorKey {
             statistic_kind: frame_state.active_statistic,
