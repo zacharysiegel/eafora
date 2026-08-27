@@ -3,14 +3,8 @@
 //! and the feature dropped: Natural Earth ships entries we intentionally omit, like Antarctica,
 //! uninhabited islets, and the Siachen Glacier.
 //!
-//! Output is a plain `.fgb`, which `artifact::compression` then replaces with a brotli sibling before the file
-//! is content-addressed, so the published artifact and the file on disk are both the compressed form. This
-//! module's earlier plan was to compress at publish time through `Content-Encoding: br` and keep a plain
-//! `.fgb` locally for QGIS and `fgb info`; a probe deploy refuted the first half, since Cloudflare Workers
-//! Assets compresses only content types on a fixed list holding no generic binary type and returned a 1.5 MB
-//! `.fgb` whole. Local inspection now goes through `brotli -d`. FlatGeobuf's HTTP-range streaming mode is
-//! unavailable either way, which costs nothing while the whole geometry is fetched at startup, and the
-//! measured saving is 3.4x on this geometry.
+//! Output is a plain `.fgb` that `artifact::compression` replaces with a brotli sibling before the file is
+//! content-addressed, so inspecting one locally goes through `brotli -d`.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -33,6 +27,7 @@ use shared::filesystem::FileReference;
 use crate::error::AppError;
 use crate::geometry::natural_earth::{self, ShapefileBytes};
 use crate::http;
+use crate::artifact::compression::PlainArtifact;
 
 const ADM0_A3_FIELD: &str = "ADM0_A3";
 pub const PLACEHOLDER_GEOMETRY_BYTES: &[u8] = b"FGB-PLACEHOLDER";
@@ -56,7 +51,7 @@ type ShapefileReader<'a> = Reader<Cursor<&'a [u8]>, Cursor<&'a [u8]>>;
 pub async fn write_geometry<'e>(
     executor: impl PgExecutor<'e>,
     artifact_dir: &Path,
-) -> Result<FileReference, AppError> {
+) -> Result<PlainArtifact, AppError> {
     let shapefile_bytes: ShapefileBytes = natural_earth::download_pinned_release(&http::HTTP_CLIENT).await?;
     write_flatgeobuf_from_shapefile(executor, &shapefile_bytes, artifact_dir).await
 }
@@ -65,7 +60,7 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     executor: impl PgExecutor<'e>,
     shapefile_bytes: &ShapefileBytes,
     artifact_dir: &Path,
-) -> Result<FileReference, AppError> {
+) -> Result<PlainArtifact, AppError> {
     let iso3_to_metadata: BTreeMap<String, CountryMetadataProjection> =
         artifact_db::read_country_iso3_to_metadata(executor).await?;
 
@@ -126,21 +121,23 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     let file: File = File::create(&path)?;
     let mut file_writer: BufWriter<File> = BufWriter::new(file);
     writer.write(&mut file_writer)?;
-    // The buffered tail reaches disk on drop, which is after the stat below.
+    // Without this, the stat below reads a file still missing whatever the buffer holds.
     file_writer.flush()?;
 
     let byte_count: u64 = fs::metadata(&path)?.len();
 
-    Ok(FileReference { path, byte_count })
+    Ok(PlainArtifact { file: FileReference { path, byte_count } })
 }
 
-pub fn write_placeholder_geometry(artifact_dir: &Path) -> Result<FileReference, AppError> {
+pub fn write_placeholder_geometry(artifact_dir: &Path) -> Result<PlainArtifact, AppError> {
     let path: PathBuf = build_tmp_geometry_path(artifact_dir)?;
     fs::write(&path, PLACEHOLDER_GEOMETRY_BYTES)?;
 
-    Ok(FileReference {
-        path,
-        byte_count: PLACEHOLDER_GEOMETRY_BYTES.len() as u64,
+    Ok(PlainArtifact {
+        file: FileReference {
+            path,
+            byte_count: PLACEHOLDER_GEOMETRY_BYTES.len() as u64,
+        },
     })
 }
 

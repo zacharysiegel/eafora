@@ -12,9 +12,8 @@ use crate::filesystem;
 use crate::license::DistributionContext;
 use crate::sqlite::shard_db::{self, ShardValues};
 
-/// Content-Type the producer sets when uploading each artifact-bundle file kind. Every artifact but the
-/// manifest is a brotli stream, so one type covers them: the bytes served are the compressed ones, and no
-/// `Content-Encoding` is set, since the client decodes them itself against a digest taken over that form.
+/// Content-Type the producer sets when uploading each artifact-bundle file kind. No `Content-Encoding`
+/// accompanies them: the client decodes the brotli itself, against a digest taken over the compressed form.
 pub const CONTENT_TYPE_MANIFEST: &str = "application/json";
 pub const CONTENT_TYPE_ARTIFACT: &str = "application/octet-stream";
 
@@ -103,7 +102,7 @@ impl Bundle {
 }
 
 /// A digest match followed by a decode failure means the producer published the wrong form, so the message
-/// names the artifact rather than only the codec.
+/// names the artifact.
 fn decompress_artifact(compressed_bytes: &[u8], relative_path: &str) -> Result<Vec<u8>, AppError> {
     compression::decompress(compressed_bytes)
         .map_err(|error| AppError::from(format!("decoding {relative_path} failed; [error={error}]")))
@@ -171,8 +170,7 @@ mod tests {
     }
 
     /// Seed a mock cache with a valid manifest + geometry + Base and NonCommercial Tfr shards.
-    /// Seeds what a published version holds, which is the compressed form, so every case below exercises the
-    /// decode the real cache demands.
+    /// Seeds the compressed form a published version holds, so every case below exercises the decode.
     async fn seeded_mock() -> MockArtifactCache {
         let geometry_bytes: Vec<u8> = compression::compress(&one_feature_fgb_bytes()).unwrap();
         let base_shard: Vec<u8> = compression::compress(&sample_shard_bytes()).unwrap();
@@ -191,7 +189,6 @@ mod tests {
         cache
     }
 
-    /// The digest is checked before the decoder runs, so bytes nobody vouched for never reach it.
     #[tokio::test]
     async fn bundle_open_reports_a_digest_mismatch_before_it_decodes() {
         let geometry_bytes: Vec<u8> = compression::compress(&one_feature_fgb_bytes()).unwrap();

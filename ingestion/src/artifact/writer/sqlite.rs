@@ -20,15 +20,16 @@ use shared::sqlite::schema;
 
 use crate::artifact::artifact_model::{PartitionedValue, StatisticShard};
 use crate::error::AppError;
+use crate::artifact::compression::PlainArtifact;
 
 pub fn write_sqlite_shards(
     values: &[PartitionedValue],
     data_dir: &Path,
-) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
+) -> Result<Vec<StatisticShard<PlainArtifact>>, AppError> {
     fs::create_dir_all(data_dir)?;
 
     let groups: BTreeMap<StatisticShardKey, Vec<&PartitionedValue>> = group_values(values);
-    let shards: Vec<StatisticShard<FileReference>> = shard_values(data_dir, groups)?;
+    let shards: Vec<StatisticShard<PlainArtifact>> = shard_values(data_dir, groups)?;
     Ok(shards)
 }
 
@@ -40,13 +41,13 @@ fn group_values(values: &[PartitionedValue]) -> BTreeMap<StatisticShardKey, Vec<
     grouped
 }
 
-fn shard_values(data_dir: &Path, grouped: BTreeMap<StatisticShardKey, Vec<&PartitionedValue>>) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
-    let mut shards: Vec<StatisticShard<FileReference>> = Vec::with_capacity(grouped.len());
+fn shard_values(data_dir: &Path, grouped: BTreeMap<StatisticShardKey, Vec<&PartitionedValue>>) -> Result<Vec<StatisticShard<PlainArtifact>>, AppError> {
+    let mut shards: Vec<StatisticShard<PlainArtifact>> = Vec::with_capacity(grouped.len());
     for (shard_key, values) in grouped {
         let file: FileReference = write_one_shard(data_dir, shard_key.statistic_kind, shard_key.license_shard_class, &values)?;
         shards.push(StatisticShard {
             key: shard_key,
-            file,
+            file: PlainArtifact { file },
         });
     }
     Ok(shards)
@@ -212,11 +213,11 @@ mod tests {
             make_sourced(StatisticKind::Tfr, LicenseShardClass::Base, "deu", 2016, 1.597, DataSourceKind::HumanFertilityDatabase, 50),
         ];
 
-        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<PlainArtifact>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 1);
 
-        let connection: Connection = Connection::open(&shards[0].file.path).unwrap();
+        let connection: Connection = Connection::open(&shards[0].file.file.path).unwrap();
         let value_count: i64 = connection
             .query_row(&format!("select count(*) from {}", schema::TABLE_STATISTIC_VALUE), [], |row| row.get(0))
             .unwrap();
@@ -246,13 +247,13 @@ mod tests {
             make_merged(StatisticKind::Ccf, LicenseShardClass::Base, "usa", 2022, 1.85),
         ];
 
-        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<PlainArtifact>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 3);
         for shard in &shards {
-            assert!(shard.file.path.exists());
-            assert!(shard.file.byte_count > 0);
-            let filename: &str = shard.file.path.file_name().unwrap().to_str().unwrap();
+            assert!(shard.file.file.path.exists());
+            assert!(shard.file.file.byte_count > 0);
+            let filename: &str = shard.file.file.path.file_name().unwrap().to_str().unwrap();
             assert!(filename.contains(".tmp-"));
             assert!(filename.ends_with(".sqlite"));
         }
@@ -266,10 +267,10 @@ mod tests {
             make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "jpn", 2022, 1.30),
         ];
 
-        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<PlainArtifact>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
         assert_eq!(shards.len(), 1);
-        let connection: Connection = Connection::open(&shards[0].file.path).unwrap();
+        let connection: Connection = Connection::open(&shards[0].file.file.path).unwrap();
         let row_count: i64 = connection
             .query_row("select count(*) from statistic_value", [], |row| row.get(0))
             .unwrap();
@@ -308,9 +309,9 @@ mod tests {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let merged: Vec<PartitionedValue> = vec![make_merged(StatisticKind::Tfr, LicenseShardClass::Base, "usa", 2022, 1.66)];
 
-        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<PlainArtifact>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
-        let connection: Connection = Connection::open(&shards[0].file.path).unwrap();
+        let connection: Connection = Connection::open(&shards[0].file.file.path).unwrap();
         let index_count: i64 = connection
             .query_row(
                 "select count(*) from sqlite_master where type='index' and name='statistic_value_by_region'",
@@ -332,8 +333,8 @@ mod tests {
             1.66,
         )];
 
-        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
-        let connection: Connection = Connection::open(&shards[0].file.path).unwrap();
+        let shards: Vec<StatisticShard<PlainArtifact>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let connection: Connection = Connection::open(&shards[0].file.file.path).unwrap();
 
         let application_id: i32 = connection
             .pragma_query_value(None, "application_id", |row| row.get(0))
@@ -367,9 +368,9 @@ mod tests {
             1.66,
         )];
 
-        let shards: Vec<StatisticShard<FileReference>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
+        let shards: Vec<StatisticShard<PlainArtifact>> = write_sqlite_shards(&merged, temp_dir.path()).unwrap();
 
-        let filename: &str = shards[0].file.path.file_name().unwrap().to_str().unwrap();
+        let filename: &str = shards[0].file.file.path.file_name().unwrap().to_str().unwrap();
         assert!(filename.starts_with("tfr-share_alike.tmp-"));
     }
 }

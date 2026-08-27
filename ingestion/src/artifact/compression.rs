@@ -1,5 +1,5 @@
-//! The published file is the compressed file, so this step runs between the writers and the content-addressed
-//! rename: the digest and the byte count that reach the manifest then describe the bytes a client fetches.
+//! Runs between the writers and the content-addressed rename, so the digest and the byte count in the manifest
+//! describe the bytes a client fetches.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,25 +10,35 @@ use shared::filesystem::FileReference;
 use crate::artifact::artifact_model::StatisticShard;
 use crate::error::AppError;
 
+/// An artifact as a writer leaves it. Compressing consumes it, because the file it names is then gone.
+pub struct PlainArtifact {
+    pub file: FileReference,
+}
+
+/// An artifact in the form it is published and hashed in, which is what the manifest's digest and size
+/// describe. Only compression produces one, so nothing can hash or upload a file that skipped the step.
+pub struct CompressedArtifact {
+    pub file: FileReference,
+}
+
 pub fn compress_shards(
-    shards: Vec<StatisticShard<FileReference>>,
-) -> Result<Vec<StatisticShard<FileReference>>, AppError> {
+    shards: Vec<StatisticShard<PlainArtifact>>,
+) -> Result<Vec<StatisticShard<CompressedArtifact>>, AppError> {
     shards
         .into_iter()
         .map(|shard| {
-            let compressed_file: FileReference = compress_artifact(&shard.file.path)?;
+            let compressed: CompressedArtifact = compress_artifact(shard.file)?;
 
             Ok(StatisticShard {
                 key: shard.key,
-                file: compressed_file,
+                file: compressed,
             })
         })
         .collect()
 }
 
-/// Replaces the plain temporary artifact with a `.br` sibling and reports the bytes written, so nothing
-/// downstream can read a size or a digest from a file that is no longer the one published.
-pub fn compress_artifact(plain_path: &Path) -> Result<FileReference, AppError> {
+pub fn compress_artifact(plain: PlainArtifact) -> Result<CompressedArtifact, AppError> {
+    let plain_path: &Path = &plain.file.path;
     let plain_bytes: Vec<u8> = fs::read(plain_path)
         .map_err(|error| AppError::from(format!("reading {plain_path:?} to compress failed; [error={error}]")))?;
 
@@ -47,9 +57,11 @@ pub fn compress_artifact(plain_path: &Path) -> Result<FileReference, AppError> {
         compressed_bytes.len(),
     );
 
-    Ok(FileReference {
-        path: compressed_path,
-        byte_count: compressed_bytes.len() as u64,
+    Ok(CompressedArtifact {
+        file: FileReference {
+            path: compressed_path,
+            byte_count: compressed_bytes.len() as u64,
+        },
     })
 }
 
@@ -65,6 +77,12 @@ fn compressed_sibling_of(plain_path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    fn plain_artifact(path: &Path) -> PlainArtifact {
+        PlainArtifact {
+            file: FileReference { path: path.to_path_buf(), byte_count: 0 },
+        }
+    }
+
     fn write_plain(temp_dir: &Path, filename: &str, contents: &[u8]) -> PathBuf {
         let path: PathBuf = temp_dir.join(filename);
         fs::write(&path, contents).unwrap();
@@ -77,10 +95,10 @@ mod tests {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let plain_path: PathBuf = write_plain(temp_dir.path(), "tfr-base.tmp-0198.sqlite", &b"redundant ".repeat(500));
 
-        let compressed: FileReference = compress_artifact(&plain_path).unwrap();
+        let compressed: CompressedArtifact = compress_artifact(plain_artifact(&plain_path)).unwrap();
 
-        assert_eq!(compressed.byte_count, fs::metadata(&compressed.path).unwrap().len());
-        assert_eq!(compressed.path.file_name().unwrap(), "tfr-base.tmp-0198.sqlite.br");
+        assert_eq!(compressed.file.byte_count, fs::metadata(&compressed.file.path).unwrap().len());
+        assert_eq!(compressed.file.path.file_name().unwrap(), "tfr-base.tmp-0198.sqlite.br");
         assert!(!plain_path.exists());
     }
 
@@ -90,17 +108,17 @@ mod tests {
         let plain_bytes: Vec<u8> = b"redundant ".repeat(500);
         let plain_path: PathBuf = write_plain(temp_dir.path(), "world-50m.tmp-0198.fgb", &plain_bytes);
 
-        let compressed: FileReference = compress_artifact(&plain_path).unwrap();
+        let compressed: CompressedArtifact = compress_artifact(plain_artifact(&plain_path)).unwrap();
 
-        let restored: Vec<u8> = compression::decompress(&fs::read(&compressed.path).unwrap()).unwrap();
+        let restored: Vec<u8> = compression::decompress(&fs::read(&compressed.file.path).unwrap()).unwrap();
         assert_eq!(restored, plain_bytes);
-        assert!(compressed.byte_count < plain_bytes.len() as u64);
+        assert!(compressed.file.byte_count < plain_bytes.len() as u64);
     }
 
     #[test]
     fn compress_artifact_errors_when_the_plain_file_is_missing() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
 
-        assert!(compress_artifact(&temp_dir.path().join("absent.tmp-0198.fgb")).is_err());
+        assert!(compress_artifact(plain_artifact(&temp_dir.path().join("absent.tmp-0198.fgb"))).is_err());
     }
 }

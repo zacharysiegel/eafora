@@ -7,18 +7,19 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::artifact::compression::CompressedArtifact;
 use crate::artifact::artifact_model::StatisticShard;
 use crate::error::AppError;
 use shared::filesystem::{self, FileReference, Hashed};
 
 pub fn hash_sqlite_shards(
-    shards: Vec<StatisticShard<FileReference>>,
+    shards: Vec<StatisticShard<CompressedArtifact>>,
 ) -> Result<Vec<StatisticShard<Hashed<FileReference>>>, AppError> {
     shards
         .into_iter()
         .map(|shard| {
-            let sha256_hex: String = filesystem::sha256_hex_of_file(&shard.file.path)?;
-            let hashed_file: Hashed<FileReference> = rename_with_digest(shard.file, &sha256_hex)?;
+            let sha256_hex: String = filesystem::sha256_hex_of_file(&shard.file.file.path)?;
+            let hashed_file: Hashed<FileReference> = rename_with_digest(shard.file.file, &sha256_hex)?;
             Ok(StatisticShard {
                 key: shard.key,
                 file: hashed_file,
@@ -27,9 +28,9 @@ pub fn hash_sqlite_shards(
         .collect()
 }
 
-pub fn hash_geometry(geometry: FileReference) -> Result<Hashed<FileReference>, AppError> {
-    let sha256_hex: String = filesystem::sha256_hex_of_file(&geometry.path)?;
-    rename_with_digest(geometry, &sha256_hex)
+pub fn hash_geometry(geometry: CompressedArtifact) -> Result<Hashed<FileReference>, AppError> {
+    let sha256_hex: String = filesystem::sha256_hex_of_file(&geometry.file.path)?;
+    rename_with_digest(geometry.file, &sha256_hex)
 }
 
 fn rename_with_digest(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashed<FileReference>, AppError> {
@@ -49,8 +50,7 @@ fn rename_with_digest(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashe
     ))
 }
 
-/// Splits on the `.tmp-` marker rather than on the last dot, so a compressed artifact keeps every extension it
-/// arrived with.
+/// Splits on the `.tmp-` marker, so an artifact carrying two extensions keeps both.
 fn build_hashed_path(tmp_path: &Path, sha256_hex: &str) -> Result<PathBuf, AppError> {
     let parent: &Path = tmp_path.parent().ok_or_else(|| {
         AppError::from(format!("no parent for {:?}", tmp_path))
@@ -90,30 +90,28 @@ mod tests {
         }
     }
 
-    fn make_shard_and_geometry(temp_dir: &Path) -> (Vec<StatisticShard<FileReference>>, FileReference) {
+    fn make_shard_and_geometry(temp_dir: &Path) -> (Vec<StatisticShard<CompressedArtifact>>, CompressedArtifact) {
         let tmp_uuid: Uuid = Uuid::now_v7();
         let shard_file: FileReference = write_tmp_file(
             temp_dir,
             &format!("tfr-base.tmp-{}.sqlite", tmp_uuid),
             b"SQLITE FAKE",
         );
-        let shard: StatisticShard<FileReference> = StatisticShard {
+        let shard: StatisticShard<CompressedArtifact> = StatisticShard {
             key: StatisticShardKey {
                 statistic_kind: StatisticKind::Tfr,
                 license_shard_class: LicenseShardClass::Base,
             },
-            file: shard_file,
+            file: CompressedArtifact { file: shard_file },
         };
         let geometry: FileReference = write_tmp_file(
             temp_dir,
             &format!("world-50m.tmp-{}.fgb", tmp_uuid),
             b"FGB FAKE",
         );
-        (vec![shard], geometry)
+        (vec![shard], CompressedArtifact { file: geometry })
     }
 
-    /// A compressed artifact carries two extensions, and the whole chain has to survive the rename or the
-    /// published file stops saying what format it holds.
     #[test]
     fn build_hashed_path_keeps_every_extension() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
@@ -156,7 +154,7 @@ mod tests {
     fn hash_sqlite_shards_renames_tmp_files_to_sha256_filenames() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (shards, _geometry) = make_shard_and_geometry(temp_dir.path());
-        let original_shard_path: PathBuf = shards[0].file.path.clone();
+        let original_shard_path: PathBuf = shards[0].file.file.path.clone();
 
         let shards: Vec<StatisticShard<Hashed<FileReference>>> = hash_sqlite_shards(shards).unwrap();
 
@@ -179,7 +177,7 @@ mod tests {
     fn hash_geometry_renames_tmp_file_to_sha256_filename() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
         let (_shards, geometry) = make_shard_and_geometry(temp_dir.path());
-        let original_geometry_path: PathBuf = geometry.path.clone();
+        let original_geometry_path: PathBuf = geometry.file.path.clone();
 
         let geometry: Hashed<FileReference> = hash_geometry(geometry).unwrap();
 
@@ -216,14 +214,16 @@ mod tests {
     #[test]
     fn hash_sqlite_shards_errors_when_file_missing() {
         let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-        let shards: Vec<StatisticShard<FileReference>> = vec![StatisticShard {
+        let shards: Vec<StatisticShard<CompressedArtifact>> = vec![StatisticShard {
             key: StatisticShardKey {
                 statistic_kind: StatisticKind::Tfr,
                 license_shard_class: LicenseShardClass::Base,
             },
-            file: FileReference {
-                path: temp_dir.path().join("tfr-base.tmp-deadbeef.sqlite"),
-                byte_count: 0,
+            file: CompressedArtifact {
+                file: FileReference {
+                    path: temp_dir.path().join("tfr-base.tmp-deadbeef.sqlite"),
+                    byte_count: 0,
+                },
             },
         }];
 

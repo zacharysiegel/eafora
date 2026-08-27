@@ -16,12 +16,12 @@ use rusqlite::Connection;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
+use ingestion::artifact::compression::PlainArtifact;
 use ingestion::artifact::{self, BuildOptions, BuildReport, CoupledBuildReport};
 use shared::canonical::canonical_model::DataSourceKind;
 use ingestion::artifact::writer::flatgeobuf::{write_flatgeobuf_from_shapefile, write_geometry, PLACEHOLDER_GEOMETRY_BYTES};
 use shared::artifact::geometry;
 use shared::artifact::manifest;
-use shared::filesystem::FileReference;
 use shared::map::projection::GeoPoint;
 use ingestion::geometry::natural_earth::{self, ShapefileBytes};
 
@@ -30,8 +30,8 @@ use helpers::test_db::test_pool;
 
 const BUNDLED_NATURAL_EARTH_ZIP: &str = "samples/natural_earth/ne_50m_admin_0_countries.zip";
 
-/// A published shard is compressed, so opening one means decoding it to a scratch file the sqlite driver can
-/// open. The returned tempdir must outlive the connection.
+/// Decodes a published shard to a scratch file the sqlite driver can open. The returned tempdir must outlive
+/// the connection.
 fn open_published_shard(shard_path: &std::path::Path) -> (Connection, tempfile::TempDir) {
     let compressed_bytes: Vec<u8> = fs::read(shard_path).unwrap();
     let plain_bytes: Vec<u8> = shared::artifact::compression::decompress(&compressed_bytes).unwrap();
@@ -93,8 +93,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert!(build.artifacts.manifest.byte_count > 0);
 
     assert!(build.artifacts.geometry.path.exists());
-    /* The count describes the published file, so it is checked against that file and the original bytes are
-       checked through the decoder. A 15-byte placeholder compresses to more than 15 bytes. */
+    // A 15-byte placeholder compresses to more than 15 bytes, so the count is checked against the file.
     assert_eq!(
         build.artifacts.geometry.byte_count,
         fs::metadata(&build.artifacts.geometry.path).unwrap().len(),
@@ -306,12 +305,12 @@ async fn write_geometry_flatgeobuf_against_live_natural_earth_release() {
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let geometry: FileReference =
+    let geometry: PlainArtifact =
         write_geometry(&mut *transaction, temp_dir.path())
             .await
             .expect("geometry shard emitted");
 
-    assert_geometry_fgb_well_formed(&geometry.path);
+    assert_geometry_fgb_well_formed(&geometry.file.path);
 
     transaction.rollback().await.unwrap();
 }
@@ -329,12 +328,12 @@ async fn write_flatgeobuf_from_bundled_natural_earth_sample() {
     let shapefile_bytes: ShapefileBytes = natural_earth::extract_shapefile_from_zip(&zip_bytes).unwrap();
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let geometry: FileReference =
+    let geometry: PlainArtifact =
         write_flatgeobuf_from_shapefile(&mut *transaction, &shapefile_bytes, temp_dir.path())
             .await
             .expect("offline geometry shard emitted");
 
-    assert_geometry_fgb_well_formed(&geometry.path);
+    assert_geometry_fgb_well_formed(&geometry.file.path);
 
     transaction.rollback().await.unwrap();
 }
@@ -352,13 +351,13 @@ async fn write_flatgeobuf_covers_aliased_and_merged_countries() {
     let shapefile_bytes: ShapefileBytes = natural_earth::extract_shapefile_from_zip(&zip_bytes).unwrap();
 
     let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
-    let geometry: FileReference =
+    let geometry: PlainArtifact =
         write_flatgeobuf_from_shapefile(&mut *transaction, &shapefile_bytes, temp_dir.path())
             .await
             .expect("offline geometry shard emitted");
 
     let layer: geometry::GeometryLayer =
-        geometry::parse_geometry_layer(fs::read(&geometry.path).unwrap()).unwrap();
+        geometry::parse_geometry_layer(fs::read(&geometry.file.path).unwrap()).unwrap();
     let country_features: Vec<geometry::CountryFeature> = layer.iter_features().unwrap();
     let region_codes: Vec<&str> = country_features.iter()
         .map(|country_feature| country_feature.region_code.as_str())

@@ -10,6 +10,7 @@ use crate::artifact::artifact_model::{
     Artifacts, BuildReport, BundleProvenance, CandidateValue, CoupledBuildReport, PartitionedValue, SourceDetail,
 };
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
+use crate::artifact::compression::{CompressedArtifact, PlainArtifact};
 use crate::artifact::{artifact_db, compression, hashing, StatisticShard};
 use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, StatisticKind};
 use crate::error::AppError;
@@ -150,8 +151,8 @@ async fn create_statistic_shards(
             data_sources.insert(value.data_source_kind);
         }
 
-        let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&partitioned_values, &variant_dir.join(manifest::SUBDIR_DATA))?;
-        let compressed_shards: Vec<StatisticShard<FileReference>> = compression::compress_shards(tmp_shards)?;
+        let tmp_shards: Vec<StatisticShard<PlainArtifact>> = sqlite::write_sqlite_shards(&partitioned_values, &variant_dir.join(manifest::SUBDIR_DATA))?;
+        let compressed_shards: Vec<StatisticShard<CompressedArtifact>> = compression::compress_shards(tmp_shards)?;
         let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(compressed_shards)?;
         log::info!(
             "statistic {:?}: {} values across {} shards",
@@ -219,14 +220,14 @@ async fn create_geometry(
     variant_dir: &Path,
     options: BuildOptions,
 ) -> Result<Hashed<FileReference>, AppError> {
-    let geometry: FileReference = if options.test_offline {
+    let plain_geometry: PlainArtifact = if options.test_offline {
         flatgeobuf::write_placeholder_geometry(variant_dir)?
     } else {
         flatgeobuf::write_geometry(&mut *connection, variant_dir).await?
     };
-    log::info!("wrote geometry {:?}", geometry.path);
-    let geometry: FileReference = compression::compress_artifact(&geometry.path)?;
-    let geometry: Hashed<FileReference> = hashing::hash_geometry(geometry)?;
+    log::info!("wrote geometry {:?}", plain_geometry.file.path);
+    let compressed_geometry: CompressedArtifact = compression::compress_artifact(plain_geometry)?;
+    let geometry: Hashed<FileReference> = hashing::hash_geometry(compressed_geometry)?;
     Ok(geometry)
 }
 
