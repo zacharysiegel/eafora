@@ -146,7 +146,18 @@ We upload no precompressed files. Workers Assets does not negotiate them, and up
 
 The consequence for the perf budget is larger than the compression question itself. Cloudflare compresses a response only when its content type is on a fixed list, and that list holds no generic binary type: no `application/octet-stream`, no `application/vnd.sqlite3`, no catch-all. A 1.5 MB FlatGeobuf file, far above any size threshold, came back with all 1,576,240 bytes and no `Content-Encoding`. So the geometry and the statistic shards transfer whole however well they would have compressed, which is why the producer compresses them itself and `shared` decodes them: see `specs/009-artifact-compression/`. `scripts/build/measure-site-budget.sh` still counts them at full size, and that figure is now exact rather than an approximation, because the bytes on disk are the compressed bytes a client fetches.
 
-Compressed in transit those two files would total 631,850 bytes rather than 3,702,064, so approx. 3.07 MB per cold fetch is on the table. Claiming it means compressing the artifacts in the producer and decompressing them in `shared`, which would cover the R2-served live bundle and the native clients too. Tracked in `docs/backlog.md`.
+Measured against a real build once the producer began encoding, comparing each published file with the plain file it replaced:
+
+| Artifact          |    Before |   After | Ratio  |     Saved |
+| ----------------- | --------: | ------: | -----: | --------: |
+| Geometry          | 1,576,240 | 469,994 |  3.35x | 1,106,246 |
+| Total fertility   | 2,592,768 | 224,117 | 11.57x | 2,368,651 |
+| Completed cohort  |   204,800 |  17,442 | 11.74x |   187,358 |
+| Total             | 4,373,808 | 711,553 |  6.15x | 3,662,255 |
+
+So approx. 3.66 MB less per cold fetch, against the approx. 3.07 MB estimated before the work, which was low because it costed a smaller statistic shard than the one the store now produces. The decoder adds 60,138 bytes of brotli-compressed wasm, measured by building the client with and without it, so the net saving is approx. 3.60 MB and the ratio of saving to cost is about 61 to 1.
+
+The geometry's 3.35x matched its estimate. The shards came in at 11.6x rather than the 13.0x a single-source shard measured, because a shard now carries every source's candidate value for a cell and the extra distinct numbers leave less redundancy to exploit.
 
 ### Perf-budget warning
 
