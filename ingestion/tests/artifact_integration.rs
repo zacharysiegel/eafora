@@ -30,6 +30,21 @@ use helpers::test_db::test_pool;
 
 const BUNDLED_NATURAL_EARTH_ZIP: &str = "samples/natural_earth/ne_50m_admin_0_countries.zip";
 
+/// A published shard is compressed, so opening one means decoding it to a scratch file the sqlite driver can
+/// open. The returned tempdir must outlive the connection.
+fn open_published_shard(shard_path: &std::path::Path) -> (Connection, tempfile::TempDir) {
+    let compressed_bytes: Vec<u8> = fs::read(shard_path).unwrap();
+    let plain_bytes: Vec<u8> = shared::artifact::compression::decompress(&compressed_bytes).unwrap();
+
+    let scratch_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let plain_path: std::path::PathBuf = scratch_dir.path().join("shard.sqlite");
+    fs::write(&plain_path, plain_bytes).unwrap();
+
+    let connection: Connection = Connection::open(&plain_path).unwrap();
+
+    (connection, scratch_dir)
+}
+
 #[tokio::test]
 async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_manifest() {
     let pool: PgPool = test_pool().await;
@@ -67,7 +82,7 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert_eq!(tfr_base_shard.key.license_shard_class.as_str(), "base");
     let tfr_base_filename: &str = tfr_base_shard.file.path.file_name().unwrap().to_str().unwrap();
     assert!(tfr_base_filename.starts_with("tfr-base-"));
-    assert!(tfr_base_filename.ends_with(".sqlite"));
+    assert!(tfr_base_filename.ends_with(".sqlite.br"));
     assert_eq!(tfr_base_shard.file.sha256_hex().len(), 64);
     assert!(tfr_base_filename.contains(tfr_base_shard.file.sha256_hex()));
     assert!(tfr_base_shard.file.byte_count > 0);
@@ -78,15 +93,25 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
     assert!(build.artifacts.manifest.byte_count > 0);
 
     assert!(build.artifacts.geometry.path.exists());
-    assert_eq!(build.artifacts.geometry.byte_count, PLACEHOLDER_GEOMETRY_BYTES.len() as u64);
+    /* The count describes the published file, so it is checked against that file and the original bytes are
+       checked through the decoder. A 15-byte placeholder compresses to more than 15 bytes. */
+    assert_eq!(
+        build.artifacts.geometry.byte_count,
+        fs::metadata(&build.artifacts.geometry.path).unwrap().len(),
+    );
+    let published_geometry: Vec<u8> = fs::read(&build.artifacts.geometry.path).unwrap();
+    assert_eq!(
+        shared::artifact::compression::decompress(&published_geometry).unwrap(),
+        PLACEHOLDER_GEOMETRY_BYTES,
+    );
     let geometry_filename: &str = build.artifacts.geometry.path.file_name().unwrap().to_str().unwrap();
     assert!(geometry_filename.starts_with(&format!("{}-", geometry::GEOMETRY_FILENAME_STEM)));
-    assert!(geometry_filename.ends_with(".fgb"));
+    assert!(geometry_filename.ends_with(".fgb.br"));
     assert_eq!(build.artifacts.geometry.sha256_hex().len(), 64);
     assert!(geometry_filename.contains(build.artifacts.geometry.sha256_hex()));
 
     let tfr_shard_path: PathBuf = tfr_base_shard.file.path.clone();
-    let connection: Connection = Connection::open(&tfr_shard_path).unwrap();
+    let (connection, _scratch_dir) = open_published_shard(&tfr_shard_path);
 
     let (shard_kind, shard_class): (String, String) = connection
         .query_row(
@@ -145,7 +170,10 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
         manifest_geometry["relative_path"].as_str().unwrap(),
         format!("{}/{}", manifest::SUBDIR_GEOMETRY, geometry_filename),
     );
-    assert_eq!(manifest_geometry["size_bytes"].as_u64().unwrap(), build.artifacts.geometry.byte_count);
+    assert_eq!(
+        manifest_geometry["size_bytes"].as_u64().unwrap(),
+        fs::metadata(&build.artifacts.geometry.path).unwrap().len(),
+    );
     assert_eq!(manifest_geometry["sha256"].as_str().unwrap(), build.artifacts.geometry.sha256_hex());
 
     let wb_revision = &manifest_value["source_revisions"]["wb_wdi"];
@@ -238,7 +266,7 @@ async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year
     let build: BuildReport = build.downsampled;
 
     let tfr_base_shard = &build.artifacts.shards[0];
-    let connection: Connection = Connection::open(&tfr_base_shard.file.path).unwrap();
+    let (connection, _scratch_dir) = open_published_shard(&tfr_base_shard.file.path);
 
     let row_count: i64 = connection
         .query_row("select count(*) from statistic_value", [], |row| row.get(0))
@@ -500,7 +528,7 @@ async fn build_artifacts_includes_world_region_when_it_has_values() {
     let build: BuildReport = build.complete;
 
     let tfr_base_shard = &build.artifacts.shards[0];
-    let connection: Connection = Connection::open(&tfr_base_shard.file.path).unwrap();
+    let (connection, _scratch_dir) = open_published_shard(&tfr_base_shard.file.path);
 
     let world_value: f64 = connection
         .query_row(

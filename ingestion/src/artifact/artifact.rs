@@ -10,7 +10,7 @@ use crate::artifact::artifact_model::{
     Artifacts, BuildReport, BundleProvenance, CandidateValue, CoupledBuildReport, PartitionedValue, SourceDetail,
 };
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
-use crate::artifact::{artifact_db, hashing, StatisticShard};
+use crate::artifact::{artifact_db, compression, hashing, StatisticShard};
 use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, StatisticKind};
 use crate::error::AppError;
 use shared::artifact::manifest::{self, BundleVariant};
@@ -151,7 +151,8 @@ async fn create_statistic_shards(
         }
 
         let tmp_shards: Vec<StatisticShard<FileReference>> = sqlite::write_sqlite_shards(&partitioned_values, &variant_dir.join(manifest::SUBDIR_DATA))?;
-        let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(tmp_shards)?;
+        let compressed_shards: Vec<StatisticShard<FileReference>> = compression::compress_shards(tmp_shards)?;
+        let hashed_shards: Vec<StatisticShard<Hashed<FileReference>>> = hashing::hash_sqlite_shards(compressed_shards)?;
         log::info!(
             "statistic {:?}: {} values across {} shards",
             kind,
@@ -224,6 +225,7 @@ async fn create_geometry(
         flatgeobuf::write_geometry(&mut *connection, variant_dir).await?
     };
     log::info!("wrote geometry {:?}", geometry.path);
+    let geometry: FileReference = compression::compress_artifact(&geometry.path)?;
     let geometry: Hashed<FileReference> = hashing::hash_geometry(geometry)?;
     Ok(geometry)
 }

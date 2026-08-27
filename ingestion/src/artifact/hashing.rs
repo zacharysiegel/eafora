@@ -49,29 +49,26 @@ fn rename_with_digest(tmp_file: FileReference, sha256_hex: &str) -> Result<Hashe
     ))
 }
 
+/// Splits on the `.tmp-` marker rather than on the last dot, so a compressed artifact keeps every extension it
+/// arrived with.
 fn build_hashed_path(tmp_path: &Path, sha256_hex: &str) -> Result<PathBuf, AppError> {
     let parent: &Path = tmp_path.parent().ok_or_else(|| {
         AppError::from(format!("no parent for {:?}", tmp_path))
     })?;
     let filename: &str = filesystem::filename_of(tmp_path)?;
 
-    let (name_part, extension): (&str, &str) = filename
-        .rsplit_once('.')
-        .ok_or_else(|| AppError::from(format!("no extension in {:?}", filename)))?;
-
-    let stem_without_uuid: &str = trim_tmp_uuid_segment(name_part).ok_or_else(|| {
+    let (stem, uuid_and_extensions): (&str, &str) = filename.split_once(".tmp-").ok_or_else(|| {
         AppError::from(format!(
             "filename {:?} missing .tmp-<uuid> segment",
             filename,
         ))
     })?;
 
-    Ok(parent.join(format!("{}-{}.{}", stem_without_uuid, sha256_hex, extension)))
-}
+    let (_uuid, extensions): (&str, &str) = uuid_and_extensions
+        .split_once('.')
+        .ok_or_else(|| AppError::from(format!("no extension in {:?}", filename)))?;
 
-fn trim_tmp_uuid_segment(name_part: &str) -> Option<&str> {
-    let (stem, _uuid_part): (&str, &str) = name_part.rsplit_once(".tmp-")?;
-    Some(stem)
+    Ok(parent.join(format!("{}-{}.{}", stem, sha256_hex, extensions)))
 }
 
 #[cfg(test)]
@@ -113,6 +110,32 @@ mod tests {
             b"FGB FAKE",
         );
         (vec![shard], geometry)
+    }
+
+    /// A compressed artifact carries two extensions, and the whole chain has to survive the rename or the
+    /// published file stops saying what format it holds.
+    #[test]
+    fn build_hashed_path_keeps_every_extension() {
+        let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+        let digest: &str = "abc123";
+
+        let single: PathBuf =
+            build_hashed_path(&temp_dir.path().join("world-50m.tmp-0198.fgb"), digest).unwrap();
+        let double: PathBuf =
+            build_hashed_path(&temp_dir.path().join("world-50m.tmp-0198.fgb.br"), digest).unwrap();
+        let shard: PathBuf =
+            build_hashed_path(&temp_dir.path().join("tfr-base.tmp-0198.sqlite.br"), digest).unwrap();
+
+        assert_eq!(single.file_name().unwrap(), "world-50m-abc123.fgb");
+        assert_eq!(double.file_name().unwrap(), "world-50m-abc123.fgb.br");
+        assert_eq!(shard.file_name().unwrap(), "tfr-base-abc123.sqlite.br");
+    }
+
+    #[test]
+    fn build_hashed_path_rejects_a_filename_with_no_tmp_segment() {
+        let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+
+        assert!(build_hashed_path(&temp_dir.path().join("world-50m.fgb"), "abc123").is_err());
     }
 
     #[test]

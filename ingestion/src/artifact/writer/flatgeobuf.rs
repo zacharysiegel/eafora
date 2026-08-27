@@ -18,7 +18,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{BufWriter, Cursor};
+use std::io::{BufWriter, Cursor, Write};
 use std::path::{Path, PathBuf};
 
 use flatgeobuf::{ColumnType, FgbWriter, GeometryType};
@@ -130,6 +130,8 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
     let file: File = File::create(&path)?;
     let mut file_writer: BufWriter<File> = BufWriter::new(file);
     writer.write(&mut file_writer)?;
+    // The buffered tail reaches disk on drop, which is after the stat below.
+    file_writer.flush()?;
 
     let byte_count: u64 = fs::metadata(&path)?.len();
 
