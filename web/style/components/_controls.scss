@@ -183,7 +183,10 @@
     top: 0;
     left: calc(var(--thumb-proportion) * 100%);
     transform: translateX(calc(-50% + (0.5 - var(--thumb-proportion)) * var(--scrubber-grab-width)));
-    width: 4.5ch;
+    /* Four digits and slack. Two units because Chrome's minimum-font-size clamp raises the size the digits
+    are drawn at without raising the size `ch` resolves against, which left the box half the width of its own
+    text at 50% zoom; the wider of the two is the one that fits. */
+    width: max(4.5ch, 2.8em);
     text-align: center;
     appearance: none;
     -webkit-appearance: none;
