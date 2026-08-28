@@ -238,11 +238,11 @@ API and bulk download share the same dataset license. Commercial use, modificati
 - Visual presentation (interactive charts) is excellent for public communication but not suitable for bulk ingestion; use data exports
 
 **Notes & Caveats:**
-- OWID is a **re-aggregator**, not a primary source. For v1, ingest directly from UN WPP, Eurostat, and HFD rather than OWID to avoid a chain of dependencies
+- OWID is a **re-aggregator**, not a primary source: every series it carries is ingested from the body that produced it
 - Effective TFR calculations use Bongaarts-Feeney method applied to UN WPP data; methodology should be documented in Eafora's provenance layer
 - Fertility intentions (desired children) come from Pew Research surveys, which are sparse geographically and infrequent; not suitable for comprehensive global coverage
 - OWID's data update lag can vary; some indicators update within weeks of upstream publication, others remain stale for months; verify freshness before use
-- Use OWID as a **validation source** (compare TFR values across sources for anomaly detection) rather than primary ingestion target
+- OWID is not ingested; `docs/architecture/ingestion.md` §Our World in Data records the decision and the one use that remains, finding a series' publisher and following a documented method for an indicator nobody publishes directly
 
 ---
 
@@ -952,7 +952,7 @@ API and bulk download share the same dataset license. Commercial use, modificati
 
 ### **Phase 1 (MVP — v1.0):** Establish Global Baseline
 
-**Priority sources:** UN WPP, Eurostat, World Bank, HFD, OWID (validation layer)
+**Priority sources:** UN WPP, Eurostat, World Bank, HFD. OWID is not ingested; `docs/architecture/ingestion.md` §Our World in Data records that decision.
 
 **Rationale:**
 - UN WPP provides the global gold standard; 195+ countries with ~70 years of history

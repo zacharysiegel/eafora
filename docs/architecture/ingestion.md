@@ -478,6 +478,18 @@ Concrete enum variants are only justified when callers actually need to pattern-
 
 When v3+ adds actix-web HTTP handlers to this binary (currently dormant), the error model gains an HTTP-response mapping layer: copy Singularity's `LobbyError` pattern (implements actix-web's `ResponseError` trait to convert `AppError` variants into HTTP status + JSON body). v1's CLI-only ingestion doesn't need this; flag for whichever spec introduces the HTTP server mode.
 
+### Our World in Data
+
+OWID is not a source Eafora ingests. It republishes other bodies' series, so a series taken from it is
+governed by whoever produced it, and pulling one would mean relying on OWID's decision to republish instead
+of on a licence granted to us. Its fertility series comes from UN WPP, whose terms are the ones we cannot
+currently satisfy.
+
+It stands only as an intermediary: a place to find which body publishes a series, and a documented method for
+an indicator nobody publishes directly. Effective TFR is the case that matters, being OWID's own
+Bongaarts-Feeney adjustment of WPP data rather than a WPP series, so we compute it from data we hold and
+record the method as provenance.
+
 ### Adding a new source
 
 The mechanical steps for any new source:

@@ -416,9 +416,9 @@ no-endorsement boilerplate is the only obligation.
   estimates that nothing in Tier 1 matches. Ingest only the HFD-derived
   output indicators, never the underlying NSO input tables. Attribution
   follows HFD's citation format.
-- **Our World in Data** — useful as a curation/processing reference, but each
-  indicator inherits its upstream license. Don't treat OWID as a primary
-  source for license purposes; ingest from the upstream.
+- **Our World in Data** — not ingested. Each indicator inherits its upstream
+  license, so a series taken from OWID is governed by whoever produced it;
+  `docs/architecture/ingestion.md` §Our World in Data records the decision.
 
 ### Tier 3 — verify before shipping
 
