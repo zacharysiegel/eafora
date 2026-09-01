@@ -42,7 +42,7 @@
     "ccf_description": "The average number of children born to a woman of a given birth cohort by the end of her childbearing years. Unlike the total fertility rate, it counts births which actually occurred to a real cohort rather than combining one year's age-specific rates into a hypothetical woman.",
     "mean_age_at_childbirth": "Mean age at childbirth",
     "mean_age_at_childbirth_unit": "years",
-    "mean_age_at_childbirth_description": "The average age of women giving birth in a given year, counting first and later births alike.",
+    "mean_age_at_childbirth_description": "The average age of women giving birth in a given year, across every birth order.",
     "mean_age_at_first_birth": "Mean age at first birth",
     "mean_age_at_first_birth_unit": "years",
     "mean_age_at_first_birth_description": "The average age of women at the birth of their first child in a given year.",
