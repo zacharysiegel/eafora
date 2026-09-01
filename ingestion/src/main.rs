@@ -156,7 +156,7 @@ async fn run_source(
     match source_kind {
         DataSourceKind::WorldBankWDI => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
         DataSourceKind::HumanFertilityDatabase => hfd_adapter::fetch_and_store(pool, options).await,
-        // TODO: remove once the Eurostat adapter is registered.
+        // TODO: resolve once the Eurostat adapter is registered.
         DataSourceKind::Eurostat => Err(AppError::from(format!(
             "no adapter is registered; [source={}]",
             DataSourceKind::Eurostat.code(),
