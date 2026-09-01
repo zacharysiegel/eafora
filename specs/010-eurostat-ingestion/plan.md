@@ -117,7 +117,16 @@ Test-first for the parse, the flag mapping, and the normalization, per Constitut
 
 ## Phase C, sketch: subnational regions with NUTS-2 values
 
-Not planned in detail, because a probe of the regional datasets has to come first. The dataset codes, which indicators they carry at which NUTS level, whether they carry the same flag attribute, and how large an extraction of them is against the 500,000-cell synchronous limit are all unestablished; this feature's probing covered the country-level dataset only. That probe is the first task of the phase, not a prerequisite of the plan.
+Probed on 2026-09-01, so the facts below are measured rather than assumed.
+
+- **`demo_r_find2`** carries NUTS-2, **`demo_r_find3`** NUTS-3. Both take the same `geoLevel` parameter the country-level request uses, and it returns one level cleanly: 345 four-character codes and 1,615 five-character codes respectively, with no mixing. The level-mixing hazard recorded against these datasets applies to an unfiltered request, not to a level-filtered one.
+- **Both carry three indicators**, `TOTFERRT`, `AGEMOTH` and `MEDAGEMOTH`. Mean age at first birth is country-level only, so one of the two statistics Phase A added cannot be published subnationally at all, and a NUTS layer for it would be empty rather than sparse.
+- **They add a `unit` dimension** the country-level dataset has none of, with members `NR` and `YR`. Every `TOTFERRT` observation sits under `NR`, so the request pins the unit rather than treating it as a varying dimension.
+- **Extraction sizes are comfortable.** NUTS-2 is 24,150 cells for 8,962 observations over 1990 to 2024; NUTS-3 is 38,760 cells for 15,901 observations over 2013 to 2024. Both are far inside the 500,000-cell synchronous ceiling, so each stays one request.
+- **The same flag attribute**, with the same characters Phase B already maps: NUTS-2 returned `b` 107, `p` 81, `e` 40, `ep` 17; NUTS-3 returned `e` 168, `b` 158, `p` 101. No new character appears, so the precedence table needs no change.
+- **NUTS-2 spans 37 countries**, more than the 28 the country-level extraction resolves, because it includes candidate and EFTA territories whose parents may not be seeded.
+
+Two consequences for the order of work. Mean age at first birth stays country-level, so the subnational phase publishes two statistics rather than three. And a NUTS code's parent is its own prefix, so the hierarchy is derivable from the codes themselves without a second source.
 
 What is already known about the shape:
 
