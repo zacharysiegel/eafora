@@ -14,6 +14,8 @@ pub struct RegionEntity {
     pub level: String,
     pub parent_region_id: Option<Uuid>,
     pub m49_code: Option<String>,
+    pub nuts_code: Option<String>,
+    pub iso_3166_2: Option<String>,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
 }
@@ -27,6 +29,8 @@ impl From<RegionEntity> for Region {
             level: entity.level,
             parent_region_id: entity.parent_region_id,
             m49_code: entity.m49_code,
+            nuts_code: entity.nuts_code,
+            iso_3166_2: entity.iso_3166_2,
             created: entity.created,
             modified: entity.modified,
         }

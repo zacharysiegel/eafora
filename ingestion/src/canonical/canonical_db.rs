@@ -50,11 +50,49 @@ pub async fn find_region_by_code<'e>(
     let region_entity: Option<RegionEntity> = sqlx::query_as!(
         RegionEntity,
         r#"
-        select id, code, name_en, level, parent_region_id, m49_code, created, modified
+        select id, code, name_en, level, parent_region_id, m49_code, nuts_code, iso_3166_2, created, modified
         from region
         where code = $1
         "#,
         code,
+    )
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(region_entity.map(Region::from))
+}
+
+pub async fn find_region_by_nuts_code<'e>(
+    executor: impl PgExecutor<'e>,
+    nuts_code: &str,
+) -> Result<Option<Region>, AppError> {
+    let region_entity: Option<RegionEntity> = sqlx::query_as!(
+        RegionEntity,
+        r#"
+        select id, code, name_en, level, parent_region_id, m49_code, nuts_code, iso_3166_2, created, modified
+        from region
+        where nuts_code = $1
+        "#,
+        nuts_code,
+    )
+    .fetch_optional(executor)
+    .await?;
+
+    Ok(region_entity.map(Region::from))
+}
+
+pub async fn find_region_by_iso_3166_2<'e>(
+    executor: impl PgExecutor<'e>,
+    iso_3166_2: &str,
+) -> Result<Option<Region>, AppError> {
+    let region_entity: Option<RegionEntity> = sqlx::query_as!(
+        RegionEntity,
+        r#"
+        select id, code, name_en, level, parent_region_id, m49_code, nuts_code, iso_3166_2, created, modified
+        from region
+        where iso_3166_2 = $1
+        "#,
+        iso_3166_2,
     )
     .fetch_optional(executor)
     .await?;

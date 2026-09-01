@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select id, code, name_en, level, parent_region_id, m49_code, created, modified\n        from region\n        where code = $1\n        ",
+  "query": "\n        select id, code, name_en, level, parent_region_id, m49_code, nuts_code, iso_3166_2, created, modified\n        from region\n        where code = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -35,11 +35,21 @@
       },
       {
         "ordinal": 6,
+        "name": "nuts_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "iso_3166_2",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
         "name": "created",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "modified",
         "type_info": "Timestamptz"
       }
@@ -56,9 +66,11 @@
       false,
       true,
       true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "149826a372bf0abc56e9d0a726f31147f2c45d75ed65a8ef9c7d1e1733cbc94f"
+  "hash": "fc8c13f2b024352568811264ba986603de10873da6d83f5138051444b864cb22"
 }

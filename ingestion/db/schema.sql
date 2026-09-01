@@ -199,7 +199,9 @@ CREATE TABLE public.region (
     parent_region_id uuid,
     m49_code text,
     created timestamp with time zone DEFAULT now() NOT NULL,
-    modified timestamp with time zone DEFAULT now() NOT NULL
+    modified timestamp with time zone DEFAULT now() NOT NULL,
+    nuts_code text,
+    iso_3166_2 text
 );
 
 
@@ -229,6 +231,20 @@ COMMENT ON COLUMN public.region.parent_region_id IS 'null only for top-level reg
 --
 
 COMMENT ON COLUMN public.region.m49_code IS 'UN M49 numeric code as text (preserves leading zeros like ''021''); also populated for country-level rows (USA=''840'', DEU=''276''); nullable for future non-M49 levels (subnational) that have no M49 equivalent';
+
+
+--
+-- Name: COLUMN region.nuts_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.region.nuts_code IS 'Eurostat NUTS code (''DE11'', ''TR100''), which identifies a region only within one revision of the classification: NUTS is re-legislated every few years and a code can be reused for different territory across revisions, so a code is meaningful only alongside the vintage it was seeded from';
+
+
+--
+-- Name: COLUMN region.iso_3166_2; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.region.iso_3166_2 IS 'ISO 3166-2 subdivision code (''TR-34''); the scheme boundary geometry sources key subnational units on, and unrelated to nuts_code, which numbers by statistical grouping rather than alphabetically';
 
 
 --
@@ -412,11 +428,27 @@ ALTER TABLE ONLY public.region
 
 
 --
+-- Name: region region_iso_3166_2_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.region
+    ADD CONSTRAINT region_iso_3166_2_key UNIQUE (iso_3166_2);
+
+
+--
 -- Name: region region_m49_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.region
     ADD CONSTRAINT region_m49_code_key UNIQUE (m49_code);
+
+
+--
+-- Name: region region_nuts_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.region
+    ADD CONSTRAINT region_nuts_code_key UNIQUE (nuts_code);
 
 
 --
@@ -552,4 +584,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260822120000'),
     ('20260822140000'),
     ('20260825120000'),
-    ('20260901120000');
+    ('20260901120000'),
+    ('20260901180000');
