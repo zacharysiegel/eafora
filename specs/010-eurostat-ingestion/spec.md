@@ -174,11 +174,9 @@ Settled while reviewing the draft. Each was an open question; the reasoning is r
 
 ## Open questions
 
-Facts no probe could establish, each gating a later phase rather than this one.
+One fact no probe could establish, gating the geometry phase.
 
-1. **Whether every NUTS-2 region's country is seeded.** The NUTS-2 extraction spans 37 countries against the 28 the country-level one resolves, so some parents are candidate or EFTA territories the seed may not carry. A NUTS region whose country is absent has nothing to hang from, and the phase has to decide between seeding those countries and dropping their regions.
-
-2. **Whether a single boundary source covers every NUTS region ingested.** EuroGlobalMap's NUTS layer is optional per country in its specification, so coverage is settled only by downloading the file and looking. Phase D depends on it; the rest of that phase's design is settled in `docs/architecture/geometry.md`.
+1. **Whether a single boundary source covers every NUTS region ingested.** EuroGlobalMap's NUTS layer is optional per country in its specification, so coverage is settled only by downloading the file and looking. Phase D depends on it; the rest of that phase's design is settled in `docs/architecture/geometry.md`.
 
 ## Constitution check
 

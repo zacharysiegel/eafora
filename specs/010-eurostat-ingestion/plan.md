@@ -124,9 +124,9 @@ Probed on 2026-09-01, so the facts below are measured rather than assumed.
 - **They add a `unit` dimension** the country-level dataset has none of, with members `NR` and `YR`. Every `TOTFERRT` observation sits under `NR`, so the request pins the unit rather than treating it as a varying dimension.
 - **Extraction sizes are comfortable.** NUTS-2 is 24,150 cells for 8,962 observations over 1990 to 2024; NUTS-3 is 38,760 cells for 15,901 observations over 2013 to 2024. Both are far inside the 500,000-cell synchronous ceiling, so each stays one request.
 - **The same flag attribute**, with the same characters Phase B already maps: NUTS-2 returned `b` 107, `p` 81, `e` 40, `ep` 17; NUTS-3 returned `e` 168, `b` 158, `p` 101. No new character appears, so the precedence table needs no change.
-- **NUTS-2 spans 37 countries**, more than the 28 the country-level extraction resolves, because it includes candidate and EFTA territories whose parents may not be seeded.
+- **NUTS-2 spans 37 country prefixes**, every one of them among the 48 codes the country-level extraction already resolves, so every subnational region has a seeded parent to hang from and no country needs adding.
 
-Two consequences for the order of work. Mean age at first birth stays country-level, so the subnational phase publishes two statistics rather than three. And a NUTS code's parent is its own prefix, so the hierarchy is derivable from the codes themselves without a second source.
+Two consequences for the order of work. Mean age at first birth stays country-level, so the subnational phase publishes two statistics rather than three. And a NUTS code's parent is its own prefix, which every seeded country already answers to, so the hierarchy is derivable from the codes themselves without a second source.
 
 What is already known about the shape:
 
