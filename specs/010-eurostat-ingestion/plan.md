@@ -115,6 +115,16 @@ Test-first for the parse, the flag mapping, and the normalization, per Constitut
 12. **The CLI wiring.** The registered-sources slice, the dispatch match arm, the import, and the source argument's help text. The match is exhaustive so the compiler names it; the slice and the help text are not, and omitting the slice entry silently drops Eurostat from the all-sources run.
 13. **The first real run and the first publish.** Run the adapter against live Eurostat, reconcile the counts against the response, build, publish locally, re-sync the embedded tree, and verify the site tree. The manifest schema version decision (open question 4) lands here if it lands at all, together with the embedded re-sync FR-035 requires.
 
+## Verified end to end on 2026-09-01
+
+A complete build, publish and embedded sync ran once the Natural Earth CDN was reachable, which confirms what Phase B could previously only argue:
+
+- Both bundle variants carry four shards. The downsampled one previously carried one, because its reference year was anchored on a World Bank value for the United States; the statistics Eurostat alone publishes now reach first paint. The downsampled slice holds 267 total fertility values, 45 mean ages at childbirth, 42 at first birth and 30 completed cohort figures.
+- The published manifest names all four statistics, and the embedded tree carries a shard for each.
+- Sizes are unchanged in practice: first paint 0.48 MB against a 2 MB target, second paint 1.19 MB against 8 MB. Three additional statistics cost roughly 6 KB compressed at first paint, because a single-year slice of Europe is small.
+
+Two observations worth carrying. `verify-site-tree.sh` reads `target/site` rather than `web/static`, so it reports the shard count of the last site build rather than of the tree just synced; it said one shard while the synced tree held four. And republishing a version label that already exists fails by design, with the guard printing a backtrace that reads like a crash rather than a refusal.
+
 ## Phase C0: external identifiers on the region
 
 A region is identified externally by more than one scheme, and today each scheme has its own home: `region.m49_code` is a column, `country.iso3` and `country.iso2` are columns on the one-to-one extension table, and a NUTS code has nowhere at all. Türkiye is what forces the question. Its provinces are one region carrying two identifiers, a NUTS code from Eurostat and an ISO 3166-2 code from the boundary source, and the two schemes have no computable relation, so without somewhere to put both, the pipeline needs a committed table of 81 pairs to get from a polygon to the region its values belong to.
