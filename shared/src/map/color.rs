@@ -70,8 +70,7 @@ pub const CHOROPLETH_SCALE: ColorScale = ColorScale {
 pub enum StatisticColorTransform {
     /// Linear normalization against the observed data range: `min` → 0, `max` → 1, clamped. Data-relative.
     Linear,
-    /// Linear normalization reversed: `max` → 0, `min` → 1, clamped. For a statistic whose high end is the one
-    /// the scale's saturated red should mark.
+    /// Linear normalization reversed: `max` → 0, `min` → 1, clamped.
     LinearDescending,
     /// A C² curve keyed to absolute values: a convex cubic on `[0, x0]` meeting a concave arctan tail at the
     /// inflection `x0`, through the origin and asymptotic to 1. `y0` is the inflection height (vertically
@@ -107,10 +106,6 @@ pub fn transform_for(statistic: StatisticKind) -> StatisticColorTransform {
         StatisticKind::Tfr | StatisticKind::Ccf => {
             StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 }
         }
-        /* The fertility curve pivots at 2.1 and every mean age sits far past it, deep in the saturated tail,
-           so all of Europe would paint one colour. Normalizing against the observed range spreads a span of a
-           few years across the ramp. Descending, because later childbearing is the end that accompanies lower
-           fertility. */
         StatisticKind::MeanAgeAtChildbirth | StatisticKind::MeanAgeAtFirstBirth => {
             StatisticColorTransform::LinearDescending
         }
