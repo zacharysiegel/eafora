@@ -10,7 +10,7 @@ use crate::canonical::canonical_model::{
 use crate::error::AppError;
 
 pub const MANIFEST_FILENAME: &str = "manifest.json";
-pub const MANIFEST_SCHEMA_VERSION: u32 = 2;
+pub const MANIFEST_SCHEMA_VERSION: u32 = 3;
 pub const MANIFEST_SCHEMA_VERSION_FIELD: &str = "manifest_schema_version";
 pub const SUBDIR_GEOMETRY: &str = "geometry";
 pub const SUBDIR_DATA: &str = "data";
@@ -172,7 +172,7 @@ mod tests {
     fn parse_manifest_round_trips_fixture_set() {
         let manifest: Manifest = parse_manifest(valid_manifest_json().as_bytes()).unwrap();
 
-        assert_eq!(manifest.manifest_schema_version, 2);
+        assert_eq!(manifest.manifest_schema_version, MANIFEST_SCHEMA_VERSION);
         assert_eq!(manifest.version, "2026-05-18+laureate");
         assert!(manifest.statistics.contains_key(&StatisticKind::Tfr));
         assert_eq!(manifest.source_revisions[&DataSourceKind::WorldBankWDI].revision, "2024-12-12");
