@@ -50,17 +50,6 @@ pub fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) ->
     }
 }
 
-/// Named where a statistic covers only part of the world, so selecting it does not read as a map that has
-/// broken. `None` where coverage is global.
-pub fn statistic_coverage(i18n: I18nContext<Locale>, statistic: StatisticKind) -> Option<String> {
-    match statistic {
-        StatisticKind::Tfr | StatisticKind::Ccf => None,
-        StatisticKind::MeanAgeAtChildbirth | StatisticKind::MeanAgeAtFirstBirth => {
-            Some(t_string!(i18n, statistic.coverage_europe).to_string())
-        }
-    }
-}
-
 /// How many decimal places a statistic's values are shown to. Eurostat publishes an age to one, and rendering
 /// a second asserts precision the source does not carry.
 pub fn statistic_decimals(statistic: StatisticKind) -> usize {

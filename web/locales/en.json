@@ -46,7 +46,6 @@
     "mean_age_at_first_birth": "Mean age at first birth",
     "mean_age_at_first_birth_unit": "years",
     "mean_age_at_first_birth_description": "The average age of women at the birth of their first child in a given year.",
-    "coverage_europe": "Europe only",
     "picker_label": "Statistic"
   },
   "scrubber": {
