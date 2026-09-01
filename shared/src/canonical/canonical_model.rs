@@ -168,7 +168,6 @@ pub enum DataStatus {
     Projection,
     Imputed,
     Interpolated,
-    /// The source computed the value rather than collecting it.
     Estimated,
 }
 
