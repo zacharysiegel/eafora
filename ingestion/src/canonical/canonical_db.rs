@@ -25,6 +25,24 @@ pub async fn find_country_by_iso3<'e>(
     Ok(country_entity.map(Country::from))
 }
 
+pub async fn find_country_by_iso2<'e>(
+    executor: impl PgExecutor<'e>,
+    iso2: &str,
+) -> Result<Option<Country>, AppError> {
+    let country_entity: Option<CountryEntity> = sqlx::query_as!(
+        CountryEntity,
+        r#"
+        select region_id, iso3, iso2, created, modified
+        from country
+        where iso2 = $1
+        "#,
+        iso2,
+    )
+    .fetch_optional(executor)
+    .await?;
+    Ok(country_entity.map(Country::from))
+}
+
 pub async fn find_region_by_code<'e>(
     executor: impl PgExecutor<'e>,
     code: &str,
