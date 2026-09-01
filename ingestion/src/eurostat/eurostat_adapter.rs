@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use uuid::Uuid;
@@ -136,7 +138,7 @@ pub async fn normalize(
 
     let mut statistic_values: Vec<NormalizedStatisticValue> = Vec::with_capacity(observations.len());
     let mut warnings: Vec<IngestWarning> = Vec::new();
-    let mut region_by_geo_code: std::collections::HashMap<String, RegionOutcome> = std::collections::HashMap::new();
+    let mut region_by_geo_code: HashMap<String, RegionOutcome> = HashMap::new();
 
     for observation in observations {
         if !region_by_geo_code.contains_key(&observation.geo_code) {
