@@ -11,6 +11,6 @@ Total fertility rate across the globe in 2024.
 
 A single region's detail panel, showing its history, the sources behind the selected value, and how the statistic is defined.
 
-![Poland detail panel for 2024](./docs/screenshots/region-detail.png)
+![Poland detail panel for 2017](./docs/screenshots/region-detail.png)
 
 </details>
