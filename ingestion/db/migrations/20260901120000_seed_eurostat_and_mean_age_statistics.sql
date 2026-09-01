@@ -11,7 +11,8 @@ insert into statistic (code, name_en, name_abbreviated_en, units) values
     ('mean_age_at_childbirth', 'Mean age of women at childbirth', 'MAC', 'years'),
     ('mean_age_at_first_birth', 'Mean age of women at first birth', 'MAFB', 'years');
 
-comment on column statistic_value.data_status is 'one of: final | provisional | preliminary | projection | imputed | interpolated | estimated';
+-- The set of statuses lives in the DataStatus enum; enumerating it here would be a second copy that rots.
+comment on column statistic_value.data_status is null;
 
 -- Eurostat publishes no revision label; its JSON-stat responses carry an `updated` timestamp, which is what
 -- the adapter records. The previous text named a week-numbered form Eurostat does not publish.

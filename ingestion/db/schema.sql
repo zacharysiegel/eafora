@@ -325,13 +325,6 @@ COMMENT ON COLUMN public.statistic_value.data_source_publication_id IS 'points a
 
 
 --
--- Name: COLUMN statistic_value.data_status; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.statistic_value.data_status IS 'one of: final | provisional | preliminary | projection | imputed | interpolated | estimated';
-
-
---
 -- Name: COLUMN statistic_value.superseded; Type: COMMENT; Schema: public; Owner: -
 --
 
