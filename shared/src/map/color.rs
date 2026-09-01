@@ -107,9 +107,10 @@ pub fn transform_for(statistic: StatisticKind) -> StatisticColorTransform {
         StatisticKind::Tfr | StatisticKind::Ccf => {
             StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 }
         }
-        /* An age spans a few years where the fertility curve is already saturated, so it needs the range
-           rather than an absolute pivot. Descending, because later childbearing is the end that accompanies
-           lower fertility, which is the end the saturated red marks for the rates. */
+        /* The fertility curve pivots at 2.1 and every mean age sits far past it, deep in the saturated tail,
+           so all of Europe would paint one colour. Normalizing against the observed range spreads a span of a
+           few years across the ramp. Descending, because later childbearing is the end that accompanies lower
+           fertility. */
         StatisticKind::MeanAgeAtChildbirth | StatisticKind::MeanAgeAtFirstBirth => {
             StatisticColorTransform::LinearDescending
         }
