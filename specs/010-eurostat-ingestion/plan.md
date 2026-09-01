@@ -115,6 +115,23 @@ Test-first for the parse, the flag mapping, and the normalization, per Constitut
 12. **The CLI wiring.** The registered-sources slice, the dispatch match arm, the import, and the source argument's help text. The match is exhaustive so the compiler names it; the slice and the help text are not, and omitting the slice entry silently drops Eurostat from the all-sources run.
 13. **The first real run and the first publish.** Run the adapter against live Eurostat, reconcile the counts against the response, build, publish locally, re-sync the embedded tree, and verify the site tree. The manifest schema version decision (open question 4) lands here if it lands at all, together with the embedded re-sync FR-035 requires.
 
+## Phase C0: external identifiers on the region
+
+A region is identified externally by more than one scheme, and today each scheme has its own home: `region.m49_code` is a column, `country.iso3` and `country.iso2` are columns on the one-to-one extension table, and a NUTS code has nowhere at all. Türkiye is what forces the question. Its provinces are one region carrying two identifiers, a NUTS code from Eurostat and an ISO 3166-2 code from the boundary source, and the two schemes have no computable relation, so without somewhere to put both, the pipeline needs a committed table of 81 pairs to get from a polygon to the region its values belong to.
+
+`region` gains two nullable columns beside `m49_code`, each unique: a NUTS code and an ISO 3166-2 code. Resolving a polygon to a region is then a lookup rather than a mapping, and the 81 pairs become seed data instead of code. The name match still happens once, in the seed generator, which is where a heuristic belongs; nothing downstream repeats it.
+
+Columns rather than an association table of region, scheme and value. Five schemes are in sight across the whole roadmap, the rows are sparse but the table is small, and every lookup stays one indexed predicate instead of a join. An association table is the better answer at twenty schemes and the worse one at five.
+
+`country.iso3` and `country.iso2` stay where they are. Moving them up would leave `country` holding nothing but a foreign key and its timestamps, which argues for dropping the table outright, and that is a refactor across 68 identifier references in 14 files with no benefit to this feature. The split is worth naming as deliberate rather than discovering it later: `country` is a one-to-one extension for the identifiers only a country has, and `region` carries the ones any level can.
+
+Steps:
+
+1. One migration adding `nuts_code` and `iso_3166_2` to `region`, both nullable and unique, each with a catalog comment naming the scheme and its vintage. NUTS codes are revised every few years and are not stable across revisions, which the comment has to say.
+2. `Region` in `shared/src/canonical/canonical_model.rs` gains both fields, and `RegionEntity` its columns.
+3. `canonical_db` gains one lookup per scheme, following `find_country_by_iso2`'s shape. A caller that has a NUTS code should not be reaching through `country`.
+4. Nothing populates the new columns yet. Phase C seeds them for the regions it creates.
+
 ## Phase C, sketch: subnational regions with NUTS-2 values
 
 Probed on 2026-09-01, so the facts below are measured rather than assumed.
@@ -151,7 +168,7 @@ Both gaps were then closed on 2026-09-01 without a commercial licence, so the ph
 - **Montenegro needs no subnational geometry.** Eurostat publishes it as one region at each level, `ME00` and `ME000`, so the country outline already in the layer is its NUTS geometry.
 - **Türkiye comes from Natural Earth's admin-1 layer**, public domain like the countries file already used. It carries exactly 81 Turkish provinces against Eurostat's 81 NUTS-3 regions, and the two sets match one to one by name with nothing left over on either side, which follows from Turkish NUTS-3 being defined on the provinces themselves. Grouping those 81 on the four-character prefix yields exactly the 26 NUTS-2 regions Eurostat publishes.
 
-The join has to be a committed table of 81 rows rather than a derivation, because the two sources use unrelated identifiers: Natural Earth carries ISO 3166-2 (`TR-34`), Eurostat a NUTS code (`TR100`). It is generated once by matching names with diacritics stripped.
+The two sources use unrelated identifiers, Natural Earth carrying ISO 3166-2 (`TR-34`) and Eurostat a NUTS code (`TR100`), with no computable relation between them: ISO numbers the provinces alphabetically and NUTS numbers them by statistical grouping. Phase C0 puts both on the region so the pair is seed data rather than a mapping the pipeline consults; the names are matched once, in the seed generator, with diacritics stripped.
 
 Boundaries were checked by area rather than assumed to agree. The 81 provinces sum to 781,300 km2 against Türkiye's published 783,562, a difference of 0.3%, so they tile the country without overlaps or holes. Per-province deviations are larger and follow a recognizable pattern: inland provinces sit within one or two percent, while small and coastal ones swing further (İstanbul -9.8%, Yalova -18.0%, Trabzon +8.2%, İzmir +8.7%), with neighbours erring in opposite directions. That is 1:10M generalisation moving coastlines and short shared borders, and official figures that sometimes count inland water. It is not evidence of a different unit set.
 
