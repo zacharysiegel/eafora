@@ -174,9 +174,7 @@ Settled while reviewing the draft. Each was an open question; the reasoning is r
 
 ## Open questions
 
-One fact no probe could establish, gating the geometry phase.
-
-1. **Whether a single boundary source covers every NUTS region ingested.** EuroGlobalMap's NUTS layer is optional per country in its specification, so coverage is settled only by downloading the file and looking. Phase D depends on it; the rest of that phase's design is settled in `docs/architecture/geometry.md`.
+None gating the phases this feature plans. The boundary-coverage question was answered on 2026-09-01 and is recorded in plan.md §Phase D.
 
 ## Constitution check
 

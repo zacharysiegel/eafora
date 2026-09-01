@@ -140,6 +140,15 @@ Doing NUTS-2 before NUTS-3 is the right order regardless of what the probe finds
 
 ## Phase D, sketch: subnational geometry
 
+Boundary coverage was probed on 2026-09-01 through the WFS the Open Maps for Europe viewer uses, rather than the 507 MB download behind its email form. Findings:
+
+- The layer is `ome:egm_wfs_nuts_3` and there is no NUTS-2 layer, so NUTS-2 geometry has to be derived by unioning NUTS-3 polygons on their four-character prefix.
+- It reports 16,114 features, which are polygon parts and not regions: Norway contributes 4,751 and Sweden 3,695, both coastlines of thousands of islands. A distinct-region count is still unknown, because the service began returning 504s under repeated paging.
+- **It covers 35 of the 37 countries Eurostat publishes NUTS regions for. Montenegro and Türkiye are absent.** Türkiye is the substantive gap, at 26 NUTS-2 regions that would carry values with no polygon to draw them on; Montenegro is one region at each level.
+
+So the phase has to choose between rendering those two countries at country level while their neighbours render subnationally, sourcing their boundaries elsewhere, or omitting their values. It is a presentation decision rather than a blocker.
+
+
 Also not planned in detail, and for a reason that cannot be resolved by reading: **the phase's shape depends on whether the chosen boundary source's finest optional layer covers every country ingested, and only downloading it settles that.** EuroGlobalMap's optional NUTS_3 layer is the candidate the owner has in mind; nothing in this repository mentions it, and its per-country coverage is a property of the distribution rather than of its documentation. If it covers every country, one layer serves both NUTS levels by dissolving upward. If it does not, either the countries it misses fall back to the coarser level (a mixed-resolution layer, with a visible seam and a per-country record of which level a feature represents) or a second source fills the gaps (a join problem, and two boundary generalizations meeting along a shared border).
 
 What is settled, and what is not:
