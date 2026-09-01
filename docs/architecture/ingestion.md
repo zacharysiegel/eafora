@@ -551,6 +551,8 @@ Geometry is ingested separately from statistic ingestion, with a different caden
 
 Two-tier shard model (per License-segmented shards in the overview) does not apply to geometry: Natural Earth is public domain, so geometry ships in the base FlatGeobuf without segmentation.
 
+Boundary sources beyond country outlines, and how a second source is reconciled with Natural Earth into one layer, are in `geometry.md`.
+
 ## Artifact builder
 
 ### Entrypoint
