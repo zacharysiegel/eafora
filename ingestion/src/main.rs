@@ -17,6 +17,7 @@ use ingestion::artifact::repository::{
 use shared::canonical::canonical_model::DataSourceKind;
 use ingestion::db;
 use ingestion::error::AppError;
+use ingestion::eurostat::eurostat_adapter;
 use ingestion::hfd::hfd_adapter;
 use ingestion::ingest::IngestReport;
 use ingestion::secrets;
@@ -25,7 +26,8 @@ use ingestion::world_bank_wdi::world_bank_wdi_adapter;
 
 /// Registered source adapters. Adding a new source = one entry here plus
 /// the source's per-feature module + a `data_source` seed row.
-const REGISTERED_SOURCES: &[DataSourceKind] = &[DataSourceKind::WorldBankWDI, DataSourceKind::HumanFertilityDatabase];
+const REGISTERED_SOURCES: &[DataSourceKind] =
+    &[DataSourceKind::WorldBankWDI, DataSourceKind::HumanFertilityDatabase, DataSourceKind::Eurostat];
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -59,7 +61,7 @@ fn build_cli() -> Command {
                 .subcommand(
                     Command::new("source")
                         .about("Run a single source adapter")
-                        .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi, hfd)"))
+                        .arg(Arg::new("source").required(true).help("source code (e.g. wb_wdi, hfd, eurostat)"))
                         .arg(Arg::new("force-full-refetch").long("force-full-refetch").action(ArgAction::SetTrue)),
                 )
                 .subcommand(
@@ -156,11 +158,7 @@ async fn run_source(
     match source_kind {
         DataSourceKind::WorldBankWDI => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
         DataSourceKind::HumanFertilityDatabase => hfd_adapter::fetch_and_store(pool, options).await,
-        // TODO: resolve once the Eurostat adapter is registered.
-        DataSourceKind::Eurostat => Err(AppError::from(format!(
-            "no adapter is registered; [source={}]",
-            DataSourceKind::Eurostat.code(),
-        ))),
+        DataSourceKind::Eurostat => eurostat_adapter::fetch_and_store(pool, options).await,
     }
 }
 

@@ -4,6 +4,7 @@ pub mod canonical;
 pub mod db;
 pub mod error;
 pub mod geometry;
+pub mod eurostat;
 pub mod hfd;
 pub mod http;
 pub mod ingest;
