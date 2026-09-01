@@ -156,6 +156,11 @@ async fn run_source(
     match source_kind {
         DataSourceKind::WorldBankWDI => world_bank_wdi_adapter::fetch_and_store(pool, options).await,
         DataSourceKind::HumanFertilityDatabase => hfd_adapter::fetch_and_store(pool, options).await,
+        // The seeded source has no adapter yet, so `source eurostat` refuses rather than reporting no values.
+        DataSourceKind::Eurostat => Err(AppError::from(format!(
+            "no adapter is registered; [source={}]",
+            DataSourceKind::Eurostat.code(),
+        ))),
     }
 }
 

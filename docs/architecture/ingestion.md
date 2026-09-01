@@ -525,17 +525,18 @@ For each `(region, statistic, period_start, period_end)` cell published into the
 1. Select all candidate rows from `statistic_value` where `superseded is null`.
 2. Filter by license-class eligibility (the base shard only considers rows whose `data_source.license_class` is `public_domain` or `attribution`; the `share_alike` shard adds rows of class `attribution_sa`; the `noncommercial` shard adds rows of class `noncommercial`).
 3. Among eligible candidates, pick the row with the lowest `data_source.preference_rank`. Ties (allowed — `preference_rank` is not unique) break by the lower `data_source.id`, which gives a stable arbitrary ordering when two sources sit at the same priority.
-4. If the picked source's `data_status` is `provisional`/`preliminary` AND a lower-priority source has a `final` value for the same `(period_start, period_end)` whose `period_end` is within the last 2 years, prefer the `final` value. (Don't show stale "final" data when fresher "preliminary" data exists, and don't show preliminary data when a high-quality final value is available.)
+
+Rank alone decides. An earlier draft of this document added a fourth step preferring a lower-ranked source's final value over the picked source's provisional one; nothing ever implemented it, and Eurostat is the first source to publish a non-final status, which would have made the two disagree observably. The step is removed rather than implemented: a reader is shown the preferred source's own figure, with its status named beside it.
 
 ### Current preference ranking (v1+)
 
-| Rank | Source                                      | Coverage                          |
-|-----:|---------------------------------------------|-----------------------------------|
-|   10 | Human Fertility Database (HFD)              | ~25 countries, peer-reviewed     |
-|   20 | National statistical offices (per-country)  | Per country (CDC NCHS, ONS, etc.) |
-|   30 | Eurostat                                    | EU members                        |
-|   60 | UN World Population Prospects (WPP)         | Global, estimates + projections  |
-|   90 | World Bank WDI                              | Global, aggregates from above     |
+| Rank | Source                         | Coverage                            |
+|-----:|--------------------------------|-------------------------------------|
+|   40 | Eurostat                       | EU, EFTA and candidate countries    |
+|   50 | Human Fertility Database (HFD) | approx. 25 countries, peer-reviewed |
+|  100 | World Bank WDI                 | Global, aggregates from above       |
+
+Seeded ranks, read from the migrations rather than proposed. Sources surveyed but not ingested carry no row and no rank: national statistical offices and UN World Population Prospects would slot between the seeded values when they land.
 
 The numeric gaps leave room for inserting new sources without renumbering. The ranking is a working policy — revisable per-statistic if a source proves authoritative for one indicator and not another (a `statistic_source_override` table is a v3+ option; v1 uses a single global ranking).
 

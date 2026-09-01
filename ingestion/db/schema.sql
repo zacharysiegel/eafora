@@ -120,7 +120,7 @@ CREATE TABLE public.data_source (
 -- Name: COLUMN data_source.code; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.data_source.code IS 'short identifier (''wb_wdi'', ''eurostat_demo_fer'', ''hfd'')';
+COMMENT ON COLUMN public.data_source.code IS 'short identifier naming the publisher rather than one of its datasets (''wb_wdi'', ''hfd'', ''eurostat''), since preference_rank judges the publisher';
 
 
 --
@@ -170,7 +170,7 @@ CREATE TABLE public.data_source_publication (
 -- Name: COLUMN data_source_publication.revision_label; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.data_source_publication.revision_label IS 'the source''s own revision label for this publication event (WB WDI ''2024-Q4'', Eurostat ''2026-w20'', HFD ''2025-12'', WPP ''WPP-2024-rev1''); sources without native versioning get a synthesized label (response payload hash or fetch date); read by the adapter''s read_latest_publication_revision step for incremental fetches; aggregated per-source into the manifest''s data_source_revisions_jsonb at artifact-build time';
+COMMENT ON COLUMN public.data_source_publication.revision_label IS 'the source''s own revision label for this publication event (WB WDI ''2024-Q4'', HFD ''2025-12'', Eurostat the response''s `updated` timestamp); sources without native versioning get a synthesized label (response payload hash or fetch date); read before a fetch so an unchanged revision skips the write; aggregated per-source into the manifest at artifact-build time';
 
 
 --
@@ -328,7 +328,7 @@ COMMENT ON COLUMN public.statistic_value.data_source_publication_id IS 'points a
 -- Name: COLUMN statistic_value.data_status; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.statistic_value.data_status IS 'one of: final | provisional | preliminary | projection | imputed | interpolated';
+COMMENT ON COLUMN public.statistic_value.data_status IS 'one of: final | provisional | preliminary | projection | imputed | interpolated | estimated';
 
 
 --
@@ -558,4 +558,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260819140100'),
     ('20260822120000'),
     ('20260822140000'),
-    ('20260825120000');
+    ('20260825120000'),
+    ('20260901120000');

@@ -200,7 +200,7 @@ fn summary_figure(i18n: I18nContext<Locale>, figure: &ActiveFigure) -> AnyView {
     };
 
     view! {
-        <p class="detail-panel-value numeric">{format_value(value)}</p>
+        <p class="detail-panel-value numeric">{format_value(statistic, value)}</p>
         <p class="detail-panel-unit">{labels::statistic_unit(i18n, statistic)}</p>
         {source.map(|source| view! {
             <p class="detail-panel-source">{t!(i18n, detail.source)} ": " {source_label(i18n, source)}</p>
@@ -232,7 +232,7 @@ fn detail_dock(
     on_cleanup(|| dispatch_left_surface_inset(0.0));
 
     let value_text = figure_text(figure, move |figure| match figure.cell.value {
-        Some(value) => format_value(value),
+        Some(value) => format_value(figure.statistic, value),
         None => t_string!(i18n, detail.not_applicable).to_string(),
     });
 
@@ -279,7 +279,7 @@ fn detail_dock(
                     return ().into_any();
                 };
 
-                attribution.with(|attribution| sources_section(i18n, &figure.detail.sources, attribution))
+                attribution.with(|attribution| sources_section(i18n, figure.statistic, &figure.detail.sources, attribution))
             })}
             <h3 class="region-dock-heading">{t!(i18n, detail.about)}</h3>
             <p class="region-dock-about">
@@ -412,6 +412,7 @@ struct ChartGeometry {
     marker_radius: String,
     reference_y: String,
     reference_label: String,
+    has_reference: bool,
     unit_label: String,
     first_year: String,
     last_year: String,
@@ -428,6 +429,7 @@ fn chart_geometry(i18n: I18nContext<Locale>, figure: Option<&ActiveFigure>) -> C
             marker_radius: chart_unit(0.0),
             reference_y: chart_unit(PLOT_BOTTOM),
             reference_label: String::new(),
+            has_reference: false,
             unit_label: String::new(),
             first_year: String::new(),
             last_year: String::new(),
@@ -447,6 +449,7 @@ fn chart_geometry(i18n: I18nContext<Locale>, figure: Option<&ActiveFigure>) -> C
         marker_radius: chart_unit(marker.radius),
         reference_y: chart_unit(reference.map_or(PLOT_BOTTOM, |value| scale.y(value))),
         reference_label: reference.map(|value| format!("{value:.1}")).unwrap_or_default(),
+        has_reference: reference.is_some(),
         unit_label: labels::statistic_unit(i18n, figure.statistic),
         first_year: scale.first_period_start.year().to_string(),
         last_year: scale.last_period_start.year().to_string(),
@@ -479,12 +482,13 @@ fn history_section(i18n: I18nContext<Locale>, figure: Memo<Option<ActiveFigure>>
     }
 }
 
-/// The value a statistic's series is read against. Both fertility measures are births per woman, so both are
-/// read against replacement.
+/// The value a statistic's series is read against, or `None` for one with no such threshold.
 fn reference_value(statistic: StatisticKind) -> Option<f64> {
     match statistic {
         StatisticKind::Tfr => Some(REPLACEMENT_RATE),
         StatisticKind::Ccf => Some(REPLACEMENT_RATE),
+        StatisticKind::MeanAgeAtChildbirth => None,
+        StatisticKind::MeanAgeAtFirstBirth => None,
     }
 }
 
@@ -581,7 +585,7 @@ fn cursor_at(figure: Option<&ActiveFigure>, event: &leptos::ev::PointerEvent) ->
 
     let x: f64 = scale.x(point.period_start);
     let y: f64 = scale.y(point.value);
-    let label: String = format!("{} · {}", point.period_start.year(), format_value(point.value));
+    let label: String = format!("{} · {}", point.period_start.year(), format_value(figure.statistic, point.value));
 
     Some(ChartCursor {
         period_start: point.period_start,
@@ -658,14 +662,20 @@ fn history_chart(geometry: Memo<ChartGeometry>, figure: Memo<Option<ActiveFigure
                 {move || geometry.with(|geometry| geometry.unit_label.clone())}
             </text>
             <line
-                class="region-dock-chart-reference"
+                class=move || geometry.with(|geometry| match geometry.has_reference {
+                    true => "region-dock-chart-reference",
+                    false => "region-dock-chart-reference is-absent",
+                })
                 x1=chart_unit(PLOT_LEFT)
                 x2=chart_unit(PLOT_RIGHT)
                 y1=move || geometry.with(|geometry| geometry.reference_y.clone())
                 y2=move || geometry.with(|geometry| geometry.reference_y.clone())
             />
             <text
-                class="region-dock-chart-reference-value numeric"
+                class=move || geometry.with(|geometry| match geometry.has_reference {
+                    true => "region-dock-chart-reference-value numeric",
+                    false => "region-dock-chart-reference-value numeric is-absent",
+                })
                 x=chart_unit(PLOT_RIGHT + REFERENCE_LABEL_GAP)
                 y=move || geometry.with(|geometry| geometry.reference_y.clone())
                 dominant-baseline="middle"
@@ -887,6 +897,7 @@ impl ChartScale {
 /// Every source covering the active period, so a reader can see that sources disagree and by how much.
 fn sources_section(
     i18n: I18nContext<Locale>,
+    statistic: StatisticKind,
     sources: &[SourceCellView],
     attribution: &BTreeMap<DataSourceKind, SourceAttribution>,
 ) -> AnyView {
@@ -900,7 +911,7 @@ fn sources_section(
         .map(|source_cell| {
             let source_attribution: Option<&SourceAttribution> = attribution.get(&source_cell.source);
 
-            source_row(i18n, source_cell, is_contested, source_attribution)
+            source_row(i18n, statistic, source_cell, is_contested, source_attribution)
         })
         .collect();
 
@@ -914,6 +925,7 @@ fn sources_section(
 /// `is_contested` gates the tag: with one source there is nothing for a priority to have decided.
 fn source_row(
     i18n: I18nContext<Locale>,
+    statistic: StatisticKind,
     source_cell: &SourceCellView,
     is_contested: bool,
     attribution: Option<&SourceAttribution>,
@@ -929,7 +941,7 @@ fn source_row(
                     <span class="tag tag-ink">{t!(i18n, detail.source_preferred)}</span>
                 })}
             </span>
-            <span class="region-dock-source-value numeric">{format_value(source_cell.value)}</span>
+            <span class="region-dock-source-value numeric">{format_value(statistic, source_cell.value)}</span>
             {status.map(|status| view! {
                 <span class="region-dock-source-status">{status}</span>
             })}
@@ -965,8 +977,8 @@ fn link_host(url: &str) -> String {
     host.strip_prefix("www.").unwrap_or(host).to_string()
 }
 
-fn format_value(value: f64) -> String {
-    format!("{value:.2}")
+fn format_value(statistic: StatisticKind, value: f64) -> String {
+    format!("{value:.*}", labels::statistic_decimals(statistic))
 }
 
 /// Signed, since the reader is being shown a direction rather than a magnitude.
@@ -986,6 +998,7 @@ fn status_text(i18n: I18nContext<Locale>, data_status: DataStatus) -> Option<Str
         DataStatus::Projection => Some(t_string!(i18n, detail.status.projection).to_string()),
         DataStatus::Imputed => Some(t_string!(i18n, detail.status.imputed).to_string()),
         DataStatus::Interpolated => Some(t_string!(i18n, detail.status.interpolated).to_string()),
+        DataStatus::Estimated => Some(t_string!(i18n, detail.status.estimated).to_string()),
     }
 }
 
@@ -998,6 +1011,7 @@ fn status_label(i18n: I18nContext<Locale>, data_status: DataStatus) -> Option<An
         DataStatus::Projection => Some(t!(i18n, detail.status.projection).into_any()),
         DataStatus::Imputed => Some(t!(i18n, detail.status.imputed).into_any()),
         DataStatus::Interpolated => Some(t!(i18n, detail.status.interpolated).into_any()),
+        DataStatus::Estimated => Some(t!(i18n, detail.status.estimated).into_any()),
     }
 }
 
@@ -1005,6 +1019,7 @@ fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
     match source {
         DataSourceKind::WorldBankWDI => t!(i18n, source.wb_wdi).into_any(),
         DataSourceKind::HumanFertilityDatabase => t!(i18n, source.hfd).into_any(),
+        DataSourceKind::Eurostat => t!(i18n, source.eurostat).into_any(),
     }
 }
 
@@ -1240,6 +1255,35 @@ mod tests {
         let plot_midpoint: f64 = (PLOT_LEFT + PLOT_RIGHT) / 2.0;
 
         assert!(scale.x(january(2018)) > plot_midpoint);
+    }
+
+    #[test]
+    fn chart_scale_spans_the_plot_for_an_age_series_with_no_reference() {
+        let series: Vec<SeriesPointView> = series_of(&[(1990, 24.9), (2005, 27.4), (2020, 29.7)]);
+
+        let plot_height: f64 = PLOT_BOTTOM - PLOT_TOP;
+        let drawn_extent = |scale: &ChartScale| -> f64 { scale.y(24.9) - scale.y(29.7) };
+
+        let without_reference: ChartScale = ChartScale::from_series(&series, None);
+        let with_replacement: ChartScale = ChartScale::from_series(&series, Some(REPLACEMENT_RATE));
+
+        // Holding 2.1 inside the range of an age series squeezes the series itself into a sliver; the whole
+        // point of a statistic having no reference is that its own range sets the scale.
+        assert!(drawn_extent(&without_reference) > plot_height * 0.7);
+        assert!(drawn_extent(&with_replacement) < plot_height * 0.2);
+    }
+
+    #[test]
+    fn a_statistic_measured_in_years_reports_no_reference() {
+        assert_eq!(reference_value(StatisticKind::MeanAgeAtChildbirth), None);
+        assert_eq!(reference_value(StatisticKind::MeanAgeAtFirstBirth), None);
+        assert_eq!(reference_value(StatisticKind::Tfr), Some(REPLACEMENT_RATE));
+    }
+
+    #[test]
+    fn an_age_is_shown_to_one_decimal_and_a_rate_to_two() {
+        assert_eq!(format_value(StatisticKind::MeanAgeAtFirstBirth, 29.35), "29.4");
+        assert_eq!(format_value(StatisticKind::Tfr, 1.456), "1.46");
     }
 
     #[test]

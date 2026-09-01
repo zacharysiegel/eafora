@@ -78,7 +78,10 @@ pub fn Controls() -> impl IntoView {
                                     value=statistic.code()
                                     selected=move || active_statistic.get() == Some(statistic)
                                 >
-                                    {labels::statistic_label(i18n, statistic)}
+                                    {match labels::statistic_coverage(i18n, statistic) {
+                                        Some(coverage) => format!("{} ({})", labels::statistic_label(i18n, statistic), coverage),
+                                        None => labels::statistic_label(i18n, statistic),
+                                    }}
                                 </option>
                             })
                             .collect_view()}

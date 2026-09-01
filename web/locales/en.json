@@ -15,7 +15,8 @@
       "preliminary": "Preliminary figure, subject to revision.",
       "projection": "Projected figure, not an observation.",
       "imputed": "Imputed figure, not directly reported.",
-      "interpolated": "Interpolated between reported figures."
+      "interpolated": "Interpolated between reported figures.",
+      "estimated": "Estimated figure, not directly reported."
     },
     "expand": "Expand to the full detail.",
     "collapse": "Collapse the detail.",
@@ -39,6 +40,13 @@
     "ccf": "Completed cohort fertility",
     "ccf_unit": "children per woman",
     "ccf_description": "The average number of children born to a woman of a given birth cohort by the end of her childbearing years. Unlike the total fertility rate, it counts births which actually occurred to a real cohort rather than combining one year's age-specific rates into a hypothetical woman.",
+    "mean_age_at_childbirth": "Mean age at childbirth",
+    "mean_age_at_childbirth_unit": "years",
+    "mean_age_at_childbirth_description": "The average age of women giving birth in a given year, across births of every order. It rises as childbearing is postponed, and is reported by Eurostat for Europe only.",
+    "mean_age_at_first_birth": "Mean age at first birth",
+    "mean_age_at_first_birth_unit": "years",
+    "mean_age_at_first_birth_description": "The average age of women at the birth of their first child in a given year. It is the clearest single measure of how late childbearing begins, and is reported by Eurostat for Europe only.",
+    "coverage_europe": "Europe only",
     "picker_label": "Statistic"
   },
   "scrubber": {
@@ -51,7 +59,8 @@
   },
   "source": {
     "wb_wdi": "World Bank WDI",
-    "hfd": "Human Fertility Database"
+    "hfd": "Human Fertility Database",
+    "eurostat": "Eurostat"
   },
   "settings": {
     "title": "Settings",

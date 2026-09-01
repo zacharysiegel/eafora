@@ -76,6 +76,8 @@ pub struct DataSource {
 pub enum StatisticKind {
     Tfr,
     Ccf,
+    MeanAgeAtChildbirth,
+    MeanAgeAtFirstBirth,
 }
 
 /// Whether a statistic describes a slice of calendar time or a group of people followed through their
@@ -92,6 +94,8 @@ impl StatisticKind {
         match self {
             StatisticKind::Tfr => TemporalBasis::Period,
             StatisticKind::Ccf => TemporalBasis::Cohort,
+            StatisticKind::MeanAgeAtChildbirth => TemporalBasis::Period,
+            StatisticKind::MeanAgeAtFirstBirth => TemporalBasis::Period,
         }
     }
 
@@ -99,6 +103,8 @@ impl StatisticKind {
         match self {
             StatisticKind::Tfr => "tfr",
             StatisticKind::Ccf => "ccf",
+            StatisticKind::MeanAgeAtChildbirth => "mean_age_at_childbirth",
+            StatisticKind::MeanAgeAtFirstBirth => "mean_age_at_first_birth",
         }
     }
 }
@@ -110,6 +116,8 @@ impl TryFrom<&str> for StatisticKind {
         match value {
             "tfr" => Ok(StatisticKind::Tfr),
             "ccf" => Ok(StatisticKind::Ccf),
+            "mean_age_at_childbirth" => Ok(StatisticKind::MeanAgeAtChildbirth),
+            "mean_age_at_first_birth" => Ok(StatisticKind::MeanAgeAtFirstBirth),
             other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }
@@ -124,6 +132,7 @@ impl_code_serde!(StatisticKind, code);
 pub enum DataSourceKind {
     WorldBankWDI,
     HumanFertilityDatabase,
+    Eurostat,
 }
 
 impl DataSourceKind {
@@ -131,6 +140,7 @@ impl DataSourceKind {
         match self {
             DataSourceKind::WorldBankWDI => "wb_wdi",
             DataSourceKind::HumanFertilityDatabase => "hfd",
+            DataSourceKind::Eurostat => "eurostat",
         }
     }
 }
@@ -141,6 +151,7 @@ impl TryFrom<&str> for DataSourceKind {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "wb_wdi" => Ok(DataSourceKind::WorldBankWDI),
+            "eurostat" => Ok(DataSourceKind::Eurostat),
             "hfd" => Ok(DataSourceKind::HumanFertilityDatabase),
             other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
@@ -157,6 +168,8 @@ pub enum DataStatus {
     Projection,
     Imputed,
     Interpolated,
+    /// The source computed the value rather than collecting it.
+    Estimated,
 }
 
 impl DataStatus {
@@ -168,6 +181,7 @@ impl DataStatus {
             DataStatus::Projection => "projection",
             DataStatus::Imputed => "imputed",
             DataStatus::Interpolated => "interpolated",
+            DataStatus::Estimated => "estimated",
         }
     }
 }
@@ -183,6 +197,7 @@ impl TryFrom<&str> for DataStatus {
             "projection" => Ok(DataStatus::Projection),
             "imputed" => Ok(DataStatus::Imputed),
             "interpolated" => Ok(DataStatus::Interpolated),
+            "estimated" => Ok(DataStatus::Estimated),
             other => Err(AppError::from(format!("unknown value {:?}", other))),
         }
     }

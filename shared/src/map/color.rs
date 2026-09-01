@@ -53,8 +53,9 @@ impl ColorScale {
     }
 }
 
-/// The choropleth color scale: accent red at position 0, white at position 1 (the TFR direction, where
-/// the most-saturated red marks the lowest value), grey for no-data.
+/// The choropleth color scale: accent red at position 0, white at position 1, grey for no-data. Which end of
+/// a statistic's range reaches the saturated red is the transform's decision, not the scale's: for a fertility
+/// rate it is the lowest value, for a mean age at childbirth the highest.
 /// The value → position mapping is a separate, per-statistic `StatisticColorTransform`.
 pub const CHOROPLETH_SCALE: ColorScale = ColorScale {
     low: ACCENT_FILL,
@@ -69,6 +70,9 @@ pub const CHOROPLETH_SCALE: ColorScale = ColorScale {
 pub enum StatisticColorTransform {
     /// Linear normalization against the observed data range: `min` → 0, `max` → 1, clamped. Data-relative.
     Linear,
+    /// Linear normalization reversed: `max` → 0, `min` → 1, clamped. For a statistic whose high end is the one
+    /// the scale's saturated red should mark.
+    LinearDescending,
     /// A C² curve keyed to absolute values: a convex cubic on `[0, x0]` meeting a concave arctan tail at the
     /// inflection `x0`, through the origin and asymptotic to 1. `y0` is the inflection height (vertically
     /// draggable); `toe` in `[0, 1]` sets the toe convexity (0 linear, 1 flat start), normalized so any `y0`
@@ -81,6 +85,7 @@ impl StatisticColorTransform {
     pub fn position(&self, value: f64, min: f64, max: f64) -> f32 {
         let position: f64 = match self {
             StatisticColorTransform::Linear => linear_normalization(value, min, max),
+            StatisticColorTransform::LinearDescending => 1.0 - linear_normalization(value, min, max),
             StatisticColorTransform::PiecewiseCubicArctan { x0, y0, toe } => piecewise_cubic_arctan(value, *x0, *y0, *toe),
         };
 
@@ -91,7 +96,7 @@ impl StatisticColorTransform {
     /// `None` for `Linear`. The legend marks it generically.
     pub fn inflection(&self) -> Option<f64> {
         match self {
-            StatisticColorTransform::Linear => None,
+            StatisticColorTransform::Linear | StatisticColorTransform::LinearDescending => None,
             StatisticColorTransform::PiecewiseCubicArctan { x0, .. } => Some(*x0),
         }
     }
@@ -101,6 +106,12 @@ pub fn transform_for(statistic: StatisticKind) -> StatisticColorTransform {
     match statistic {
         StatisticKind::Tfr | StatisticKind::Ccf => {
             StatisticColorTransform::PiecewiseCubicArctan { x0: 2.1, y0: 0.65, toe: 0.5 }
+        }
+        /* An age spans a few years where the fertility curve is already saturated, so it needs the range
+           rather than an absolute pivot. Descending, because later childbearing is the end that accompanies
+           lower fertility, which is the end the saturated red marks for the rates. */
+        StatisticKind::MeanAgeAtChildbirth | StatisticKind::MeanAgeAtFirstBirth => {
+            StatisticColorTransform::LinearDescending
         }
     }
 }

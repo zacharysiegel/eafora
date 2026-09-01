@@ -253,6 +253,13 @@
     stroke-dasharray: 3 3;
 }
 
+/* Hidden rather than unmounted: Safari logs an invalid empty attribute value for every attribute Leptos
+   removes when it tears an SVG element down. */
+.region-dock-chart-reference.is-absent,
+.region-dock-chart-reference-value.is-absent {
+    visibility: hidden;
+}
+
 // Dashed like the reference line, so both read as annotations over the series rather than as data.
 .region-dock-chart-cursor {
     stroke: var(--color-ink-muted);
