@@ -190,8 +190,53 @@ async fn build_artifacts_emits_sqlite_shard_with_inserted_rows_and_well_formed_m
 /// The downsampled variant every build emits keeps only the reference year (the United States'
 /// most-recent period). Regions reporting that year are kept; a region reporting only a later year is
 /// still dropped, since the renderer resolves each region's value by exact period.
+/// A statistic no World Bank source covers still reaches the embedded bundle: the picker offers the same
+/// statistics before and after the live bundle swaps in, rather than one then three.
 #[tokio::test]
-async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year() {
+async fn build_artifacts_downsampled_keeps_a_statistic_the_world_bank_does_not_publish() {
+    let pool: PgPool = test_pool().await;
+    let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
+
+    let data_source_id: Uuid = get_data_source_id(&mut transaction, DataSourceKind::Eurostat).await;
+    let statistic_id: Uuid = get_statistic_id(&mut transaction, "mean_age_at_first_birth").await;
+    let fra_region_id: Uuid = get_country_region_id(&mut transaction, "FRA").await;
+    let deu_region_id: Uuid = get_country_region_id(&mut transaction, "DEU").await;
+    let published: DateTime<Utc> = "2026-08-14T00:00:00Z".parse().unwrap();
+    let publication_id: Uuid =
+        insert_data_source_publication(&mut transaction, data_source_id, "2026-08-14T23:00:00+0200", published).await;
+
+    for (region_id, value) in [(fra_region_id, 29.1), (deu_region_id, 30.4)] {
+        insert_statistic_value(
+            &mut transaction,
+            region_id,
+            statistic_id,
+            data_source_id,
+            publication_id,
+            NaiveDate::from_ymd_opt(2023, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+            value,
+        ).await;
+    }
+
+    let temp_dir: tempfile::TempDir = tempfile::tempdir().unwrap();
+    let options: BuildOptions = BuildOptions { test_offline: true };
+    let build: CoupledBuildReport =
+        artifact::build_artifacts(&mut *transaction, temp_dir.path(), "2026-09-01-europe-only", options)
+            .await
+            .expect("build_artifacts succeeds");
+
+    let carries_the_statistic = |report: &BuildReport| -> bool {
+        report.artifacts.shards.iter().any(|shard| shard.file.path.to_string_lossy().contains("mean_age_at_first_birth"))
+    };
+
+    assert!(carries_the_statistic(&build.complete));
+    assert!(carries_the_statistic(&build.downsampled));
+
+    transaction.rollback().await.unwrap();
+}
+
+#[tokio::test]
+async fn build_artifacts_downsampled_keeps_only_the_best_covered_period() {
     let pool: PgPool = test_pool().await;
     let mut transaction: Transaction<'static, Postgres> = pool.begin().await.unwrap();
 
@@ -203,9 +248,8 @@ async fn build_artifacts_downsampled_keeps_only_the_united_states_reference_year
     let wb_published: DateTime<Utc> = "2024-12-31T00:00:00Z".parse().unwrap();
     let publication_id: Uuid = insert_data_source_publication(&mut transaction, data_source_id, "2024-12-12", wb_published).await;
 
-    // The reference year is the USA's most-recent period (2022). France reports it and is kept;
-    // Germany reports only 2023 (later, but not the reference year) and is dropped, as is the
-    // USA's own 2020 value.
+    // Two regions report 2022 and one reports 2023, so 2022 is the best-covered period and anchors the
+    // slice. Germany's later 2023 value is dropped with the USA's earlier 2020 one.
     insert_statistic_value(
         &mut transaction,
         usa_region_id,

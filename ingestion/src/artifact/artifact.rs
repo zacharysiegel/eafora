@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -17,7 +17,6 @@ use crate::error::AppError;
 use shared::artifact::manifest::{self, BundleVariant};
 use shared::filesystem::{self, FileReference, Hashed};
 
-const UNITED_STATES_REGION_CODE: &str = "usa";
 
 /// The subdirectories of a version directory holding the two bundle variants every build emits.
 /// `complete` carries all periods and sources and publishes to the CDN; `downsampled` is World Bank
@@ -178,34 +177,35 @@ fn partition_by_license(candidates: Vec<CandidateValue>) -> Vec<PartitionedValue
         .collect()
 }
 
-/// Reduces a statistic to its World Bank WDI values at one reference year (the most-recent period
-/// the United States reports) for the embedded bundle's single time slice. One shared year is
-/// required because the renderer resolves each region's value by exact period; a per-region-latest
-/// slice would leave every region whose latest year differs from the active period with nothing to
-/// draw. Yields nothing when the United States has no World Bank WDI value to anchor the year.
+/// Reduces a statistic to one reference year for the embedded bundle's single time slice: the period the
+/// most regions report, and the later period where several tie. One shared year is required because the
+/// renderer resolves each region's value by exact period, so a per-region-latest slice would leave every
+/// region whose latest year differs from the active period with nothing to draw. Yields nothing only when the
+/// statistic has no values at all.
 fn downsample_to_reference_year(
     candidates: Vec<CandidateValue>,
     statistic_kind: StatisticKind,
 ) -> Vec<PartitionedValue> {
-    let world_bank_wdi_candidates: Vec<CandidateValue> = candidates
-        .into_iter()
-        .filter(|candidate| candidate.data_source_kind == DataSourceKind::WorldBankWDI)
-        .collect();
+    let mut regions_by_period: BTreeMap<NaiveDate, BTreeSet<&str>> = BTreeMap::new();
+    for candidate in &candidates {
+        regions_by_period
+            .entry(candidate.period.start)
+            .or_default()
+            .insert(candidate.region_code.as_str());
+    }
 
-    let reference_period_start: Option<NaiveDate> = world_bank_wdi_candidates
+    let reference_period_start: Option<NaiveDate> = regions_by_period
         .iter()
-        .filter(|candidate| candidate.region_code == UNITED_STATES_REGION_CODE)
-        .map(|candidate| candidate.period.start)
-        .max();
-    let Some(reference_period_start) = reference_period_start else {
-        log::warn!(
-            "downsampled build omits statistic {:?}: no World Bank WDI United States value to anchor the reference year",
-            statistic_kind,
-        );
+        .max_by_key(|(period_start, regions)| (regions.len(), **period_start))
+        .map(|(period_start, _)| *period_start);
+    let Some(reference_period_start) = reference_period_start
+    else {
+        log::warn!("downsampled build omits statistic; [statistic={:?}]", statistic_kind);
+
         return Vec::new();
     };
 
-    world_bank_wdi_candidates
+    candidates
         .into_iter()
         .filter(|candidate| candidate.period.start == reference_period_start)
         .map(|candidate| {
@@ -297,28 +297,39 @@ mod tests {
     }
 
     #[test]
-    fn downsample_to_reference_year_excludes_sources_other_than_world_bank_wdi() {
+    fn downsample_to_reference_year_keeps_every_source_at_the_reference_period() {
         let candidates: Vec<CandidateValue> = vec![
             candidate_value("usa", DataSourceKind::WorldBankWDI, 2023, 1.62),
+            candidate_value("deu", DataSourceKind::Eurostat, 2023, 1.46),
             candidate_value("usa", DataSourceKind::HumanFertilityDatabase, 2025, 1.50),
-            candidate_value("deu", DataSourceKind::HumanFertilityDatabase, 2023, 1.46),
         ];
 
         let kept: Vec<PartitionedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
 
-        assert_eq!(kept.len(), 1);
-        assert_eq!(kept[0].region_code, "usa");
-        assert_eq!(kept[0].data_source_kind, DataSourceKind::WorldBankWDI);
-        assert_eq!(kept[0].period.start, NaiveDate::from_ymd_opt(2023, 1, 1).unwrap());
+        // A statistic no World Bank source publishes still reaches the embedded bundle.
+        assert_eq!(kept.len(), 2);
+        assert!(kept.iter().any(|value| value.data_source_kind == DataSourceKind::Eurostat));
+        assert!(kept.iter().all(|value| value.period.start == NaiveDate::from_ymd_opt(2023, 1, 1).unwrap()));
     }
 
     #[test]
-    fn downsample_to_reference_year_yields_nothing_without_united_states_data() {
+    fn downsample_to_reference_year_prefers_the_period_the_most_regions_report() {
         let candidates: Vec<CandidateValue> = vec![
-            candidate_value("deu", DataSourceKind::WorldBankWDI, 2023, 1.46),
+            candidate_value("deu", DataSourceKind::Eurostat, 2023, 1.46),
+            candidate_value("fra", DataSourceKind::Eurostat, 2023, 1.79),
+            candidate_value("deu", DataSourceKind::Eurostat, 2024, 1.35),
         ];
 
         let kept: Vec<PartitionedValue> = downsample_to_reference_year(candidates, StatisticKind::try_from("tfr").unwrap());
+
+        // 2024 is later but only one region reports it, so the slice would be nearly empty.
+        assert_eq!(kept.len(), 2);
+        assert!(kept.iter().all(|value| value.period.start == NaiveDate::from_ymd_opt(2023, 1, 1).unwrap()));
+    }
+
+    #[test]
+    fn downsample_to_reference_year_yields_nothing_for_a_statistic_with_no_values() {
+        let kept: Vec<PartitionedValue> = downsample_to_reference_year(Vec::new(), StatisticKind::try_from("tfr").unwrap());
 
         assert!(kept.is_empty());
     }
