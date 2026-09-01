@@ -177,7 +177,7 @@ Settled while reviewing the draft. Each was an open question; the reasoning is r
 Facts no probe could establish, each gating a later phase rather than this one.
 
 1. **The regional dataset codes and their dimension shape.** Probing covered the country-level dataset only. The regional fertility datasets, their indicator coverage at NUTS-2 and NUTS-3, and whether they carry the same flag attributes are unestablished, and Phase C cannot be ordered without them.
-2. **Whether a single boundary source covers every NUTS region ingested.** EuroGlobalMap's NUTS layer is optional per country in its specification, so coverage is settled only by downloading the file and looking. Phase D depends on it, and on `docs/architecture/geometry.md` reaching `master`.
+2. **Whether a single boundary source covers every NUTS region ingested.** EuroGlobalMap's NUTS layer is optional per country in its specification, so coverage is settled only by downloading the file and looking. Phase D depends on it; the rest of that phase's design is settled in `docs/architecture/geometry.md`.
 
 ## Constitution check
 

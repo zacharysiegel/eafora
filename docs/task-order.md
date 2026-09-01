@@ -9,7 +9,7 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
 ## Sequence
 
 1. **Eurostat ingestion** — the next data source, and the first to carry regions below country level: fertility at NUTS-2 and NUTS-3, plus fresher country figures than WDI holds for members. Spec, plan and tasks in `specs/010-eurostat-ingestion/`. **In progress** (`010-eurostat-ingestion`).
-   - Phase A adds the canonical vocabulary and the presentation for two statistics measured in years; Phase B adds the country-level adapter. Phases C and D, the subnational region model and its geometry, are sketches: C needs the regional datasets probed, and D needs `docs/architecture/geometry.md` on master and a boundary file downloaded to see whether its NUTS layer covers every country.
+   - Phase A adds the canonical vocabulary and the presentation for two statistics measured in years; Phase B adds the country-level adapter. Phases C and D, the subnational region model and its geometry, are sketches: C needs the regional datasets probed, and D needs a boundary file downloaded to see whether EuroGlobalMap's optional NUTS layer covers every country, its design being settled in `docs/architecture/geometry.md`.
    - Sources take priority over the iOS client from here.
    - Unblocking UN WPP is a written reply from `population@un.org` confirming reuse terms, which is an errand rather than a task; WPP jumps ahead of Eurostat if it arrives, being the wider source.
 
