@@ -136,7 +136,8 @@ with subnational_1 as (
 )
 insert into subdivision (region_id, nuts_code)
 select subnational_1.id, upper(subnational_1.code)
-from subnational_1;
+from subnational_1
+;
 
 with subnational_2 as (
     insert into region (code, name_en, level, parent_region_id) values
@@ -484,7 +485,8 @@ with subnational_2 as (
 )
 insert into subdivision (region_id, nuts_code)
 select subnational_2.id, upper(subnational_2.code)
-from subnational_2;
+from subnational_2
+;
 
 with subnational_3 as (
     insert into region (code, name_en, level, parent_region_id) values
@@ -2050,12 +2052,19 @@ with subnational_3 as (
 )
 insert into subdivision (region_id, nuts_code)
 select subnational_3.id, upper(subnational_3.code)
-from subnational_3;
+from subnational_3
+;
 
 -- migrate:down
 
+delete from statistic_value
+where region_id in (select id from region where level in ('subnational_1', 'subnational_2', 'subnational_3'))
+;
+
 delete from subdivision
-where region_id in (select id from region where level in ('subnational_1', 'subnational_2', 'subnational_3'));
+where region_id in (select id from region where level in ('subnational_1', 'subnational_2', 'subnational_3'))
+;
 
 delete from region
-where level in ('subnational_1', 'subnational_2', 'subnational_3');
+where level in ('subnational_1', 'subnational_2', 'subnational_3')
+;

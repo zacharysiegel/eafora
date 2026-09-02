@@ -63,7 +63,7 @@ pub enum EurostatGeoLevel {
 }
 
 impl EurostatGeoLevel {
-    pub fn code(&self) -> &'static str {
+    pub const fn code(self) -> &'static str {
         match self {
             EurostatGeoLevel::Country => "country",
             EurostatGeoLevel::Nuts1 => "nuts1",
@@ -141,15 +141,15 @@ fn superseded_geo_codes(response: &EurostatResponse) -> BTreeSet<String> {
         return BTreeSet::new();
     };
 
-    let vintage_by_code: BTreeMap<&String, Option<i32>> = geo.category.label
+    let vintage_by_code: BTreeMap<&str, Option<i32>> = geo.category.label
         .iter()
-        .map(|(code, label)| (code, geo_vintage_of(label)))
+        .map(|(code, label)| (code.as_str(), geo_vintage_of(label)))
         .collect();
     let current_vintage: Option<i32> = vintage_by_code.values().flatten().max().copied();
 
     vintage_by_code.into_iter()
         .filter(|(_, vintage)| vintage.is_some() && *vintage != current_vintage)
-        .map(|(code, _)| code.clone())
+        .map(|(code, _)| code.to_string())
         .collect()
 }
 
