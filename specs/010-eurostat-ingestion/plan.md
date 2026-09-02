@@ -145,13 +145,19 @@ Steps:
 Probed on 2026-09-01, so the facts below are measured rather than assumed.
 
 - **`demo_r_find2`** carries NUTS-2, **`demo_r_find3`** NUTS-3. Both take the same `geoLevel` parameter the country-level request uses, and it returns one level cleanly: 345 four-character codes and 1,615 five-character codes respectively, with no mixing. The level-mixing hazard recorded against these datasets applies to an unfiltered request, not to a level-filtered one.
-- **Both carry three indicators**, `TOTFERRT`, `AGEMOTH` and `MEDAGEMOTH`. Mean age at first birth is country-level only, so one of the two statistics Phase A added cannot be published subnationally at all, and a NUTS layer for it would be empty rather than sparse.
+- **Both carry three indicators** at every level, `TOTFERRT`, `AGEMOTH` and `MEDAGEMOTH`. Mean age at first birth is country-level only, so one of the two statistics Phase A added cannot be published subnationally at all, and a NUTS layer for it would be empty rather than sparse.
 - **They add a `unit` dimension** the country-level dataset has none of, with members `NR` and `YR`. Every `TOTFERRT` observation sits under `NR`, so the request pins the unit rather than treating it as a varying dimension.
-- **Extraction sizes are comfortable.** NUTS-2 is 24,150 cells for 8,962 observations over 1990 to 2024; NUTS-3 is 38,760 cells for 15,901 observations over 2013 to 2024. Both are far inside the 500,000-cell synchronous ceiling, so each stays one request.
+- **Extraction sizes are comfortable.** NUTS-2 is 24,150 cells for 8,962 observations over 1990 to 2024; NUTS-3 is 38,760 cells for 15,901 observations over 2013 to 2024. NUTS-1 comes from the same `demo_r_find2` dataset at `geoLevel=nuts1` and is smaller than either. Both are far inside the 500,000-cell synchronous ceiling, so each stays one request.
 - **The same flag attribute**, with the same characters Phase B already maps: NUTS-2 returned `b` 107, `p` 81, `e` 40, `ep` 17; NUTS-3 returned `e` 168, `b` 158, `p` 101. No new character appears, so the precedence table needs no change.
 - **NUTS-2 spans 37 country prefixes**, every one of them among the 48 codes the country-level extraction already resolves, so every subnational region has a seeded parent to hang from and no country needs adding.
 
 Two consequences for the order of work. Mean age at first birth stays country-level, so the subnational phase publishes two statistics rather than three. And a NUTS code's parent is its own prefix, which every seeded country already answers to, so the hierarchy is derivable from the codes themselves without a second source.
+
+`region.level` counts depth in our own tree, not the source's classification: `subnational_1` is a direct child of a country, `subnational_2` a child of a `subnational_1`, and so on. Settled by the owner.
+
+That makes tier-skipping expensive, so this phase ingests NUTS-1 as well as NUTS-2 and NUTS-3. Taking only the lower two would put NUTS-2 regions directly under their country as `subnational_1`, and adding NUTS-1 later would have to relevel and reparent every row beneath it. NUTS-1 costs one further extraction of approximately 92 regions through `geoLevel=nuts1`, after which the depth is permanent and, for Europe, our tier numbers coincide with Eurostat's.
+
+The invariant this buys is that a region's level is one deeper than its parent's. Nothing in Postgres enforces a cross-row rule like that without a trigger, so it is checked where the rows are written rather than declared.
 
 What is already known about the shape:
 
