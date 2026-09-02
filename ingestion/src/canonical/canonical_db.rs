@@ -1,9 +1,9 @@
 use sqlx::PgExecutor;
 
-use shared::canonical::canonical_model::{Country, DataSource, DataSourceKind, Region, Statistic};
+use shared::canonical::canonical_model::{Country, DataSource, DataSourceKind, Region, Statistic, Subdivision};
 
 use crate::canonical::canonical_entity::{
-    CountryEntity, DataSourceEntity, RegionEntity, StatisticEntity,
+    CountryEntity, DataSourceEntity, RegionEntity, StatisticEntity, SubdivisionEntity,
 };
 use crate::error::AppError;
 
@@ -50,7 +50,7 @@ pub async fn find_region_by_code<'e>(
     let region_entity: Option<RegionEntity> = sqlx::query_as!(
         RegionEntity,
         r#"
-        select id, code, name_en, level, parent_region_id, m49_code, nuts_code, iso_3166_2, created, modified
+        select id, code, name_en, level, parent_region_id, m49_code, created, modified
         from region
         where code = $1
         "#,
@@ -62,15 +62,15 @@ pub async fn find_region_by_code<'e>(
     Ok(region_entity.map(Region::from))
 }
 
-pub async fn find_region_by_nuts_code<'e>(
+pub async fn find_subdivision_by_nuts_code<'e>(
     executor: impl PgExecutor<'e>,
     nuts_code: &str,
-) -> Result<Option<Region>, AppError> {
-    let region_entity: Option<RegionEntity> = sqlx::query_as!(
-        RegionEntity,
+) -> Result<Option<Subdivision>, AppError> {
+    let subdivision_entity: Option<SubdivisionEntity> = sqlx::query_as!(
+        SubdivisionEntity,
         r#"
-        select id, code, name_en, level, parent_region_id, m49_code, nuts_code, iso_3166_2, created, modified
-        from region
+        select region_id, nuts_code, iso_3166_2, created, modified
+        from subdivision
         where nuts_code = $1
         "#,
         nuts_code,
@@ -78,18 +78,18 @@ pub async fn find_region_by_nuts_code<'e>(
     .fetch_optional(executor)
     .await?;
 
-    Ok(region_entity.map(Region::from))
+    Ok(subdivision_entity.map(Subdivision::from))
 }
 
-pub async fn find_region_by_iso_3166_2<'e>(
+pub async fn find_subdivision_by_iso_3166_2<'e>(
     executor: impl PgExecutor<'e>,
     iso_3166_2: &str,
-) -> Result<Option<Region>, AppError> {
-    let region_entity: Option<RegionEntity> = sqlx::query_as!(
-        RegionEntity,
+) -> Result<Option<Subdivision>, AppError> {
+    let subdivision_entity: Option<SubdivisionEntity> = sqlx::query_as!(
+        SubdivisionEntity,
         r#"
-        select id, code, name_en, level, parent_region_id, m49_code, nuts_code, iso_3166_2, created, modified
-        from region
+        select region_id, nuts_code, iso_3166_2, created, modified
+        from subdivision
         where iso_3166_2 = $1
         "#,
         iso_3166_2,
@@ -97,7 +97,7 @@ pub async fn find_region_by_iso_3166_2<'e>(
     .fetch_optional(executor)
     .await?;
 
-    Ok(region_entity.map(Region::from))
+    Ok(subdivision_entity.map(Subdivision::from))
 }
 
 pub async fn find_statistic_by_code<'e>(

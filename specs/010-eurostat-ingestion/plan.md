@@ -125,22 +125,20 @@ A complete build, publish and embedded sync ran once the Natural Earth CDN was r
 
 Two observations worth carrying. `verify-site-tree.sh` reads `target/site` rather than `web/static`, so it reports the shard count of the last site build rather than of the tree just synced; it said one shard while the synced tree held four. And republishing a version label that already exists fails by design, with the guard printing a backtrace that reads like a crash rather than a refusal.
 
-## Phase C0: external identifiers on the region
+## Phase C0: identifiers for a subdivision
 
-A region is identified externally by more than one scheme, and today each scheme has its own home: `region.m49_code` is a column, `country.iso3` and `country.iso2` are columns on the one-to-one extension table, and a NUTS code has nowhere at all. Türkiye is what forces the question. Its provinces are one region carrying two identifiers, a NUTS code from Eurostat and an ISO 3166-2 code from the boundary source, and the two schemes have no computable relation, so without somewhere to put both, the pipeline needs a committed table of 81 pairs to get from a polygon to the region its values belong to.
+A region is identified externally by more than one scheme, and each scheme belongs where the rows that have it live. `region.m49_code` sits on the spine because most levels have one. ISO 3166-1 codes sit on `country`, a strict 1:1 extension, because only a country has them. A NUTS code and an ISO 3166-2 code are the same case one level down: only a subdivision has them, so they get their own strict 1:1 extension, `subdivision`, rather than nullable columns on the spine that are null for every row above country level.
 
-`region` gains two nullable columns beside `m49_code`, each unique: a NUTS code and an ISO 3166-2 code. Resolving a polygon to a region is then a lookup rather than a mapping, and the 81 pairs become seed data instead of code. The name match still happens once, in the seed generator, which is where a heuristic belongs; nothing downstream repeats it.
+Türkiye is what forces the question. Its provinces are one territory named by two schemes with no computable relation, a NUTS code from Eurostat and an ISO 3166-2 code from the boundary source, since ISO numbers a country's subdivisions alphabetically and NUTS numbers them by statistical grouping. Without somewhere to hold both, resolving a polygon to the region its values belong to needs a table of 81 pairs consulted at build time; with the extension, it is a lookup and the pairs are seed data.
 
-Columns rather than an association table of region, scheme and value. Five schemes are in sight across the whole roadmap, the rows are sparse but the table is small, and every lookup stays one indexed predicate instead of a join. An association table is the better answer at twenty schemes and the worse one at five.
-
-`country.iso3` and `country.iso2` stay where they are. Moving them up would leave `country` holding nothing but a foreign key and its timestamps, which argues for dropping the table outright, and that is a refactor across 68 identifier references in 14 files with no benefit to this feature. The split is worth naming as deliberate rather than discovering it later: `country` is a one-to-one extension for the identifiers only a country has, and `region` carries the ones any level can.
+Note the two schemes are unrelated despite the similar names: `country.iso2` is ISO 3166-1 alpha-2, a country (`TR`), and `subdivision.iso_3166_2` is ISO 3166-2, a subdivision (`TR-34`). No country row has the latter and no subdivision row has the former.
 
 Steps:
 
-1. One migration adding `nuts_code` and `iso_3166_2` to `region`, both nullable and unique, each with a catalog comment naming the scheme and its vintage. NUTS codes are revised every few years and are not stable across revisions, which the comment has to say.
-2. `Region` in `shared/src/canonical/canonical_model.rs` gains both fields, and `RegionEntity` its columns.
-3. `canonical_db` gains one lookup per scheme, following `find_country_by_iso2`'s shape. A caller that has a NUTS code should not be reaching through `country`.
-4. Nothing populates the new columns yet. Phase C seeds them for the regions it creates.
+1. One migration creating `subdivision`, mirroring `country`'s shape: `region_id` as both primary and foreign key, the two identifier columns nullable and unique, timestamps, and a catalog comment per column. The NUTS comment records that a code identifies a territory only within one revision, since the classification is re-legislated and codes are reused.
+2. `Subdivision` in `shared/src/canonical/canonical_model.rs` beside `Country`, with `SubdivisionEntity` and its conversion beside `CountryEntity`.
+3. `canonical_db` gains a lookup per scheme, following `find_country_by_iso2`.
+4. Nothing populates the table yet. Phase C inserts a row per subnational region it creates.
 
 ## Phase C, sketch: subnational regions with NUTS-2 values
 

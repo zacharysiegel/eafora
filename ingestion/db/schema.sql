@@ -199,9 +199,7 @@ CREATE TABLE public.region (
     parent_region_id uuid,
     m49_code text,
     created timestamp with time zone DEFAULT now() NOT NULL,
-    modified timestamp with time zone DEFAULT now() NOT NULL,
-    nuts_code text,
-    iso_3166_2 text
+    modified timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -231,20 +229,6 @@ COMMENT ON COLUMN public.region.parent_region_id IS 'null only for top-level reg
 --
 
 COMMENT ON COLUMN public.region.m49_code IS 'UN M49 numeric code as text (preserves leading zeros like ''021''); also populated for country-level rows (USA=''840'', DEU=''276''); nullable for future non-M49 levels (subnational) that have no M49 equivalent';
-
-
---
--- Name: COLUMN region.nuts_code; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.region.nuts_code IS 'Eurostat NUTS code (''DE11'', ''TR100''), which identifies a region only within one revision of the classification: NUTS is re-legislated every few years and a code can be reused for different territory across revisions, so a code is meaningful only alongside the vintage it was seeded from';
-
-
---
--- Name: COLUMN region.iso_3166_2; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.region.iso_3166_2 IS 'ISO 3166-2 subdivision code (''TR-34''); the scheme boundary geometry sources key subnational units on, and unrelated to nuts_code, which numbers by statistical grouping rather than alphabetically';
 
 
 --
@@ -348,6 +332,47 @@ COMMENT ON COLUMN public.statistic_value.superseded IS 'wall-clock instant when 
 
 
 --
+-- Name: subdivision; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.subdivision (
+    region_id uuid NOT NULL,
+    nuts_code text,
+    iso_3166_2 text,
+    created timestamp with time zone DEFAULT now() NOT NULL,
+    modified timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE subdivision; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.subdivision IS 'strict 1:1 extension of region rows below country level, holding the external identifier schemes only a subdivision has';
+
+
+--
+-- Name: COLUMN subdivision.region_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.subdivision.region_id IS 'both PK and FK to region.id, enforcing the 1:1 extension shape country uses';
+
+
+--
+-- Name: COLUMN subdivision.nuts_code; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.subdivision.nuts_code IS 'Eurostat NUTS code (''DE11'', ''TR100''), which identifies a territory only within one revision of the classification: NUTS is re-legislated periodically and a code can be reused for different territory across revisions';
+
+
+--
+-- Name: COLUMN subdivision.iso_3166_2; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.subdivision.iso_3166_2 IS 'ISO 3166-2 subdivision code (''TR-34''), the scheme boundary sources key subdivisions on';
+
+
+--
 -- Name: artifact_version artifact_version_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -428,27 +453,11 @@ ALTER TABLE ONLY public.region
 
 
 --
--- Name: region region_iso_3166_2_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.region
-    ADD CONSTRAINT region_iso_3166_2_key UNIQUE (iso_3166_2);
-
-
---
 -- Name: region region_m49_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.region
     ADD CONSTRAINT region_m49_code_key UNIQUE (m49_code);
-
-
---
--- Name: region region_nuts_code_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.region
-    ADD CONSTRAINT region_nuts_code_key UNIQUE (nuts_code);
 
 
 --
@@ -497,6 +506,30 @@ ALTER TABLE ONLY public.statistic_value
 
 ALTER TABLE ONLY public.statistic_value
     ADD CONSTRAINT statistic_value_region_id_statistic_id_period_start_period__key UNIQUE (region_id, statistic_id, period_start, period_end, data_source_publication_id);
+
+
+--
+-- Name: subdivision subdivision_iso_3166_2_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subdivision
+    ADD CONSTRAINT subdivision_iso_3166_2_key UNIQUE (iso_3166_2);
+
+
+--
+-- Name: subdivision subdivision_nuts_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subdivision
+    ADD CONSTRAINT subdivision_nuts_code_key UNIQUE (nuts_code);
+
+
+--
+-- Name: subdivision subdivision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subdivision
+    ADD CONSTRAINT subdivision_pkey PRIMARY KEY (region_id);
 
 
 --
@@ -560,6 +593,14 @@ ALTER TABLE ONLY public.statistic_value
 
 ALTER TABLE ONLY public.statistic_value
     ADD CONSTRAINT statistic_value_statistic_id_fkey FOREIGN KEY (statistic_id) REFERENCES public.statistic(id);
+
+
+--
+-- Name: subdivision subdivision_region_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.subdivision
+    ADD CONSTRAINT subdivision_region_id_fkey FOREIGN KEY (region_id) REFERENCES public.region(id);
 
 
 --
