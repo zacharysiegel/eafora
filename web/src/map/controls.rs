@@ -164,8 +164,11 @@ fn span_proportion(
     latest_year: i32,
 ) -> f64 {
     let axis_years: i32 = latest_year - earliest_year;
+    /* An axis of one year is what the embedded bundle carries until the live bundle widens it, and covering
+       all of it would draw a capsule the width of the rail for that moment. The stylesheet floors the capsule
+       to a visible length, so nothing is lost by claiming none of the axis. */
     if axis_years <= 0 {
-        return 1.0;
+        return 0.0;
     }
 
     let period_years: i32 = match period_end {
@@ -283,9 +286,11 @@ mod tests {
         assert_eq!(span_proportion(2000, None, 1960, 2020), 1.0 / 60.0);
     }
 
+    /// The embedded bundle carries one reference year, so this is every cold load until the live bundle
+    /// widens the range. Filling the axis would draw a capsule the width of the rail, which then collapses.
     #[test]
-    fn span_proportion_fills_a_single_year_axis() {
-        assert_eq!(span_proportion(2024, january(2025), 2024, 2024), 1.0);
+    fn span_proportion_claims_none_of_a_single_year_axis() {
+        assert_eq!(span_proportion(2024, january(2025), 2024, 2024), 0.0);
     }
 
     /// An ending at or before the period's own year would otherwise vanish the span.
