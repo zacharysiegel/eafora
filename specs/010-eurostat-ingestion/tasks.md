@@ -110,9 +110,13 @@ Every decision the draft left open is now settled in spec.md §Decisions taken. 
 
 ---
 
-## Phase C: subnational regions with NUTS-2 values
+## Phase C: subnational regions with NUTS values
 
-Sketched in [plan.md](plan.md) §Phase C. No task breakdown: its first task is a probe of Eurostat's regional datasets, and the phase cannot be ordered until the probe settles which datasets carry which indicators at which level, whether they carry the same flag attribute, and how an extraction of them sits against the 500,000-cell synchronous limit. The region-model change, the level-selection question in the client, and a NUTS region lookup are the known substance.
+Delivered. Sketched in [plan.md](plan.md) §Phase C, with the probe's findings folded back into that sketch and the departures from it in §Deviations.
+
+The seed holds 2,023 NUTS regions at three levels, each with a `subdivision` row carrying its code, and the adapter reads all three levels alongside the country extraction. A live run added 55,951 values with no warnings, so every published code resolves to a seeded region.
+
+What this phase does not do is let a reader see any of it. Subnational values reach the canonical store and stop there: the shard carries the levels a client can present, and these have neither geometry nor a control to select them by. Both belong to Phase D.
 
 ## Phase D: subnational geometry
 
@@ -123,3 +127,12 @@ Sketched in [plan.md](plan.md) §Phase D. No task breakdown, and it cannot have 
 ## Deviations from the plan
 
 Recorded here as the work lands.
+
+### Phase C
+
+- **Pinning the unit was wrong.** The plan read `unit` as a dimension every observation shares one member of and had the request pin `NR`. The unit is set by the indicator instead: total fertility is published under `NR` and mean age under `YR`, with no overlap. Pinning silently halved each regional extraction, dropping mean age entirely, and the loss is invisible because the response is well-formed. The request omits the unit and the parser projects that axis away as it already does `freq`. Because the projection is what makes this safe, `parse_observations` now rejects two cells that land on the same indicator, geo and period, so a future dimension cannot quietly overwrite.
+- **Eurostat serves two revisions of the classification at once.** Not anticipated anywhere in the plan. A response carries both NUTS 2021 and NUTS 2016 codes for territory the newer revision recut, and Norway, outside the regulation, is labelled `(statistical region 2016)` rather than `(NUTS 2016)` on the same cycle. Taking every code as published would put overlapping regions at the same level in one layer, so the seed takes the newest revision present and the adapter drops observations on the rest. 62 of 2,085 regions and 702 of 61,654 observations. No temporal coverage is lost: in all five affected countries the surviving regions span the same years or wider.
+- **2,023 regions, not the 2,085 the plan's counts imply.** The plan's probe counted 125, 345 and 1,615 codes before the revision question was known. After the drop the seed holds 125, 340 and 1,558.
+- **The shard is scoped by level rather than the client learning to select one.** The plan named preventing a mixed layer as the substance of the phase. The canonical store now holds subnational values, and `read_candidate_values_for_statistic` takes the levels a shard may carry, which is the world aggregate and countries. Choosing a level in the client is left to the phase that gives those regions geometry, since there is nothing to select between until then.
+- **`RegionLevel` replaces the bare `String` on `Region.level`.** The level had no typed model despite being a constrained column, and scoping the shard read is the first code that branches on it.
+
