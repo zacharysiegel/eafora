@@ -340,7 +340,9 @@ CREATE TABLE public.subdivision (
     nuts_code text,
     iso_3166_2 text,
     created timestamp with time zone DEFAULT now() NOT NULL,
-    modified timestamp with time zone DEFAULT now() NOT NULL
+    modified timestamp with time zone DEFAULT now() NOT NULL,
+    nuts_revision integer,
+    CONSTRAINT subdivision_check CHECK (((nuts_code IS NULL) = (nuts_revision IS NULL)))
 );
 
 
@@ -356,6 +358,13 @@ COMMENT ON TABLE public.subdivision IS 'expected for every region below country 
 --
 
 COMMENT ON COLUMN public.subdivision.nuts_code IS 'identifies a territory only within one revision: NUTS is re-legislated periodically and codes are reused across revisions';
+
+
+--
+-- Name: COLUMN subdivision.nuts_revision; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.subdivision.nuts_revision IS 'the revision of the NUTS classification the code in nuts_code belongs to, named by year as Eurostat names it (2016, 2021); a code names territory only within its revision, and a later revision may reassign it, so an observation resolves on the pair rather than the code';
 
 
 --
@@ -613,4 +622,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260825120000'),
     ('20260901120000'),
     ('20260901180000'),
-    ('20260902120000');
+    ('20260902120000'),
+    ('20260902160000');

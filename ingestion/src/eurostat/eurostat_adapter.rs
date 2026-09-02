@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use chrono::Utc;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
@@ -92,10 +92,14 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         return Ok(IngestReport::default());
     }
 
+    let seeded_nuts_revision: Option<i32> = canonical_db::read_nuts_revision(&mut *transaction).await?;
+
     let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::new();
     let mut warnings: Vec<IngestWarning> = Vec::new();
 
     for (extraction, response) in &responses {
+        warnings.extend(get_later_revision_warning(extraction, response, seeded_nuts_revision));
+
         for (indicator_code, statistic_kind) in INGESTED_INDICATORS {
             if !extraction.indicator_codes.contains(&indicator_code) {
                 continue;
@@ -104,7 +108,12 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
             let for_indicator: Vec<ParsedEurostatObservation> = response.observations
                 .iter()
                 .filter(|observation| observation.indicator_code == indicator_code)
-                .filter(|observation| !response.superseded_geo_codes.contains(&observation.geo_code))
+                .filter(|observation| {
+                    is_from_seeded_revision(
+                        response.revision_by_geo_code.get(&observation.geo_code).copied(),
+                        seeded_nuts_revision,
+                    )
+                })
                 .cloned()
                 .collect();
 
@@ -147,6 +156,44 @@ fn revision_label_of(responses: &[(&EurostatExtraction, ParsedEurostatResponse)]
         .map(|(dataset, updated)| format!("{dataset}={updated}"))
         .collect::<Vec<String>>()
         .join(",")
+}
+
+/// A code the response marks with a revision means what the store thinks it means only when the two agree;
+/// a code no revision has recut carries no marker and stands either way.
+fn is_from_seeded_revision(published_revision: Option<i32>, seeded_nuts_revision: Option<i32>) -> bool {
+    match (published_revision, seeded_nuts_revision) {
+        (Some(published), Some(seeded)) => published == seeded,
+        _ => true,
+    }
+}
+
+/// A revision later than the seeded one is the source recutting regions the store still names the old way.
+/// Every code it touched is skipped, so this is the signal to re-seed.
+fn get_later_revision_warning(
+    extraction: &EurostatExtraction,
+    response: &ParsedEurostatResponse,
+    seeded_nuts_revision: Option<i32>,
+) -> Option<IngestWarning> {
+    let seeded: i32 = seeded_nuts_revision?;
+    let later_revisions: BTreeSet<i32> = response.revision_by_geo_code
+        .values()
+        .copied()
+        .filter(|published| *published > seeded)
+        .collect();
+
+    if later_revisions.is_empty() {
+        return None;
+    }
+
+    Some(IngestWarning {
+        kind: IngestWarningKind::MismatchedRegionRevision,
+        message: format!(
+            "regions published under a later NUTS revision than the seed holds are skipped; \
+             [dataset={} geo_level={} seeded={seeded} published={later_revisions:?}]",
+            extraction.dataset,
+            extraction.geo_level.code(),
+        ),
+    })
 }
 
 pub async fn normalize(
@@ -276,6 +323,62 @@ pub fn status_for_flag(flag: Option<&str>) -> DataStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use crate::eurostat::eurostat_model::ParsedEurostatPublication;
+
+    fn nuts_2_extraction() -> &'static EurostatExtraction {
+        eurostat_client::EXTRACTIONS
+            .iter()
+            .find(|extraction| extraction.geo_level == EurostatGeoLevel::Nuts2)
+            .expect("an extraction for the level")
+    }
+
+    fn response_revised(revision_by_geo_code: BTreeMap<String, i32>) -> ParsedEurostatResponse {
+        ParsedEurostatResponse {
+            publication: ParsedEurostatPublication {
+                revision_label: "2026-01-01T00:00:00+0100".to_string(),
+            },
+            revision_by_geo_code,
+            observations: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn is_from_seeded_revision_keeps_a_code_no_revision_has_recut() {
+        assert!(is_from_seeded_revision(None, Some(2021)));
+    }
+
+    #[test]
+    fn is_from_seeded_revision_matches_only_the_seeded_revision() {
+        assert!(is_from_seeded_revision(Some(2021), Some(2021)));
+        assert!(!is_from_seeded_revision(Some(2016), Some(2021)));
+        assert!(!is_from_seeded_revision(Some(2024), Some(2021)));
+    }
+
+    #[test]
+    fn is_from_seeded_revision_keeps_everything_when_the_store_seeds_none() {
+        assert!(is_from_seeded_revision(Some(2016), None));
+    }
+
+    #[test]
+    fn get_later_revision_warning_stays_silent_for_the_revision_the_seed_supersedes() {
+        let response: ParsedEurostatResponse =
+            response_revised(BTreeMap::from([("HR04".to_string(), 2016)]));
+
+        assert!(get_later_revision_warning(nuts_2_extraction(), &response, Some(2021)).is_none());
+    }
+
+    #[test]
+    fn get_later_revision_warning_names_a_revision_the_seed_does_not_hold_yet() {
+        let response: ParsedEurostatResponse =
+            response_revised(BTreeMap::from([("HR04".to_string(), 2024)]));
+
+        let warning: IngestWarning = get_later_revision_warning(nuts_2_extraction(), &response, Some(2021))
+            .expect("a warning");
+
+        assert!(matches!(warning.kind, IngestWarningKind::MismatchedRegionRevision));
+        assert!(warning.message.contains("2024"), "{}", warning.message);
+    }
 
     #[test]
     fn status_for_flag_maps_each_modelled_character() {

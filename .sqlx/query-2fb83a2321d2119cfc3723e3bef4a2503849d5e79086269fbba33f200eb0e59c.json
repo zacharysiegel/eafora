@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select region_id, nuts_code, iso_3166_2, created, modified\n        from subdivision\n        where nuts_code = $1\n        ",
+  "query": "\n        select region_id, nuts_code, nuts_revision, iso_3166_2, created, modified\n        from subdivision\n        where nuts_code = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -15,16 +15,21 @@
       },
       {
         "ordinal": 2,
+        "name": "nuts_revision",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
         "name": "iso_3166_2",
         "type_info": "Text"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "created",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "modified",
         "type_info": "Timestamptz"
       }
@@ -38,9 +43,10 @@
       false,
       true,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "6ead9cff5ae70d8b4ccd29d364909481ee9aac1ac7b72f7fe2e792c4159c27a1"
+  "hash": "2fb83a2321d2119cfc3723e3bef4a2503849d5e79086269fbba33f200eb0e59c"
 }

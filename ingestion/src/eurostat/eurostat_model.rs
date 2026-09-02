@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
@@ -35,8 +35,8 @@ pub struct ParsedEurostatPublication {
 #[derive(Debug)]
 pub struct ParsedEurostatResponse {
     pub publication: ParsedEurostatPublication,
-    /// Codes the response labels with an older revision of the classification than the newest it carries.
-    pub superseded_geo_codes: BTreeSet<String>,
+    /// The revision of the classification each geo label names, absent for a code no revision has recut.
+    pub revision_by_geo_code: BTreeMap<String, i32>,
     pub observations: Vec<ParsedEurostatObservation>,
 }
 

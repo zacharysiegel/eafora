@@ -31,6 +31,7 @@ pub struct IngestWarning {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IngestWarningKind {
     UnrecognizedRegionCode,
+    MismatchedRegionRevision,
     NotApplicableValue,
     UnparsableRow,
     NoValuesForRegion,

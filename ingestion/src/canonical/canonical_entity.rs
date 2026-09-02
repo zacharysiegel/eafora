@@ -46,6 +46,7 @@ pub struct CountryEntity {
 pub struct SubdivisionEntity {
     pub region_id: Uuid,
     pub nuts_code: Option<String>,
+    pub nuts_revision: Option<i32>,
     pub iso_3166_2: Option<String>,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
@@ -56,6 +57,7 @@ impl From<SubdivisionEntity> for Subdivision {
         Subdivision {
             region_id: entity.region_id,
             nuts_code: entity.nuts_code,
+            nuts_revision: entity.nuts_revision,
             iso_3166_2: entity.iso_3166_2,
             created: entity.created,
             modified: entity.modified,

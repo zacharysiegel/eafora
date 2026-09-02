@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use crate::error::AppError;
 use crate::eurostat::eurostat_model::{
@@ -52,7 +52,7 @@ const DIMENSION_GEO: &str = "geo";
 const DIMENSION_TIME: &str = "time";
 
 /// Eurostat's own name for a revision of the classification, as it appears in a geo label.
-const VINTAGE_MARKER_PREFIXES: [&str; 2] = ["NUTS ", "statistical region "];
+const REVISION_MARKER_PREFIXES: [&str; 2] = ["NUTS ", "statistical region "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EurostatGeoLevel {
@@ -128,38 +128,32 @@ pub fn parse_response(
 
     Ok(ParsedEurostatResponse {
         publication,
-        superseded_geo_codes: superseded_geo_codes(&response),
+        revision_by_geo_code: revision_by_geo_code(&response),
         observations: parse_observations(&response)?,
     })
 }
 
-/// A response carries several revisions of the classification at once, the older ones naming territory the
-/// newer one has recut, so the newest revision present is the one that stands.
-fn superseded_geo_codes(response: &EurostatResponse) -> BTreeSet<String> {
+/// A response names territory under several revisions of the classification at once, so which revision a
+/// code belongs to is what decides whether it means what the canonical store thinks it means.
+fn revision_by_geo_code(response: &EurostatResponse) -> BTreeMap<String, i32> {
     let Some(geo) = response.dimension.get(DIMENSION_GEO)
     else {
-        return BTreeSet::new();
+        return BTreeMap::new();
     };
 
-    let vintage_by_code: BTreeMap<&str, Option<i32>> = geo.category.label
+    geo.category.label
         .iter()
-        .map(|(code, label)| (code.as_str(), geo_vintage_of(label)))
-        .collect();
-    let current_vintage: Option<i32> = vintage_by_code.values().flatten().max().copied();
-
-    vintage_by_code.into_iter()
-        .filter(|(_, vintage)| vintage.is_some() && *vintage != current_vintage)
-        .map(|(code, _)| code.to_string())
+        .filter_map(|(code, label)| geo_revision_of(label).map(|revision| (code.clone(), revision)))
         .collect()
 }
 
 /// Eurostat suffixes a geo label with the revision that defines the region, `(NUTS 2021)` inside the
 /// regulation and `(statistical region 2021)` outside it, and leaves the suffix off where no revision has
 /// recut the region.
-fn geo_vintage_of(label: &str) -> Option<i32> {
+fn geo_revision_of(label: &str) -> Option<i32> {
     let opening: usize = label.rfind('(')?;
     let marker: &str = label[opening + 1..].strip_suffix(')')?;
-    let year: &str = VINTAGE_MARKER_PREFIXES
+    let year: &str = REVISION_MARKER_PREFIXES
         .iter()
         .find_map(|prefix| marker.strip_prefix(prefix))?;
 
@@ -357,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_response_names_the_superseded_codes_and_leaves_the_unmarked_alone() {
+    fn parse_response_reads_each_label_revision_and_leaves_the_unmarked_absent() {
         let body: &str = r#"{
             "updated": "2026-01-01T00:00:00+0100",
             "id": ["indic_de", "geo", "time"],
@@ -380,7 +374,10 @@ mod tests {
         let response: ParsedEurostatResponse =
             parse_response(extraction_for(EurostatGeoLevel::Nuts2), body).unwrap();
 
-        assert_eq!(response.superseded_geo_codes, BTreeSet::from(["HR04".to_string()]));
+        assert_eq!(
+            response.revision_by_geo_code,
+            BTreeMap::from([("HR02".to_string(), 2021), ("HR04".to_string(), 2016)]),
+        );
     }
 
     #[test]
@@ -404,18 +401,18 @@ mod tests {
     }
 
     #[test]
-    fn geo_vintage_of_reads_both_marker_forms() {
-        assert_eq!(geo_vintage_of("North East (UK) (NUTS 2021)"), Some(2021));
-        assert_eq!(geo_vintage_of("Kontinentalna Hrvatska (NUTS 2016)"), Some(2016));
-        assert_eq!(geo_vintage_of("Oslo og Akershus (statistical region 2016)"), Some(2016));
+    fn geo_revision_of_reads_both_marker_forms() {
+        assert_eq!(geo_revision_of("North East (UK) (NUTS 2021)"), Some(2021));
+        assert_eq!(geo_revision_of("Kontinentalna Hrvatska (NUTS 2016)"), Some(2016));
+        assert_eq!(geo_revision_of("Oslo og Akershus (statistical region 2016)"), Some(2016));
     }
 
     #[test]
-    fn geo_vintage_of_leaves_a_parenthesis_that_belongs_to_the_name() {
-        assert_eq!(geo_vintage_of("Berlin"), None);
-        assert_eq!(geo_vintage_of("Centro (ES)"), None);
-        assert_eq!(geo_vintage_of("Lindau (Bodensee)"), None);
-        assert_eq!(geo_vintage_of("Frankfurt (Oder), Kreisfreie Stadt"), None);
+    fn geo_revision_of_leaves_a_parenthesis_that_belongs_to_the_name() {
+        assert_eq!(geo_revision_of("Berlin"), None);
+        assert_eq!(geo_revision_of("Centro (ES)"), None);
+        assert_eq!(geo_revision_of("Lindau (Bodensee)"), None);
+        assert_eq!(geo_revision_of("Frankfurt (Oder), Kreisfreie Stadt"), None);
     }
 
     #[test]

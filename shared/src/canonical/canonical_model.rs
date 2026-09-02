@@ -95,6 +95,7 @@ pub struct Country {
 pub struct Subdivision {
     pub region_id: Uuid,
     pub nuts_code: Option<String>,
+    pub nuts_revision: Option<i32>,
     pub iso_3166_2: Option<String>,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,

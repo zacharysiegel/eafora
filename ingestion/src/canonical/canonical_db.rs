@@ -69,7 +69,7 @@ pub async fn find_subdivision_by_nuts_code<'e>(
     let subdivision_entity: Option<SubdivisionEntity> = sqlx::query_as!(
         SubdivisionEntity,
         r#"
-        select region_id, nuts_code, iso_3166_2, created, modified
+        select region_id, nuts_code, nuts_revision, iso_3166_2, created, modified
         from subdivision
         where nuts_code = $1
         "#,
@@ -88,7 +88,7 @@ pub async fn find_subdivision_by_iso_3166_2<'e>(
     let subdivision_entity: Option<SubdivisionEntity> = sqlx::query_as!(
         SubdivisionEntity,
         r#"
-        select region_id, nuts_code, iso_3166_2, created, modified
+        select region_id, nuts_code, nuts_revision, iso_3166_2, created, modified
         from subdivision
         where iso_3166_2 = $1
         "#,
@@ -98,6 +98,28 @@ pub async fn find_subdivision_by_iso_3166_2<'e>(
     .await?;
 
     Ok(subdivision_entity.map(Subdivision::from))
+}
+
+/// The NUTS revision every seeded code belongs to. More than one would mean the store models two namings of
+/// the same territory at once, which no map layer can draw and no lookup by code alone can disambiguate.
+pub async fn read_nuts_revision<'e>(executor: impl PgExecutor<'e>) -> Result<Option<i32>, AppError> {
+    let nuts_revisions: Vec<i32> = sqlx::query_scalar!(
+        r#"
+        select distinct nuts_revision as "nuts_revision!"
+        from subdivision
+        where nuts_revision is not null
+        "#,
+    )
+    .fetch_all(executor)
+    .await?;
+
+    if nuts_revisions.len() > 1 {
+        return Err(AppError::from(format!(
+            "subdivision holds more than one NUTS revision; [revisions={nuts_revisions:?}]",
+        )));
+    }
+
+    Ok(nuts_revisions.into_iter().next())
 }
 
 pub async fn find_statistic_by_code<'e>(

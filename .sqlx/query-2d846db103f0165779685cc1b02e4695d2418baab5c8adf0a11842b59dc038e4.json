@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select distinct nuts_revision as \"nuts_revision!\"\n        from subdivision\n        where nuts_revision is not null\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nuts_revision!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "2d846db103f0165779685cc1b02e4695d2418baab5c8adf0a11842b59dc038e4"
+}
