@@ -13,7 +13,9 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
    - Sources take priority over the iOS client from here.
    - Unblocking UN WPP is a written reply from `population@un.org` confirming reuse terms, which is an errand rather than a task; WPP jumps ahead of Eurostat if it arrives, being the wider source.
 
-2. **`004-ios-client`** — the iOS surface: a UniFFI boundary, a SwiftUI shell, and the Metal surface. Spec, plan, and tasks in `specs/004-ios-client/`. **In progress** (`004-ios-client`), planning only so far, and parked behind the sources above.
+2. **Narrow-width layout for the two top panels** — stack them into one panel with a collapsible statistic picker, per `docs/backlog.md`. It comes before the iOS client because the web is the cheaper place to find out what a phone-width layout needs, and because the stylesheet has no media query yet, so this decides the responsive vocabulary the rest of the client will follow.
+
+3. **`004-ios-client`** — the iOS surface: a UniFFI boundary, a SwiftUI shell, and the Metal surface. Spec, plan, and tasks in `specs/004-ios-client/`. **In progress** (`004-ios-client`), planning only so far, and parked behind the sources above.
    - Delivered in phases per `plan.md` §Phasing for PRs. Phases 0.1, 0.2, A, and B carry task breakdowns; C and D are scoped sketches that need one before being picked up.
    - Phase 0.1 is blocked on approving `uniffi`, the feature's one new Rust dependency. Phase D is blocked on an Apple Developer Program enrollment, which gates device installs, TestFlight, and Universal Links but nothing on the simulator.
    - Phase 0.2 moves the web client's load orchestration, discovery reconciliation, and version ranking into `shared`, since all three are platform-agnostic Rust that happens to live under `web/`. Doing it first is what stops the iOS client reimplementing 562 lines of it in Swift.
