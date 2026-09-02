@@ -10,7 +10,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use ingestion::adapter::*;
-use shared::canonical::canonical_model::{DataSourceKind, SourceRevision};
+use shared::canonical::canonical_model::{DataSourceKind, RegionLevel, SourceRevision};
 use ingestion::canonical::canonical_entity::StatisticValue;
 use ingestion::canonical::canonical_db;
 use ingestion::ingest;
@@ -318,7 +318,7 @@ async fn find_region_by_code_resolves_seeded_world_region() {
             .expect("world region is seeded");
 
     assert_eq!(region.code, "world");
-    assert_eq!(region.level, "world");
+    assert_eq!(region.level, RegionLevel::World);
     assert_eq!(region.m49_code.as_deref(), Some("001"));
 
     transaction.rollback().await.unwrap();

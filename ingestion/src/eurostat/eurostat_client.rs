@@ -1,31 +1,95 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::error::AppError;
 use crate::eurostat::eurostat_model::{
     EurostatDimension, EurostatResponse, ParsedEurostatObservation, ParsedEurostatPublication,
+    ParsedEurostatResponse,
 };
 use crate::http;
 
 const API_BASE_URL: &str = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data";
-const DATASET: &str = "demo_find";
 
-/// The indicators phase one ingests, one dimension member each.
+/// The indicators this adapter ingests, one dimension member each.
 pub const INDICATOR_TOTAL_FERTILITY_RATE: &str = "TOTFERRT";
 pub const INDICATOR_MEAN_AGE_AT_CHILDBIRTH: &str = "AGEMOTH";
 pub const INDICATOR_MEAN_AGE_AT_FIRST_BIRTH: &str = "AGEMOTH1";
+
+const DATASET_COUNTRY: &str = "demo_find";
+const DATASET_NUTS_1_AND_2: &str = "demo_r_find2";
+const DATASET_NUTS_3: &str = "demo_r_find3";
+
+/// Eurostat splits fertility across datasets by the level of the regions it reports, so one run reads
+/// several. Mean age at first birth is published at country level only.
+pub const EXTRACTIONS: [EurostatExtraction; 4] = [
+    EurostatExtraction {
+        dataset: DATASET_COUNTRY,
+        geo_level: EurostatGeoLevel::Country,
+        indicator_codes: &[
+            INDICATOR_TOTAL_FERTILITY_RATE,
+            INDICATOR_MEAN_AGE_AT_CHILDBIRTH,
+            INDICATOR_MEAN_AGE_AT_FIRST_BIRTH,
+        ],
+    },
+    EurostatExtraction {
+        dataset: DATASET_NUTS_1_AND_2,
+        geo_level: EurostatGeoLevel::Nuts1,
+        indicator_codes: &[INDICATOR_TOTAL_FERTILITY_RATE, INDICATOR_MEAN_AGE_AT_CHILDBIRTH],
+    },
+    EurostatExtraction {
+        dataset: DATASET_NUTS_1_AND_2,
+        geo_level: EurostatGeoLevel::Nuts2,
+        indicator_codes: &[INDICATOR_TOTAL_FERTILITY_RATE, INDICATOR_MEAN_AGE_AT_CHILDBIRTH],
+    },
+    EurostatExtraction {
+        dataset: DATASET_NUTS_3,
+        geo_level: EurostatGeoLevel::Nuts3,
+        indicator_codes: &[INDICATOR_TOTAL_FERTILITY_RATE, INDICATOR_MEAN_AGE_AT_CHILDBIRTH],
+    },
+];
 
 const DIMENSION_INDICATOR: &str = "indic_de";
 const DIMENSION_GEO: &str = "geo";
 const DIMENSION_TIME: &str = "time";
 
-/// Above 500,000 cells Eurostat answers asynchronously and above 5,000,000 it refuses; one indicator across
-/// every country and year is approx. 9,555, so the synchronous path is the only one this adapter needs.
-pub async fn fetch_upstream() -> Result<String, AppError> {
+/// Eurostat's own name for a revision of the classification, as it appears in a geo label.
+const VINTAGE_MARKER_PREFIXES: [&str; 2] = ["NUTS ", "statistical region "];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EurostatGeoLevel {
+    Country,
+    Nuts1,
+    Nuts2,
+    Nuts3,
+}
+
+impl EurostatGeoLevel {
+    pub fn code(&self) -> &'static str {
+        match self {
+            EurostatGeoLevel::Country => "country",
+            EurostatGeoLevel::Nuts1 => "nuts1",
+            EurostatGeoLevel::Nuts2 => "nuts2",
+            EurostatGeoLevel::Nuts3 => "nuts3",
+        }
+    }
+}
+
+pub struct EurostatExtraction {
+    pub dataset: &'static str,
+    pub geo_level: EurostatGeoLevel,
+    pub indicator_codes: &'static [&'static str],
+}
+
+/// Above 500,000 cells Eurostat answers asynchronously and above 5,000,000 it refuses; the largest extraction
+/// here is approx. 77,520, so the synchronous path is the only one this adapter needs.
+pub async fn fetch_upstream(extraction: &EurostatExtraction) -> Result<String, AppError> {
+    let indicator_parameters: String = extraction.indicator_codes
+        .iter()
+        .map(|indicator_code| format!("&{DIMENSION_INDICATOR}={indicator_code}"))
+        .collect();
     let url: String = format!(
-        "{API_BASE_URL}/{DATASET}?format=JSON&lang=EN&geoLevel=country\
-         &{DIMENSION_INDICATOR}={INDICATOR_TOTAL_FERTILITY_RATE}\
-         &{DIMENSION_INDICATOR}={INDICATOR_MEAN_AGE_AT_CHILDBIRTH}\
-         &{DIMENSION_INDICATOR}={INDICATOR_MEAN_AGE_AT_FIRST_BIRTH}",
+        "{API_BASE_URL}/{}?format=JSON&lang=EN&geoLevel={}{indicator_parameters}",
+        extraction.dataset,
+        extraction.geo_level.code(),
     );
 
     let response: reqwest::Response = http::HTTP_CLIENT
@@ -46,20 +110,60 @@ pub async fn fetch_upstream() -> Result<String, AppError> {
 
 /// Eurostat answers an over-large extraction with a SOAP fault under a successful status, so a body that does
 /// not deserialize is reported against the cell limit rather than as a parse bug.
-pub fn parse_response(body: &str) -> Result<(ParsedEurostatPublication, Vec<ParsedEurostatObservation>), AppError> {
+pub fn parse_response(
+    extraction: &EurostatExtraction,
+    body: &str,
+) -> Result<ParsedEurostatResponse, AppError> {
     let response: EurostatResponse = serde_json::from_str(body).map_err(|error| {
         AppError::from(format!(
             "eurostat response is not a JSON-stat dataset, which is how an extraction over 5,000,000 cells is \
-             refused; [dataset={DATASET} error={error}]",
+             refused; [dataset={} error={error}]",
+            extraction.dataset,
         ))
     })?;
 
     let publication: ParsedEurostatPublication = ParsedEurostatPublication {
         revision_label: response.updated.clone(),
     };
-    let observations: Vec<ParsedEurostatObservation> = parse_observations(&response)?;
 
-    Ok((publication, observations))
+    Ok(ParsedEurostatResponse {
+        publication,
+        superseded_geo_codes: superseded_geo_codes(&response),
+        observations: parse_observations(&response)?,
+    })
+}
+
+/// A response carries several revisions of the classification at once, the older ones naming territory the
+/// newer one has recut, so the newest revision present is the one that stands.
+fn superseded_geo_codes(response: &EurostatResponse) -> BTreeSet<String> {
+    let Some(geo) = response.dimension.get(DIMENSION_GEO)
+    else {
+        return BTreeSet::new();
+    };
+
+    let vintage_by_code: BTreeMap<&String, Option<i32>> = geo.category.label
+        .iter()
+        .map(|(code, label)| (code, geo_vintage_of(label)))
+        .collect();
+    let current_vintage: Option<i32> = vintage_by_code.values().flatten().max().copied();
+
+    vintage_by_code.into_iter()
+        .filter(|(_, vintage)| vintage.is_some() && *vintage != current_vintage)
+        .map(|(code, _)| code.clone())
+        .collect()
+}
+
+/// Eurostat suffixes a geo label with the revision that defines the region, `(NUTS 2021)` inside the
+/// regulation and `(statistical region 2021)` outside it, and leaves the suffix off where no revision has
+/// recut the region.
+fn geo_vintage_of(label: &str) -> Option<i32> {
+    let opening: usize = label.rfind('(')?;
+    let marker: &str = label[opening + 1..].strip_suffix(')')?;
+    let year: &str = VINTAGE_MARKER_PREFIXES
+        .iter()
+        .find_map(|prefix| marker.strip_prefix(prefix))?;
+
+    year.parse().ok()
 }
 
 /// JSON-stat addresses an observation by one flat index over the dimensions in `id` order, so a position is
@@ -75,10 +179,22 @@ fn parse_observations(response: &EurostatResponse) -> Result<Vec<ParsedEurostatO
     let strides: Vec<usize> = strides_of(&response.size);
 
     let mut observations: Vec<ParsedEurostatObservation> = Vec::with_capacity(response.value.len());
+    let mut projected_coordinates: HashSet<(usize, usize, usize)> = HashSet::with_capacity(response.value.len());
     for (&position, &value) in &response.value {
         let indicator_index: usize = (position / strides[indicator_axis]) % response.size[indicator_axis];
         let geo_index: usize = (position / strides[geo_axis]) % response.size[geo_axis];
         let time_index: usize = (position / strides[time_axis]) % response.size[time_axis];
+
+        let is_first: bool = projected_coordinates.insert((indicator_index, geo_index, time_index));
+        if !is_first {
+            return Err(AppError::from(format!(
+                "eurostat cells differ only in a dimension this parser drops, so one would silently replace \
+                 the other; [indicator={} geo={} period={}]",
+                indicator_codes[indicator_index],
+                geo_codes[geo_index],
+                time_codes[time_index],
+            )));
+        }
 
         let period_year: i32 = time_codes[time_index].parse().map_err(|_| {
             AppError::from(format!(
@@ -148,6 +264,17 @@ mod tests {
     const FLAGGED_OBSERVATIONS: &str = include_str!("../../samples/eurostat/flagged_observations.json");
     const UNFLAGGED_OBSERVATIONS: &str = include_str!("../../samples/eurostat/unflagged_observations.json");
 
+    fn extraction_for(geo_level: EurostatGeoLevel) -> &'static EurostatExtraction {
+        EXTRACTIONS
+            .iter()
+            .find(|extraction| extraction.geo_level == geo_level)
+            .expect("an extraction for the level")
+    }
+
+    fn parse_country_level(body: &str) -> Result<ParsedEurostatResponse, AppError> {
+        parse_response(extraction_for(EurostatGeoLevel::Country), body)
+    }
+
     fn observation<'a>(
         observations: &'a [ParsedEurostatObservation],
         indicator_code: &str,
@@ -163,37 +290,40 @@ mod tests {
 
     #[test]
     fn parse_response_reads_the_updated_timestamp_as_the_revision_label() {
-        let (publication, _) = parse_response(COUNTRY_LEVEL_EXTRACTION).unwrap();
+        let response: ParsedEurostatResponse = parse_country_level(COUNTRY_LEVEL_EXTRACTION).unwrap();
 
-        assert_eq!(publication.revision_label, "2026-08-14T23:00:00+0200");
+        assert_eq!(response.publication.revision_label, "2026-08-14T23:00:00+0200");
     }
 
     #[test]
     fn parse_response_addresses_every_observation_by_its_flat_index() {
-        let (_, observations) = parse_response(COUNTRY_LEVEL_EXTRACTION).unwrap();
+        let response: ParsedEurostatResponse = parse_country_level(COUNTRY_LEVEL_EXTRACTION).unwrap();
 
         // 5,001 of 9,555 addressable cells carry a value; the rest are simply absent from the value map.
-        assert_eq!(observations.len(), 5001);
+        assert_eq!(response.observations.len(), 5001);
 
         let french_rate: &ParsedEurostatObservation =
-            observation(&observations, INDICATOR_TOTAL_FERTILITY_RATE, "FR", 2023).unwrap();
+            observation(&response.observations, INDICATOR_TOTAL_FERTILITY_RATE, "FR", 2023).unwrap();
         assert!((french_rate.value - 1.66).abs() < 1e-9);
 
         let french_first_birth: &ParsedEurostatObservation =
-            observation(&observations, INDICATOR_MEAN_AGE_AT_FIRST_BIRTH, "FR", 2023).unwrap();
+            observation(&response.observations, INDICATOR_MEAN_AGE_AT_FIRST_BIRTH, "FR", 2023).unwrap();
         assert!(french_first_birth.value > 28.0 && french_first_birth.value < 30.0);
     }
 
     #[test]
     fn parse_response_reads_all_three_indicators() {
-        let (_, observations) = parse_response(COUNTRY_LEVEL_EXTRACTION).unwrap();
+        let response: ParsedEurostatResponse = parse_country_level(COUNTRY_LEVEL_EXTRACTION).unwrap();
 
         for indicator_code in [
             INDICATOR_TOTAL_FERTILITY_RATE,
             INDICATOR_MEAN_AGE_AT_CHILDBIRTH,
             INDICATOR_MEAN_AGE_AT_FIRST_BIRTH,
         ] {
-            let count: usize = observations.iter().filter(|observation| observation.indicator_code == indicator_code).count();
+            let count: usize = response.observations
+                .iter()
+                .filter(|observation| observation.indicator_code == indicator_code)
+                .count();
 
             assert!(count > 1000, "{indicator_code} carried only {count} observations");
         }
@@ -201,28 +331,91 @@ mod tests {
 
     #[test]
     fn parse_response_attaches_a_flag_to_the_observation_it_belongs_to() {
-        let (_, observations) = parse_response(FLAGGED_OBSERVATIONS).unwrap();
+        let response: ParsedEurostatResponse = parse_country_level(FLAGGED_OBSERVATIONS).unwrap();
 
         // The sample's status map flags positions 2 and 3, but only position 3 carries a value; a flag on a
         // valueless cell has no observation to attach to and is dropped with it.
-        assert_eq!(observations.len(), 1);
-        assert_eq!(observations[0].period_year, 2016);
-        assert_eq!(observations[0].flag.as_deref(), Some("p"));
+        assert_eq!(response.observations.len(), 1);
+        assert_eq!(response.observations[0].period_year, 2016);
+        assert_eq!(response.observations[0].flag.as_deref(), Some("p"));
     }
 
     #[test]
     fn parse_response_leaves_the_flag_absent_when_the_response_carries_no_status() {
-        let (_, observations) = parse_response(UNFLAGGED_OBSERVATIONS).unwrap();
+        let response: ParsedEurostatResponse = parse_country_level(UNFLAGGED_OBSERVATIONS).unwrap();
 
-        assert!(!observations.is_empty());
-        assert!(observations.iter().all(|observation| observation.flag.is_none()));
+        assert!(!response.observations.is_empty());
+        assert!(response.observations.iter().all(|observation| observation.flag.is_none()));
     }
 
     #[test]
     fn parse_response_rejects_a_body_that_is_not_a_dataset() {
-        let error: AppError = parse_response("<S:Fault><faultcode>413</faultcode></S:Fault>").unwrap_err();
+        let error: AppError =
+            parse_country_level("<S:Fault><faultcode>413</faultcode></S:Fault>").unwrap_err();
 
         assert!(error.to_string().contains("5,000,000"));
+    }
+
+    #[test]
+    fn parse_response_names_the_superseded_codes_and_leaves_the_unmarked_alone() {
+        let body: &str = r#"{
+            "updated": "2026-01-01T00:00:00+0100",
+            "id": ["indic_de", "geo", "time"],
+            "size": [1, 3, 1],
+            "dimension": {
+                "indic_de": {"category": {"index": {"TOTFERRT": 0}}},
+                "geo": {"category": {
+                    "index": {"HR02": 0, "HR04": 1, "DE3": 2},
+                    "label": {
+                        "HR02": "Panonska Hrvatska (NUTS 2021)",
+                        "HR04": "Kontinentalna Hrvatska (NUTS 2016)",
+                        "DE3": "Berlin"
+                    }
+                }},
+                "time": {"category": {"index": {"2020": 0}}}
+            },
+            "value": {"0": 1.5, "1": 1.4, "2": 1.3}
+        }"#;
+
+        let response: ParsedEurostatResponse =
+            parse_response(extraction_for(EurostatGeoLevel::Nuts2), body).unwrap();
+
+        assert_eq!(response.superseded_geo_codes, BTreeSet::from(["HR04".to_string()]));
+    }
+
+    #[test]
+    fn parse_response_rejects_cells_that_collide_once_a_dimension_is_dropped() {
+        let body: &str = r#"{
+            "updated": "2026-01-01T00:00:00+0100",
+            "id": ["indic_de", "unit", "geo", "time"],
+            "size": [1, 2, 1, 1],
+            "dimension": {
+                "indic_de": {"category": {"index": {"TOTFERRT": 0}}},
+                "unit": {"category": {"index": {"NR": 0, "YR": 1}}},
+                "geo": {"category": {"index": {"DE3": 0}}},
+                "time": {"category": {"index": {"2020": 0}}}
+            },
+            "value": {"0": 1.5, "1": 30.2}
+        }"#;
+
+        let error: AppError = parse_response(extraction_for(EurostatGeoLevel::Nuts1), body).unwrap_err();
+
+        assert!(error.to_string().contains("differ only in a dimension"));
+    }
+
+    #[test]
+    fn geo_vintage_of_reads_both_marker_forms() {
+        assert_eq!(geo_vintage_of("North East (UK) (NUTS 2021)"), Some(2021));
+        assert_eq!(geo_vintage_of("Kontinentalna Hrvatska (NUTS 2016)"), Some(2016));
+        assert_eq!(geo_vintage_of("Oslo og Akershus (statistical region 2016)"), Some(2016));
+    }
+
+    #[test]
+    fn geo_vintage_of_leaves_a_parenthesis_that_belongs_to_the_name() {
+        assert_eq!(geo_vintage_of("Berlin"), None);
+        assert_eq!(geo_vintage_of("Centro (ES)"), None);
+        assert_eq!(geo_vintage_of("Lindau (Bodensee)"), None);
+        assert_eq!(geo_vintage_of("Frankfurt (Oder), Kreisfreie Stadt"), None);
     }
 
     #[test]

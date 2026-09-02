@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::Utc;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
@@ -6,13 +6,14 @@ use uuid::Uuid;
 
 use shared::canonical::canonical_model::{
     Country, DataSource, DataSourceKind, DataStatus, NaiveDatePeriod, SourceRevision, Statistic, StatisticKind,
+    Subdivision,
 };
 
 use crate::adapter::{self, AdapterOptions, IngestWarning, IngestWarningKind, NormalizedStatisticValue};
 use crate::canonical::canonical_db;
 use crate::error::AppError;
-use crate::eurostat::eurostat_client;
-use crate::eurostat::eurostat_model::{ParsedEurostatObservation, ParsedEurostatPublication};
+use crate::eurostat::eurostat_client::{self, EurostatExtraction, EurostatGeoLevel};
+use crate::eurostat::eurostat_model::{ParsedEurostatObservation, ParsedEurostatResponse};
 use crate::ingest;
 use crate::ingest::IngestReport;
 
@@ -75,15 +76,18 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     let last_seen: Option<SourceRevision> =
         ingest::ingest_db::read_latest_publication(&mut *transaction, data_source.id).await?;
 
-    let body: String = eurostat_client::fetch_upstream().await?;
-    let (publication, observations): (ParsedEurostatPublication, Vec<ParsedEurostatObservation>) =
-        eurostat_client::parse_response(&body)?;
+    let mut responses: Vec<(&EurostatExtraction, ParsedEurostatResponse)> = Vec::new();
+    for extraction in &eurostat_client::EXTRACTIONS {
+        let body: String = eurostat_client::fetch_upstream(extraction).await?;
+        let response: ParsedEurostatResponse = eurostat_client::parse_response(extraction, &body)?;
 
-    if adapter::should_skip_run(&last_seen, &publication.revision_label, options) {
-        log::info!(
-            "eurostat is unchanged since the last run; [revision_label={}]",
-            publication.revision_label,
-        );
+        responses.push((extraction, response));
+    }
+
+    let revision_label: String = revision_label_of(&responses);
+
+    if adapter::should_skip_run(&last_seen, &revision_label, options) {
+        log::info!("eurostat is unchanged since the last run; [revision_label={revision_label}]");
 
         return Ok(IngestReport::default());
     }
@@ -91,24 +95,31 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::new();
     let mut warnings: Vec<IngestWarning> = Vec::new();
 
-    for (indicator_code, statistic_kind) in INGESTED_INDICATORS {
-        let for_indicator: Vec<ParsedEurostatObservation> = observations
-            .iter()
-            .filter(|observation| observation.indicator_code == indicator_code)
-            .cloned()
-            .collect();
+    for (extraction, response) in &responses {
+        for (indicator_code, statistic_kind) in INGESTED_INDICATORS {
+            if !extraction.indicator_codes.contains(&indicator_code) {
+                continue;
+            }
 
-        let (values, indicator_warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
-            normalize(&mut *transaction, for_indicator, statistic_kind).await?;
+            let for_indicator: Vec<ParsedEurostatObservation> = response.observations
+                .iter()
+                .filter(|observation| observation.indicator_code == indicator_code)
+                .filter(|observation| !response.superseded_geo_codes.contains(&observation.geo_code))
+                .cloned()
+                .collect();
 
-        normalized_statistic_values.extend(values);
-        warnings.extend(indicator_warnings);
+            let (values, indicator_warnings): (Vec<NormalizedStatisticValue>, Vec<IngestWarning>) =
+                normalize(&mut *transaction, for_indicator, statistic_kind, extraction.geo_level).await?;
+
+            normalized_statistic_values.extend(values);
+            warnings.extend(indicator_warnings);
+        }
     }
 
     let mut report: IngestReport = ingest::record_statistic_values(
         &mut *transaction,
         data_source.id,
-        &publication.revision_label,
+        &revision_label,
         None,
         Utc::now(),
         normalized_statistic_values,
@@ -121,10 +132,28 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     Ok(report)
 }
 
+/// One run reads several datasets, each carrying its own `updated` timestamp, so the revision is all of them
+/// together and any one of them moving defeats the skip.
+fn revision_label_of(responses: &[(&EurostatExtraction, ParsedEurostatResponse)]) -> String {
+    let updated_by_dataset: BTreeMap<&str, &str> = responses
+        .iter()
+        .map(|(extraction, response)| {
+            (extraction.dataset, response.publication.revision_label.as_str())
+        })
+        .collect();
+
+    updated_by_dataset
+        .into_iter()
+        .map(|(dataset, updated)| format!("{dataset}={updated}"))
+        .collect::<Vec<String>>()
+        .join(",")
+}
+
 pub async fn normalize(
     connection: &mut PgConnection,
     observations: Vec<ParsedEurostatObservation>,
     statistic_kind: StatisticKind,
+    geo_level: EurostatGeoLevel,
 ) -> Result<(Vec<NormalizedStatisticValue>, Vec<IngestWarning>), AppError> {
     let statistic: Statistic =
         canonical_db::find_statistic_by_code(&mut *connection, statistic_kind.code())
@@ -142,7 +171,8 @@ pub async fn normalize(
 
     for observation in observations {
         if !region_by_geo_code.contains_key(&observation.geo_code) {
-            let outcome: RegionOutcome = resolve_region(&mut *connection, &observation.geo_code).await?;
+            let outcome: RegionOutcome =
+                resolve_region(&mut *connection, &observation.geo_code, geo_level).await?;
 
             if let RegionOutcome::Warned(warning) = &outcome {
                 warnings.push(warning.clone());
@@ -162,11 +192,27 @@ pub async fn normalize(
     Ok((statistic_values, warnings))
 }
 
-async fn resolve_region(connection: &mut PgConnection, geo_code: &str) -> Result<RegionOutcome, AppError> {
+async fn resolve_region(
+    connection: &mut PgConnection,
+    geo_code: &str,
+    geo_level: EurostatGeoLevel,
+) -> Result<RegionOutcome, AppError> {
     if EXCLUDED_GEO_CODES.contains(&geo_code) {
         return Ok(RegionOutcome::Excluded);
     }
 
+    match geo_level {
+        EurostatGeoLevel::Country => resolve_country_region(&mut *connection, geo_code).await,
+        EurostatGeoLevel::Nuts1 | EurostatGeoLevel::Nuts2 | EurostatGeoLevel::Nuts3 => {
+            resolve_subdivision_region(&mut *connection, geo_code).await
+        },
+    }
+}
+
+async fn resolve_country_region(
+    connection: &mut PgConnection,
+    geo_code: &str,
+) -> Result<RegionOutcome, AppError> {
     let alias: Option<&GeoCodeAlias> = ISO2_BY_EUROSTAT_GEO_CODE
         .iter()
         .find(|alias| alias.geo_code == geo_code);
@@ -179,6 +225,22 @@ async fn resolve_region(connection: &mut PgConnection, geo_code: &str) -> Result
         None => Ok(RegionOutcome::Warned(IngestWarning {
             kind: IngestWarningKind::UnrecognizedRegionCode,
             message: format!("code {geo_code} matches no canonical region"),
+        })),
+    }
+}
+
+async fn resolve_subdivision_region(
+    connection: &mut PgConnection,
+    nuts_code: &str,
+) -> Result<RegionOutcome, AppError> {
+    let subdivision: Option<Subdivision> =
+        canonical_db::find_subdivision_by_nuts_code(&mut *connection, nuts_code).await?;
+
+    match subdivision {
+        Some(subdivision) => Ok(RegionOutcome::Resolved(subdivision.region_id)),
+        None => Ok(RegionOutcome::Warned(IngestWarning {
+            kind: IngestWarningKind::UnrecognizedRegionCode,
+            message: format!("NUTS code {nuts_code} matches no canonical region"),
         })),
     }
 }

@@ -12,19 +12,23 @@ use crate::artifact::artifact_model::{
 use crate::artifact::writer::{flatgeobuf, manifest as manifest_writer, sqlite};
 use crate::artifact::compression::{CompressedArtifact, PlainArtifact};
 use crate::artifact::{artifact_db, compression, hashing, StatisticShard};
-use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, StatisticKind};
+use shared::canonical::canonical_model::{DataSourceKind, LicenseShardClass, RegionLevel, StatisticKind};
 use crate::error::AppError;
 use shared::artifact::manifest::{self, BundleVariant};
 use shared::filesystem::{self, FileReference, Hashed};
 
 
 /// The subdirectories of a version directory holding the two bundle variants every build emits.
-/// `complete` carries all periods and sources and publishes to the CDN; `downsampled` is World Bank
-/// WDI at the United States reference year and is embedded into clients.
+/// `complete` carries all periods and sources and publishes to the CDN; `downsampled` carries the reference
+/// period alone and is embedded into clients.
 pub const SUBDIR_COMPLETE: &str = "complete";
 pub const SUBDIR_DOWNSAMPLED: &str = "downsampled";
 /// The symlink under `EAFORA_ARTIFACTS_DIR` that points at the newest build's version directory.
 pub const LATEST_POINTER: &str = "latest";
+
+/// The levels a client can present. A level with no geometry and no way to select it would still be
+/// coloured and ranked against the regions the map draws.
+const SHARD_REGION_LEVELS: [RegionLevel; 2] = [RegionLevel::World, RegionLevel::Country];
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BuildOptions {
@@ -127,7 +131,7 @@ async fn create_statistic_shards(
 
     for kind in statistic_kinds {
         let candidates: Vec<CandidateValue> =
-            artifact_db::read_candidate_values_for_statistic(&mut *connection, kind).await?;
+            artifact_db::read_candidate_values_for_statistic(&mut *connection, kind, &SHARD_REGION_LEVELS).await?;
         if candidates.is_empty() {
             log::warn!(
                 "statistic {:?} has no candidate values; shard will be missing from this build",

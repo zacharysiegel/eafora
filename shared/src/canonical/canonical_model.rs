@@ -30,11 +30,58 @@ pub struct Region {
     pub id: Uuid,
     pub code: String,
     pub name_en: String,
-    pub level: String,
+    pub level: RegionLevel,
     pub parent_region_id: Option<Uuid>,
     pub m49_code: Option<String>,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
+}
+
+/// Depth in the region tree rather than any one publisher's classification: a `Subnational1` is a direct
+/// child of a country whatever the source that supplied it calls that tier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum RegionLevel {
+    World,
+    Region,
+    Subregion,
+    IntermediateRegion,
+    Country,
+    Subnational1,
+    Subnational2,
+    Subnational3,
+}
+
+impl RegionLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RegionLevel::World => "world",
+            RegionLevel::Region => "region",
+            RegionLevel::Subregion => "subregion",
+            RegionLevel::IntermediateRegion => "intermediate_region",
+            RegionLevel::Country => "country",
+            RegionLevel::Subnational1 => "subnational_1",
+            RegionLevel::Subnational2 => "subnational_2",
+            RegionLevel::Subnational3 => "subnational_3",
+        }
+    }
+}
+
+impl TryFrom<&str> for RegionLevel {
+    type Error = AppError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "world" => Ok(RegionLevel::World),
+            "region" => Ok(RegionLevel::Region),
+            "subregion" => Ok(RegionLevel::Subregion),
+            "intermediate_region" => Ok(RegionLevel::IntermediateRegion),
+            "country" => Ok(RegionLevel::Country),
+            "subnational_1" => Ok(RegionLevel::Subnational1),
+            "subnational_2" => Ok(RegionLevel::Subnational2),
+            "subnational_3" => Ok(RegionLevel::Subnational3),
+            other => Err(AppError::from(format!("unknown value {:?}", other))),
+        }
+    }
 }
 
 pub struct Country {

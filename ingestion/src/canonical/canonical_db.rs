@@ -59,7 +59,7 @@ pub async fn find_region_by_code<'e>(
     .fetch_optional(executor)
     .await?;
 
-    Ok(region_entity.map(Region::from))
+    region_entity.map(Region::try_from).transpose()
 }
 
 pub async fn find_subdivision_by_nuts_code<'e>(

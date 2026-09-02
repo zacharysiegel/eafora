@@ -8,7 +8,7 @@ use crate::artifact::artifact_model::{
 };
 use crate::canonical::canonical_db;
 use shared::canonical::canonical_model::{
-    DataSource, DataSourceKind, SourceAttribution, SourceRevision, StatisticKind,
+    DataSource, DataSourceKind, RegionLevel, SourceAttribution, SourceRevision, StatisticKind,
 };
 use crate::error::AppError;
 use crate::ingest::ingest_db;
@@ -16,7 +16,13 @@ use crate::ingest::ingest_db;
 pub async fn read_candidate_values_for_statistic<'e>(
     executor: impl PgExecutor<'e>,
     statistic_kind: StatisticKind,
+    region_levels: &[RegionLevel],
 ) -> Result<Vec<CandidateValue>, AppError> {
+    let level_codes: Vec<String> = region_levels
+        .iter()
+        .map(|region_level| region_level.as_str().to_string())
+        .collect();
+
     let projections: Vec<CandidateValueProjection> = sqlx::query_as!(
         CandidateValueProjection,
         r#"
@@ -39,8 +45,10 @@ pub async fn read_candidate_values_for_statistic<'e>(
         join data_source_publication on data_source_publication.id = statistic_value.data_source_publication_id
         where statistic_value.superseded is null
           and statistic.code = $1
+          and region.level = any($2)
         "#,
         statistic_kind.code(),
+        &level_codes,
     )
     .fetch_all(executor)
     .await?;

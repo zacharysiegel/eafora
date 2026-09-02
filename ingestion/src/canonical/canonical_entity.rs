@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use shared::canonical::canonical_model::{
-    Country, DataSource, DataSourceKind, DataStatus, LicenseClass, Region, Statistic, Subdivision,
+    Country, DataSource, DataSourceKind, DataStatus, LicenseClass, Region, RegionLevel, Statistic, Subdivision,
 };
 
 use crate::error::AppError;
@@ -18,18 +18,20 @@ pub struct RegionEntity {
     pub modified: DateTime<Utc>,
 }
 
-impl From<RegionEntity> for Region {
-    fn from(entity: RegionEntity) -> Self {
-        Region {
+impl TryFrom<RegionEntity> for Region {
+    type Error = AppError;
+
+    fn try_from(entity: RegionEntity) -> Result<Self, Self::Error> {
+        Ok(Region {
             id: entity.id,
             code: entity.code,
             name_en: entity.name_en,
-            level: entity.level,
+            level: RegionLevel::try_from(entity.level.as_str())?,
             parent_region_id: entity.parent_region_id,
             m49_code: entity.m49_code,
             created: entity.created,
             modified: entity.modified,
-        }
+        })
     }
 }
 
