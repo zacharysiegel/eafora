@@ -348,28 +348,14 @@ CREATE TABLE public.subdivision (
 -- Name: TABLE subdivision; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.subdivision IS 'strict 1:1 extension of region rows below country level, holding the external identifier schemes only a subdivision has';
-
-
---
--- Name: COLUMN subdivision.region_id; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.subdivision.region_id IS 'both PK and FK to region.id, enforcing the 1:1 extension shape country uses';
+COMMENT ON TABLE public.subdivision IS 'expected for every region below country level; nothing enforces it';
 
 
 --
 -- Name: COLUMN subdivision.nuts_code; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.subdivision.nuts_code IS 'Eurostat NUTS code (''DE11'', ''TR100''), which identifies a territory only within one revision of the classification: NUTS is re-legislated periodically and a code can be reused for different territory across revisions';
-
-
---
--- Name: COLUMN subdivision.iso_3166_2; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.subdivision.iso_3166_2 IS 'ISO 3166-2 subdivision code (''TR-34''), the scheme boundary sources key subdivisions on';
+COMMENT ON COLUMN public.subdivision.nuts_code IS 'identifies a territory only within one revision: NUTS is re-legislated periodically and codes are reused across revisions';
 
 
 --
