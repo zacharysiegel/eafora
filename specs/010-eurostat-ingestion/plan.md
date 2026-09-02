@@ -155,7 +155,7 @@ Two consequences for the order of work. Mean age at first birth stays country-le
 
 `region.level` counts depth in our own tree, not the source's classification: `subnational_1` is a direct child of a country, `subnational_2` a child of a `subnational_1`, and so on. Settled by the owner.
 
-That makes tier-skipping expensive, so this phase ingests NUTS-1 as well as NUTS-2 and NUTS-3. Taking only the lower two would put NUTS-2 regions directly under their country as `subnational_1`, and adding NUTS-1 later would have to relevel and reparent every row beneath it. NUTS-1 costs one further extraction of approximately 92 regions through `geoLevel=nuts1`, after which the depth is permanent and, for Europe, our tier numbers coincide with Eurostat's.
+For Eurostat the two therefore line up exactly, and the phase ingests all three levels so that they do: NUTS-1 is `subnational_1`, NUTS-2 is `subnational_2`, NUTS-3 is `subnational_3`. Ingesting only the lower two would put NUTS-2 under its country as a `subnational_1`, and adding NUTS-1 later would relevel and reparent every row beneath it. NUTS-1 costs one further extraction, 125 regions and 3,484 total fertility observations from `demo_r_find2` at `geoLevel=nuts1`, verified live.
 
 The invariant this buys is that a region's level is one deeper than its parent's. Nothing in Postgres enforces a cross-row rule like that without a trigger, so it is checked where the rows are written rather than declared.
 
