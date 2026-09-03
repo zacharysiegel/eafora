@@ -4,6 +4,9 @@
 -- that revision are absent; Norway sits outside the NUTS regulation and Eurostat labels its regions
 -- "statistical region" instead, on the same revision cycle.
 -- Names are Eurostat's own, which are endonyms for most regions even in the English extraction.
+-- Generated via tools/seed_generator: cargo run -p seed_generator --bin nuts_regions --
+--   <m49-iso3166 csv> <nuts1 json> <nuts2 json> <nuts3 json> > <this-file>
+-- The binary's doc comment carries the request each JSON input is the response to.
 
 with subnational_1 as (
     insert into region (code, name_en, level, parent_region_id) values
@@ -134,8 +137,8 @@ with subnational_1 as (
         ('ukn', 'Northern Ireland (UK)', 'subnational_1', (select id from region where code = 'gbr'))
     returning id, code
 )
-insert into subdivision (region_id, nuts_code)
-select subnational_1.id, upper(subnational_1.code)
+insert into subdivision (region_id, nuts_code, nuts_revision)
+select subnational_1.id, upper(subnational_1.code), 2021
 from subnational_1
 ;
 
@@ -483,8 +486,8 @@ with subnational_2 as (
         ('ukn0', 'Northern Ireland (UK)', 'subnational_2', (select id from region where code = 'ukn'))
     returning id, code
 )
-insert into subdivision (region_id, nuts_code)
-select subnational_2.id, upper(subnational_2.code)
+insert into subdivision (region_id, nuts_code, nuts_revision)
+select subnational_2.id, upper(subnational_2.code), 2021
 from subnational_2
 ;
 
@@ -2050,8 +2053,8 @@ with subnational_3 as (
         ('ukn09', 'Ards and North Down', 'subnational_3', (select id from region where code = 'ukn0'))
     returning id, code
 )
-insert into subdivision (region_id, nuts_code)
-select subnational_3.id, upper(subnational_3.code)
+insert into subdivision (region_id, nuts_code, nuts_revision)
+select subnational_3.id, upper(subnational_3.code), 2021
 from subnational_3
 ;
 
