@@ -260,11 +260,7 @@ async fn resolve_country_region(
     connection: &mut PgConnection,
     geo_code: &str,
 ) -> Result<RegionOutcome, AppError> {
-    let alias: Option<&GeoCodeAlias> = ISO2_BY_EUROSTAT_GEO_CODE
-        .iter()
-        .find(|alias| alias.geo_code == geo_code);
-    let iso2: &str = alias.map_or(geo_code, |alias| alias.iso2);
-
+    let iso2: &str = get_iso2_for_geo_code(geo_code);
     let country: Option<Country> = canonical_db::find_country_by_iso2(&mut *connection, iso2).await?;
 
     match country {
@@ -274,6 +270,16 @@ async fn resolve_country_region(
             message: format!("code {geo_code} matches no canonical region"),
         })),
     }
+}
+
+/// The alpha-2 a Eurostat geo code stands for, which is the code itself except where Eurostat departs from
+/// ISO 3166-1. Public because the seed generator resolves a NUTS region's country the same way, and a
+/// disagreement would parent those regions under the wrong country.
+pub fn get_iso2_for_geo_code(geo_code: &str) -> &str {
+    ISO2_BY_EUROSTAT_GEO_CODE
+        .iter()
+        .find(|alias| alias.geo_code == geo_code)
+        .map_or(geo_code, |alias| alias.iso2)
 }
 
 async fn resolve_subdivision_region(

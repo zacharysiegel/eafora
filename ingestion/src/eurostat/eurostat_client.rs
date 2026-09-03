@@ -48,7 +48,7 @@ pub const EXTRACTIONS: [EurostatExtraction; 4] = [
 ];
 
 const DIMENSION_INDICATOR: &str = "indic_de";
-const DIMENSION_GEO: &str = "geo";
+pub const DIMENSION_GEO: &str = "geo";
 const DIMENSION_TIME: &str = "time";
 
 /// Eurostat's own name for a revision of the classification, as it appears in a geo label.
@@ -135,7 +135,7 @@ pub fn parse_response(
 
 /// A response names territory under several revisions of the classification at once, so which revision a
 /// code belongs to is what decides whether it means what the canonical store thinks it means.
-fn revision_by_geo_code(response: &EurostatResponse) -> BTreeMap<String, i32> {
+pub fn revision_by_geo_code(response: &EurostatResponse) -> BTreeMap<String, i32> {
     let Some(geo) = response.dimension.get(DIMENSION_GEO)
     else {
         return BTreeMap::new();
