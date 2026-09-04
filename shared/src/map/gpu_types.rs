@@ -44,6 +44,9 @@ const _: () = assert!(std::mem::size_of::<ViewportUniform>() == 32);
 
 /// Per-country emphasis state, indexed by `EmphasisVertexAttributes::country_index` in a uniform
 /// array. Padded to a multiple of 16 bytes to match the std140 uniform-array element stride.
+///
+/// Held per country because several may carry distinct values at once: a hover transition decays each on
+/// its own clock, so a country keeps a lift after the pointer has left it.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CountryState {
@@ -58,4 +61,7 @@ const _: () = assert!(std::mem::size_of::<CountryState>() == 16);
 
 /// The fixed length of the per-country state uniform array; the shader's `array<CountryState, ...>`
 /// literal length must match this. At least the number of countries in the layer.
+///
+/// A uniform block is limited to 16 KiB under `Limits::downlevel_webgl2_defaults`, which caps this at 1,024
+/// entries; a layer needing more has to hold the same per-country values somewhere else.
 pub const COUNTRY_STATE_ARRAY_LEN: usize = 512;
