@@ -3,11 +3,12 @@ use wgpu::{
     BufferSize, ColorTargetState, ColorWrites, Device, ErrorFilter, ErrorScopeGuard, FragmentState, FrontFace,
     MultisampleState, PipelineCompilationOptions, PipelineLayout, PipelineLayoutDescriptor, PolygonMode,
     PrimitiveState, PrimitiveTopology, RenderPipeline, RenderPipelineDescriptor, ShaderModule, ShaderModuleDescriptor,
-    ShaderSource, ShaderStages, TextureFormat, VertexAttribute, VertexBufferLayout, VertexState, VertexStepMode,
+    ShaderSource, ShaderStages, TextureFormat, TextureSampleType, TextureViewDimension, VertexAttribute,
+    VertexBufferLayout, VertexState, VertexStepMode,
 };
 
 use crate::error::AppError;
-use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_ARRAY_LEN};
+use crate::map::gpu_types::{FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform};
 
 /// The compiled pipelines the renderer draws through, built against a known surface format and so
 /// (re)created at attach time once that format is available.
@@ -94,10 +95,11 @@ pub(crate) fn create_map_bind_group_layout(device: &Device) -> BindGroupLayout {
             BindGroupLayoutEntry {
                 binding: 1,
                 visibility: ShaderStages::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: BufferSize::new((COUNTRY_STATE_ARRAY_LEN * std::mem::size_of::<CountryState>()) as u64),
+                ty: BindingType::Texture {
+                    // Float32 is filterable only with Features::FLOAT32_FILTERABLE, which is not requested.
+                    sample_type: TextureSampleType::Float { filterable: false },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
                 },
                 count: None,
             },

@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::ops::Range;
 use std::sync::Arc;
@@ -6,11 +7,13 @@ use tokio::sync::watch;
 use chrono::NaiveDate;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    Adapter, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, Buffer, BufferAddress,
-    BufferDescriptor, BufferUsages, Color, CommandBuffer, CommandEncoder, CommandEncoderDescriptor, CurrentSurfaceTexture,
-    Device, DeviceDescriptor, ExperimentalFeatures, Features, IndexFormat, Instance, InstanceDescriptor, Limits,
-    LoadOp, MemoryHints, Operations, PowerPreference, Queue, RenderPass, RenderPassColorAttachment,
-    RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture, TextureView, TextureViewDescriptor, Trace,
+    Adapter, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindingResource, Buffer,
+    BufferAddress, BufferDescriptor, BufferUsages, Color, CommandBuffer, CommandEncoder, CommandEncoderDescriptor,
+    CurrentSurfaceTexture, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, IndexFormat, Instance,
+    InstanceDescriptor, Limits, LoadOp, MemoryHints, Operations, Origin3d, PowerPreference, Queue, RenderPass,
+    RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture,
+    TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
+    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, Trace,
 };
 
 use crate::artifact::Bundle;
@@ -19,7 +22,7 @@ use crate::error::AppError;
 use crate::map::color::{self, StatisticColorTransform, Rgba};
 use crate::map::{FrameState, RegionCode, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
-use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_ARRAY_LEN};
+use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_TEXTURE_WIDTH};
 use crate::map::pipeline::{self, RenderPipelines};
 use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
@@ -121,9 +124,25 @@ struct FillColors {
 /// surface.
 struct MapBinding {
     viewport_buffer: Buffer,
-    country_state_buffer: Buffer,
+    country_state_texture: Texture,
+    /// The texels currently holding a non-zero emphasis, so a change clears only the ones it has to.
+    emphasized_country_indices: Vec<u32>,
     bind_group: BindGroup,
     layout: BindGroupLayout,
+}
+
+impl MapBinding {
+    /// A swapped-in layer has its own region count, so the texture is resized to it. The bind group names
+    /// the old texture and is rebuilt with it; the layout is untouched, since the pipelines were built
+    /// against it.
+    fn resize_country_state(&mut self, device: &Device, region_count: usize) {
+        self.country_state_texture = create_country_state_texture(device, region_count);
+        self.emphasized_country_indices.clear();
+
+        let bind_group: BindGroup =
+            create_map_bind_group(device, &self.layout, &self.viewport_buffer, &self.country_state_texture);
+        self.bind_group = bind_group;
+    }
 }
 
 /// Created at attach and dropped at detach as a unit; the geometry, map binding, and color buffer all
@@ -161,7 +180,7 @@ impl Renderer {
 
         let bundle: Arc<Bundle> = bundle_receiver.borrow().clone();
         let country_geometry: CountryGeometry = create_country_geometry(&device, &bundle)?;
-        let map_binding: MapBinding = create_map_binding(&device);
+        let map_binding: MapBinding = create_map_binding(&device, country_geometry.spans.len());
         let fill_colors: FillColors = FillColors {
             buffer: create_fill_color_buffer(&device, country_geometry.positions.count),
             key: None,
@@ -292,25 +311,62 @@ impl Renderer {
         self.queue.write_buffer(&self.map_binding.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
     }
 
-    /// Rewrites the per-country emphasis state each frame: the hovered region gets a thin outline and,
+    /// Rewrites the emphasis texels that changed: the hovered region gets a thin outline and,
     /// when `frame_state.hover_lift_enabled`, the lift; the selected region a bolder outline (no lift; it
     /// reads in the detail panel and drives zoom-to-country). When the same country is both, it keeps the
     /// bolder outline. A region with no matching country (e.g. a stale hover after a bundle swap) is skipped.
-    fn write_country_state(&self, frame_state: &FrameState) {
-        let mut country_state: Vec<CountryState> =
-            vec![CountryState { lift_px: 0.0, outline_px: 0.0, _padding: [0.0; 2] }; COUNTRY_STATE_ARRAY_LEN];
+    fn write_country_state(&mut self, frame_state: &FrameState) {
+        let mut emphasized: BTreeMap<u32, CountryState> = BTreeMap::new();
 
-        if let Some(index) = self.country_index_of(frame_state.selected_region.as_ref()) {
-            country_state[index].outline_px = SELECTED_OUTLINE_PX;
+        if let Some(country_index) = self.country_index_of(frame_state.selected_region.as_ref()) {
+            emphasized.insert(country_index as u32, CountryState { lift_px: 0.0, outline_px: SELECTED_OUTLINE_PX });
         }
-        if let Some(index) = self.country_index_of(frame_state.hovered_region.as_ref()) {
+        if let Some(country_index) = self.country_index_of(frame_state.hovered_region.as_ref()) {
+            let country_state: &mut CountryState = emphasized
+                .entry(country_index as u32)
+                .or_insert(CountryState { lift_px: 0.0, outline_px: 0.0 });
+
             if frame_state.hover_lift_enabled {
-                country_state[index].lift_px = HOVER_LIFT_PX;
+                country_state.lift_px = HOVER_LIFT_PX;
             }
-            country_state[index].outline_px = country_state[index].outline_px.max(HOVER_OUTLINE_PX);
+            country_state.outline_px = country_state.outline_px.max(HOVER_OUTLINE_PX);
         }
 
-        self.queue.write_buffer(&self.map_binding.country_state_buffer, 0, bytemuck::cast_slice(&country_state));
+        let cleared_country_indices: Vec<u32> = self.map_binding.emphasized_country_indices.iter()
+            .copied()
+            .filter(|country_index| !emphasized.contains_key(country_index))
+            .collect();
+
+        for country_index in cleared_country_indices {
+            self.write_country_state_texel(country_index, CountryState { lift_px: 0.0, outline_px: 0.0 });
+        }
+        for (&country_index, &country_state) in &emphasized {
+            self.write_country_state_texel(country_index, country_state);
+        }
+
+        self.map_binding.emphasized_country_indices = emphasized.into_keys().collect();
+    }
+
+    fn write_country_state_texel(&self, country_index: u32, country_state: CountryState) {
+        self.queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &self.map_binding.country_state_texture,
+                mip_level: 0,
+                origin: Origin3d {
+                    x: country_index % COUNTRY_STATE_TEXTURE_WIDTH,
+                    y: country_index / COUNTRY_STATE_TEXTURE_WIDTH,
+                    z: 0,
+                },
+                aspect: TextureAspect::All,
+            },
+            bytemuck::cast_slice(&[country_state]),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size_of::<CountryState>() as u32),
+                rows_per_image: Some(1),
+            },
+            Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+        );
     }
 
     /// The build-order index of the span whose region matches `region`, i.e. the `country_index` its
@@ -423,6 +479,7 @@ impl Renderer {
         );
 
         self.country_geometry = create_country_geometry(&self.device, bundle)?;
+        self.map_binding.resize_country_state(&self.device, self.country_geometry.spans.len());
         self.fill_colors = FillColors {
             buffer: create_fill_color_buffer(&self.device, self.country_geometry.positions.count),
             key: None,
@@ -496,7 +553,7 @@ fn create_instance(backend: RendererBackend) -> Instance {
     }
 }
 
-fn create_map_binding(device: &Device) -> MapBinding {
+fn create_map_binding(device: &Device, region_count: usize) -> MapBinding {
     let layout: BindGroupLayout = pipeline::create_map_bind_group_layout(device);
     let viewport_buffer: Buffer = device.create_buffer(&BufferDescriptor {
         label: Some("eafora-viewport-uniform"),
@@ -504,34 +561,57 @@ fn create_map_binding(device: &Device) -> MapBinding {
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
-    let country_state_buffer: Buffer = device.create_buffer(&BufferDescriptor {
-        label: Some("eafora-country-state-uniform"),
-        size: (COUNTRY_STATE_ARRAY_LEN * size_of::<CountryState>()) as BufferAddress,
-        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let bind_group: BindGroup = device.create_bind_group(&BindGroupDescriptor {
+    let country_state_texture: Texture = create_country_state_texture(device, region_count);
+    let bind_group: BindGroup = create_map_bind_group(device, &layout, &viewport_buffer, &country_state_texture);
+
+    MapBinding {
+        viewport_buffer,
+        country_state_texture,
+        emphasized_country_indices: Vec::new(),
+        bind_group,
+        layout,
+    }
+}
+
+/// One texel per region, laid out in rows because a texture dimension is capped far below the number of
+/// regions a layer can hold. Zero-filled on creation, which is the un-emphasized state.
+fn create_country_state_texture(device: &Device, region_count: usize) -> Texture {
+    let rows: u32 = (region_count as u32).div_ceil(COUNTRY_STATE_TEXTURE_WIDTH).max(1);
+
+    device.create_texture(&TextureDescriptor {
+        label: Some("eafora-country-state"),
+        size: Extent3d { width: COUNTRY_STATE_TEXTURE_WIDTH, height: rows, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rg32Float,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    })
+}
+
+/// No sampler entry: the shader reads the texture with `textureLoad`, and a sampler bound to the same unit
+/// would override the NEAREST filtering an unfilterable float format requires, making every read return zero.
+fn create_map_bind_group(
+    device: &Device,
+    layout: &BindGroupLayout,
+    viewport_buffer: &Buffer,
+    country_state_texture: &Texture,
+) -> BindGroup {
+    let country_state_view: TextureView = country_state_texture.create_view(&TextureViewDescriptor::default());
+
+    device.create_bind_group(&BindGroupDescriptor {
         label: Some("eafora-map-bind-group"),
-        layout: &layout,
+        layout,
         entries: &[
             BindGroupEntry { binding: 0, resource: viewport_buffer.as_entire_binding() },
-            BindGroupEntry { binding: 1, resource: country_state_buffer.as_entire_binding() },
+            BindGroupEntry { binding: 1, resource: BindingResource::TextureView(&country_state_view) },
         ],
-    });
-
-    MapBinding { viewport_buffer, country_state_buffer, bind_group, layout }
+    })
 }
 
 fn create_country_geometry(device: &Device, bundle: &Bundle) -> Result<CountryGeometry, AppError> {
     let country_meshes: Vec<CountryMesh> = country_mesh::build_country_meshes(&bundle.geometry)?;
-
-    if country_meshes.len() > COUNTRY_STATE_ARRAY_LEN {
-        return Err(AppError::from(format!(
-            "geometry has {} countries, over the per-country state cap of {}",
-            country_meshes.len(),
-            COUNTRY_STATE_ARRAY_LEN,
-        )));
-    }
 
     let mut positions: Vec<ProjectedVertexAttributes> = Vec::new();
     let mut emphasis_vertices: Vec<EmphasisVertexAttributes> = Vec::new();

@@ -8,18 +8,24 @@ struct ViewportUniform {
 @group(0) @binding(0)
 var<uniform> viewport: ViewportUniform;
 
-// Per-country emphasis state, indexed by a vertex's country_index. The array length matches
-// COUNTRY_STATE_ARRAY_LEN on the Rust side. Padded to 16 bytes so the uniform-array element size is a
-// multiple of 16 (stricter WGSL validators such as WebKit require this); matches the Rust CountryState struct.
-struct CountryState {
-    lift_px: f32,
-    outline_px: f32,
-    padding0: f32,
-    padding1: f32,
-};
-
+// Per-country emphasis, one texel per country: r is the outward lift in screen pixels, g the outline rim
+// width. A texture rather than a uniform array because a uniform block holds only 1,024 of these, and a
+// layer carrying every subnational level holds more countries than that. Read with textureLoad, which takes
+// no sampler; adding one would override the texture's NEAREST filtering and make every read return zero.
 @group(0) @binding(1)
-var<uniform> country_state: array<CountryState, 512>;
+var country_state: texture_2d<f32>;
+
+// Must match COUNTRY_STATE_TEXTURE_WIDTH in gpu_types.rs, which the CPU sizes the texture by.
+const COUNTRY_STATE_TEXTURE_WIDTH: u32 = 256u;
+
+fn country_state_of(country_index: u32) -> vec4<f32> {
+    let texel: vec2<i32> = vec2<i32>(
+        i32(country_index % COUNTRY_STATE_TEXTURE_WIDTH),
+        i32(country_index / COUNTRY_STATE_TEXTURE_WIDTH),
+    );
+
+    return textureLoad(country_state, texel, 0);
+}
 
 const PI: f32 = 3.141592653589793;
 const TWO_PI: f32 = 6.283185307179586;
@@ -52,7 +58,7 @@ fn project_to_clip(position: vec2<f32>, instance_index: u32) -> vec4<f32> {
 // converting screen pixels to projected units via the isotropic projected-units-per-pixel (equal in x
 // and y since the viewport shares the surface's aspect). A zero lift and zero extra leave it untouched.
 fn emphasis_offset(position: vec2<f32>, outward_direction: vec2<f32>, country_index: u32, extra_px: f32) -> vec2<f32> {
-    let lift_px: f32 = country_state[country_index].lift_px + extra_px;
+    let lift_px: f32 = country_state_of(country_index).r + extra_px;
     let projected_span_y: f32 = viewport.projected_max.y - viewport.projected_min.y;
     let projected_per_pixel: f32 = projected_span_y / viewport.surface_size.y;
     return position + outward_direction * (lift_px * projected_per_pixel);
@@ -94,7 +100,7 @@ fn fill_fragment_main(input: FillVertexOutput) -> @location(0) vec4<f32> {
 
 @vertex
 fn emphasis_outline_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {
-    let outline_px: f32 = country_state[input.country_index].outline_px;
+    let outline_px: f32 = country_state_of(input.country_index).g;
     let inflated_position: vec2<f32> = emphasis_offset(input.position, input.outward_direction, input.country_index, outline_px);
     return project_to_clip(inflated_position, instance_index);
 }

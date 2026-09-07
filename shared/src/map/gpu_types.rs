@@ -42,26 +42,26 @@ pub struct ViewportUniform {
 
 const _: () = assert!(std::mem::size_of::<ViewportUniform>() == 32);
 
-/// Per-country emphasis state, indexed by `EmphasisVertexAttributes::country_index` in a uniform
-/// array. Padded to a multiple of 16 bytes to match the std140 uniform-array element stride.
+/// Per-country emphasis state, one texel of the country-state texture, addressed by
+/// `EmphasisVertexAttributes::country_index`.
 ///
 /// Held per country because several may carry distinct values at once: a hover transition decays each on
 /// its own clock, so a country keeps a lift after the pointer has left it.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CountryState {
     /// Outward lift in screen pixels (0 unless hovered).
     pub lift_px: f32,
     /// Black outline rim width in screen pixels (0 unless hovered or selected).
     pub outline_px: f32,
-    pub _padding: [f32; 2],
 }
 
-const _: () = assert!(std::mem::size_of::<CountryState>() == 16);
+const _: () = assert!(std::mem::size_of::<CountryState>() == 8);
 
-/// The fixed length of the per-country state uniform array; the shader's `array<CountryState, ...>`
-/// literal length must match this. At least the number of countries in the layer.
+/// The country-state texture's width in texels; its height is whatever holds the layer's countries. The
+/// shader derives a country's texel from its index and this same width, so the two must agree.
 ///
-/// A uniform block is limited to 16 KiB under `Limits::downlevel_webgl2_defaults`, which caps this at 1,024
-/// entries; a layer needing more has to hold the same per-country values somewhere else.
-pub const COUNTRY_STATE_ARRAY_LEN: usize = 512;
+/// A texture dimension is capped at 2048 under `Limits::downlevel_webgl2_defaults`, which this stays well
+/// under in both axes: 256 columns leaves room for far more rows than a layer carrying every subnational
+/// level needs.
+pub const COUNTRY_STATE_TEXTURE_WIDTH: u32 = 256;
