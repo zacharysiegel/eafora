@@ -69,11 +69,37 @@ If national borders should read heavier than regional ones, the national outline
 - **Montenegro: nothing needed.** Eurostat publishes it as a single region at every level, so the country outline already is its NUTS geometry.
 - **Not GISCO.** Eurostat's own NUTS boundaries are the better fit — pre-generalised at five scales, per level, a few megabytes — but they are EuroGeographics material carved out of Eurostat's reuse policy, and their terms require that "the data will not be used for commercial purposes". EuroBoundaryMap licensing starts at €6,600 for European coverage at the smallest user band.
 
-The EuroGeographics Open Data Licence that governs EuroGlobalMap defines use as "any act for any legal purpose, including commercial exploitation", conditional on an attribution statement. Its short form is "© EuroGeographics 2026." and it must appear "within every use of the Dataset", so the map legend carries it. Attribution is per source, so the geometry artifact carries it as data rather than the client carrying a constant.
-
 Both questions the specification leaves open were settled from the data. `NUTS_3` is partial, as its optional status allows: it carries 1,437 distinct codes across 35 countries, Montenegro and Türkiye absent, which is what sends those two to the sources above. Its codes follow the current classification rather than a revision it names, measured as 1,420 of the 1,437 being present in the NUTS 2021 seed; the seeded codes it lacks are dominated by Türkiye's 81 and Montenegro's one. Rolling its codes up by prefix gives 113 NUTS-1 and 311 NUTS-2 groups against the 125 and 340 Eurostat publishes, the shortfall again being those two countries.
 
 Acquisition is this source's one real obstacle, and it is not technical. The distribution is a 507 MB shapefile whose download link is minted server-side and sent by email after a registration form, and the site's client exposes no download route at all. So the file arrives by hand and is kept outside the repository, which departs from the pinned-release fetch every other source uses and means a rebuild depends on a local copy rather than on the network. The WFS the coverage probe went through is not an alternative: it serves `NUTS_3` alone, in GeoJSON alone of the formats it advertises, and requires a credential the publisher does not offer as a public API.
+
+## Licence obligations
+
+EuroGlobalMap is the only boundary source carrying obligations; Natural Earth is public domain. The licence grants reproduction, communication to the public, adaptation, distribution, extraction and reutilisation, and states commercial exploitation among the purposes it permits, so every step here is a granted right: taking `NUTS_3` alone is extraction, deriving the coarser levels is adaptation, and serving the file to a browser is reutilisation. Nothing requires a derivative to be marked as modified and nothing imposes share-alike.
+
+What is owed is the licence's full attribution statement, not the familiar symbol-and-year:
+
+> This dataset includes Intellectual Property from European National Mapping and Cadastral Authorities and is licensed on behalf of these by EuroGeographics. Original dataset is available for free at https://www.mapsforeurope.org. Terms of the licence available at https://www.mapsforeurope.org/licence All attribution statements can be found here.
+
+with "here" linking the licensor's attributions list. The shorter `© EuroGeographics <year>.` is a fallback the licence conditions on the full statement being unusable, which a map legend and a detail panel are not.
+
+That resolves the year, by removing it: the full statement carries none. The year exists only in the fallback, where the licence states no rule for what it refers to, and the licensor's own page fills it with whatever year the reader loads the page in, which is why its archived copy reads 2024 where the live page reads 2026. A year in our attribution string would be an artifact of the day someone read that page.
+
+**Great Britain brings a second rightsholder.** Its polygons are in the layer: EuroGlobalMap lacks 138 of the 1,558 seeded NUTS-3 codes while the United Kingdom alone accounts for 170, so it cannot be among the absent. The licensor's attributions list gives Great Britain an Ordnance Survey line, Crown copyright and database right under the Open Government Licence v3, with its own year placeholder that is not the EuroGeographics one. Publishing the layer without that credit omits a third party's licence rather than wording one badly.
+
+The statement belongs with the data, not only in the interface. The obligation reads "within every use of the Dataset", and both the rendered map and the published geometry file are uses; a file addressable by its own URL reaches readers who never load the client, and handing it to them is the sub-licence the passthrough condition governs. So a plain-text attribution and licence file sits beside the geometry in the published tree, and the map renders the same statement. Attribution held only in the manifest travels with a bundle, not with a file fetched alone.
+
+Further conditions, none of which the pipeline currently answers to:
+
+- The acknowledgement requirement passes to recipients, and no additional or different conditions may be imposed on the licensed part. That constrains whatever terms the artifact tree states over itself.
+- The data must not be used in a way suggesting official status or the licensor's endorsement. The lineage documentation makes the same point about the boundaries themselves being cartographic descriptions rather than endorsements, which a choropleth over a disputed boundary should surface rather than imply away.
+- The name is not licensed as a trademark. Attribution use only.
+- Breach terminates the licence automatically, without notice, which makes a defect in any of the above a licence problem rather than a presentation one.
+- The data must not be altered so that what it contains becomes erroneous or misleading. §Reconciling discards remainder rings below an area threshold, so that threshold is the concrete act answering to this clause and its reasoning is recorded with it rather than assumed.
+
+Citing the licence needs care, because the live text is client-rendered by a single-page application and carries no version marker. EuroGeographics' own published deliverable reproduces it as an annex and is the fixed, hashable copy worth citing, with the retrieval date recorded; the EU data portal identifies the edition's licence as the 2024 version, so versions do exist even though the page shows none. Two of the distribution's four documents must not be committed: the user guide forbids reproduction without written permission, and the data specification is marked as restricted to the association's members despite being served publicly. Cite their URLs and quote operative clauses only.
+
+Two questions stay unanswered from public material: whether the collective credit discharges the individual national authorities or whether the pointer to their list must be reproduced, and whether the notice may live on a linked page rather than beside the file. The shape above discharges both conservatively without waiting on an answer, and the licensor's contact form settles them if a definitive one is wanted.
 
 ## Order of work
 
