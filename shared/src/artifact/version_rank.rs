@@ -40,7 +40,7 @@ mod tests {
             },
             statistics: BTreeMap::new(),
             source_revisions: BTreeMap::new(),
-            source_attribution: BTreeMap::new(),
+            source_attributions: BTreeMap::new(),
         }
     }
 

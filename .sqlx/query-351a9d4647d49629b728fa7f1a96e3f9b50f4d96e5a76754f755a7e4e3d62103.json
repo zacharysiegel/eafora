@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select attribution_text, license_name, license_url, homepage_url\n        from data_source_attribution\n        where data_source_id = $1\n        order by position asc\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "attribution_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "license_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "license_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "homepage_url",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "351a9d4647d49629b728fa7f1a96e3f9b50f4d96e5a76754f755a7e4e3d62103"
+}

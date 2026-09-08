@@ -102,7 +102,7 @@ async fn build_bundle_variant(
 
     let provenance: BundleProvenance = BundleProvenance {
         source_revisions: source_detail.revisions,
-        source_attribution: source_detail.attribution,
+        source_attributions: source_detail.attributions,
     };
 
     let manifest: Hashed<FileReference> =

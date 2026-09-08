@@ -105,11 +105,7 @@ CREATE TABLE public.data_source (
     id uuid DEFAULT uuidv7() NOT NULL,
     code text NOT NULL,
     name_en text NOT NULL,
-    homepage_url text NOT NULL,
     license_class text NOT NULL,
-    license_name text NOT NULL,
-    license_url text NOT NULL,
-    attribution_text text NOT NULL,
     preference_rank integer NOT NULL,
     created timestamp with time zone DEFAULT now() NOT NULL,
     modified timestamp with time zone DEFAULT now() NOT NULL
@@ -131,24 +127,41 @@ COMMENT ON COLUMN public.data_source.license_class IS 'one of: public_domain | a
 
 
 --
--- Name: COLUMN data_source.license_name; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.data_source.license_name IS 'e.g. ''CC BY 4.0'', ''Open Government Licence v3.0''';
-
-
---
--- Name: COLUMN data_source.attribution_text; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.data_source.attribution_text IS 'exact display string for UI citations';
-
-
---
 -- Name: COLUMN data_source.preference_rank; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.data_source.preference_rank IS 'orders sources when more than one supplies a cell; lower wins, ties broken deterministically by data_source.code';
+
+
+--
+-- Name: data_source_attribution; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.data_source_attribution (
+    id uuid DEFAULT uuidv7() NOT NULL,
+    data_source_id uuid NOT NULL,
+    "position" integer NOT NULL,
+    attribution_text text NOT NULL,
+    license_name text NOT NULL,
+    license_url text NOT NULL,
+    homepage_url text NOT NULL,
+    created timestamp with time zone DEFAULT now() NOT NULL,
+    modified timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE data_source_attribution; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.data_source_attribution IS 'a source has at least one; nothing enforces it, and the artifact build fails on a source with none';
+
+
+--
+-- Name: COLUMN data_source_attribution.attribution_text; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.data_source_attribution.attribution_text IS 'the exact string a consumer must display, rendered verbatim because the licence asks for that wording';
 
 
 --
@@ -408,6 +421,22 @@ ALTER TABLE ONLY public.country
 
 
 --
+-- Name: data_source_attribution data_source_attribution_data_source_id_position_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.data_source_attribution
+    ADD CONSTRAINT data_source_attribution_data_source_id_position_key UNIQUE (data_source_id, "position");
+
+
+--
+-- Name: data_source_attribution data_source_attribution_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.data_source_attribution
+    ADD CONSTRAINT data_source_attribution_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: data_source data_source_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -543,6 +572,14 @@ ALTER TABLE ONLY public.country
 
 
 --
+-- Name: data_source_attribution data_source_attribution_data_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.data_source_attribution
+    ADD CONSTRAINT data_source_attribution_data_source_id_fkey FOREIGN KEY (data_source_id) REFERENCES public.data_source(id);
+
+
+--
 -- Name: data_source_publication data_source_publication_data_source_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -623,4 +660,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20260901120000'),
     ('20260901180000'),
     ('20260902110000'),
-    ('20260902120000');
+    ('20260902120000'),
+    ('20260907120000');

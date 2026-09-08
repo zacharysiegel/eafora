@@ -244,7 +244,7 @@ fn write_synthetic_bundle(artifact_dir: &Path, version_label: &str) -> BuildRepo
 
     let provenance: BundleProvenance = BundleProvenance {
         source_revisions: data_source_revisions.clone(),
-        source_attribution: BTreeMap::new(),
+        source_attributions: BTreeMap::new(),
     };
 
     let manifest_hashed: Hashed<FileReference> = artifact::writer::manifest::write_manifest(

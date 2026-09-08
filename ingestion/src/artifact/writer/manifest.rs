@@ -68,7 +68,7 @@ fn build_manifest_json(
         geometry: geometry_entry,
         statistics,
         source_revisions: provenance.source_revisions.clone(),
-        source_attribution: provenance.source_attribution.clone(),
+        source_attributions: provenance.source_attributions.clone(),
     };
 
     let json: String = serde_json::to_string_pretty(&manifest)?;
@@ -148,7 +148,7 @@ mod tests {
     fn empty_provenance() -> BundleProvenance {
         BundleProvenance {
             source_revisions: BTreeMap::new(),
-            source_attribution: BTreeMap::new(),
+            source_attributions: BTreeMap::new(),
         }
     }
 
@@ -162,14 +162,14 @@ mod tests {
                     fetched: "2026-05-15T00:00:00Z".parse().unwrap(),
                 },
             )]),
-            source_attribution: BTreeMap::from([(
+            source_attributions: BTreeMap::from([(
                 DataSourceKind::WorldBankWDI,
-                SourceAttribution {
+                vec![SourceAttribution {
                     attribution_text: "World Bank, World Development Indicators (CC BY 4.0)".to_string(),
                     license_name: "CC BY 4.0".to_string(),
                     license_url: "https://creativecommons.org/licenses/by/4.0/".to_string(),
                     homepage_url: "https://databank.worldbank.org/source/world-development-indicators".to_string(),
-                },
+                }],
             )]),
         }
     }
@@ -227,7 +227,7 @@ mod tests {
 
         let manifest: Manifest = manifest::parse_manifest(json.as_bytes()).unwrap();
 
-        assert_eq!(manifest.source_attribution[&DataSourceKind::WorldBankWDI].license_name, "CC BY 4.0");
+        assert_eq!(manifest.source_attributions[&DataSourceKind::WorldBankWDI][0].license_name, "CC BY 4.0");
     }
 
     #[test]

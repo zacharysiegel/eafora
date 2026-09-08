@@ -71,7 +71,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
     let selection: RwSignal<Option<SelectionView>> = expect_context();
     let global: RwSignal<Option<GlobalView>> = expect_context();
     let surface: RwSignal<DetailSurface> = expect_context();
-    let attribution: RwSignal<BTreeMap<DataSourceKind, SourceAttribution>> = expect_context();
+    let attributions: RwSignal<BTreeMap<DataSourceKind, Vec<SourceAttribution>>> = expect_context();
     let top_surface: RwSignal<TopSurface> = expect_context();
     let i18n = use_i18n();
 
@@ -88,7 +88,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
             {summary_panel(i18n, figure, surface, top_surface, expanded_by_keyboard)}
         </Show>
         <Show when=move || surface.get() == DetailSurface::Expanded && figure.with(Option::is_some)>
-            {detail_dock(i18n, figure, surface, attribution, expanded_by_keyboard)}
+            {detail_dock(i18n, figure, surface, attributions, expanded_by_keyboard)}
         </Show>
     }
 }
@@ -233,7 +233,7 @@ fn detail_dock(
     i18n: I18nContext<Locale>,
     figure: Memo<Option<ActiveFigure>>,
     surface: RwSignal<DetailSurface>,
-    attribution: RwSignal<BTreeMap<DataSourceKind, SourceAttribution>>,
+    attributions: RwSignal<BTreeMap<DataSourceKind, Vec<SourceAttribution>>>,
     expanded_by_keyboard: RwSignal<bool>,
 ) -> impl IntoView {
     let thumb: ScrollThumbState = scroll_thumb::create_state();
@@ -304,7 +304,7 @@ fn detail_dock(
                     return ().into_any();
                 };
 
-                attribution.with(|attribution| sources_section(i18n, figure.statistic, &figure.detail.sources, attribution))
+                attributions.with(|attributions| sources_section(i18n, figure.statistic, &figure.detail.sources, attributions))
             })}
             <h3 class="region-dock-heading">{t!(i18n, detail.about)}</h3>
             <p class="region-dock-about">
@@ -924,7 +924,7 @@ fn sources_section(
     i18n: I18nContext<Locale>,
     statistic: StatisticKind,
     sources: &[SourceCellView],
-    attribution: &BTreeMap<DataSourceKind, SourceAttribution>,
+    attributions: &BTreeMap<DataSourceKind, Vec<SourceAttribution>>,
 ) -> AnyView {
     if sources.is_empty() {
         return ().into_any();
@@ -934,9 +934,9 @@ fn sources_section(
     let rows: Vec<AnyView> = sources
         .iter()
         .map(|source_cell| {
-            let source_attribution: Option<&SourceAttribution> = attribution.get(&source_cell.source);
+            let source_attributions: Option<&Vec<SourceAttribution>> = attributions.get(&source_cell.source);
 
-            source_row(i18n, statistic, source_cell, is_contested, source_attribution)
+            source_row(i18n, statistic, source_cell, is_contested, source_attributions)
         })
         .collect();
 
@@ -953,7 +953,7 @@ fn source_row(
     statistic: StatisticKind,
     source_cell: &SourceCellView,
     is_contested: bool,
-    attribution: Option<&SourceAttribution>,
+    attributions: Option<&Vec<SourceAttribution>>,
 ) -> AnyView {
     let status: Option<String> = status_text(i18n, source_cell.data_status);
     let is_tagged: bool = source_cell.is_preferred && is_contested;
@@ -970,27 +970,35 @@ fn source_row(
             {status.map(|status| view! {
                 <span class="region-dock-source-status">{status}</span>
             })}
-            {attribution.map(attribution_lines)}
+            {attributions.map(|attributions| attribution_lines(attributions))}
         </div>
     }
     .into_any()
 }
 
-/// The citation is rendered verbatim because the source's licence asks for exactly that string.
-fn attribution_lines(attribution: &SourceAttribution) -> AnyView {
-    view! {
-        <span class="region-dock-source-attribution">{attribution.attribution_text.clone()}</span>
-        <span class="region-dock-source-links">
-            <a href=attribution.license_url.clone() target="_blank" rel="noopener noreferrer">
-                {attribution.license_name.clone()}
-            </a>
-            " · "
-            <a href=attribution.homepage_url.clone() target="_blank" rel="noopener noreferrer">
-                {link_host(&attribution.homepage_url)}
-            </a>
-        </span>
-    }
-    .into_any()
+/// Each rightsholder's citation is rendered verbatim because its licence asks for exactly that string. An
+/// aggregated source names several, and every one of them is owed.
+fn attribution_lines(attributions: &[SourceAttribution]) -> AnyView {
+    let blocks: Vec<AnyView> = attributions
+        .iter()
+        .map(|attribution| {
+            view! {
+                <span class="region-dock-source-attribution">{attribution.attribution_text.clone()}</span>
+                <span class="region-dock-source-links">
+                    <a href=attribution.license_url.clone() target="_blank" rel="noopener noreferrer">
+                        {attribution.license_name.clone()}
+                    </a>
+                    " · "
+                    <a href=attribution.homepage_url.clone() target="_blank" rel="noopener noreferrer">
+                        {link_host(&attribution.homepage_url)}
+                    </a>
+                </span>
+            }
+            .into_any()
+        })
+        .collect();
+
+    blocks.into_any()
 }
 
 /// The host a link points at, which says where it goes without claiming it is a "home" page and without a word

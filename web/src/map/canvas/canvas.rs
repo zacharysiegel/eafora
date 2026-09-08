@@ -137,7 +137,7 @@ pub fn MapCanvas() -> impl IntoView {
             let global: RwSignal<Option<GlobalView>> = expect_context();
             let view_controls: RwSignal<Option<ViewControls>> = expect_context();
             let legend: RwSignal<Option<LegendView>> = expect_context();
-            let source_attribution: RwSignal<BTreeMap<DataSourceKind, SourceAttribution>> = expect_context();
+            let source_attributions: RwSignal<BTreeMap<DataSourceKind, Vec<SourceAttribution>>> = expect_context();
             let live_load_notice_shown: RwSignal<bool> = expect_context();
             super::driver::start(
                 canvas,
@@ -147,7 +147,7 @@ pub fn MapCanvas() -> impl IntoView {
                     global_view: global.write_only(),
                     view_controls: view_controls.write_only(),
                     legend: legend.write_only(),
-                    source_attribution: source_attribution.write_only(),
+                    source_attributions: source_attributions.write_only(),
                     live_load_notice_shown: live_load_notice_shown.write_only(),
                 },
             );

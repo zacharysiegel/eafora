@@ -720,7 +720,7 @@ pub struct DriverSignals {
     pub global_view: WriteSignal<Option<GlobalView>>,
     pub view_controls: WriteSignal<Option<ViewControls>>,
     pub legend: WriteSignal<Option<LegendView>>,
-    pub source_attribution: WriteSignal<BTreeMap<DataSourceKind, SourceAttribution>>,
+    pub source_attributions: WriteSignal<BTreeMap<DataSourceKind, Vec<SourceAttribution>>>,
     pub live_load_notice_shown: WriteSignal<bool>,
 }
 
@@ -837,8 +837,8 @@ async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Res
     let initial_controls: ViewControls = driver.view_controls(&published_bundle);
     let initial_legend: LegendView = driver.legend_view(&published_bundle);
     let initial_global: GlobalView = driver.resolve_global_view(&published_bundle);
-    let initial_attribution: BTreeMap<DataSourceKind, SourceAttribution> =
-        published_bundle.manifest.source_attribution.clone();
+    let initial_attributions: BTreeMap<DataSourceKind, Vec<SourceAttribution>> =
+        published_bundle.manifest.source_attributions.clone();
     log::info!(
         "initial global figure resolved; [period_start={} value={:?} source={:?} data_status={:?}]",
         initial_global.period_start,
@@ -855,7 +855,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Res
     signals.view_controls.set(Some(initial_controls));
     signals.legend.set(Some(initial_legend));
     signals.global_view.set(Some(initial_global));
-    signals.source_attribution.set(initial_attribution);
+    signals.source_attributions.set(initial_attributions);
 
     leptos::task::spawn_local(async move {
         upgrade_to_live_bundle(cache, distribution_context, live_bundle_sender, signals).await;
@@ -894,7 +894,7 @@ fn apply_live_bundle(live_bundle_sender: watch::Sender<Arc<Bundle>>, bundle: Bun
         return;
     }
 
-    let published: Option<(RepublishedViews, BTreeMap<DataSourceKind, SourceAttribution>)> =
+    let published: Option<(RepublishedViews, BTreeMap<DataSourceKind, Vec<SourceAttribution>>)> =
         DRIVER.with_borrow_mut(|driver_slot| {
         let driver: &mut Driver = driver_slot.as_mut()?;
 
@@ -902,18 +902,19 @@ fn apply_live_bundle(live_bundle_sender: watch::Sender<Arc<Bundle>>, bundle: Bun
         reset_active_period_if_uncovered(driver, &bundle);
 
         let views: RepublishedViews = driver.republish(&bundle);
-        let attribution: BTreeMap<DataSourceKind, SourceAttribution> = bundle.manifest.source_attribution.clone();
+        let attributions: BTreeMap<DataSourceKind, Vec<SourceAttribution>> =
+            bundle.manifest.source_attributions.clone();
         driver.request_redraw();
 
-        Some((views, attribution))
+        Some((views, attributions))
     });
 
-    if let Some((views, attribution)) = published {
+    if let Some((views, attributions)) = published {
         signals.view_controls.set(Some(views.view_controls));
         signals.legend.set(Some(views.legend));
         signals.selection_view.set(views.selection);
         signals.global_view.set(Some(views.global));
-        signals.source_attribution.set(attribution);
+        signals.source_attributions.set(attributions);
     }
 }
 

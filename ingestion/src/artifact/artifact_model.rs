@@ -122,14 +122,14 @@ impl PartitionedValue {
 #[derive(Debug, Clone)]
 pub struct SourceDetail {
     pub revisions: BTreeMap<DataSourceKind, SourceRevision>,
-    pub attribution: BTreeMap<DataSourceKind, SourceAttribution>,
+    pub attributions: BTreeMap<DataSourceKind, Vec<SourceAttribution>>,
 }
 
 /// Everything a manifest says about the data rather than about the files.
 #[derive(Debug, Clone)]
 pub struct BundleProvenance {
     pub source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
-    pub source_attribution: BTreeMap<DataSourceKind, SourceAttribution>,
+    pub source_attributions: BTreeMap<DataSourceKind, Vec<SourceAttribution>>,
 }
 
 #[derive(Debug, Clone)]

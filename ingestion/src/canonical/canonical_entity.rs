@@ -2,7 +2,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use shared::canonical::canonical_model::{
-    Country, DataSource, DataSourceKind, DataStatus, LicenseClass, Region, RegionLevel, Statistic, Subdivision,
+    Country, DataSource, DataSourceKind, DataStatus, LicenseClass, Region, RegionLevel, SourceAttribution, Statistic,
+    Subdivision,
 };
 
 use crate::error::AppError;
@@ -104,11 +105,7 @@ pub struct DataSourceEntity {
     pub id: Uuid,
     pub code: String,
     pub name_en: String,
-    pub homepage_url: String,
     pub license_class: String,
-    pub license_name: String,
-    pub license_url: String,
-    pub attribution_text: String,
     pub preference_rank: i32,
     pub created: DateTime<Utc>,
     pub modified: DateTime<Utc>,
@@ -122,15 +119,31 @@ impl TryFrom<DataSourceEntity> for DataSource {
             id: entity.id,
             kind: DataSourceKind::try_from(entity.code.as_str())?,
             name_en: entity.name_en,
-            homepage_url: entity.homepage_url,
             license_class: LicenseClass::try_from(entity.license_class.as_str())?,
-            license_name: entity.license_name,
-            license_url: entity.license_url,
-            attribution_text: entity.attribution_text,
             preference_rank: entity.preference_rank,
             created: entity.created,
             modified: entity.modified,
         })
+    }
+}
+
+/// One rightsholder's credit for a source. A source has at least one, and an aggregated one has several.
+#[derive(Debug, Clone)]
+pub struct DataSourceAttributionEntity {
+    pub attribution_text: String,
+    pub license_name: String,
+    pub license_url: String,
+    pub homepage_url: String,
+}
+
+impl From<DataSourceAttributionEntity> for SourceAttribution {
+    fn from(entity: DataSourceAttributionEntity) -> Self {
+        SourceAttribution {
+            attribution_text: entity.attribution_text,
+            license_name: entity.license_name,
+            license_url: entity.license_url,
+            homepage_url: entity.homepage_url,
+        }
     }
 }
 

@@ -40,9 +40,9 @@ pub fn MapView() -> impl IntoView {
     let detail_surface: RwSignal<DetailSurface> = RwSignal::new(DetailSurface::Summary);
     provide_context(detail_surface);
 
-    let source_attribution: RwSignal<BTreeMap<DataSourceKind, SourceAttribution>> =
+    let source_attributions: RwSignal<BTreeMap<DataSourceKind, Vec<SourceAttribution>>> =
         RwSignal::new(BTreeMap::new());
-    provide_context(source_attribution);
+    provide_context(source_attributions);
 
     let settings_surface: RwSignal<SettingsSurface> = RwSignal::new(SettingsSurface::Closed);
     provide_context(settings_surface);

@@ -111,7 +111,7 @@ pub async fn read_source_detail(
     data_source_kinds: &BTreeSet<DataSourceKind>,
 ) -> Result<SourceDetail, AppError> {
     let mut revisions: BTreeMap<DataSourceKind, SourceRevision> = BTreeMap::new();
-    let mut attribution: BTreeMap<DataSourceKind, SourceAttribution> = BTreeMap::new();
+    let mut attributions: BTreeMap<DataSourceKind, Vec<SourceAttribution>> = BTreeMap::new();
 
     for kind in data_source_kinds {
         let data_source: DataSource = canonical_db::find_data_source_by_kind(&mut *connection, *kind)
@@ -120,17 +120,21 @@ pub async fn read_source_detail(
         let revision: SourceRevision = ingest_db::read_latest_publication(&mut *connection, data_source.id)
             .await?
             .ok_or_else(|| AppError::from(format!("no publication recorded for {:?}", kind)))?;
+        let source_attributions: Vec<SourceAttribution> =
+            canonical_db::read_data_source_attributions(&mut *connection, data_source.id).await?;
+
+        if source_attributions.is_empty() {
+            return Err(AppError::from(format!(
+                "no attribution recorded for {:?}, which a consumer needs to display to redistribute its data",
+                kind,
+            )));
+        }
 
         revisions.insert(*kind, revision);
-        attribution.insert(*kind, SourceAttribution {
-            attribution_text: data_source.attribution_text,
-            license_name: data_source.license_name,
-            license_url: data_source.license_url,
-            homepage_url: data_source.homepage_url,
-        });
+        attributions.insert(*kind, source_attributions);
     }
 
-    Ok(SourceDetail { revisions, attribution })
+    Ok(SourceDetail { revisions, attributions })
 }
 
 pub async fn read_artifact_version_exists<'e>(
