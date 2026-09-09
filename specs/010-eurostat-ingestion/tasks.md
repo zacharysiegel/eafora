@@ -120,7 +120,87 @@ What this phase does not do is let a reader see any of it. Subnational values re
 
 ## Phase D: subnational geometry
 
-Sketched in [plan.md](plan.md) §Phase D. No task breakdown, and it cannot have one until a candidate boundary file is downloaded: the phase is one layer if the finest optional layer covers every country ingested, and either a mixed-resolution layer or a two-source join if it does not. The repository's only committed subnational geometry decision names a Natural Earth provinces layer, which does not nest with NUTS for several member states and so cannot carry NUTS values; revisiting that decision is part of the phase.
+Gives the 2,023 seeded NUTS regions polygons to be drawn on, and the control that chooses which level is drawn. The design is `docs/architecture/geometry.md`, which is authoritative where this file and it disagree.
+
+Delivered in four slices. D0 has landed; D0.5 and D1 need no boundary data; D2 needs only public-domain data already fetchable; D3 needs the EuroGlobalMap download.
+
+### Facts established, so a reader need not re-derive them
+
+- **The boundary file is on disk**, unzipped, at `/Users/zachary/Downloads/euro-global-map-SHP` (2.4 GB). The layer is `DATA/FullEurope/NUTS3.shp` with `NUTS3.dbf`, UTF-8 per its `.cpg`: 16,899 polygon parts, 1,411 distinct `NUTS_CODE` values, 34 countries. Fields are `OBJECTID`, `inspireId`, `beginLifes` (beginLifespanVersion, 2018 through 2024), `ICC`, `NUTS_CODE`, `NUTS_LABEL`, `TAA`, `Shape_Leng`, `Shape_Area`.
+- **Do not use `NUTS3_optionRS.shp`.** It is a 31-feature variant representing Kosovo as part of Serbia. The canonical store carries Kosovo as its own country, so this layer contradicts the region model and would double-cover ground.
+- **Serbia has no NUTS-3 in EuroGlobalMap at all.** Its 25 seeded regions will have values and no polygon, so Serbia draws as a country. That is the mixed layer behaving correctly, not a defect to fix.
+- **EuroGlobalMap holds 12 codes the seed lacks**: `ELZZZ` (Extra-Regio), `NO0B1` (Jan Mayen), `NO0B2` (Svalbard), `UKK24`, `UKK25`, and `UKN0A` through `UKN0G`. The UK ones postdate Eurostat's retired UK series. A feature whose code matches no seeded region is dropped with a warning, as the country writer already does.
+- **All 170 seeded UK NUTS-3 codes have a polygon** in EuroGlobalMap, which holds 179. So the join is clean and the Ordnance Survey obligation is verified against the data rather than inferred from the attributions list.
+- **Eurostat publishes the authority on obsolete codes.** Its GEO codelist annotates every code with `IS_STANDARD_CODE`: `Y` standard, `O` obsolete, `M` missing. Fetch it from `https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/GEO?compressed=false` (approx. 2.8 MB SDMX-ML; codes are `<s:Code id="...">` elements whose annotation type is `IS_STANDARD_CODE`). Phase C filtered on the revision marker in a label instead, which is the wrong signal: `NL111` is labelled "Oost-Groningen (NUTS 2021)" and is annotated obsolete.
+- **Licence obligations** are in `geometry.md` §Licence obligations. The short form everyone quotes is a fallback and is not what is owed.
+
+### Decisions settled, with the reason in one line each
+
+- **One geometry file carries every level**, each feature tagged with its level, because switching granularity then costs a redraw rather than a fetch.
+- **The draw rule is "features at the active level, plus the country remainder"**, since the remainder is shared across levels and stored once.
+- **A country whose regions are all empty at the active period draws whole**, per `geometry.md` §When a level has nothing to show. The UK forces it.
+- **A covered country's whole shape is the union of its own regions**, not the coarse source, because the fallback makes the subdivided/whole border move per period and a precomputed subtraction cannot follow it.
+- **An explicit level picker**, not a zoom trigger: a level change costs a buffer rebuild, which is acceptable on a click and stutters on a zoom, and it keeps what the legend and ranks mean legible.
+- **The picker is global**, offering the levels the manifest says have both geometry and values.
+- **Labels are Countries / Regions / Districts.** Loose in any one language, but they are locale strings, so a locale may use apter words. Not NUTS 1/2/3, which would weld a European classification into a control that will also carry US states.
+- **A cold load opens on countries.**
+- **A level switch clears the selection** when the selected region has no feature at the new level. Following parentage instead is in `docs/backlog.md` with its trigger.
+- **The United Kingdom is included** despite every UK code being obsolete, because the history is real and an atlas that silently omits Britain is worse than one showing its series end.
+- **Per-region emphasis storage is kept**, per `docs/backlog.md`, so an animated hover transition can decay each region on its own clock.
+
+### D0 — per-country emphasis off the uniform array (landed)
+
+Commit `bf7c6fa`. `CountryState` is a texel of an `Rg32Float` texture `COUNTRY_STATE_TEXTURE_WIDTH` wide, read in the vertex shader with `textureLoad`; the 512-feature cap and its error are gone, the texture is sized to the layer and rebuilt on a bundle swap, and an emphasis change writes only the texels that changed. Verified by `./scripts/test/test-shaders.sh`, which compiles the WGSL against a real adapter. The remaining risk is driver behaviour on the WebGL2 path: load `?renderer=webgl2` and confirm a hover still lifts, because an incomplete texture returns zeros silently rather than erroring.
+
+### D0.5 — drop the superseded regions the seed carries
+
+- [ ] T040 Add a migration deleting the 57 regions that are obsolete **and** have a current successor set, with their `statistic_value` and `subdivision` rows, in that order or the foreign key rejects it. The set is every seeded code Eurostat annotates `O` whose country also holds a `Y` code at the same level: NL 17, PT 17, FI 9, DE 7, LV 4, NO 3. Verified to leave no orphan, since every remaining code's prefix is still present.
+- [ ] T041 Do **not** delete the 223 obsolete UK regions. No current UK code covers that ground, so they overlap nothing, and the decision above keeps them.
+- [ ] T042 Change `tools/seed_generator/src/bin/nuts_regions.rs` to take the GEO codelist as a fourth input and filter on `IS_STANDARD_CODE`, keeping an obsolete code only where its country has no current code at that level. Delete `geo_revision_of` and the marker-prefix constant; the label's revision marker stops being load-bearing, though stripping it from the name stays. Re-run and diff against the migration to confirm the generator and the store agree.
+- [ ] T043 Re-run `ingest source eurostat` and confirm the warning count is still zero: the dropped codes must no longer resolve, and nothing else may start warning.
+
+### D1 — level as a dimension
+
+Needs no geometry. The canonical store already holds the values; the shard filter is what hides them.
+
+- [ ] T044 Add a level column to the shard schema (`shared/src/sqlite/schema.rs`) and thread it through both loaders (`shared/src/sqlite/shard_db.rs`, native and wasm arms) into `ShardValues`. Bump the shard `SCHEMA_VERSION`; cache invalidation is not an argument pre-launch.
+- [ ] T045 Widen `SHARD_REGION_LEVELS` (`ingestion/src/artifact/artifact.rs`) to every level, and write the level per row. The constant exists because the client had no level notion; that is what D1 removes.
+- [ ] T046 Scope `ShardValues::value_range` to a level, since it is precomputed once over every region and period and feeds both the choropleth and the legend. A NUTS-3 outlier must not flatten every country's colour on the mean-age statistics, whose transform normalises against it.
+- [ ] T047 Scope the rank denominator: `resolve_rank` counts every region the shard covers minus `world`, which is 217 only because the producer filtered the shard. Rank a region among its own level's peers.
+- [ ] T048 Add `active_level` to `FrameState` and to `FillColorKey`, or a level change will not repaint. Then the accessor and every view that reads it: `active_shard_values`, `resolve_region_detail`, `resolve_selection_view`, `resolve_global_view`, `view_controls`, `legend_view`, `republish`, `reset_active_period_if_uncovered`, `default_period_start`, plus a `set_active_level` returning `RepublishedViews` and an `apply_level` beside `apply_statistic`.
+- [ ] T049 Add the picker as a third field in `web/src/map/controls.rs`, following `dispatch_statistic`'s pattern, with a `level_label` in `labels.rs` and its locale strings. Note the collision: `docs/backlog.md` carries an item to collapse this panel at narrow widths, and whichever lands first sets the responsive vocabulary for the other.
+- [ ] T050 Implement the empty-level fallback of `geometry.md` §When a level has nothing to show: when no region in a country has a value at the active period, draw that country's whole shape instead of its subdivisions. Per country, per period, and only when the whole set is empty.
+
+### D2 — Türkiye's geometry, from public-domain data
+
+A complete vertical slice with no licence exposure: 81 provinces against 81 seeded NUTS-3 regions carrying 1,432 values, matching one to one because Turkish NUTS-3 is defined on the provinces.
+
+- [ ] T051 Fetch `ne_10m_admin_1_states_provinces` from the pinned `naciscdn.org` release beside the existing countries fetch in `ingestion/src/geometry/natural_earth.rs`. `docs/architecture/ingestion.md` §Geometry ingestion already names this file.
+- [ ] T052 Join its Turkish provinces to regions through `subdivision.iso_3166_2`, which Phase C0 seeded for exactly this. Match by identifier, not by name; the name match was how the pairing was *verified*, not how it should be resolved at build time.
+- [ ] T053 Add two properties to the emitted feature, in `shared/src/artifact/geometry.rs` and `ingestion/src/artifact/writer/flatgeobuf.rs` in lockstep since the parser reads properties by name: the level it represents, and its parent's region code (empty for a country). Then filter both the hit test (`shared/src/map/hit_test.rs`) and the draw path by the active level.
+- [ ] T053a The parent property is load-bearing for two things `geometry.md` §When a level has nothing to show depends on, so it is not optional. It tells a fallback shape from a coarse remainder, both being country-level features, and it groups the active level by country so the fallback can ask whether every region in one is empty. Do not derive either by truncating a region code: that works for NUTS and fails for ISO 3166-2 when US states arrive.
+- [ ] T054 Implement the subtraction of `geometry.md` §Reconciling with `geo`'s `BooleanOps`, already an ingestion dependency with `union` in use. Emit each covered country's union as its country-level feature, every fine polygon unchanged, and the coarse remainder. Assert the grid-scan property: every point in the reconciled area falls inside exactly one feature at a given level.
+- [ ] T055 Emit Montenegro's country outline once per level, keyed to that level's code (`ME0`, `ME00`, `ME000`), since Eurostat gives it one region at every level and a remainder feature keyed `mne` would not join its values.
+- [ ] T056 Count emitted features against expected regions and warn on the difference by name. The writer iterates source features, so a seeded region the source never mentions produces no feature, no warning and no error. At 2,023 regions a silent hole is not visible; at 249 countries it was.
+- [ ] T057 Rename the country vocabulary to region: `CountryFeature`, `CountryMesh`, `CountrySpan`, `CountryGeometry`, `country_index`, `CountryState`, `build_country_meshes`, `country_index_of`, and the layer name and filename stem, which say `50m` and `admin_0` for what is now mixed-scale and mixed-level. Mechanical and wide; do it here rather than as drive-by churn.
+
+### D3 — EuroGlobalMap
+
+- [ ] T058 Read `NUTS3.shp` from a local path rather than a fetch, since no pipeline can obtain it: the link is emailed after a registration form. Record that this departs from the pinned-release fetch every other source uses and that a rebuild therefore depends on a local copy.
+- [ ] T059 Join on `NUTS_CODE` through `subdivision.nuts_code`, and reject a code whose revision does not match `subdivision.nuts_revision` rather than binding it to whatever region shares the string.
+- [ ] T060 Make geometry an attributable source. There is no `data_source` row for Natural Earth or EuroGlobalMap, and the manifest's attribution set is built only from sources that contributed statistic values, so geometry has no path into it today. Seed both sources, record which contributed features, and reach `read_source_detail`. `data_source_attribution` already holds several rightsholders per source, which is what EuroGlobalMap needs.
+- [ ] T061 Publish a plain-text attribution and licence file beside the geometry in the artifact tree, and render the same full statement in the map. A file addressable by its own URL reaches readers who never load the client, and handing it to them is the sub-licence the passthrough condition governs; attribution held only in the manifest does not travel with it.
+- [ ] T062 Add the Ordnance Survey credit for the British portion, reading the exact credits off the shapefile's UK and Northern Ireland features rather than off the attributions list, since those territories are administered by different agencies.
+- [ ] T063 Commit a dated copy of the licence, citing EuroGeographics' own published deliverable rather than the live page, which renders client-side and carries no version marker. Do not commit the user guide or the data specification: one forbids reproduction, the other is marked restricted.
+
+### Phase D verification
+
+- [ ] T064 `cargo test -p shared --features render`, since the renderer and mesh code are feature-gated out of a plain `cargo test -p shared`.
+- [ ] T065 `./scripts/test/test-shaders.sh` after any WGSL change; WGSL is validated at pipeline creation, not by `cargo build`.
+- [ ] T066 `./scripts/db/setup-test-db.sh` before the integration suites whenever a migration lands, or they run against a stale schema.
+- [ ] T067 The full sweep: `cargo test -p ingestion`, `cargo test -p shared`, `cargo test -p web --lib`, `cargo check -p web --lib --no-default-features --features hydrate --target wasm32-unknown-unknown`, `cargo check -p web --no-default-features --features ssr`.
+- [ ] T068 End to end: `./scripts/build/publish-web-local.sh --build`, then `./scripts/build/build-site.sh`, `./scripts/build/verify-site-tree.sh`, `./scripts/build/measure-site-budget.sh`. `build-site.sh` refuses while a dev server holds port 3000. A manifest schema bump makes the embedded re-sync mandatory, and older published versions become unopenable and log a parse warning per publish.
+- [ ] T069 Look at it, on both backends. Check a level switch repaints, that ranks read against the right peer set, that the UK draws whole at 2024 and subdivided at 2015, and that no border shows a sliver where a subdivided country meets a whole one.
 
 ---
 

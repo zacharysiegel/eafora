@@ -19,13 +19,29 @@ Every level ships in the same file rather than one file per level, and each feat
 
 Nesting is what makes the level property load-bearing. A point in Germany falls inside a NUTS-1, a NUTS-2 and a NUTS-3 polygon, so both the draw path and the hit test select on level first: the hit test filters to the active level before testing containment, and the draw path scopes to that level's spans the way emphasis draws are already scoped to a feature's range. Without the filter the first polygon the spatial index happens to return would win.
 
-The country remainder is shared across levels. Every level of one classification covers the same countries, so subtracting any level's footprint from the coarse source leaves the same remainder, and it is stored once and drawn at every level. The rule a client applies is therefore "features at the active level, plus the remainder", not level equality.
+The country remainder is shared across levels. Every level of one classification covers the same countries, so subtracting any level's footprint from the coarse source leaves the same remainder, and it is stored once and drawn at every level. The rule a client applies is therefore "features at the active level, plus the remainder", not level equality, with §When a level has nothing to show adding the one case where a covered country is drawn whole instead of subdivided.
 
 What this costs is duplicated coastline: a country covered at three levels stores its coast three times, since each level is a separate polygon set. Internal borders are not duplicated, only the outer ring. The lever if a measured byte count ever objects is the same topology encoding §No generalisation reaches for, which stores a shared border once.
 
 What it requires first is that per-feature emphasis state stop living in a fixed uniform array. All levels resident at once is on the order of 2,200 features against a ceiling of 1,024, so the container has to move before anything renders; `docs/backlog.md` carries the replacement and the reason the per-region shape itself is kept.
 
 Which levels a reader may choose comes from the manifest, being those with both geometry and values, rather than from a constant. A bundle carrying only countries and NUTS-2 offers exactly those two.
+
+## When a level has nothing to show
+
+A country whose regions all lack a value at the active period draws whole, as a country, rather than as its subdivisions in uniform no-data grey. The United Kingdom is the case that forces it: its regional series ends around 2018, so at 2024 every one of its 170 districts is empty, and drawing them subdivided says "we have 170 things to tell you about Britain" while telling the reader nothing. Drawn whole it carries the country-level value a source does hold.
+
+The fallback is per country and per period, and it triggers only when the whole set is empty. Partial gaps stay partial: three empty districts out of Germany's 400 is a fact about the data and is drawn as such.
+
+What this costs is the coarse polygon the subtraction was throwing away. §Reconciling cut a fully covered country's outline off precisely because its regions covered that ground, so nothing remained to fall back to. The layer therefore keeps both shapes for a covered country, and the rule picks one per period.
+
+Two things follow that the rule above cannot express on its own, and both are met by one feature property: each feature names its parent's region code, empty for a country.
+
+The first is telling a fallback shape from a remainder. Both are country-level features, so drawing every country-level feature at a subnational level would draw a covered country whole *and* subdivided. A country-level feature is a fallback shape exactly when some feature at the active level names it as parent, which the property answers directly.
+
+The second is evaluating the fallback at all. Asking whether every region in a country is empty means grouping the active level by country, and a client holds neither the region tree nor anything to derive it from. Truncating a region code would work for NUTS and fail for every scheme that does not nest by prefix, ISO 3166-2 among them, so the producer states the parentage rather than leaving it to be guessed. It also happens to be what the deferred item in `docs/backlog.md` needs to follow parentage across a level switch.
+
+It also decides where a covered country's whole shape comes from. Because the set of countries drawn subdivided now changes with the scrubber, the border between a subdivided country and a whole one moves per period, and a subtraction computed once against a coarse source cannot follow it. So a covered country's whole shape is the union of its own subnational polygons: same source, same scale, agreeing with its neighbours' regions vertex for vertex, so no sliver can open along that border whichever way the rule falls. The coarse source is left to cover only the countries that have no subnational polygons at all.
 
 ## No generalisation
 
@@ -39,27 +55,27 @@ Two boundary sources drawn at different scales disagree about where a shared bor
 
 Matching the two datasets vertex by vertex is the expensive answer and fails silently: deciding which runs of vertices describe the same border needs a tolerance, and independently generalised renderings of a river border differ by kilometres. Subtraction is exact instead, and runs in the producer:
 
-1. Union every fine polygon into one shape, the footprint of everything the fine source covers.
+1. Union each covered country's fine polygons into that country's whole shape, and emit it as that country's country-level feature. This is the shape §When a level has nothing to show falls back to, and it comes from the fine source so it agrees with its neighbours' regions exactly.
 2. Emit every fine polygon unchanged, each keyed to its own region code.
-3. Subtract the footprint from each coarse country polygon and emit whatever remains, keyed to that country's region code. A country wholly inside the footprint leaves nothing and disappears; one partly overlapped keeps the part outside; one the footprint never touches is unchanged.
+3. Union every fine polygon into one footprint, subtract it from each coarse country polygon, and emit whatever remains. A country wholly inside the footprint leaves nothing and disappears, its whole shape having come from step 1 instead; one partly overlapped keeps the part outside; one the footprint never touches is unchanged.
 
-Step 3 runs once for the whole classification rather than once per level, because every level covers the same countries and so shares one footprint. Step 1 can be taken at the finest level and reused: a coarser level is a union of finer polygons, so its footprint is identical by construction.
+Step 3 runs once for the whole classification rather than once per level, because every level covers the same countries and so shares one footprint. The footprint can be taken at the finest level and reused: a coarser level is a union of finer polygons, so its footprint is identical by construction, and step 1's per-country unions are the same operation grouped by country rather than globally.
 
-No overlap can survive, because every emitted coarse piece has had the fine area cut out of it, and no hole can open, because the only area removed is area a fine polygon now fills. Both hold from the operation rather than from a tolerance, and the covered countries need no separate exclusion list — subtraction removes them.
+No overlap can survive, because every emitted coarse piece has had the fine area cut out of it, and no hole can open, because the only area removed is area a fine polygon now fills. Both hold from the operation rather than from a tolerance, and the covered countries need no separate exclusion list — subtraction removes them from the coarse source.
 
 The two disagreement cases resolve on their own. Where the fine regions cross a coarse border, that strip leaves the coarse neighbour and draws as the fine region. Where they stop short of it, the strip survives the subtraction and draws as the country it belonged to.
 
 `BooleanOps::difference` in geo carries this, alongside the `union` the writer already uses to fold territories into their sovereign. Three concerns attach to it, none algorithmic:
 
-- Cost. Cutting every country against a footprint of over a thousand polygons is wasteful. Prefilter by bounding box so only countries touching the footprint are cut, and union the fine polygons per country first so each subtraction works against a small operand. The producer runs weekly, so its slowness costs nothing a reader sees.
-- Robustness. Floating-point boolean operations leave hairline slivers along coincident edges and misbehave on degenerate rings, which real boundary data contains. Remainder rings below an area threshold are discarded, and the threshold is a named constant with its reason.
-- Verification. The property wanted is that every point in the reconciled area falls inside exactly one feature, which a grid scan asserts directly — exactly one, so overlaps fail the test as well as holes. Conserved total area is the second assertion. This is the test that settles whether the library behaved, and it is worth more than reading its source.
+- Cost. Cutting every country against a footprint of over a thousand polygons is wasteful. Prefilter by bounding box so only countries touching the footprint are cut, and reuse step 1's per-country unions as the operands so each subtraction works against a small shape. The producer runs weekly, so its slowness costs nothing a reader sees.
+- Robustness. Floating-point boolean operations leave hairline slivers along coincident edges and misbehave on degenerate rings, which real boundary data contains. Remainder rings below an area threshold are discarded, and the threshold is a named constant carrying both its reason and the licence clause it answers to, since discarding area is the one step that could make the data say something untrue.
+- Verification. The property wanted is that every point in the reconciled area falls inside exactly one feature at a given level, which a grid scan asserts directly — exactly one, so overlaps fail the test as well as holes. Conserved total area is the second assertion. This is the test that settles whether the library behaved, and it is worth more than reading its source.
 
 ## National outlines
 
-A feature's outline is its polygon's edges: the renderer strokes the same rings it fills. So once a country's polygon has been subtracted away, nothing draws that country's border, and the national border appears only as the outer edge of its subnational regions, stroked at the same weight as the regional borders inside it. The country reads as a uniform mesh rather than as a country subdivided.
+A feature's outline is its polygon's edges: the renderer strokes the same rings it fills. So a subdivided country has no border of its own being drawn; the national border appears only as the outer edge of its subnational regions, stroked at the same weight as the regional borders inside it, and the country reads as a uniform mesh rather than as a country subdivided.
 
-If national borders should read heavier than regional ones, the national outline has to be its own feature: union the subnational polygons per country and stroke that union more heavily. Same source, so the two agree vertex for vertex.
+Making national borders read heavier needs no new geometry. §Reconciling already emits each covered country's whole shape, unioned from its own regions, because §When a level has nothing to show falls back to it; stroking that same feature more heavily at a subnational level is a render decision rather than a producer one. Same source as the regions, so the two agree vertex for vertex.
 
 ## Boundary sources
 
@@ -69,7 +85,9 @@ If national borders should read heavier than regional ones, the national outline
 - **Montenegro: nothing needed.** Eurostat publishes it as a single region at every level, so the country outline already is its NUTS geometry.
 - **Not GISCO.** Eurostat's own NUTS boundaries are the better fit — pre-generalised at five scales, per level, a few megabytes — but they are EuroGeographics material carved out of Eurostat's reuse policy, and their terms require that "the data will not be used for commercial purposes". EuroBoundaryMap licensing starts at €6,600 for European coverage at the smallest user band.
 
-Both questions the specification leaves open were settled from the data. `NUTS_3` is partial, as its optional status allows: it carries 1,437 distinct codes across 35 countries, Montenegro and Türkiye absent, which is what sends those two to the sources above. Its codes follow the current classification rather than a revision it names, measured as 1,420 of the 1,437 being present in the NUTS 2021 seed; the seeded codes it lacks are dominated by Türkiye's 81 and Montenegro's one. Rolling its codes up by prefix gives 113 NUTS-1 and 311 NUTS-2 groups against the 125 and 340 Eurostat publishes, the shortfall again being those two countries.
+Both questions the specification leaves open were settled from the distribution itself rather than from the WFS the coverage probe used, whose counts it does not agree with. `NUTS_3` is partial, as its optional status allows: 16,899 polygon parts carrying 1,411 distinct codes across 34 countries, with Montenegro, Türkiye and Serbia absent. 1,399 of the 1,558 seeded NUTS-3 codes have a polygon; it holds 12 the seed lacks, among them Svalbard, Jan Mayen and UK codes postdating Eurostat's retired UK series.
+
+It follows no single revision, and asking which one it follows is the wrong question. Its `beginLifespanVersion` spans 2018 to 2024, because the layer is assembled from national contributions made at different times. So a code is reconciled against Eurostat's own `IS_STANDARD_CODE` annotation, which says whether Eurostat still disseminates it, rather than against a revision label. That annotation is also what showed the seed to be carrying superseded codes of its own, since a code can be labelled with the current revision and be obsolete within it.
 
 Acquisition is this source's one real obstacle, and it is not technical. The distribution is a 507 MB shapefile whose download link is minted server-side and sent by email after a registration form, and the site's client exposes no download route at all. So the file arrives by hand and is kept outside the repository, which departs from the pinned-release fetch every other source uses and means a rebuild depends on a local copy rather than on the network. The WFS the coverage probe went through is not an alternative: it serves `NUTS_3` alone, in GeoJSON alone of the formats it advertises, and requires a credential the publisher does not offer as a public API.
 
