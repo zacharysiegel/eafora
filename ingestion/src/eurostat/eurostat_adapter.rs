@@ -180,10 +180,11 @@ fn get_recut_region_warning(
 ) -> Option<IngestWarning> {
     let recut_geo_codes: BTreeSet<&str> = response.revision_by_geo_code
         .iter()
-        .filter(|(geo_code, published)| {
-            matches!(seeded_revision_by_geo_code.get(*geo_code), Some(seeded) if seeded != *published)
+        .filter_map(|(geo_code, published)| {
+            let seeded: &i32 = seeded_revision_by_geo_code.get(geo_code)?;
+
+            (seeded != published).then_some(geo_code.as_str())
         })
-        .map(|(geo_code, _)| geo_code.as_str())
         .collect();
 
     if recut_geo_codes.is_empty() {

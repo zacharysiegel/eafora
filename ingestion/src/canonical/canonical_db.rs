@@ -110,7 +110,7 @@ pub async fn find_subdivision_by_iso_3166_2<'e>(
 pub async fn read_nuts_revision_by_code<'e>(
     executor: impl PgExecutor<'e>,
 ) -> Result<BTreeMap<String, i32>, AppError> {
-    let subdivision_records: Vec<(String, i32)> = sqlx::query!(
+    let subdivision_records = sqlx::query!(
         r#"
         select
             nuts_code as "nuts_code!",
@@ -121,12 +121,12 @@ pub async fn read_nuts_revision_by_code<'e>(
         "#,
     )
     .fetch_all(executor)
-    .await?
-    .into_iter()
-    .map(|subdivision_record| (subdivision_record.nuts_code, subdivision_record.nuts_revision))
-    .collect();
+    .await?;
 
-    Ok(subdivision_records.into_iter().collect())
+    Ok(subdivision_records
+        .into_iter()
+        .map(|subdivision_record| (subdivision_record.nuts_code, subdivision_record.nuts_revision))
+        .collect())
 }
 
 pub async fn find_statistic_by_code<'e>(
