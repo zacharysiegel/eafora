@@ -96,27 +96,51 @@ impl CountrySpan {
     }
 }
 
-/// The inputs that determine the choropleth colors — the cache key for the color buffer. The bundle
+/// What the fill-color buffer was last written from; a later frame rewrites it only when these differ. The bundle
 /// is compared by identity (`Arc::ptr_eq`), since a hot-swap publishes a new `Arc`.
-struct FillColorKey {
+struct FillColorInputs {
     statistic_kind: StatisticKind,
     period_start: NaiveDate,
     bundle: Arc<Bundle>,
 }
 
-impl FillColorKey {
-    fn matches(&self, other: &FillColorKey) -> bool {
+impl FillColorInputs {
+    fn matches(&self, other: &FillColorInputs) -> bool {
         self.statistic_kind == other.statistic_kind
             && self.period_start == other.period_start
             && Arc::ptr_eq(&self.bundle, &other.bundle)
     }
 }
 
-/// The choropleth color buffer paired with the key describing what is currently written into it. The
-/// buffer is persistent and rewritten in place; the key gates those rewrites (`None` before the first).
+/// The choropleth color buffer paired with the inputs it was written from. The buffer is persistent and
+/// rewritten in place; `inputs` is `None` before the first write.
 struct FillColors {
     buffer: Buffer,
-    key: Option<FillColorKey>,
+    inputs: Option<FillColorInputs>,
+}
+
+/// What the emphasis texels were last written from; a later frame rewrites them only when these differ.
+struct EmphasisInputs {
+    selected_region: Option<RegionCode>,
+    hovered_region: Option<RegionCode>,
+    hover_lift_enabled: bool,
+}
+
+impl EmphasisInputs {
+    fn of(frame_state: &FrameState) -> EmphasisInputs {
+        EmphasisInputs {
+            selected_region: frame_state.selected_region.clone(),
+            hovered_region: frame_state.hovered_region.clone(),
+            hover_lift_enabled: frame_state.hover_lift_enabled,
+        }
+    }
+
+    /// Takes the frame directly, so an unchanged frame allocates nothing.
+    fn matches(&self, frame_state: &FrameState) -> bool {
+        self.selected_region == frame_state.selected_region
+            && self.hovered_region == frame_state.hovered_region
+            && self.hover_lift_enabled == frame_state.hover_lift_enabled
+    }
 }
 
 /// The map's uniform buffers (shader inputs constant across a draw) and the bind group wiring them to
@@ -127,6 +151,8 @@ struct MapBinding {
     country_state_texture: Texture,
     /// The texels currently holding a non-zero emphasis, so a change clears only the ones it has to.
     emphasized_country_indices: Vec<u32>,
+    /// What the emphasis texels hold; `None` before the first write and after a resize zeroes them.
+    emphasis_inputs: Option<EmphasisInputs>,
     bind_group: BindGroup,
     layout: BindGroupLayout,
 }
@@ -138,6 +164,7 @@ impl MapBinding {
     fn resize_country_state(&mut self, device: &Device, region_count: usize) {
         self.country_state_texture = create_country_state_texture(device, region_count);
         self.emphasized_country_indices.clear();
+        self.emphasis_inputs = None;
 
         let bind_group: BindGroup =
             create_map_bind_group(device, &self.layout, &self.viewport_buffer, &self.country_state_texture);
@@ -183,7 +210,7 @@ impl Renderer {
         let map_binding: MapBinding = create_map_binding(&device, country_geometry.spans.len());
         let fill_colors: FillColors = FillColors {
             buffer: create_fill_color_buffer(&device, country_geometry.positions.count),
-            key: None,
+            inputs: None,
         };
 
         Ok(Renderer {
@@ -311,11 +338,17 @@ impl Renderer {
         self.queue.write_buffer(&self.map_binding.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
     }
 
-    /// Rewrites the emphasis texels that changed: the hovered region gets a thin outline and,
-    /// when `frame_state.hover_lift_enabled`, the lift; the selected region a bolder outline (no lift; it
-    /// reads in the detail panel and drives zoom-to-country). When the same country is both, it keeps the
-    /// bolder outline. A region with no matching country (e.g. a stale hover after a bundle swap) is skipped.
+    /// Rewrites the emphasis texels that changed. A country that is both hovered and selected keeps the
+    /// bolder outline.
     fn write_country_state(&mut self, frame_state: &FrameState) {
+        let is_already_written: bool = self.map_binding.emphasis_inputs
+            .as_ref()
+            .is_some_and(|emphasis_inputs| emphasis_inputs.matches(frame_state));
+
+        if is_already_written {
+            return;
+        }
+
         let mut emphasized: BTreeMap<u32, CountryState> = BTreeMap::new();
 
         if let Some(country_index) = self.country_index_of(frame_state.selected_region.as_ref()) {
@@ -345,6 +378,7 @@ impl Renderer {
         }
 
         self.map_binding.emphasized_country_indices = emphasized.into_keys().collect();
+        self.map_binding.emphasis_inputs = Some(EmphasisInputs::of(frame_state));
     }
 
     fn write_country_state_texel(&self, country_index: u32, country_state: CountryState) {
@@ -482,7 +516,7 @@ impl Renderer {
         self.map_binding.resize_country_state(&self.device, self.country_geometry.spans.len());
         self.fill_colors = FillColors {
             buffer: create_fill_color_buffer(&self.device, self.country_geometry.positions.count),
-            key: None,
+            inputs: None,
         };
 
         Ok(())
@@ -492,21 +526,21 @@ impl Renderer {
     /// bundle) have changed since the last frame. A pan, zoom, or hover leaves them untouched, so the
     /// buffer keeps whatever was last uploaded.
     fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) {
-        let key: FillColorKey = FillColorKey {
+        let inputs: FillColorInputs = FillColorInputs {
             statistic_kind: frame_state.active_statistic,
             period_start: frame_state.active_period_start,
             bundle: Arc::clone(bundle),
         };
 
-        let is_current: bool = self.fill_colors.key.as_ref()
-            .is_some_and(|current| current.matches(&key));
+        let is_current: bool = self.fill_colors.inputs.as_ref()
+            .is_some_and(|current| current.matches(&inputs));
         if is_current {
             return;
         }
 
         let fill_vertices: Vec<FillVertexAttributes> = self.compute_fill_colors(bundle, frame_state);
         self.queue.write_buffer(&self.fill_colors.buffer, 0, bytemuck::cast_slice(&fill_vertices));
-        self.fill_colors.key = Some(key);
+        self.fill_colors.inputs = Some(inputs);
     }
 
     fn compute_fill_colors(&self, bundle: &Bundle, frame_state: &FrameState) -> Vec<FillVertexAttributes> {
@@ -568,6 +602,7 @@ fn create_map_binding(device: &Device, region_count: usize) -> MapBinding {
         viewport_buffer,
         country_state_texture,
         emphasized_country_indices: Vec::new(),
+        emphasis_inputs: None,
         bind_group,
         layout,
     }
@@ -705,6 +740,56 @@ mod tests {
     use crate::map::projection::ProjectedPoint;
 
     const TOLERANCE: f32 = 1e-6;
+
+    fn emphasized_frame_state() -> FrameState {
+        FrameState {
+            active_statistic: StatisticKind::Tfr,
+            active_period_start: NaiveDate::from_ymd_opt(2024, 1, 1).expect("a valid date"),
+            selected_region: Some(RegionCode("pol".to_string())),
+            hovered_region: Some(RegionCode("deu".to_string())),
+            hover_lift_enabled: true,
+        }
+    }
+
+    #[test]
+    fn emphasis_inputs_matches_the_frame_it_was_taken_from() {
+        let frame_state: FrameState = emphasized_frame_state();
+        let emphasis_inputs: EmphasisInputs = EmphasisInputs::of(&frame_state);
+
+        assert!(emphasis_inputs.matches(&frame_state));
+    }
+
+    #[test]
+    fn emphasis_inputs_matches_a_frame_differing_only_outside_the_emphasis() {
+        let emphasis_inputs: EmphasisInputs = EmphasisInputs::of(&emphasized_frame_state());
+
+        let mut scrubbed: FrameState = emphasized_frame_state();
+        scrubbed.active_period_start = NaiveDate::from_ymd_opt(2010, 1, 1).expect("a valid date");
+
+        assert!(emphasis_inputs.matches(&scrubbed));
+    }
+
+    #[test]
+    fn emphasis_inputs_does_not_match_a_moved_hover_or_selection() {
+        let emphasis_inputs: EmphasisInputs = EmphasisInputs::of(&emphasized_frame_state());
+
+        let mut hover_moved: FrameState = emphasized_frame_state();
+        hover_moved.hovered_region = Some(RegionCode("fra".to_string()));
+
+        let mut hover_left: FrameState = emphasized_frame_state();
+        hover_left.hovered_region = None;
+
+        let mut selection_cleared: FrameState = emphasized_frame_state();
+        selection_cleared.selected_region = None;
+
+        let mut lift_disabled: FrameState = emphasized_frame_state();
+        lift_disabled.hover_lift_enabled = false;
+
+        assert!(!emphasis_inputs.matches(&hover_moved));
+        assert!(!emphasis_inputs.matches(&hover_left));
+        assert!(!emphasis_inputs.matches(&selection_cleared));
+        assert!(!emphasis_inputs.matches(&lift_disabled));
+    }
 
     #[test]
     fn viewport_to_gpu_copies_the_projected_bounds() {
