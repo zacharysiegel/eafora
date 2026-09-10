@@ -152,12 +152,23 @@ Delivered in four slices. D0 has landed; D0.5 and D1 need no boundary data; D2 n
 
 Commit `bf7c6fa`. `CountryState` is a texel of an `Rg32Float` texture `COUNTRY_STATE_TEXTURE_WIDTH` wide, read in the vertex shader with `textureLoad`; the 512-feature cap and its error are gone, the texture is sized to the layer and rebuilt on a bundle swap, and an emphasis change writes only the texels that changed. Verified by `./scripts/test/test-shaders.sh`, which compiles the WGSL against a real adapter. The remaining risk is driver behaviour on the WebGL2 path: load `?renderer=webgl2` and confirm a hover still lifts, because an incomplete texture returns zeros silently rather than erroring.
 
-### D0.5 — drop the superseded regions the seed carries
+### D0.5 — reconcile the seed with Eurostat's code standing (landed)
 
-- [ ] T040 Add a migration deleting the 57 regions that are obsolete **and** have a current successor set, with their `statistic_value` and `subdivision` rows, in that order or the foreign key rejects it. The set is every seeded code Eurostat annotates `O` whose country also holds a `Y` code at the same level: NL 17, PT 17, FI 9, DE 7, LV 4, NO 3. Verified to leave no orphan, since every remaining code's prefix is still present.
-- [ ] T041 Do **not** delete the 223 obsolete UK regions. No current UK code covers that ground, so they overlap nothing, and the decision above keeps them.
-- [ ] T042 Change `tools/seed_generator/src/bin/nuts_regions.rs` to take the GEO codelist as a fourth input and filter on `IS_STANDARD_CODE`, keeping an obsolete code only where its country has no current code at that level. Delete `geo_revision_of` and the marker-prefix constant; the label's revision marker stops being load-bearing, though stripping it from the name stays. Re-run and diff against the migration to confirm the generator and the store agree.
-- [ ] T043 Re-run `ingest source eurostat` and confirm the warning count is still zero: the dropped codes must no longer resolve, and nothing else may start warning.
+Commits `f3e8ca9` and `e4e87d2`. The store now holds 1,975 subnational regions against the seed's 2,023, at three revisions: 1,743 at 2024, 223 at 2021, 9 at 2016. `ingest source eurostat` reports `added=48 revised=24 warnings=0`.
+
+- [x] T040 A migration deletes the 57 regions that are obsolete **and** have a current successor set, with their `statistic_value` and `subdivision` rows, in that order or the foreign key rejects it. The set is every seeded code Eurostat annotates `O` whose country also holds a `Y` code at the same level: NL 17, PT 17, FI 9, DE 7, LV 4, NO 3. They were duplicate namesakes, not merely stale: the store held both `NL31 Utrecht` and `NL35 Utrecht`.
+- [x] T041 The 223 obsolete UK regions stay. No current UK code covers that ground, so they overlap nothing.
+- [x] T042 `tools/seed_generator/src/bin/nuts_regions.rs` takes the GEO codelist and filters on `IS_STANDARD_CODE`, keeping an obsolete code only where its country has no current code at that level.
+- [x] T043 `ingest source eurostat` re-run: the dropped codes no longer resolve and nothing else warns.
+
+Four things the phase turned out to need that its description did not anticipate.
+
+- **The same rule adds 9 regions.** The vintage filter dropped every code whose label marker was not the newest present, which discarded `UKK21`, `UKK22` and seven of Northern Ireland's eleven districts (`UKN10`–`UKN16`). Those are distinct districts, not superseded namesakes, so the seed had been holding four of NI's eleven. They are added at revision 2016, and carry values through 2018.
+- **The parent of an overflowed code is not its truncation.** NI's eleven districts all sit under `UKN0`, so `UKN10` truncates to `UKN1`, which the classification never defined. The generator falls back to the sole region at the level above under the same grandparent, and errors where that is ambiguous.
+- **The revision in force is an input, not a maximum.** Eurostat marks a label with a revision only once that revision has retired the code, so the newest marker present (2021) is the newest *retired* cut, and the unmarked codes belong to the cut in force. The seed had recorded 2021 for all 2,023 rows. The generator now takes the current revision as an argument and validates that every marker predates it. `geo_revision_of` and the marker-prefix constant therefore stay rather than being deleted: the marker is now the source of each row's `nuts_revision`.
+- **The revision gate had to become per code.** `read_nuts_revision` returned one revision for the whole store and errored on more than one, which the UK's frozen cut makes impossible. It is now `read_nuts_revision_by_code`, and `is_from_seeded_revision` compares per code. A marked code the store does not hold is skipped silently, since Eurostat's own marker says it belongs to a retired cut; an unmarked code the store does not hold still reaches the region lookup and is reported as a gap.
+
+`quick-xml` is a new workspace dependency, used only by the seed generator: the per-code standing is in the codelist's XML, and its JSON form annotates only the list as a whole.
 
 ### D1 — level as a dimension
 
