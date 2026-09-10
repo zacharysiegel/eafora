@@ -96,11 +96,10 @@ impl CountrySpan {
     }
 }
 
-/// What the fill-color buffer was last written from; a later frame rewrites it only when these differ. The bundle
-/// is compared by identity (`Arc::ptr_eq`), since a hot-swap publishes a new `Arc`.
 struct FillColorInputs {
     statistic_kind: StatisticKind,
     period_start: NaiveDate,
+    /// Compared by identity, since a hot swap publishes a new `Arc` over equal data.
     bundle: Arc<Bundle>,
 }
 
@@ -112,14 +111,11 @@ impl FillColorInputs {
     }
 }
 
-/// The choropleth color buffer paired with the inputs it was written from. The buffer is persistent and
-/// rewritten in place; `inputs` is `None` before the first write.
 struct FillColors {
     buffer: Buffer,
     inputs: Option<FillColorInputs>,
 }
 
-/// What the emphasis texels were last written from; a later frame rewrites them only when these differ.
 struct EmphasisInputs {
     selected_region: Option<RegionCode>,
     hovered_region: Option<RegionCode>,
