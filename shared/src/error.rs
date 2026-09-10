@@ -1,6 +1,6 @@
 use std::error::Error;
 
-minimer::define_app_error!(pub AppError);
+minimer::define_app_error_static!(pub AppError);
 
 minimer::impl_from_error!(AppError, serde_json::Error);
 minimer::impl_from_error!(AppError, flatgeobuf::Error);

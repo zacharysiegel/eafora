@@ -1,5 +1,5 @@
 use crate::artifact::{self, fetch, manifest, version_rank, ArtifactCache, AuthoritativeBase, Bundle,
-    CachedVersionRank, DiscoveryDocument, Manifest};
+    CachedVersionRank, DiscoveryDocument, Manifest, ManifestEntry};
 use crate::error::AppError;
 use crate::filesystem;
 use crate::http::HttpFetch;
@@ -228,15 +228,21 @@ async fn open_fetched_live_bundle(
     Bundle::open(cache, &manifest.version, distribution_context).await
 }
 
-/// At most `LIVE_FETCH_CONCURRENCY` files are in flight, all within this task: the work is I/O-bound and
-/// `ArtifactCache` futures are not `Send`, which rules out spawning.
+/// At most `LIVE_FETCH_CONCURRENCY` files are in flight, all within this task: the work is I/O-bound, and
+/// spawning would demand a `Send` bound `ArtifactCache` does not carry.
+///
+/// The entries are cloned up front so each fetch owns its own. A closure whose argument is a reference and
+/// whose return value borrows it cannot be proven general over lifetimes, and the iOS FFI needs this future
+/// to be `Send`.
 async fn put_live_files(
     cache: &impl ArtifactCache,
     http_fetch: &impl HttpFetch,
     repository_base_url: &str,
     manifest: &Manifest,
 ) -> Result<(), AppError> {
-    let pending_fetches = manifest.file_entries().map(|entry| {
+    let file_entries: Vec<ManifestEntry> = manifest.file_entries().cloned().collect();
+
+    let pending_fetches = file_entries.into_iter().map(|entry| async move {
         fetch_and_cache_artifact_file(
             cache,
             http_fetch,
@@ -245,6 +251,7 @@ async fn put_live_files(
             &entry.relative_path,
             &entry.sha256,
         )
+        .await
     });
 
     let mut fetch_results = futures_util::stream::iter(pending_fetches).buffer_unordered(LIVE_FETCH_CONCURRENCY);
@@ -535,5 +542,24 @@ mod tests {
         assert_eq!(cache.get("2026-07-01+zulu", manifest::MANIFEST_FILENAME).await.unwrap(), None);
         assert!(cache.get("2026-07-02+alpha", manifest::MANIFEST_FILENAME).await.unwrap().is_some());
         assert!(cache.get("2026-07-03+bravo", manifest::MANIFEST_FILENAME).await.unwrap().is_some());
+    }
+}
+
+/* The iOS FFI exports the live load as an async function and UniFFI requires a Send future, so this
+   pins the bound against the concrete implementations a non-browser client uses. */
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod send_bound {
+    use super::*;
+    use crate::artifact::FilesystemArtifactCache;
+    use crate::http::ReqwestHttpFetch;
+
+    fn assert_send<T: Send>(_value: T) {}
+
+    #[test]
+    fn the_live_load_future_is_send_for_the_native_instantiation() {
+        let cache: FilesystemArtifactCache = FilesystemArtifactCache::create(std::path::PathBuf::from("/tmp/x"));
+        let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create().unwrap();
+
+        assert_send(load_live_bundle(&cache, &http_fetch, "/discovery", "/repository", DistributionContext::FirstParty));
     }
 }
