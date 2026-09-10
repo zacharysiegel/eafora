@@ -139,9 +139,7 @@ impl EmphasisInputs {
     }
 }
 
-/// The map's uniform buffers (shader inputs constant across a draw) and the bind group wiring them to
-/// the shaders. Pixel-format-independent, so unlike the pipelines they are created once and outlive any
-/// surface.
+/// Independent of the surface's pixel format, so unlike the pipelines these outlive any surface.
 struct MapBinding {
     viewport_buffer: Buffer,
     country_state_texture: Texture,
