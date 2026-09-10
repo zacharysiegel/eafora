@@ -163,8 +163,8 @@ FR-011 asks for `eafora.revision()`. `shared/src/revision.rs` already exposes `R
 
 Each of these is a hazard the plan cannot close from this machine, listed with what would close it:
 
-- **The UniFFI version and its Swift bindgen invocation.** `uniffi` is not in the local registry cache, so neither the current version nor the `uniffi-bindgen-swift` argument shape could be checked. The spec already flags the per-artifact invocation pattern as possibly shifted. Closing it: add the dependency once approved, then read the installed crate's own documentation rather than trusting the architecture doc.
-- **Whether UniFFI's async support covers the loader's shape.** The loader is `async` and holds a `tokio` `Semaphore` across awaits. Either the FFI exposes blocking calls over an owned `tokio` runtime, or it uses UniFFI's async support. This is the largest open design question in Phase 0.1 and should be settled by reading the installed crate before writing the surface.
+- ~~**The UniFFI version and its Swift bindgen invocation.**~~ Resolved in Phase 0.1 against uniffi 0.32.1. `uniffi::uniffi_bindgen_swift()` exists behind the `cli` feature and is distinct from `uniffi_bindgen_main()`. Its CLI takes the archive and the output directory positionally, then one of `--swift-sources` / `--headers` / `--modulemap`; there is no `--out-dir` and no `--crate`, and `--library` on the general CLI is deprecated in favour of auto-detection. Three invocations are required because each emits one kind of file.
+- ~~**Whether UniFFI's async support covers the loader's shape.**~~ Resolved in Phase 0.1: the boundary uses UniFFI's async support, so Swift gets `async throws` rather than a blocked thread. UniFFI requires an exported `async fn` to return a `Send + 'static` future and offers no local-spawn escape off `wasm32`, which took two changes to satisfy. `shared::AppError` moved to minimer's static flavour, since `minimer::AppError` holds an `Option<Box<dyn Error>>` with no `Send` bound; `ingestion` keeps the chaining flavour and promotes on the way in. And `put_live_files` clones each manifest entry, because a closure whose argument is a reference and whose returned future borrows it cannot be proven general over lifetimes. A regression test in `shared/src/artifact/load.rs` pins the bound.
 - **The XcodeGen schema.** `xcodegen` is not installed, so `project.yml` cannot be validated. Closing it: install it in Phase A and run `xcodegen generate`.
 - **`MTKView.isPaused` plus `setNeedsDisplay` semantics.** The event-driven loop is unverified. Closing it: run it on the simulator in Phase A.
 - **Everything in Phase D**, which needs an enrollment that does not exist.
@@ -219,6 +219,10 @@ The plan's substantive change is to invert where the work happens. The web clien
 ## Post-implementation notes
 
 To be appended per phase, recording deviations from this plan.
+
+### Phase 0.1
+
+Deviations are recorded in [tasks.md](tasks.md) §Deviations from the plan, Phase 0.1. The consequential ones are that the renderer lives in a `thread_local!` in `ios/ffi` rather than inside `EaforaClient`, and that the surface's viewport-dependent functions are deferred to Phase A along with the driver orchestration they need.
 
 ### Phase 0.2
 

@@ -1,0 +1,16 @@
+[package]
+name = "ffi"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[lib]
+# a static archive is what xcodebuild links into the xcframework.
+crate-type = ["staticlib"]
+name = "eafora_core"
+
+[dependencies]
+shared = { workspace = true, features = ["render"] }
+uniffi = { workspace = true, features = ["tokio"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+log = { workspace = true }
