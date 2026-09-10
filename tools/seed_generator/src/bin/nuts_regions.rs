@@ -169,8 +169,7 @@ fn select_codes(
     Ok(seeded_codes)
 }
 
-/// The codelist states each code's level, so a response given under the wrong `geoLevel` argument is caught
-/// here rather than seeded as a tree with regions at the wrong depth.
+/// The codelist states each code's level, so a response given under the wrong `geoLevel` argument is caught here.
 fn get_territorial_codes<'a>(
     response: &'a EurostatResponse,
     geo_codes: &'a BTreeMap<String, GeoCode>,
@@ -313,7 +312,7 @@ fn emit_sql(regions_by_level: &[Vec<SeedRegion>], current_revision: i32) {
     println!("-- \"statistical region\" instead, on the same revision cycle.");
     println!("-- Names are Eurostat's own, which are endonyms for most regions even in the English extraction.");
     println!("-- Generated via tools/seed_generator: cargo run -p seed_generator --bin nuts_regions --");
-    println!("--   <m49-iso3166 csv> <geo codelist xml> <nuts1 json> <nuts2 json> <nuts3 json> > <this-file>");
+    println!("--   <m49-iso3166 csv> <geo codelist xml> <current nuts revision> <nuts1 json> <nuts2 json> <nuts3 json>");
     println!("-- The binary's doc comment carries the request each input is the response to.");
 
     for (level_index, seed_regions) in regions_by_level.iter().enumerate() {

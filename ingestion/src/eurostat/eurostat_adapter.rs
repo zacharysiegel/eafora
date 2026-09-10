@@ -37,7 +37,7 @@ const STATUS_BY_FLAG_CHARACTER: [FlagStatus; 4] = [
     FlagStatus { character: 'p', status: DataStatus::Provisional },
 ];
 
-/// Which statistic each ingested indicator becomes. One response carries all three.
+/// Which statistic each ingested indicator becomes.
 const INGESTED_INDICATORS: [(&str, StatisticKind); 3] = [
     (eurostat_client::INDICATOR_TOTAL_FERTILITY_RATE, StatisticKind::Tfr),
     (eurostat_client::INDICATOR_MEAN_AGE_AT_CHILDBIRTH, StatisticKind::MeanAgeAtChildbirth),

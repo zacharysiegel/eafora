@@ -15,7 +15,6 @@ const ELEMENT_ANNOTATION_TYPE: &str = "AnnotationType";
 const ANNOTATION_STANDARD_CODE: &str = "IS_STANDARD_CODE";
 const ANNOTATION_LEVEL: &str = "LEVEL";
 
-/// The two `LEVEL` values that name something other than a depth in the territorial hierarchy.
 const LEVEL_AGGREGATE: &str = "AGG";
 const LEVEL_OTHER: &str = "OTH";
 
@@ -48,7 +47,7 @@ pub struct GeoCode {
     pub level: Option<u8>,
 }
 
-/// Eurostat gives an aggregate a level of its own rather than a depth, so not every value is a number.
+/// Eurostat gives an aggregate a level of its own, so not every value is a number.
 fn parse_level(title: &str) -> Result<Option<u8>, Box<dyn Error>> {
     match title {
         LEVEL_AGGREGATE | LEVEL_OTHER => Ok(None),
