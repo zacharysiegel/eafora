@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use sqlx::PgExecutor;
 use uuid::Uuid;
 
@@ -103,26 +105,28 @@ pub async fn find_subdivision_by_iso_3166_2<'e>(
     Ok(subdivision_entity.map(Subdivision::from))
 }
 
-/// The NUTS revision every seeded code belongs to. More than one would mean the store models two namings of
-/// the same territory at once, which no map layer can draw and no lookup by code alone can disambiguate.
-pub async fn read_nuts_revision<'e>(executor: impl PgExecutor<'e>) -> Result<Option<i32>, AppError> {
-    let nuts_revisions: Vec<i32> = sqlx::query_scalar!(
+/// The NUTS revision each seeded code belongs to. The store holds several at once: a country that has left the
+/// classification keeps the cut it left under, while the rest follow the cut in force.
+pub async fn read_nuts_revision_by_code<'e>(
+    executor: impl PgExecutor<'e>,
+) -> Result<BTreeMap<String, i32>, AppError> {
+    let subdivision_records: Vec<(String, i32)> = sqlx::query!(
         r#"
-        select distinct nuts_revision as "nuts_revision!"
+        select
+            nuts_code as "nuts_code!",
+            nuts_revision as "nuts_revision!"
         from subdivision
-        where nuts_revision is not null
+        where nuts_code is not null
+          and nuts_revision is not null
         "#,
     )
     .fetch_all(executor)
-    .await?;
+    .await?
+    .into_iter()
+    .map(|subdivision_record| (subdivision_record.nuts_code, subdivision_record.nuts_revision))
+    .collect();
 
-    if nuts_revisions.len() > 1 {
-        return Err(AppError::from(format!(
-            "subdivision holds more than one NUTS revision; [revisions={nuts_revisions:?}]",
-        )));
-    }
-
-    Ok(nuts_revisions.into_iter().next())
+    Ok(subdivision_records.into_iter().collect())
 }
 
 pub async fn find_statistic_by_code<'e>(

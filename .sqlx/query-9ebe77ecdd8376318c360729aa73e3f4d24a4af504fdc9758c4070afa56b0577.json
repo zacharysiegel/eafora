@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        select\n            nuts_code as \"nuts_code!\",\n            nuts_revision as \"nuts_revision!\"\n        from subdivision\n        where nuts_code is not null\n          and nuts_revision is not null\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "nuts_code!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "nuts_revision!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "9ebe77ecdd8376318c360729aa73e3f4d24a4af504fdc9758c4070afa56b0577"
+}

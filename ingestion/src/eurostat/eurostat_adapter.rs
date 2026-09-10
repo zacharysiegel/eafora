@@ -92,13 +92,14 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
         return Ok(IngestReport::default());
     }
 
-    let seeded_nuts_revision: Option<i32> = canonical_db::read_nuts_revision(&mut *transaction).await?;
+    let seeded_revision_by_geo_code: BTreeMap<String, i32> =
+        canonical_db::read_nuts_revision_by_code(&mut *transaction).await?;
 
     let mut normalized_statistic_values: Vec<NormalizedStatisticValue> = Vec::new();
     let mut warnings: Vec<IngestWarning> = Vec::new();
 
     for (extraction, response) in &responses {
-        warnings.extend(get_later_revision_warning(extraction, response, seeded_nuts_revision));
+        warnings.extend(get_recut_region_warning(extraction, response, &seeded_revision_by_geo_code));
 
         for (indicator_code, statistic_kind) in INGESTED_INDICATORS {
             if !extraction.indicator_codes.contains(&indicator_code) {
@@ -111,7 +112,7 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
                 .filter(|observation| {
                     is_from_seeded_revision(
                         response.revision_by_geo_code.get(&observation.geo_code).copied(),
-                        seeded_nuts_revision,
+                        seeded_revision_by_geo_code.get(&observation.geo_code).copied(),
                     )
                 })
                 .cloned()
@@ -158,38 +159,42 @@ fn revision_label_of(responses: &[(&EurostatExtraction, ParsedEurostatResponse)]
         .join(",")
 }
 
-/// A code the response marks with a revision means what the store thinks it means only when the two agree;
-/// a code no revision has recut carries no marker and stands either way.
-fn is_from_seeded_revision(published_revision: Option<i32>, seeded_nuts_revision: Option<i32>) -> bool {
-    match (published_revision, seeded_nuts_revision) {
+/// Eurostat marks a label with a revision only once that revision has retired the code, so a marked code the
+/// store does not hold is one the classification has recut and the seed deliberately leaves out: its ground is
+/// covered by the live code that took its name. An unmarked code the store does not hold is a gap, and reaches
+/// the region lookup to be reported as one.
+fn is_from_seeded_revision(published_revision: Option<i32>, seeded_revision: Option<i32>) -> bool {
+    match (published_revision, seeded_revision) {
         (Some(published), Some(seeded)) => published == seeded,
-        _ => true,
+        (Some(_), None) => false,
+        (None, _) => true,
     }
 }
 
-/// A revision later than the seeded one is the source recutting regions the store still names the old way.
-/// Every code it touched is skipped, so this is the signal to re-seed.
-fn get_later_revision_warning(
+/// A code the store holds under one revision and the source publishes under another names different ground on
+/// the two sides, so its values are skipped. This is the signal to re-seed.
+fn get_recut_region_warning(
     extraction: &EurostatExtraction,
     response: &ParsedEurostatResponse,
-    seeded_nuts_revision: Option<i32>,
+    seeded_revision_by_geo_code: &BTreeMap<String, i32>,
 ) -> Option<IngestWarning> {
-    let seeded: i32 = seeded_nuts_revision?;
-    let later_revisions: BTreeSet<i32> = response.revision_by_geo_code
-        .values()
-        .copied()
-        .filter(|published| *published > seeded)
+    let recut_geo_codes: BTreeSet<&str> = response.revision_by_geo_code
+        .iter()
+        .filter(|(geo_code, published)| {
+            matches!(seeded_revision_by_geo_code.get(*geo_code), Some(seeded) if seeded != *published)
+        })
+        .map(|(geo_code, _)| geo_code.as_str())
         .collect();
 
-    if later_revisions.is_empty() {
+    if recut_geo_codes.is_empty() {
         return None;
     }
 
     Some(IngestWarning {
         kind: IngestWarningKind::MismatchedRegionRevision,
         message: format!(
-            "regions published under a later NUTS revision than the seed holds are skipped; \
-             [dataset={} geo_level={} seeded={seeded} published={later_revisions:?}]",
+            "regions the source publishes under a different NUTS revision than the seed holds are skipped; \
+             [dataset={} geo_level={} regions={recut_geo_codes:?}]",
             extraction.dataset,
             extraction.geo_level.code(),
         ),
@@ -362,28 +367,43 @@ mod tests {
     }
 
     #[test]
-    fn is_from_seeded_revision_keeps_everything_when_the_store_seeds_none() {
-        assert!(is_from_seeded_revision(Some(2016), None));
+    fn is_from_seeded_revision_skips_a_retired_code_the_store_does_not_hold() {
+        assert!(!is_from_seeded_revision(Some(2016), None));
     }
 
     #[test]
-    fn get_later_revision_warning_stays_silent_for_the_revision_the_seed_supersedes() {
+    fn is_from_seeded_revision_keeps_an_unmarked_code_the_store_does_not_hold() {
+        assert!(is_from_seeded_revision(None, None));
+    }
+
+    #[test]
+    fn get_recut_region_warning_stays_silent_when_the_two_revisions_agree() {
+        let response: ParsedEurostatResponse =
+            response_revised(BTreeMap::from([("HR04".to_string(), 2016)]));
+        let seeded: BTreeMap<String, i32> = BTreeMap::from([("HR04".to_string(), 2016)]);
+
+        assert!(get_recut_region_warning(nuts_2_extraction(), &response, &seeded).is_none());
+    }
+
+    #[test]
+    fn get_recut_region_warning_stays_silent_for_a_code_the_store_does_not_hold() {
         let response: ParsedEurostatResponse =
             response_revised(BTreeMap::from([("HR04".to_string(), 2016)]));
 
-        assert!(get_later_revision_warning(nuts_2_extraction(), &response, Some(2021)).is_none());
+        assert!(get_recut_region_warning(nuts_2_extraction(), &response, &BTreeMap::new()).is_none());
     }
 
     #[test]
-    fn get_later_revision_warning_names_a_revision_the_seed_does_not_hold_yet() {
+    fn get_recut_region_warning_names_a_code_the_source_has_recut() {
         let response: ParsedEurostatResponse =
             response_revised(BTreeMap::from([("HR04".to_string(), 2024)]));
+        let seeded: BTreeMap<String, i32> = BTreeMap::from([("HR04".to_string(), 2021)]);
 
-        let warning: IngestWarning = get_later_revision_warning(nuts_2_extraction(), &response, Some(2021))
+        let warning: IngestWarning = get_recut_region_warning(nuts_2_extraction(), &response, &seeded)
             .expect("a warning");
 
         assert!(matches!(warning.kind, IngestWarningKind::MismatchedRegionRevision));
-        assert!(warning.message.contains("2024"), "{}", warning.message);
+        assert!(warning.message.contains("HR04"), "{}", warning.message);
     }
 
     #[test]

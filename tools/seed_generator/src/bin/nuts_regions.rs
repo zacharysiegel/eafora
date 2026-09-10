@@ -11,10 +11,11 @@
 //! curl -sS "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/codelist/ESTAT/GEO" -o /tmp/eurostat-geo-codelist.xml
 //! ```
 //!
-//! Then, from the repository root:
+//! Then, from the repository root, `<current-nuts-revision>` being the classification in force (Eurostat marks
+//! a label with a revision only once that revision has retired the code, so no input names the current one):
 //!
 //! ```sh
-//! cargo run -p seed_generator --bin nuts_regions -- ingestion/db/seed-data/m49-iso3166-<snapshot-date>.csv /tmp/eurostat-geo-codelist.xml /tmp/nuts-nuts1.json /tmp/nuts-nuts2.json /tmp/nuts-nuts3.json > ingestion/db/migrations/<migration>.sql
+//! cargo run -p seed_generator --bin nuts_regions -- ingestion/db/seed-data/m49-iso3166-<snapshot-date>.csv /tmp/eurostat-geo-codelist.xml <current-nuts-revision> /tmp/nuts-nuts1.json /tmp/nuts-nuts2.json /tmp/nuts-nuts3.json > ingestion/db/migrations/<migration>.sql
 //! ```
 //!
 //! No response states a region's parent. NUTS codes nest by prefix, so a region's parent is its own code
@@ -37,8 +38,8 @@ use seed_generator::sql;
 /// The tree level each input file's regions occupy, in the order the arguments give them.
 const LEVEL_NAMES: [&str; 3] = ["subnational_1", "subnational_2", "subnational_3"];
 
-const USAGE: &str =
-    "usage: nuts_regions <m49-iso3166-csv> <geo-codelist-xml> <nuts1-json> <nuts2-json> <nuts3-json>";
+const USAGE: &str = "usage: nuts_regions <m49-iso3166-csv> <geo-codelist-xml> <current-nuts-revision> \
+                     <nuts1-json> <nuts2-json> <nuts3-json>";
 
 struct SeedRegion {
     code: String,
@@ -57,13 +58,15 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let arguments: Vec<String> = env::args().skip(1).collect();
-    let [csv_path, codelist_path, level_paths @ ..] = arguments.as_slice()
+    let [csv_path, codelist_path, current_revision, level_paths @ ..] = arguments.as_slice()
     else {
         return Err(USAGE.into());
     };
     if level_paths.len() != LEVEL_NAMES.len() {
         return Err(USAGE.into());
     }
+
+    let current_revision: i32 = current_revision.parse::<i32>()?;
 
     let csv_text: String = fs::read_to_string(csv_path)?;
     let country_rows: Vec<CountryRow> = country_csv::parse_csv(&csv_text)?;
@@ -79,7 +82,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         .iter()
         .map(|path| read_response(path))
         .collect::<Result<Vec<EurostatResponse>, Box<dyn Error>>>()?;
-    let current_revision: i32 = get_current_revision(&responses)?;
+    validate_revisions_are_retired(&responses, current_revision)?;
 
     let mut seeded_codes_by_level: Vec<BTreeSet<String>> = Vec::with_capacity(responses.len());
     for (level_index, response) in responses.iter().enumerate() {
@@ -109,15 +112,28 @@ fn read_response(path: &str) -> Result<EurostatResponse, Box<dyn Error>> {
     Ok(response)
 }
 
-/// A response labels each region with the revision of the classification that defines it, and carries several
-/// at once, so the newest present is the one whose regions are current.
-fn get_current_revision(responses: &[EurostatResponse]) -> Result<i32, Box<dyn Error>> {
-    let current_revision: Option<i32> = responses
+/// Eurostat marks a label with a revision only to tell a retired code from the live one that took its name, so
+/// every marker present must be older than the revision in force. One that is not means the argument names a
+/// revision Eurostat has already moved past.
+fn validate_revisions_are_retired(
+    responses: &[EurostatResponse],
+    current_revision: i32,
+) -> Result<(), Box<dyn Error>> {
+    let unretired: BTreeSet<i32> = responses
         .iter()
         .flat_map(|response| eurostat_client::revision_by_geo_code(response).into_values())
-        .max();
+        .filter(|marked| *marked >= current_revision)
+        .collect();
 
-    current_revision.ok_or_else(|| "no response labels any region with a revision".into())
+    if !unretired.is_empty() {
+        return Err(format!(
+            "labels carry revisions {unretired:?}, which the given current revision {current_revision} \
+             does not postdate",
+        )
+        .into());
+    }
+
+    Ok(())
 }
 
 /// Eurostat keeps disseminating a code after superseding it, and labels the replacement with the same revision
