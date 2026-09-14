@@ -754,7 +754,6 @@ fn history_chart(geometry: Memo<ChartGeometry>, figure: Memo<Option<ActiveFigure
     }
 }
 
-/// Keeps the last value when the pointer has left, so an attribute is never written empty.
 fn readout_text(cursor: RwSignal<Option<ChartCursor>>, read: impl Fn(&ChartReadout) -> String) -> String {
     cursor.with(|cursor| cursor.as_ref().map(|cursor| read(&cursor.readout)).unwrap_or_default())
 }

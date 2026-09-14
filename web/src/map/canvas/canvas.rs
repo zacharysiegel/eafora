@@ -18,7 +18,7 @@ use crate::i18n::*;
 #[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // the ssr build never runs the renderer, so it constructs only Loading
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStatus {
-    /// Shown until the embedded bundle is parsed and the surface is attached.
+    /// Shown until the first-paint bundle is open and the surface is attached.
     Loading,
     Ready,
     /// The browser lacks a hard capability: no OPFS or no usable wgpu backend.

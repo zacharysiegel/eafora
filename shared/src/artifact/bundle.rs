@@ -85,9 +85,7 @@ impl Bundle {
         })
     }
 
-    /// The values that color the map for `statistic_kind`: the first authorized license class that
-    /// ships a shard for it. Provisional policy shared by the renderer and the selection resolver;
-    /// refining it to the source-choice rules is future work.
+    /// Values for `statistic_kind` from the highest-precedence authorized license class shipping a shard.
     pub fn shard_values_for(&self, statistic_kind: StatisticKind) -> Option<&ShardValues> {
         self.distribution_context
             .authorized_classes()

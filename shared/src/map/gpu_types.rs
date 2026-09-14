@@ -44,9 +44,6 @@ const _: () = assert!(std::mem::size_of::<ViewportUniform>() == 32);
 
 /// Per-country emphasis state, one texel of the country-state texture, addressed by
 /// `EmphasisVertexAttributes::country_index`.
-///
-/// Held per country because several may carry distinct values at once: a hover transition decays each on
-/// its own clock, so a country keeps a lift after the pointer has left it.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CountryState {

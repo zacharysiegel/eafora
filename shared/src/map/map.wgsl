@@ -94,9 +94,8 @@ fn fill_fragment_main(input: FillVertexOutput) -> @location(0) vec4<f32> {
     return input.color;
 }
 
-// Emphasis-outline pipeline: the selected/hovered country's fill triangles, inflated by an extra `outline.x`
-// pixels and painted solid black. Drawn behind the normal fill so only the extra rim shows, giving a
-// uniform outline even on multi-island countries (a filled silhouette, not stroked line segments).
+/* Emphasis-outline pipeline: the emphasized country's fill triangles, inflated by the country-state
+   texel's outline width and painted solid black. Drawn behind the normal fill, so only the rim shows. */
 
 @vertex
 fn emphasis_outline_vertex_main(input: FillVertexInput, @builtin(instance_index) instance_index: u32) -> @builtin(position) vec4<f32> {

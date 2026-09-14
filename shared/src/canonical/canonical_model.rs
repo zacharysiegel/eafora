@@ -338,8 +338,7 @@ pub struct SourceRevision {
     pub fetched: DateTime<Utc>,
 }
 
-/// What a consumer must show to redistribute a source's data. Both seeded sources carry an `attribution`
-/// licence class, so displaying `attribution_text` is a licence obligation rather than a courtesy.
+/// What a consumer must show to redistribute a source's data.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceAttribution {
     /// Rendered verbatim; the canonical store calls it the exact display string for UI citations.
