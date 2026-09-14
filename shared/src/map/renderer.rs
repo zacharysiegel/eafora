@@ -28,11 +28,11 @@ use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
 use crate::sqlite::shard_db::ShardValues;
 
-// the native attach path takes a raw window handle; the web attaches from a canvas.
+// a raw window handle does not exist on wasm32
 #[cfg(not(target_arch = "wasm32"))]
 use crate::render::WindowHandle;
 
-// the canvas attach path takes an HtmlCanvasElement instead of a raw window handle.
+// web-sys is only a dependency on wasm32
 #[cfg(target_arch = "wasm32")]
 use web_sys::HtmlCanvasElement;
 
@@ -44,11 +44,11 @@ const HOVER_LIFT_PX: f32 = 4.0;
 const HOVER_OUTLINE_PX: f32 = 2.0;
 const SELECTED_OUTLINE_PX: f32 = 6.0;
 
-/// Which GPU backend the renderer's wgpu instance may use. `ForceGl` restricts it to WebGL2 for the
-/// web client's `?renderer=webgl2` parity-testing flag; `Default` lets wgpu prefer WebGPU where present.
+/// Which GPU backend the renderer's wgpu instance may use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RendererBackend {
     Default,
+    /// Restricted to WebGL2, for checking the renderer against the fallback backend.
     ForceGl,
 }
 
@@ -152,14 +152,14 @@ struct MapBinding {
 }
 
 impl MapBinding {
-    /// A swapped-in layer has its own region count, so the texture is resized to it. The bind group names
-    /// the old texture and is rebuilt with it; the layout is untouched, since the pipelines were built
-    /// against it.
     fn resize_country_state(&mut self, device: &Device, region_count: usize) {
         self.country_state_texture = create_country_state_texture(device, region_count);
+
+        // The replacement texture is zeroed, so nothing written into the old one still holds.
         self.emphasized_country_indices.clear();
         self.emphasis_inputs = None;
 
+        // The existing bind group still names the replaced texture. The layout does not, so the pipelines stand.
         let bind_group: BindGroup =
             create_map_bind_group(device, &self.layout, &self.viewport_buffer, &self.country_state_texture);
         self.bind_group = bind_group;
@@ -237,8 +237,7 @@ impl Renderer {
         self.attach(surface).await
     }
 
-    /// Builds the surface-format pipelines and stores the attached state. Surface-agnostic — shared by
-    /// the native window-handle path and the canvas path — so it is not target-gated.
+    /// Not target-gated: the window-handle and canvas attach paths both converge here.
     async fn attach(&mut self, surface: WgpuSurface) -> Result<(), AppError> {
         let pipelines: RenderPipelines =
             RenderPipelines::create(&self.device, surface.format(), &self.map_binding.layout).await?;
@@ -282,9 +281,8 @@ impl Renderer {
         Ok(())
     }
 
-    /// Maps each wgpu surface state to a frame action: `Some(texture)` to render, `None` to skip this
-    /// frame, `Err` to abort. A lost surface detaches and errors because recreating it needs the
-    /// window handle the renderer doesn't retain; only the shell can, by re-attaching the surface.
+    /// A lost surface detaches and errors, since recreating it needs the window handle the renderer does
+    /// not retain.
     fn acquire_surface_texture(&mut self) -> Result<Option<SurfaceTexture>, AppError> {
         let acquired: CurrentSurfaceTexture = self
             .attached
@@ -332,8 +330,7 @@ impl Renderer {
         self.queue.write_buffer(&self.map_binding.viewport_buffer, 0, bytemuck::cast_slice(&[viewport_uniform]));
     }
 
-    /// Rewrites the emphasis texels that changed. A country that is both hovered and selected keeps the
-    /// bolder outline.
+    /// A country that is both hovered and selected keeps the bolder outline.
     fn write_country_state(&mut self, frame_state: &FrameState) {
         let is_already_written: bool = self.map_binding.emphasis_inputs
             .as_ref()
@@ -397,8 +394,7 @@ impl Renderer {
         );
     }
 
-    /// The build-order index of the span whose region matches `region`, i.e. the `country_index` its
-    /// vertices carry, or `None` when `region` is absent or has no matching span.
+    /// The index the matching span's vertices carry as their `country_index`.
     fn country_index_of(&self, region: Option<&RegionCode>) -> Option<usize> {
         let region: &RegionCode = region?;
 
@@ -406,10 +402,7 @@ impl Renderer {
             .position(|span| span.region_code == region.0)
     }
 
-    /// The fill-index ranges of the emphasized countries (selected, then hovered) in draw order, so the
-    /// hovered country renders last; deduplicated when they are the same country, and skipping a region
-    /// with no matching span. Each range is redrawn on top of the base layer as a black silhouette plus
-    /// fill, so neighboring fills do not cover it.
+    /// In draw order, so the hovered country renders over the selected one.
     fn emphasized_country_fill_ranges(&self, frame_state: &FrameState) -> Vec<Range<u32>> {
         let selected: Option<usize> = self.country_index_of(frame_state.selected_region.as_ref());
         let hovered: Option<usize> = self.country_index_of(frame_state.hovered_region.as_ref());
@@ -466,12 +459,8 @@ impl Renderer {
         render_pass.set_index_buffer(self.country_geometry.boundary.buffer.slice(..), IndexFormat::Uint32);
         render_pass.draw_indexed(0..self.country_geometry.boundary.count, 0, 0..instance_count);
 
-        // Redraw the emphasized countries on top of the base layer so neighboring fills do not cover
-        // them. Each is drawn twice through the same fill-triangle range: first inflated outward and
-        // painted black (the emphasis_outline pipeline), then in the choropleth color at its normal
-        // extent (the fill pipeline). The black copy is larger, so only its rim shows around the color
-        // fill; that rim is the outline, and being a filled silhouette it stays clean on multi-island
-        // countries.
+        /* Drawn over the base layer so neighboring fills do not cover them. The inflated black copy goes
+           first, so only its rim shows around the normal-extent fill. */
         for country_fill_range in &emphasized_country_fill_ranges {
             render_pass.set_vertex_buffer(0, self.country_geometry.positions.buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.fill_colors.buffer.slice(..));
@@ -493,9 +482,8 @@ impl Renderer {
         encoder.finish()
     }
 
-    /// The buffers and their spans come from one bundle's geometry layer, and a hot-swap can bring a
-    /// different one. Both the choropleth and the hover emphasis key on the region codes the spans carry, so
-    /// keeping stale buffers renders a map that disagrees with what the hit-test reports.
+    /// The spans' region codes are the join key for every per-region lookup, so they must come from the
+    /// bundle being drawn.
     fn refresh_country_geometry(&mut self, bundle: &Bundle) -> Result<(), AppError> {
         if self.country_geometry.geometry_relative_path == bundle.manifest.geometry.relative_path {
             return Ok(());
@@ -516,9 +504,7 @@ impl Renderer {
         Ok(())
     }
 
-    /// Rewrites the fill-color buffer in place only when its inputs (active statistic, period, or the
-    /// bundle) have changed since the last frame. A pan, zoom, or hover leaves them untouched, so the
-    /// buffer keeps whatever was last uploaded.
+    /// Rewrites the fill-color buffer only when its inputs have changed.
     fn refresh_fill_colors(&mut self, bundle: &Arc<Bundle>, frame_state: &FrameState) {
         let inputs: FillColorInputs = FillColorInputs {
             statistic_kind: frame_state.active_statistic,
@@ -602,8 +588,7 @@ fn create_map_binding(device: &Device, region_count: usize) -> MapBinding {
     }
 }
 
-/// One texel per region, laid out in rows because a texture dimension is capped far below the number of
-/// regions a layer can hold. Zero-filled on creation, which is the un-emphasized state.
+/// Zero-filled on creation, which is the un-emphasized state.
 fn create_country_state_texture(device: &Device, region_count: usize) -> Texture {
     let rows: u32 = (region_count as u32).div_ceil(COUNTRY_STATE_TEXTURE_WIDTH).max(1);
 
