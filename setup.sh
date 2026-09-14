@@ -1,6 +1,7 @@
 #!/bin/zsh
 # One-shot bootstrap for a fresh dev machine. Idempotent — safe to re-run.
 #   - generates .env from template.env if missing
+#   - installs the iOS toolchain (Rust targets, xcodegen, a simulator runtime) when Xcode is present
 #   - installs Postgres 18 via Homebrew if missing, starts it as a launchd service
 #   - creates the eafora database (no-op if it already exists)
 #   - applies migrations to eafora via scripts/db/dbmate.sh
@@ -27,6 +28,52 @@ function check_prerequisites {
     required_program "cargo-leptos" "cargo install --locked cargo-leptos"
 }
 check_prerequisites
+
+# Nothing outside ios/ needs any of this, so a missing Xcode skips it and a failed step warns rather
+# than stopping the rest of the bootstrap.
+function install_ios_toolchain {
+    local xcodebuild_path
+    xcodebuild_path=$(which xcodebuild 2>/dev/null || true)
+    if test -z "${xcodebuild_path}"; then
+        echo "Skipping the iOS toolchain: Xcode is not installed"
+        return 0
+    fi
+
+    local installed_rust_targets
+    installed_rust_targets=$(rustup target list --installed)
+
+    for rust_target in aarch64-apple-ios aarch64-apple-ios-sim; do
+        local target_match_count
+        target_match_count=$(echo "${installed_rust_targets}" | grep -cx "${rust_target}" || true)
+
+        if test "${target_match_count}" -eq 0; then
+            echo "Adding the ${rust_target} Rust target"
+            rustup target add "${rust_target}"
+        fi
+    done
+
+    local installed_xcodegen_versions
+    installed_xcodegen_versions=$(brew ls --versions xcodegen 2>/dev/null || true)
+    if test -z "${installed_xcodegen_versions}"; then
+        echo "Installing xcodegen via Homebrew"
+        brew install xcodegen
+    fi
+
+    local installed_ios_runtimes
+    installed_ios_runtimes=$(xcrun simctl list runtimes | grep "^iOS " || true)
+    if test -n "${installed_ios_runtimes}"; then
+        return 0
+    fi
+
+    echo "Downloading an iOS simulator runtime (several gigabytes)"
+    local runtime_download_status=0
+    xcodebuild -downloadPlatform iOS || runtime_download_status=$?
+
+    if test "${runtime_download_status}" -ne 0; then
+        echo "  the download failed; run \`xcodebuild -downloadPlatform iOS\` by hand"
+    fi
+}
+install_ios_toolchain
 
 master_secret=
 if test -n "${1+set}"; then

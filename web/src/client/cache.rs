@@ -5,7 +5,7 @@ use web_sys::{
     File, FileSystemDirectoryHandle, FileSystemFileHandle, FileSystemGetFileOptions, FileSystemRemoveOptions,
 };
 
-use shared::AppError;
+use shared::error::AppErrorStatic;
 use shared::artifact::ArtifactCache;
 
 use crate::client::{js, opfs};
@@ -22,10 +22,10 @@ impl OpfsArtifactCache {
     /// Confirms OPFS is available (older Safari lacks it), ensures the `artifacts/` root exists, and
     /// requests persistent storage. Returns a `cache: opfs unsupported`-prefixed error when OPFS is
     /// absent.
-    pub async fn create() -> Result<OpfsArtifactCache, AppError> {
+    pub async fn create() -> Result<OpfsArtifactCache, AppErrorStatic> {
         let root: FileSystemDirectoryHandle = opfs::root()
             .await
-            .map_err(|error| AppError::from(format!("cache: opfs unsupported: {error}")))?;
+            .map_err(|error| AppErrorStatic::from(format!("cache: opfs unsupported: {error}")))?;
         opfs::get_or_create_directory(&root, ARTIFACTS_DIRECTORY).await?;
 
         // Persistent storage is advisory; log the outcome but never fail construction if it's denied.
@@ -39,7 +39,7 @@ impl OpfsArtifactCache {
 }
 
 impl ArtifactCache for OpfsArtifactCache {
-    async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError> {
+    async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppErrorStatic> {
         let root: FileSystemDirectoryHandle = opfs::root().await?;
 
         opfs::check_quota(bytes.len()).await?;
@@ -56,7 +56,7 @@ impl ArtifactCache for OpfsArtifactCache {
         Ok(())
     }
 
-    async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError> {
+    async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppErrorStatic> {
         let root: FileSystemDirectoryHandle = opfs::root().await?;
 
         let Some((parent, file_name)) =
@@ -75,7 +75,7 @@ impl ArtifactCache for OpfsArtifactCache {
         Ok(Some(bytes))
     }
 
-    async fn list_versions(&self) -> Result<Vec<String>, AppError> {
+    async fn list_versions(&self) -> Result<Vec<String>, AppErrorStatic> {
         let root: FileSystemDirectoryHandle = opfs::root().await?;
 
         let Some(artifacts) = opfs::get_directory(&root, ARTIFACTS_DIRECTORY).await? else {
@@ -85,7 +85,7 @@ impl ArtifactCache for OpfsArtifactCache {
         opfs::list_directory_keys(&artifacts).await
     }
 
-    async fn delete_version(&self, version_label: &str) -> Result<(), AppError> {
+    async fn delete_version(&self, version_label: &str) -> Result<(), AppErrorStatic> {
         let root: FileSystemDirectoryHandle = opfs::root().await?;
 
         let Some(artifacts) = opfs::get_directory(&root, ARTIFACTS_DIRECTORY).await? else {
@@ -122,7 +122,7 @@ async fn create_artifact_directory<'path>(
     root: &FileSystemDirectoryHandle,
     version_label: &str,
     file_relative_path: &'path str,
-) -> Result<(FileSystemDirectoryHandle, &'path str), AppError> {
+) -> Result<(FileSystemDirectoryHandle, &'path str), AppErrorStatic> {
     let (directory_path, file_name): (&str, &str) = split_directory_and_file(file_relative_path);
 
     let mut directory: FileSystemDirectoryHandle = root.clone();
@@ -137,7 +137,7 @@ async fn find_artifact_directory<'path>(
     root: &FileSystemDirectoryHandle,
     version_label: &str,
     file_relative_path: &'path str,
-) -> Result<Option<(FileSystemDirectoryHandle, &'path str)>, AppError> {
+) -> Result<Option<(FileSystemDirectoryHandle, &'path str)>, AppErrorStatic> {
     let (directory_path, file_name): (&str, &str) = split_directory_and_file(file_relative_path);
 
     let mut directory: FileSystemDirectoryHandle = root.clone();

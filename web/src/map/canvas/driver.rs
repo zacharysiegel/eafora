@@ -773,7 +773,7 @@ async fn open_first_paint_bundle(
 async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Result<(), StartupError> {
     let cache: OpfsArtifactCache = OpfsArtifactCache::create()
         .await
-        .map_err(StartupError::BrowserUnsupported)?;
+        .map_err(|error| StartupError::BrowserUnsupported(AppError::from(error)))?;
 
     let distribution_context: DistributionContext = distribution::resolve_context();
 

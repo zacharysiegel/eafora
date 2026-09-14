@@ -1,4 +1,4 @@
-use crate::error::AppError;
+use crate::error::AppErrorStatic;
 
 pub enum HttpMethod {
     Get,
@@ -46,10 +46,11 @@ impl std::fmt::Debug for Response {
 }
 
 /// The transport the artifact loader reaches the repository through. The returned future is deliberately
-/// not `Send`: some platforms' response handles are not, and one trait serves every platform.
+/// not `Send`: some platforms' response handles are not, and one trait serves every platform. Its error is
+/// `AppErrorStatic` because a client that awaits it across an FFI needs the whole future to be `Send`.
 #[allow(async_fn_in_trait)]
 pub trait HttpFetch {
-    async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppError>;
+    async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppErrorStatic>;
 }
 
 #[cfg(test)]
@@ -79,7 +80,7 @@ pub(crate) mod tests {
     }
 
     impl HttpFetch for MockHttpFetch {
-        async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppError> {
+        async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppErrorStatic> {
             self.requested_urls.lock().await.push(request.url.clone());
 
             let body: Option<&Vec<u8>> = self.bodies_by_url.get(&request.url);
