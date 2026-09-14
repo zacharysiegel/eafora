@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Builds target/uniffi/EaforaCore.xcframework from the ios/ffi crate, together with the Swift sources that
+# Builds target/uniffi/EaforaCore.xcframework from the ios crate, together with the Swift sources that
 # call into it.
 #
 # Usage:
@@ -64,7 +64,7 @@ function build_slice {
     local rust_target="$1"
 
     echo "building the ${rust_target} slice"
-    cargo build -p ffi --target "${rust_target}" ${CARGO_PROFILE_FLAG}
+    cargo build -p ios --target "${rust_target}" ${CARGO_PROFILE_FLAG}
 }
 
 # One invocation per kind of file, which is the only shape the generator offers.

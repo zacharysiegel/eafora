@@ -16,6 +16,6 @@ When a task is picked up, leave it here as **In progress**; delete it on the sam
 
 2. **`004-ios-client`** — the iOS surface: a UniFFI boundary, a SwiftUI shell, and the Metal surface. Spec, plan, and tasks in `specs/004-ios-client/`. **In progress** (`ios-ffi-boundary`).
    - Delivered in phases per `plan.md` §Phasing for PRs. Phases 0.1, 0.2, A, and B carry task breakdowns; C and D are scoped sketches that need one before being picked up.
-   - Phase 0.1 has landed: the `ios/ffi` crate behind UniFFI 0.32.1, the Swift bindgen binary, `scripts/build/build-ios-xcframework.sh` producing `target/uniffi/EaforaCore.xcframework` from both slices, and the iOS toolchain in `setup.sh`. Swift sees `async throws` for the loads, which took making the loader's future `Send`. Phase A is next.
+   - Phase 0.1 has landed: the `ios` crate behind UniFFI 0.32.1, the Swift bindgen binary, `scripts/build/build-ios-xcframework.sh` producing `target/uniffi/EaforaCore.xcframework` from both slices, and the iOS toolchain in `setup.sh`. Swift sees `async throws` for the loads, which took making the loader's future `Send`. Phase A is next.
    - Phase 0.2 has landed: the loader, discovery reconciliation, and version ranking now live in `shared/src/artifact/`, parameterized over `ArtifactCache` and an `HttpFetch` trait, with a `std::fs` cache and a `reqwest` fetch for targets with no browser to borrow. `uniffi` is approved.
    - Phase D is blocked on an Apple Developer Program enrollment, which gates device installs, TestFlight, and Universal Links but nothing on the simulator.

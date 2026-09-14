@@ -32,7 +32,7 @@ The spec's own §Constitution Check holds, with one principle served more strong
 
 - **Principle III (Rust core, native UI shells)**: better served than the spec describes. Moving the loader into `shared` rather than reimplementing it in Swift means the Swift layer holds no data logic at all.
 - **Principle IV (Singularity convention parity)**: `uniffi` is the one new Rust dependency and needs explicit approval before Phase 0.1 begins. `reqwest` is already approved and in the workspace.
-- **Principle V (Explicit over implicit)**: UniFFI is code generation, which the architecture doc already argues for as the only viable FFI path, with `ios/ffi/` as the single reviewable surface. The decision to fetch in Rust rather than Swift keeps the wire visible in one place instead of two.
+- **Principle V (Explicit over implicit)**: UniFFI is code generation, which the architecture doc already argues for as the only viable FFI path, with `ios/` as the single reviewable surface. The decision to fetch in Rust rather than Swift keeps the wire visible in one place instead of two.
 - **Principle VII (Test-first for core logic)**: the logic being tested is Rust, so this applies with full force rather than being softened for UI code.
 
 No violations identified; no amendments proposed.
@@ -53,11 +53,13 @@ specs/004-ios-client/
 
 ```
 # NEW — the FFI boundary, its own crate rather than part of shared (Phase 0.1, see Topic 6)
-ios/ffi/
+ios/
 ├── Cargo.toml                  # crate-type = ["staticlib"]; depends on shared with the render feature
 └── src/
-    ├── lib.rs                  # the UniFFI surface: pub use of the items below
+    ├── lib.rs                  # the UniFFI scaffolding and the module declarations
     ├── client.rs               # EaforaClient, the opaque handle Swift holds
+    ├── distribution.rs         # the boundary's own DistributionContext
+    ├── error.rs                # FfiError, the single-variant error Swift catches
     └── handle.rs               # WindowHandle marshaling, u64 pointers rebuilt into the shared enum
 
 # NEW — a bindgen binary (Phase 0.1)
@@ -151,7 +153,7 @@ The P2 scenario — iOS purging the cache mid-session — becomes a Rust test ra
 
 `shared/Cargo.toml` declares `[lib]` with no `crate-type`, so it builds as an rlib only. An xcframework needs a static library for each iOS slice.
 
-Adding `crate-type = ["staticlib", "rlib"]` to `shared` would make every host build also produce a static library, slowing the ingestion and web builds for no benefit. The alternative is a thin `ios/ffi` crate that depends on `shared` and carries the `staticlib` type plus the UniFFI scaffolding, leaving `shared` untouched.
+Adding `crate-type = ["staticlib", "rlib"]` to `shared` would make every host build also produce a static library, slowing the ingestion and web builds for no benefit. The alternative is a thin `ios` crate that depends on `shared` and carries the `staticlib` type plus the UniFFI scaffolding, leaving `shared` untouched.
 
 **Decision: a separate crate.** It keeps the `staticlib` cost on the one target that wants it, gives the UniFFI attributes a home that is not the middle of the domain code, and means `shared` stays a library that the ingestion producer links without dragging FFI scaffolding along. This supersedes FR-008, which places the surface at `shared/src/ffi/uniffi.rs`: the module moves to the new crate and `shared` gains nothing.
 
@@ -197,7 +199,7 @@ The Swift side then holds: `EaforaApp.swift` (lifecycle, sheets, link routing), 
 
 Phase 0.1 and 0.2 are independent of each other and both are off `master`; the rest is a linear stack. Only 0.1 through B are planned in detail.
 
-- **Phase 0.1 — the FFI boundary** (own PR, off `master`). The `ios/ffi` crate, the `uniffi-bindgen-swift` binary, `scripts/build/build-ios-xcframework.sh`, and the `setup.sh` additions for the iOS Rust targets. FR-003, 004, 005, 006, 007, 008, 009, 010, 011. Pure Rust and shell: it builds and reviews with no Xcode project and no simulator.
+- **Phase 0.1 — the FFI boundary** (own PR, off `master`). The `ios` crate, the `uniffi-bindgen-swift` binary, `scripts/build/build-ios-xcframework.sh`, and the `setup.sh` additions for the iOS Rust targets. FR-003, 004, 005, 006, 007, 008, 009, 010, 011. Pure Rust and shell: it builds and reviews with no Xcode project and no simulator.
 - **Phase 0.2 — move the loader into `shared`** (own PR, off `master`). `load.rs`, `live_resolve.rs`, and `version_rank.rs` move into `shared/src/artifact/`, parameterized over `ArtifactCache` and a new `HttpFetch` trait; `shared` gains the `std::fs` cache and the `reqwest` fetch for non-wasm; `web/` is refactored to consume the moved code, with its existing tests as the proof the move was faithful. No FR of its own: it is the prerequisite that stops FR-019 through FR-030 being written twice.
 - **Phase A — the app renders** (stacks on 0.1). `ios/` scaffolding, `project.yml`, the app skeleton, `EmbeddedBundle.swift`, the `MTKView` bridge, and first paint on the simulator. FR-001, 002, 012, 013, 014, 015, 016, 017, 035, 036, 037, 038, 039, 040, 041, 042, 043, 046, 056, 057. Closes P1.
 - **Phase B — data over time** (stacks on A and 0.2). Wiring the moved loader to the app: cache directory choice and backup exclusion in Swift, discovery, the speculative fetch, and hot-swap. FR-019, 020, 021, 022, 023, 025, 026, 027, 028, 029, 030, 054, 055. Closes P2 and P3, with the cache-purge scenario as a Rust test per Topic 5.
@@ -222,7 +224,7 @@ To be appended per phase, recording deviations from this plan.
 
 ### Phase 0.1
 
-Deviations are recorded in [tasks.md](tasks.md) §Deviations from the plan, Phase 0.1. The consequential ones are that the renderer lives in a `thread_local!` in `ios/ffi` rather than inside `EaforaClient`, and that the surface's viewport-dependent functions are deferred to Phase A along with the driver orchestration they need.
+Deviations are recorded in [tasks.md](tasks.md) §Deviations from the plan, Phase 0.1. The consequential ones are that the renderer lives in a `thread_local!` in `ios` rather than inside `EaforaClient`, and that the surface's viewport-dependent functions are deferred to Phase A along with the driver orchestration they need.
 
 ### Phase 0.2
 
