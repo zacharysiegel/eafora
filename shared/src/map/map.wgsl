@@ -15,13 +15,12 @@ var<uniform> viewport: ViewportUniform;
 @group(0) @binding(1)
 var country_state: texture_2d<f32>;
 
-// Must match COUNTRY_STATE_TEXTURE_WIDTH in gpu_types.rs, which the CPU sizes the texture by.
-const COUNTRY_STATE_TEXTURE_WIDTH: u32 = 256u;
-
 fn country_state_of(country_index: u32) -> vec4<f32> {
+    // Taken from the bound texture so the CPU's row width is the only definition of it.
+    let width: u32 = textureDimensions(country_state).x;
     let texel: vec2<i32> = vec2<i32>(
-        i32(country_index % COUNTRY_STATE_TEXTURE_WIDTH),
-        i32(country_index / COUNTRY_STATE_TEXTURE_WIDTH),
+        i32(country_index % width),
+        i32(country_index / width),
     );
 
     return textureLoad(country_state, texel, 0);

@@ -13,7 +13,7 @@ use wgpu::{
     InstanceDescriptor, Limits, LoadOp, MemoryHints, Operations, Origin3d, PowerPreference, Queue, RenderPass,
     RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp, SurfaceTexture,
     TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect, TextureDescriptor, TextureDimension,
-    TextureFormat, TextureUsages, TextureView, TextureViewDescriptor, Trace,
+    TextureUsages, TextureView, TextureViewDescriptor, Trace,
 };
 
 use crate::artifact::Bundle;
@@ -22,7 +22,7 @@ use crate::error::AppError;
 use crate::map::color::{self, StatisticColorTransform, Rgba};
 use crate::map::{FrameState, RegionCode, Viewport};
 use crate::map::country_mesh::{self, CountryMesh};
-use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_TEXTURE_WIDTH};
+use crate::map::gpu_types::{CountryState, FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform, COUNTRY_STATE_TEXTURE_FORMAT, COUNTRY_STATE_TEXTURE_WIDTH};
 use crate::map::pipeline::{self, RenderPipelines};
 use crate::render::gpu_types::{Vec2, Vec4};
 use crate::render::surface::WgpuSurface;
@@ -598,7 +598,7 @@ fn create_country_state_texture(device: &Device, region_count: usize) -> Texture
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::Rg32Float,
+        format: COUNTRY_STATE_TEXTURE_FORMAT,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     })

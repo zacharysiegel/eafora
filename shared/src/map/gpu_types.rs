@@ -1,6 +1,8 @@
 //! The map's `#[repr(C)]` GPU-buffer structs. Their field order, types, and alignment must match
 //! what the WGSL shaders read, which is why they carry `bytemuck` derives.
 
+use wgpu::TextureFormat;
+
 use crate::render::gpu_types::{Vec2, Vec4};
 
 /// A Miller-projected 2D position.
@@ -55,10 +57,28 @@ pub struct CountryState {
 
 const _: () = assert!(std::mem::size_of::<CountryState>() == 8);
 
-/// The country-state texture's width in texels; its height is whatever holds the layer's countries. The
-/// shader derives a country's texel from its index and this same width, so the two must agree.
+/// One texel holds one `CountryState`.
+pub const COUNTRY_STATE_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rg32Float;
+
+/// The country-state texture's row width in texels; its height is whatever holds the layer's countries. The
+/// shader reads the width from the bound texture, so this is its only definition.
 ///
 /// A texture dimension is capped at 2048 under `Limits::downlevel_webgl2_defaults`, which this stays well
 /// under in both axes: 256 columns leaves room for far more rows than a layer carrying every subnational
 /// level needs.
 pub const COUNTRY_STATE_TEXTURE_WIDTH: u32 = 256;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `write_texture` takes its copy size from the format and accepts an oversized `bytes_per_row`, so a
+    /// `CountryState` wider than the format would lose the added channel on every write, unreported.
+    #[test]
+    fn country_state_format_holds_exactly_one_struct_per_texel() {
+        assert_eq!(
+            COUNTRY_STATE_TEXTURE_FORMAT.block_copy_size(None),
+            Some(std::mem::size_of::<CountryState>() as u32),
+        );
+    }
+}
