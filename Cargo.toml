@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["ios/ffi", "shared", "ingestion", "tools/seed_generator", "tools/uniffi_bindgen_swift", "web"]
+members = ["ingestion", "ios", "shared", "tools/seed_generator", "tools/uniffi_bindgen_swift", "web"]
 
 [workspace.package]
 edition = "2024"
