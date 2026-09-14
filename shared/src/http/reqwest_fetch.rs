@@ -2,7 +2,7 @@ use bytes::Bytes;
 use reqwest::header::{self, HeaderValue};
 use reqwest::{Client, RequestBuilder, StatusCode};
 
-use crate::error::AppError;
+use crate::error::AppErrorStatic;
 use crate::http::{HttpCacheMode, HttpFetch, HttpMethod, HttpRequest, Response};
 
 pub struct ReqwestHttpFetch {
@@ -10,10 +10,10 @@ pub struct ReqwestHttpFetch {
 }
 
 impl ReqwestHttpFetch {
-    pub fn create() -> Result<ReqwestHttpFetch, AppError> {
+    pub fn create() -> Result<ReqwestHttpFetch, AppErrorStatic> {
         let client: Client = Client::builder()
             .build()
-            .map_err(|error| AppError::from(format!("building an HTTP client failed; [error={error}]")))?;
+            .map_err(|error| AppErrorStatic::from(format!("building an HTTP client failed; [error={error}]")))?;
 
         Ok(ReqwestHttpFetch { client })
     }
@@ -21,7 +21,7 @@ impl ReqwestHttpFetch {
 
 impl HttpFetch for ReqwestHttpFetch {
     /// Errors only on a transport failure; a non-2xx status is returned for the caller to judge.
-    async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppError> {
+    async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppErrorStatic> {
         let builder: RequestBuilder = match request.method {
             HttpMethod::Get => self.client.get(&request.url),
         };
@@ -35,13 +35,13 @@ impl HttpFetch for ReqwestHttpFetch {
         let response: reqwest::Response = builder
             .send()
             .await
-            .map_err(|error| AppError::from(format!("fetching {} failed; [error={error}]", request.url)))?;
+            .map_err(|error| AppErrorStatic::from(format!("fetching {} failed; [error={error}]", request.url)))?;
 
         let status: StatusCode = response.status();
         let bytes: Bytes = response
             .bytes()
             .await
-            .map_err(|error| AppError::from(format!("reading {} failed; [error={error}]", request.url)))?;
+            .map_err(|error| AppErrorStatic::from(format!("reading {} failed; [error={error}]", request.url)))?;
 
         Ok(Response {
             status: status.as_u16(),
@@ -116,7 +116,7 @@ mod tests {
     async fn fetch_errors_when_the_url_cannot_be_parsed() {
         let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create().unwrap();
 
-        let error: AppError = http_fetch
+        let error: AppErrorStatic = http_fetch
             .fetch(&get_request("manifest.json".to_string()))
             .await
             .unwrap_err();

@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter, Result as FormatResult};
 
-use shared::AppError;
+use shared::error::{AppError, AppErrorStatic};
 
 /// What Swift catches. UniFFI maps an exported error enum to a `throws`, and requires an enum, which the
 /// crate-wide `AppError` is not; callers that must distinguish failures match on the message.
@@ -21,6 +21,14 @@ impl std::error::Error for FfiError {}
 
 impl From<AppError> for FfiError {
     fn from(error: AppError) -> FfiError {
+        FfiError::Failed {
+            message: error.to_string(),
+        }
+    }
+}
+
+impl From<AppErrorStatic> for FfiError {
+    fn from(error: AppErrorStatic) -> FfiError {
         FfiError::Failed {
             message: error.to_string(),
         }

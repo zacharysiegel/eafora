@@ -1,6 +1,6 @@
 use crate::artifact::{self, fetch, manifest, version_rank, ArtifactCache, AuthoritativeBase, Bundle,
     CachedVersionRank, DiscoveryDocument, Manifest, ManifestEntry};
-use crate::error::AppError;
+use crate::error::{AppError, AppErrorStatic};
 use crate::filesystem;
 use crate::http::HttpFetch;
 use crate::license::DistributionContext;
@@ -21,7 +21,7 @@ pub async fn load_embedded_bundle(
     http_fetch: &impl HttpFetch,
     embedded_base_url: &str,
     distribution_context: DistributionContext,
-) -> Result<Bundle, AppError> {
+) -> Result<Bundle, AppErrorStatic> {
     let manifest_bytes: Vec<u8> = fetch::fetch_embedded_manifest(http_fetch, embedded_base_url).await?;
     let manifest: Manifest = manifest::parse_manifest(&manifest_bytes)?;
 
@@ -35,35 +35,35 @@ pub async fn load_embedded_bundle(
         cache.put(&manifest.version, &entry.relative_path, &file_bytes).await?;
     }
 
-    Bundle::open(cache, &manifest.version, distribution_context).await
+    Ok(Bundle::open(cache, &manifest.version, distribution_context).await?)
 }
 
 pub async fn open_newest_cached_bundle(
     cache: &impl ArtifactCache,
     distribution_context: DistributionContext,
-) -> Result<Option<Bundle>, AppError> {
+) -> Result<Option<Bundle>, AppErrorStatic> {
     for version_label in version_labels_newest_first(cache).await? {
-        let opened: Result<Bundle, AppError> =
+        let opened: Result<Bundle, AppErrorStatic> =
             Bundle::open(cache, &version_label, distribution_context).await;
 
-        match opened {
+        let open_failure: String = match opened {
             Ok(bundle) => return Ok(Some(bundle)),
-            Err(error) => {
-                /* A cached version this build cannot read is useless and re-fetchable, and keeping it would
-                   fail the same way on the next start while holding one of the retained slots. */
-                log::warn!(
-                    "discarding a cached bundle this build cannot open; [version_label={version_label} error={error}]"
-                );
-                cache.delete_version(&version_label).await?;
-            }
-        }
+            Err(error) => error.to_string(),
+        };
+
+        /* A cached version this build cannot read is useless and re-fetchable, and keeping it would fail
+           the same way on the next start while holding one of the retained slots. */
+        log::warn!(
+            "discarding a cached bundle this build cannot open; [version_label={version_label} error={open_failure}]"
+        );
+        cache.delete_version(&version_label).await?;
     }
 
     Ok(None)
 }
 
 /// Deletes every cached version past the `VERSIONS_KEPT` newest.
-pub async fn evict_stale_versions(cache: &impl ArtifactCache) -> Result<(), AppError> {
+pub async fn evict_stale_versions(cache: &impl ArtifactCache) -> Result<(), AppErrorStatic> {
     let kept_version_labels: Vec<String> =
         version_labels_newest_first(cache).await?.into_iter().take(VERSIONS_KEPT).collect();
 
@@ -82,7 +82,7 @@ pub async fn evict_stale_versions(cache: &impl ArtifactCache) -> Result<(), AppE
 /// comparing labels: `YYYY-MM-DD+<surname>` orders chronologically only across differing dates, and two
 /// builds sharing a date fall back to comparing arbitrary surnames. A version whose manifest cannot be read
 /// ranks last, so it is opened last and evicted first.
-pub async fn version_labels_newest_first(cache: &impl ArtifactCache) -> Result<Vec<String>, AppError> {
+pub async fn version_labels_newest_first(cache: &impl ArtifactCache) -> Result<Vec<String>, AppErrorStatic> {
     let version_labels: Vec<String> = cache.list_versions().await?;
     let mut ranked_labels: Vec<(CachedVersionRank, String)> = Vec::with_capacity(version_labels.len());
 
@@ -122,7 +122,7 @@ pub async fn load_live_bundle(
     discovery_url: &str,
     static_base: &str,
     distribution_context: DistributionContext,
-) -> Result<Bundle, AppError> {
+) -> Result<Bundle, AppErrorStatic> {
     let resolved_repository: ResolvedRepository =
         resolve_repository(http_fetch, discovery_url, static_base).await?;
     let manifest_bytes: Vec<u8> = readable_manifest_bytes(http_fetch, &resolved_repository).await;
@@ -151,7 +151,7 @@ async fn readable_manifest_bytes(
         return resolved_repository.manifest_bytes.clone();
     };
 
-    let fetched: Result<Vec<u8>, AppError> =
+    let fetched: Result<Vec<u8>, AppErrorStatic> =
         fetch::fetch_manifest_at_key(http_fetch, &resolved_repository.base_url, &fallback_key).await;
 
     match fetched {
@@ -176,15 +176,18 @@ async fn resolve_repository(
     http_fetch: &impl HttpFetch,
     discovery_url: &str,
     static_base: &str,
-) -> Result<ResolvedRepository, AppError> {
-    let (discovery_bytes_result, speculative_manifest_result): (Result<Vec<u8>, AppError>, Result<Vec<u8>, AppError>) =
-        futures_util::future::join(
-            fetch::fetch_discovery(http_fetch, discovery_url),
-            fetch::fetch_manifest(http_fetch, static_base),
-        )
-        .await;
+) -> Result<ResolvedRepository, AppErrorStatic> {
+    let (discovery_bytes_result, speculative_manifest_result): (
+        Result<Vec<u8>, AppErrorStatic>,
+        Result<Vec<u8>, AppErrorStatic>,
+    ) = futures_util::future::join(
+        fetch::fetch_discovery(http_fetch, discovery_url),
+        fetch::fetch_manifest(http_fetch, static_base),
+    )
+    .await;
 
     let parsed_discovery: Result<DiscoveryDocument, AppError> = discovery_bytes_result
+        .map_err(AppError::from)
         .and_then(|discovery_bytes| artifact::parse_discovery_document(&discovery_bytes))
         .inspect_err(|error| {
             log::warn!("discovery unavailable, falling back to the static repository base; [error={error}]")
@@ -218,14 +221,14 @@ async fn open_fetched_live_bundle(
     repository_base_url: &str,
     manifest_bytes: &[u8],
     distribution_context: DistributionContext,
-) -> Result<Bundle, AppError> {
+) -> Result<Bundle, AppErrorStatic> {
     let manifest: Manifest = manifest::parse_manifest(manifest_bytes)?;
 
     put_live_files(cache, http_fetch, repository_base_url, &manifest).await?;
 
     cache.put(&manifest.version, manifest::MANIFEST_FILENAME, manifest_bytes).await?;
 
-    Bundle::open(cache, &manifest.version, distribution_context).await
+    Ok(Bundle::open(cache, &manifest.version, distribution_context).await?)
 }
 
 /// At most `LIVE_FETCH_CONCURRENCY` files are in flight, all within this task: the work is I/O-bound, and
@@ -239,7 +242,7 @@ async fn put_live_files(
     http_fetch: &impl HttpFetch,
     repository_base_url: &str,
     manifest: &Manifest,
-) -> Result<(), AppError> {
+) -> Result<(), AppErrorStatic> {
     let file_entries: Vec<ManifestEntry> = manifest.file_entries().cloned().collect();
 
     let pending_fetches = file_entries.into_iter().map(|entry| async move {
@@ -270,7 +273,7 @@ async fn fetch_and_cache_artifact_file(
     version_label: &str,
     relative_path: &str,
     sha256: &str,
-) -> Result<(), AppError> {
+) -> Result<(), AppErrorStatic> {
     if is_already_cached(cache, version_label, relative_path, sha256).await {
         return Ok(());
     }
@@ -433,7 +436,7 @@ mod tests {
             (artifact_url("statistics/tfr.base.sqlite"), shard_bytes.to_vec()),
         ]));
 
-        let error: AppError = put_live_files(&cache, &http_fetch, REPOSITORY_BASE_URL, &manifest)
+        let error: AppErrorStatic = put_live_files(&cache, &http_fetch, REPOSITORY_BASE_URL, &manifest)
             .await
             .unwrap_err();
 

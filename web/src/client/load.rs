@@ -14,7 +14,9 @@ pub async fn load_embedded_bundle(
     cache: &OpfsArtifactCache,
     distribution_context: DistributionContext,
 ) -> Result<Bundle, AppError> {
-    load::load_embedded_bundle(cache, &BrowserFetch, EMBEDDED_BASE_URL, distribution_context).await
+    load::load_embedded_bundle(cache, &BrowserFetch, EMBEDDED_BASE_URL, distribution_context)
+        .await
+        .map_err(AppError::from)
 }
 
 pub async fn load_live_bundle(
@@ -30,6 +32,7 @@ pub async fn load_live_bundle(
         distribution_context,
     )
     .await
+    .map_err(AppError::from)
 }
 
 /// Exercised in the browser: the ordering these cover is a property of real OPFS reads, since the
