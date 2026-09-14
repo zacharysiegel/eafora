@@ -8,7 +8,7 @@ use shared::artifact::{load, Bundle, FilesystemArtifactCache};
 use shared::http::ReqwestHttpFetch;
 use shared::license::DistributionContext;
 use shared::map::{Renderer, RendererBackend};
-use shared::AppError;
+use shared::error::{AppError, AppErrorStatic};
 
 use crate::distribution::FfiDistributionContext;
 use crate::error::FfiError;
@@ -102,7 +102,7 @@ impl EaforaClient {
 
         let version_label: String = self.publish(bundle);
 
-        let evicted: Result<(), AppError> = load::evict_stale_versions(&self.cache).await;
+        let evicted: Result<(), AppErrorStatic> = load::evict_stale_versions(&self.cache).await;
         if let Err(error) = evicted {
             log::warn!("evicting old cached bundle versions failed; [error={error}]");
         }

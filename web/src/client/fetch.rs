@@ -2,7 +2,7 @@ use js_sys::{ArrayBuffer, Promise, Uint8Array};
 use web_sys::{RequestCache, RequestInit, Window};
 
 use shared::http::{HttpCacheMode, HttpFetch, HttpRequest, Response};
-use shared::AppError;
+use shared::error::AppErrorStatic;
 
 use crate::client::js;
 
@@ -10,7 +10,7 @@ pub struct BrowserFetch;
 
 impl HttpFetch for BrowserFetch {
     /// Errors only on a transport or JS failure; a non-2xx status is returned for the caller to judge.
-    async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppError> {
+    async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppErrorStatic> {
         let window: Window = js::get_window()?;
 
         let init: RequestInit = RequestInit::new();

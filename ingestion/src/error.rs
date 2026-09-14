@@ -19,6 +19,6 @@ minimer::impl_from_error!(AppError, base64::DecodeError);
 
 impl From<shared::AppError> for AppError {
     fn from(err: shared::AppError) -> Self {
-        Self(minimer::AppError::from(err.0))
+        Self(err.0)
     }
 }
