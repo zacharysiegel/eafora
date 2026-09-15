@@ -96,6 +96,7 @@ impl CountrySpan {
     }
 }
 
+/// The frame values the fill-color buffer was last written from, so an unchanged frame skips the rewrite.
 struct FillColorInputs {
     statistic_kind: StatisticKind,
     period_start: NaiveDate,
@@ -116,6 +117,7 @@ struct FillColors {
     inputs: Option<FillColorInputs>,
 }
 
+/// The frame values the emphasis texels were last written from, so an unchanged frame skips the write.
 struct EmphasisInputs {
     selected_region: Option<RegionCode>,
     hovered_region: Option<RegionCode>,
