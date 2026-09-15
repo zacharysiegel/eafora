@@ -145,7 +145,7 @@ struct MapBinding {
     country_state_texture: Texture,
     /// The texels currently holding a non-zero emphasis, so a change clears only the ones it has to.
     emphasized_country_indices: Vec<u32>,
-    /// What the emphasis texels hold; `None` before the first write and after a resize zeroes them.
+    /// `None` before the first write, and after a resize zeroes the texels.
     emphasis_inputs: Option<EmphasisInputs>,
     bind_group: BindGroup,
     layout: BindGroupLayout,
