@@ -1,5 +1,4 @@
-//! Emits the dbmate seed migration covering the UN M49 region hierarchy, the ISO 3166-1 country rows under
-//! their deepest applicable parent, and the country extension table.
+//! Emits the dbmate seed migration for the canonical store's reference data.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -22,7 +21,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let csv_path: String = env::args().nth(1).ok_or("usage: seed_generator <csv-path>")?;
     let csv_text: String = fs::read_to_string(&csv_path)?;
     let rows: Vec<CountryRow> = country_csv::parse_csv(&csv_text)?;
-    emit_sql(&rows);
+    emit_sql(&rows, &csv_path);
     Ok(())
 }
 
@@ -38,15 +37,13 @@ fn slugify_region(name: &str) -> String {
         .collect()
 }
 
-fn emit_sql(country_rows: &[CountryRow]) {
+fn emit_sql(country_rows: &[CountryRow], csv_path: &str) {
     println!("-- migrate:up");
     println!();
-    println!("-- Seeds the canonical store with reference data: UN M49 hierarchy (5");
-    println!("-- top-level regions, 17 subregions, 7 intermediate regions), ISO 3166-1");
-    println!("-- country rows under their deepest applicable parent, the tfr statistic,");
-    println!("-- and the wb_wdi data_source. Generated from");
-    println!("-- ingestion/db/seed-data/m49-iso3166-2026-05-25.csv via tools/seed_generator —");
-    println!("-- regenerate with `cargo run -p seed_generator -- ingestion/db/seed-data/m49-iso3166-<snapshot-date>.csv > ingestion/db/migrations/<this-file>`.");
+    println!("-- Seeds the canonical store with reference data: the UN M49 region hierarchy, ISO 3166-1");
+    println!("-- country rows under their deepest applicable parent, the tfr statistic, and the wb_wdi data_source.");
+    println!("-- Generated from {csv_path} via tools/seed_generator.");
+    println!("-- Regenerate with `cargo run -p seed_generator -- ingestion/db/seed-data/m49-iso3166-<snapshot-date>.csv > ingestion/db/migrations/<this-file>`.");
     println!();
     emit_top_level_regions(country_rows);
     emit_subregions(country_rows);

@@ -55,7 +55,7 @@ fn parse_level(title: &str) -> Result<Option<u8>, Box<dyn Error>> {
     }
 }
 
-/// Which element's text the reader is inside, an annotation's title and type being the two that carry any.
+/// Which element's text the reader is inside.
 enum TextSink {
     Title,
     Type,
