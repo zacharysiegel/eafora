@@ -347,7 +347,7 @@ mod tests {
             },
             statistics,
             source_revisions: BTreeMap::new(),
-            source_attribution: BTreeMap::new(),
+            source_attributions: BTreeMap::new(),
         }
     }
 
