@@ -18,9 +18,6 @@ use shared::artifact::manifest::{self, BundleVariant};
 use shared::filesystem::{self, FileReference, Hashed};
 
 
-/// The subdirectories of a version directory holding the two bundle variants every build emits.
-/// `complete` carries all periods and sources and publishes to the CDN; `downsampled` carries the reference
-/// period alone and is embedded into clients.
 pub const SUBDIR_COMPLETE: &str = "complete";
 pub const SUBDIR_DOWNSAMPLED: &str = "downsampled";
 /// The symlink under `EAFORA_ARTIFACTS_DIR` that points at the newest build's version directory.
@@ -140,8 +137,6 @@ async fn create_statistic_shards(
             continue;
         }
 
-        /* The complete bundle keeps every source's value so a consumer can present an alternative to the one
-           preference picks. The downsampled bundle exists to be small for first paint, so it keeps one. */
         let partitioned_values: Vec<PartitionedValue> = match variant {
             BundleVariant::Complete => partition_by_license(candidates),
             BundleVariant::Downsampled => downsample_to_reference_year(candidates, kind),
@@ -181,11 +176,7 @@ fn partition_by_license(candidates: Vec<CandidateValue>) -> Vec<PartitionedValue
         .collect()
 }
 
-/// Reduces a statistic to one reference year for the embedded bundle's single time slice: the period the
-/// most regions report, and the later period where several tie. One shared year is required because the
-/// renderer resolves each region's value by exact period, so a per-region-latest slice would leave every
-/// region whose latest year differs from the active period with nothing to draw. Yields nothing only when the
-/// statistic has no values at all.
+/// The renderer resolves a region's value by exact period, so one period must serve every region.
 fn downsample_to_reference_year(
     candidates: Vec<CandidateValue>,
     statistic_kind: StatisticKind,

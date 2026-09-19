@@ -79,8 +79,7 @@ join subnational_3_seed on subnational_3_seed.code = subnational_3.code
 
 -- migrate:down
 
--- The values that hung off the superseded regions are not restored with them; the next Eurostat run reinstates
--- them from the source.
+-- The values that hung off the superseded regions are not restored with them.
 
 delete from statistic_value
 where region_id in (select id from region where code in (

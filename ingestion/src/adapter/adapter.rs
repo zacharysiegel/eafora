@@ -2,8 +2,7 @@ use shared::canonical::canonical_model::SourceRevision;
 
 use crate::adapter::AdapterOptions;
 
-/// Whether a run can stop before normalizing: the source republishes the same revision until it revises, and
-/// every adapter learns the revision only after fetching, so the request is unavoidable and the write is not.
+/// A source republishes the same revision label until it revises.
 pub fn should_skip_run(
     last_seen: &Option<SourceRevision>,
     revision_label: &str,

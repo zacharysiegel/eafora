@@ -1,12 +1,12 @@
 -- migrate:up
 
--- Rank 40 places Eurostat above HFD (50) and World Bank WDI (100), so it wins every cell it supplies.
+-- Ranked above the sources already seeded, so Eurostat wins any cell it shares with them.
 -- Its data carries the Commission's reuse authorisation, which is not the licence covering the boundary
 -- geometry Eurostat's GISCO service distributes; that one is restricted to non-commercial use.
 insert into data_source (code, name_en, homepage_url, license_class, license_name, license_url, attribution_text, preference_rank) values
     ('eurostat', 'Eurostat', 'https://ec.europa.eu/eurostat', 'attribution', 'Commission Decision 2011/833/EU', 'https://ec.europa.eu/eurostat/web/main/help/copyright-notice', 'Eurostat (© European Union); reuse authorised under Commission Decision 2011/833/EU', 40);
 
--- Both are published to one decimal place and cover the EU, EFTA and candidate countries only.
+-- Eurostat publishes both to one decimal place.
 insert into statistic (code, name_en, name_abbreviated_en, units) values
     ('mean_age_at_childbirth', 'Mean age of women at childbirth', 'MAC', 'years'),
     ('mean_age_at_first_birth', 'Mean age of women at first birth', 'MAFB', 'years');
@@ -15,10 +15,10 @@ insert into statistic (code, name_en, name_abbreviated_en, units) values
 comment on column statistic_value.data_status is null;
 
 -- Eurostat publishes no revision label; its JSON-stat responses carry an `updated` timestamp, which is what
--- the adapter records. The previous text named a week-numbered form Eurostat does not publish.
-comment on column data_source_publication.revision_label is 'the source''s own revision label for this publication event (WB WDI ''2024-Q4'', HFD ''2025-12'', Eurostat the response''s `updated` timestamp); sources without native versioning get a synthesized label (response payload hash or fetch date); read before a fetch so an unchanged revision skips the write; aggregated per-source into the manifest at artifact-build time';
+-- the adapter records.
+comment on column data_source_publication.revision_label is 'the source''s own revision label for this publication event (WB WDI ''2024-Q4'', HFD ''2025-12'', Eurostat the response''s `updated` timestamp); sources without native versioning get a synthesized label (response payload hash or fetch date)';
 
-comment on column data_source.code is 'short identifier naming the publisher rather than one of its datasets (''wb_wdi'', ''hfd'', ''eurostat''), since preference_rank judges the publisher';
+comment on column data_source.code is 'short identifier for the publisher, not one of its datasets (''wb_wdi'', ''hfd'', ''eurostat'')';
 
 -- migrate:down
 

@@ -25,10 +25,7 @@ impl LocalArtifactRepository {
         LocalArtifactRepository { root, public_base_url }
     }
 
-    /// Deletes version directories until `LOCAL_VERSIONS_KEPT` remain, oldest first. The order comes from
-    /// each version's `artifact_created`, not from the directory name: `YYYY-MM-DD+<surname>` orders
-    /// chronologically only across differing dates, and two builds sharing a date fall back to comparing
-    /// arbitrary surnames. A version whose manifest cannot be read is unorderable and so pruned first.
+    /// A version whose manifest cannot be read is unorderable and so pruned first.
     pub async fn retain_newest_versions(&self) -> Result<(), AppError> {
         let version_directory_names: Vec<String> = self.read_version_directory_names().await?;
 
@@ -87,8 +84,7 @@ impl LocalArtifactRepository {
         Ok(version_directory_names)
     }
 
-    /// `None` when the version's manifest is missing or unparseable, so one damaged version cannot stop the
-    /// others from being pruned.
+    /// `None` when the version's manifest is missing or unparseable.
     async fn read_artifact_created(&self, version_directory_name: &str) -> Option<DateTime<Utc>> {
         let manifest_path: PathBuf = self.root.join(version_directory_name).join(manifest::MANIFEST_FILENAME);
         let manifest_bytes: Vec<u8> = fs::read(&manifest_path)

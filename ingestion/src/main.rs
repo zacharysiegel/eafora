@@ -24,8 +24,6 @@ use ingestion::secrets;
 use ingestion::version_label;
 use ingestion::world_bank_wdi::world_bank_wdi_adapter;
 
-/// Registered source adapters. Adding a new source = one entry here plus
-/// the source's per-feature module + a `data_source` seed row.
 const REGISTERED_SOURCES: &[DataSourceKind] =
     &[DataSourceKind::WorldBankWDI, DataSourceKind::HumanFertilityDatabase, DataSourceKind::Eurostat];
 

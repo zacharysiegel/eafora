@@ -104,8 +104,6 @@ pub async fn read_all_statistic_kinds<'e>(
     Ok(statistic_kinds)
 }
 
-/// Both maps come from one pass over the sources, since the attribution and the publication that dates it are
-/// read from the same `data_source` row.
 pub async fn read_source_detail(
     connection: &mut PgConnection,
     data_source_kinds: &BTreeSet<DataSourceKind>,

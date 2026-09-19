@@ -1,6 +1,3 @@
-//! Runs between the writers and the content-addressed rename, so the digest and the byte count in the manifest
-//! describe the bytes a client fetches.
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -15,8 +12,7 @@ pub struct PlainArtifact {
     pub file: FileReference,
 }
 
-/// An artifact in the form it is published and hashed in, which is what the manifest's digest and size
-/// describe. Only compression produces one, so nothing can hash or upload a file that skipped the step.
+/// An artifact in the form it is published and hashed in.
 pub struct CompressedArtifact {
     pub file: FileReference,
 }

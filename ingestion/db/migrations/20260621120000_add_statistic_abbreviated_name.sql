@@ -11,7 +11,7 @@ update statistic
 alter table statistic
     alter column name_abbreviated_en set not null;
 
-comment on column statistic.name_abbreviated_en is 'Short English label (often an acronym) for space-constrained UI like breadcrumbs; name_en remains the long form.';
+comment on column statistic.name_abbreviated_en is 'short English label, often an acronym';
 
 -- migrate:down
 

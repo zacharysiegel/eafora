@@ -1,10 +1,5 @@
 -- migrate:up
 
--- Single migration for the initial canonical-store schema covering all seven
--- tables: region, country, statistic, data_source, data_source_publication,
--- statistic_value, artifact_version. See docs/architecture/ingestion.md for
--- the full design rationale; this file is the executable form of that design.
---
 -- Postgres 18+ required (uuidv7() is the default for every primary key).
 
 create table if not exists region (
@@ -13,15 +8,14 @@ create table if not exists region (
     name_en          text                     not null,
     level            text                     not null,
     parent_region_id uuid                              references region (id),
-    m49_code         text                              unique, -- text vs int leaves room for a non-M49 taxonomy if §Boundary recognition's alt-taxonomy clause is exercised; nullable to accommodate future subnational levels that have no M49 equivalent
+    m49_code         text                              unique,
     created          timestamp with time zone not null default now(),
     modified         timestamp with time zone not null default now()
 );
 
-comment on column region.code             is 'human-readable slug (''americas'', ''south_america'', ''sub_saharan_africa'', ''usa'', ''germany'')';
-comment on column region.level            is '''region'' | ''subregion'' | ''intermediate_region'' | ''country'' | (future subnational levels: ''subnational_1'', ''subnational_2'', ...)';
-comment on column region.parent_region_id is 'null only for top-level region nodes (Africa, Americas, Asia, Europe, Oceania); every other row including countries has a parent';
-comment on column region.m49_code         is 'UN M49 numeric code as text (preserves leading zeros like ''021''); also populated for country-level rows (USA=''840'', DEU=''276''); nullable for future non-M49 levels (subnational) that have no M49 equivalent';
+comment on column region.code             is 'human-readable slug; country-level rows use the lowercased ISO 3166-1 alpha-3 (''deu'', ''usa'')';
+comment on column region.parent_region_id is 'null for a root of the hierarchy; every other level including country has a parent';
+comment on column region.m49_code         is 'UN M49 numeric code as text (preserves leading zeros like ''021''); populated at country level too; null where a level or territory has no M49 code';
 
 create table if not exists country (
     region_id uuid                     not null primary key references region (id),
@@ -31,7 +25,7 @@ create table if not exists country (
     modified  timestamp with time zone not null default now()
 );
 
-comment on column country.region_id is 'both PK and FK to region.id; enforces the strict 1:1 extension shape (every country row corresponds to exactly one region row at level=''country'', and vice versa)';
+comment on column country.region_id is 'expected for every region at level=''country''; nothing enforces that direction';
 comment on column country.iso3      is 'ISO 3166-1 alpha-3 (''USA'', ''DEU'', ''JPN'')';
 comment on column country.iso2      is 'ISO 3166-1 alpha-2 (''US'', ''DE'', ''JP'')';
 
@@ -62,7 +56,6 @@ create table if not exists data_source (
 );
 
 comment on column data_source.code             is 'short identifier (''wb_wdi'', ''eurostat_demo_fer'', ''hfd'')';
-comment on column data_source.license_class    is 'one of: public_domain | attribution | attribution_share_alike | noncommercial';
 comment on column data_source.license_name     is 'e.g. ''CC BY 4.0'', ''Open Government Licence v3.0''';
 comment on column data_source.attribution_text is 'exact display string for UI citations';
 comment on column data_source.preference_rank  is 'drives data-source-preference merge; lower wins; ties broken deterministically by data_source.id';
@@ -103,13 +96,13 @@ create unique index if not exists statistic_value_current_per_source
     where superseded is null
 ;
 
-comment on column statistic_value.region_id                  is 'points at any level — country (common in v1), subnational (v2+ when subnational data lands), or supranational grouping (for stored aggregates)';
+comment on column statistic_value.region_id                  is 'may point at a region of any level, including a supranational aggregate';
 comment on column statistic_value.period_start               is 'inclusive lower bound: calendar year 2024 → ''2024-01-01''; Q1 2024 → ''2024-01-01''; 2020-2025 cohort → ''2020-01-01''';
 comment on column statistic_value.period_end                 is 'exclusive upper bound: calendar year 2024 → ''2025-01-01''; Q1 2024 → ''2024-04-01''; 2020-2025 cohort → ''2025-01-01''';
 comment on column statistic_value.data_source_id             is 'denormalized from data_source_publication.data_source_id; needed for the partial unique index that enforces ''at most one current row per cell per source''; the upsert path keeps the two in sync';
-comment on column statistic_value.data_source_publication_id is 'points at the publication event this row''s value was captured from; the row is never updated to point elsewhere — when the source revises, a NEW row is inserted with the new publication, and this row''s superseded timestamp is set';
+comment on column statistic_value.data_source_publication_id is 'the publication event this value was captured from; never repointed, a revision inserts a new record instead';
 comment on column statistic_value.data_status                is 'one of: final | provisional | preliminary | projection | imputed | interpolated';
-comment on column statistic_value.superseded                 is 'wall-clock instant when this row stopped being the current view of its (region, statistic, period, data_source_id) cell — i.e., when a newer publication for the same source produced a different value, this row got marked as historical. NULL means current (the row reflects the latest publication''s view of the cell)';
+comment on column statistic_value.superseded                 is 'null means this row is the current view of its (region, statistic, period, data_source_id) cell; otherwise the instant a newer publication from the same source replaced it';
 
 create table if not exists artifact_version (
     id                         uuid                     not null default uuidv7() primary key,
@@ -122,9 +115,7 @@ create table if not exists artifact_version (
 );
 
 comment on column artifact_version.version_label              is 'ISO date of the scheduled build (e.g. ''2026-05-18''); disambiguating suffix added if two builds land the same day';
-comment on column artifact_version.manifest_sha256            is 'content hash of manifest.json';
-comment on column artifact_version.manifest_url               is 'CDN URL of manifest.json';
-comment on column artifact_version.data_source_revisions_jsonb is 'snapshot of every data_source''s latest publication at build time, keyed by data_source.code: {"wb_wdi": {"revision": "2024-Q4", "fetched": "2026-05-26T03:00:00Z"}, "hfd": {"revision": "2025-12", "fetched": "2026-05-26T03:00:00Z"}}; revision is the source''s own label, fetched is when ingestion captured the publication; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile';
+comment on column artifact_version.data_source_revisions_jsonb is 'snapshot of every data_source''s latest publication at build time, keyed by data_source.code: {"wb_wdi": {"revision": "2024-Q4", "fetched": "2026-05-26T03:00:00Z"}, "hfd": {"revision": "2025-12", "fetched": "2026-05-26T03:00:00Z"}}; revision is the source''s own label, fetched is when ingestion captured the publication';
 
 -- migrate:down
 

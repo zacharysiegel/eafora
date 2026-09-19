@@ -2,9 +2,8 @@
 
 -- Taiwan and Kosovo are absent from the UN M49 / ISO 3166 CSV the initial seed is generated from: M49
 -- folds Taiwan into China and leaves its region fields blank (so the seed generator skips it), and it
--- assigns Kosovo no code at all. Both are added here as country-level regions under their geographic
--- parent, with no m49_code. Kosovo keys on the World Bank's user-assigned 'XKX' so its indicator data
--- joins; Taiwan has no World Bank data.
+-- assigns Kosovo no code at all. Kosovo keys on the World Bank's user-assigned 'XKX' so its indicator
+-- data joins; Taiwan has no World Bank data.
 
 insert into region (code, name_en, level, parent_region_id, m49_code) values
     ('twn', 'Taiwan', 'country', (select id from region where code = 'eastern_asia'),    null),
