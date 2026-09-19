@@ -42,24 +42,10 @@ COMMENT ON COLUMN public.artifact_version.version_label IS 'ISO date of the sche
 
 
 --
--- Name: COLUMN artifact_version.manifest_sha256; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.artifact_version.manifest_sha256 IS 'content hash of manifest.json';
-
-
---
--- Name: COLUMN artifact_version.manifest_url; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.artifact_version.manifest_url IS 'CDN URL of manifest.json';
-
-
---
 -- Name: COLUMN artifact_version.data_source_revisions_jsonb; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.artifact_version.data_source_revisions_jsonb IS 'snapshot of every data_source''s latest publication at build time, keyed by data_source.code: {"wb_wdi": {"revision": "2024-Q4", "fetched": "2026-05-26T03:00:00Z"}, "hfd": {"revision": "2025-12", "fetched": "2026-05-26T03:00:00Z"}}; revision is the source''s own label, fetched is when ingestion captured the publication; used to attribute artifact contents to upstream snapshots and to let clients detect when re-fetching is worthwhile';
+COMMENT ON COLUMN public.artifact_version.data_source_revisions_jsonb IS 'snapshot of every data_source''s latest publication at build time, keyed by data_source.code: {"wb_wdi": {"revision": "2024-Q4", "fetched": "2026-05-26T03:00:00Z"}, "hfd": {"revision": "2025-12", "fetched": "2026-05-26T03:00:00Z"}}; revision is the source''s own label, fetched is when ingestion captured the publication';
 
 
 --
@@ -71,8 +57,7 @@ CREATE TABLE public.country (
     iso3 text NOT NULL,
     iso2 text NOT NULL,
     created timestamp with time zone DEFAULT now() NOT NULL,
-    modified timestamp with time zone DEFAULT now() NOT NULL,
-    deleted timestamp with time zone
+    modified timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -80,7 +65,7 @@ CREATE TABLE public.country (
 -- Name: COLUMN country.region_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.country.region_id IS 'both PK and FK to region.id; enforces the strict 1:1 extension shape (every country row corresponds to exactly one region row at level=''country'', and vice versa)';
+COMMENT ON COLUMN public.country.region_id IS 'expected for every region at level=''country''; nothing enforces that direction';
 
 
 --
@@ -116,14 +101,7 @@ CREATE TABLE public.data_source (
 -- Name: COLUMN data_source.code; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.data_source.code IS 'short identifier naming the publisher rather than one of its datasets (''wb_wdi'', ''hfd'', ''eurostat''), since preference_rank judges the publisher';
-
-
---
--- Name: COLUMN data_source.license_class; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.data_source.license_class IS 'one of: public_domain | attribution | attribution_share_alike | noncommercial';
+COMMENT ON COLUMN public.data_source.code IS 'short identifier for the publisher, not one of its datasets (''wb_wdi'', ''hfd'', ''eurostat'')';
 
 
 --
@@ -154,14 +132,14 @@ CREATE TABLE public.data_source_attribution (
 -- Name: TABLE data_source_attribution; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.data_source_attribution IS 'a source has at least one; nothing enforces it, and the artifact build fails on a source with none';
+COMMENT ON TABLE public.data_source_attribution IS 'a source has at least one; nothing enforces it';
 
 
 --
 -- Name: COLUMN data_source_attribution.attribution_text; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.data_source_attribution.attribution_text IS 'the exact string a consumer must display, rendered verbatim because the licence asks for that wording';
+COMMENT ON COLUMN public.data_source_attribution.attribution_text IS 'the exact wording the licence requires a consumer to display';
 
 
 --
@@ -183,7 +161,7 @@ CREATE TABLE public.data_source_publication (
 -- Name: COLUMN data_source_publication.revision_label; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.data_source_publication.revision_label IS 'the source''s own revision label for this publication event (WB WDI ''2024-Q4'', HFD ''2025-12'', Eurostat the response''s `updated` timestamp); sources without native versioning get a synthesized label (response payload hash or fetch date); read before a fetch so an unchanged revision skips the write; aggregated per-source into the manifest at artifact-build time';
+COMMENT ON COLUMN public.data_source_publication.revision_label IS 'the source''s own revision label for this publication event (WB WDI ''2024-Q4'', HFD ''2025-12'', Eurostat the response''s `updated` timestamp); sources without native versioning get a synthesized label (response payload hash or fetch date)';
 
 
 --
@@ -220,28 +198,21 @@ CREATE TABLE public.region (
 -- Name: COLUMN region.code; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.region.code IS 'human-readable slug (''americas'', ''south_america'', ''sub_saharan_africa'', ''usa'', ''germany'')';
-
-
---
--- Name: COLUMN region.level; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.region.level IS '''region'' | ''subregion'' | ''intermediate_region'' | ''country'' | (future subnational levels: ''subnational_1'', ''subnational_2'', ...)';
+COMMENT ON COLUMN public.region.code IS 'human-readable slug; country-level rows use the lowercased ISO 3166-1 alpha-3 (''deu'', ''usa'')';
 
 
 --
 -- Name: COLUMN region.parent_region_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.region.parent_region_id IS 'null only for top-level region nodes (Africa, Americas, Asia, Europe, Oceania); every other row including countries has a parent';
+COMMENT ON COLUMN public.region.parent_region_id IS 'null for a root of the hierarchy; every other level including country has a parent';
 
 
 --
 -- Name: COLUMN region.m49_code; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.region.m49_code IS 'UN M49 numeric code as text (preserves leading zeros like ''021''); also populated for country-level rows (USA=''840'', DEU=''276''); nullable for future non-M49 levels (subnational) that have no M49 equivalent';
+COMMENT ON COLUMN public.region.m49_code IS 'UN M49 numeric code as text (preserves leading zeros like ''021''); populated at country level too; null where a level or territory has no M49 code';
 
 
 --
@@ -279,7 +250,7 @@ COMMENT ON COLUMN public.statistic.code IS 'short identifier used downstream (''
 -- Name: COLUMN statistic.name_abbreviated_en; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.statistic.name_abbreviated_en IS 'Short English label (often an acronym) for space-constrained UI like breadcrumbs; name_en remains the long form.';
+COMMENT ON COLUMN public.statistic.name_abbreviated_en IS 'short English label, often an acronym';
 
 
 --
@@ -306,7 +277,7 @@ CREATE TABLE public.statistic_value (
 -- Name: COLUMN statistic_value.region_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.statistic_value.region_id IS 'points at any level — country (common in v1), subnational (v2+ when subnational data lands), or supranational grouping (for stored aggregates)';
+COMMENT ON COLUMN public.statistic_value.region_id IS 'may point at a region of any level, including a supranational aggregate';
 
 
 --
@@ -334,14 +305,14 @@ COMMENT ON COLUMN public.statistic_value.data_source_id IS 'denormalized from da
 -- Name: COLUMN statistic_value.data_source_publication_id; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.statistic_value.data_source_publication_id IS 'points at the publication event this row''s value was captured from; the row is never updated to point elsewhere — when the source revises, a NEW row is inserted with the new publication, and this row''s superseded timestamp is set';
+COMMENT ON COLUMN public.statistic_value.data_source_publication_id IS 'the publication event this value was captured from; never repointed, a revision inserts a new record instead';
 
 
 --
 -- Name: COLUMN statistic_value.superseded; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.statistic_value.superseded IS 'wall-clock instant when this row stopped being the current view of its (region, statistic, period, data_source_id) cell — i.e., when a newer publication for the same source produced a different value, this row got marked as historical. NULL means current (the row reflects the latest publication''s view of the cell)';
+COMMENT ON COLUMN public.statistic_value.superseded IS 'null means this row is the current view of its (region, statistic, period, data_source_id) cell; otherwise the instant a newer publication from the same source replaced it';
 
 
 --
@@ -377,7 +348,7 @@ COMMENT ON COLUMN public.subdivision.nuts_code IS 'identifies a territory only w
 -- Name: COLUMN subdivision.nuts_revision; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.subdivision.nuts_revision IS 'the revision of the NUTS classification the code in nuts_code belongs to, named by year as Eurostat names it (2016, 2021); a code names territory only within its revision, and a later revision may reassign it, so an observation resolves on the pair rather than the code';
+COMMENT ON COLUMN public.subdivision.nuts_revision IS 'the NUTS revision the code belongs to, named by year as Eurostat names it; an observation resolves on the (code, revision) pair';
 
 
 --
