@@ -1,7 +1,7 @@
 use shared::render::WindowHandle;
 
-/// The pointers a UIKit shell hands across the boundary. A record rather than a mirror of `WindowHandle`,
-/// whose other variant names a platform this crate is never built for.
+/// The pointers a UIKit shell hands across the boundary. Not a mirror of [`WindowHandle`], whose other
+/// variant names a platform this crate never builds for.
 #[derive(uniffi::Record)]
 pub struct UiKitSurfaceHandle {
     pub layer_ptr: u64,

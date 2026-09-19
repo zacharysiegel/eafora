@@ -231,12 +231,9 @@ async fn open_fetched_live_bundle(
     Ok(Bundle::open(cache, &manifest.version, distribution_context).await?)
 }
 
-/// At most `LIVE_FETCH_CONCURRENCY` files are in flight, all within this task: the work is I/O-bound, and
-/// spawning would demand a `Send` bound `ArtifactCache` does not carry.
-///
-/// The entries are cloned up front so each fetch owns its own. A closure whose argument is a reference and
-/// whose return value borrows it cannot be proven general over lifetimes, and the iOS FFI needs this future
-/// to be `Send`.
+/// At most `LIVE_FETCH_CONCURRENCY` files are in flight within this task; spawning would demand a `Send`
+/// bound `ArtifactCache` does not carry. The entries are cloned because a closure taking a reference and
+/// returning a future that borrows it cannot be proven general over lifetimes.
 async fn put_live_files(
     cache: &impl ArtifactCache,
     http_fetch: &impl HttpFetch,
@@ -548,8 +545,7 @@ mod tests {
     }
 }
 
-/* The iOS FFI exports the live load as an async function and UniFFI requires a Send future, so this
-   pins the bound against the concrete implementations a non-browser client uses. */
+// UniFFI requires a Send future for the async export, so this pins the bound.
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod send_bound {
     use super::*;

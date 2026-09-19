@@ -58,8 +58,7 @@ mod tests {
 
     use super::*;
 
-    /// Serves `status_line` once on a loopback port, so a test covers the status arm without a network or
-    /// an HTTP server dependency. Returns the URL to ask for.
+    /// Serves `status_line` once on a loopback port, so the status arm needs no HTTP server dependency.
     fn serve_one_response(status_line: &'static str, body: &'static str) -> String {
         let listener: TcpListener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url: String = format!("http://{}/manifest.json", listener.local_addr().unwrap());

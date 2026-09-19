@@ -14,16 +14,13 @@ use crate::distribution::FfiDistributionContext;
 use crate::error::FfiError;
 use crate::handle::UiKitSurfaceHandle;
 
-/* The renderer is held here rather than in `EaforaClient` because wgpu state is bound to the thread that
-   created it, and UniFFI requires every exported object to be Send + Sync. The web client holds its driver
-   the same way. Only the synchronous functions below touch it, so they run on whichever thread Swift calls
-   from; an async export would be free to resume on a worker thread. */
+/* wgpu state is bound to its creating thread, and UniFFI requires every exported object to be Send + Sync.
+   Only the synchronous functions below touch this; an async export could resume on another thread. */
 thread_local! {
     static RENDERER: RefCell<Option<Renderer>> = const { RefCell::new(None) };
 }
 
-/// The published bundle, once one has been opened. The renderer subscribes to the receiver, so a later live
-/// load repaints by sending rather than by rebuilding anything.
+/// The published bundle, once one has been opened; the renderer subscribes to the receiver.
 struct BundlePublication {
     sender: watch::Sender<Arc<Bundle>>,
     receiver: watch::Receiver<Arc<Bundle>>,
@@ -35,8 +32,7 @@ pub struct EaforaClient {
     http_fetch: ReqwestHttpFetch,
     distribution_context: DistributionContext,
     publication: Mutex<Option<BundlePublication>>,
-    /// Drives the renderer's asynchronous setup from whichever thread calls in, since those functions must
-    /// not resume elsewhere.
+    /// Drives the renderer's asynchronous setup on the calling thread.
     renderer_setup_runtime: tokio::runtime::Runtime,
 }
 
@@ -84,8 +80,7 @@ impl EaforaClient {
         Ok(self.publish(bundle))
     }
 
-    /// Fetches the newest published bundle and republishes it, repainting through the channel the renderer
-    /// already holds.
+    /// Fetches the newest published bundle and republishes it through the channel the renderer holds.
     pub async fn load_live_bundle(
         &self,
         discovery_url: String,
@@ -110,8 +105,8 @@ impl EaforaClient {
         Ok(version_label)
     }
 
-    /// Builds the renderer on the calling thread, which every later renderer function must also run on.
-    /// Requires a published bundle, since the renderer reads its geometry at construction.
+    /// Builds the renderer on the calling thread, which every later renderer function must also use.
+    /// Requires a published bundle; the renderer reads its geometry at construction.
     pub fn create_renderer(&self) -> Result<(), FfiError> {
         let receiver: watch::Receiver<Arc<Bundle>> = self.subscribe()?;
 
@@ -153,8 +148,7 @@ impl EaforaClient {
 }
 
 impl EaforaClient {
-    /// Replaces the published bundle, creating the channel on the first call, and answers with the version
-    /// label that is now live.
+    /// Replaces the published bundle, creating the channel on the first call, and answers with its version.
     fn publish(&self, bundle: Bundle) -> String {
         let version_label: String = bundle.manifest.version.clone();
         let bundle: Arc<Bundle> = Arc::new(bundle);

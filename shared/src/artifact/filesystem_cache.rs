@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 use crate::artifact::ArtifactCache;
 use crate::error::AppErrorStatic;
 
-/// An [`ArtifactCache`] over a directory tree, holding each version's files under `<root>/<version_label>/`.
-/// A root that has been removed underneath a running process reads as an empty cache, which is what an
-/// operating system reclaiming a cache directory looks like from inside.
+/// An [`ArtifactCache`] over `<root>/<version_label>/`. A root removed underneath a running process reads
+/// as an empty cache.
 pub struct FilesystemArtifactCache {
     root: PathBuf,
 }
@@ -120,8 +119,8 @@ impl ArtifactCache for FilesystemArtifactCache {
     }
 }
 
-/// Every segment must name a child. An empty or `.` segment resolves to the cache root and `..` to above
-/// it, so any of them would have `delete_version` remove a directory the caller did not name.
+/// Every segment must name a child; an empty, `.`, or `..` segment would have `delete_version` remove the
+/// cache root or above it.
 fn validated_segment(segment: &str) -> Result<&str, AppErrorStatic> {
     if segment.is_empty() || segment == "." || segment == ".." {
         return Err(AppErrorStatic::from(format!("cache path segment does not name a child; [segment={segment:?}]")));
@@ -193,8 +192,7 @@ mod tests {
         cache.delete_version("2026-08-14+macdiarmid").await.unwrap();
     }
 
-    /// The operating system may reclaim a cache directory while the process holding this cache runs. The
-    /// loader has to see an empty cache and refetch, not an error it cannot act on.
+    /// The operating system may reclaim the directory mid-session; the loader must see an empty cache.
     #[tokio::test]
     async fn a_root_removed_mid_session_reads_as_an_empty_cache_and_accepts_new_writes() {
         let (_root, cache): (TempDir, FilesystemArtifactCache) = create_cache();

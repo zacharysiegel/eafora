@@ -2,8 +2,8 @@ use std::fmt::{Display, Formatter, Result as FormatResult};
 
 use shared::error::{AppError, AppErrorStatic};
 
-/// What Swift catches. UniFFI maps an exported error enum to a `throws`, and requires an enum, which the
-/// crate-wide `AppError` is not; callers that must distinguish failures match on the message.
+/// What Swift catches. UniFFI's error derive requires an enum, which `AppError` is not; a caller that must
+/// distinguish failures matches on the message.
 #[derive(Debug, uniffi::Error)]
 pub enum FfiError {
     Failed { message: String },
@@ -52,7 +52,7 @@ mod tests {
         }
     }
 
-    /// Swift shows the message, so `Display` must be the message alone and not wrap it in the variant name.
+    /// Swift shows the message, so `Display` must not wrap it in the variant name.
     #[test]
     fn display_renders_the_message_alone() {
         let ffi_error: FfiError = FfiError::Failed {

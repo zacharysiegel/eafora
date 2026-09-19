@@ -34,7 +34,7 @@ impl Response {
     }
 }
 
-/// Reports the body's length rather than its contents, which run to megabytes.
+/// Reports the body's length; the body runs to megabytes.
 impl std::fmt::Debug for Response {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -45,9 +45,8 @@ impl std::fmt::Debug for Response {
     }
 }
 
-/// The transport the artifact loader reaches the repository through. The returned future is deliberately
-/// not `Send`: some platforms' response handles are not, and one trait serves every platform. Its error is
-/// `AppErrorStatic` because a client that awaits it across an FFI needs the whole future to be `Send`.
+// The returned future carries no `Send` bound; an implementation may hold `!Send` handles. The error does,
+// so a caller awaiting this across an FFI can be `Send`.
 #[allow(async_fn_in_trait)]
 pub trait HttpFetch {
     async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppErrorStatic>;
@@ -59,8 +58,7 @@ pub(crate) mod tests {
 
     use super::*;
 
-    /// Serves the bodies it was seeded with and 404s everything else, recording each URL asked for so a
-    /// test can assert on what was and was not requested.
+    /// Serves the bodies it was seeded with and 404s the rest, recording each URL asked for.
     pub(crate) struct MockHttpFetch {
         bodies_by_url: BTreeMap<String, Vec<u8>>,
         requested_urls: tokio::sync::Mutex<Vec<String>>,

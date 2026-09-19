@@ -1,7 +1,6 @@
 use shared::license::DistributionContext;
 
-/// The boundary's own spelling of [`DistributionContext`], so the FFI does not depend on UniFFI's
-/// hidden remote-type macro. The match below fails to compile if a variant is ever added.
+/// The boundary's own spelling of [`DistributionContext`]; UniFFI's remote-type macro is `#[doc(hidden)]`.
 #[derive(uniffi::Enum)]
 pub enum FfiDistributionContext {
     FirstParty,
