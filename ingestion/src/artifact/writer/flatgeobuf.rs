@@ -1,10 +1,5 @@
-//! A Natural Earth feature is matched to a seeded country by its `ADM0_A3` code (translated to canonical
-//! ISO3 first; see `natural_earth::canonical_iso3`). A code with no seeded country gets a warning logged
-//! and the feature dropped: Natural Earth ships entries we intentionally omit, like Antarctica,
-//! uninhabited islets, and the Siachen Glacier.
-//!
-//! Output is a plain `.fgb` that `artifact::compression` replaces with a brotli sibling before the file is
-//! content-addressed, so inspecting one locally goes through `brotli -d`.
+//! Natural Earth ships entries no seeded country matches, such as Antarctica, uninhabited islets, and the
+//! Siachen Glacier.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -72,10 +67,8 @@ pub async fn write_flatgeobuf_from_shapefile<'e>(
 
     let mut reader: Reader<Cursor<&[u8]>, Cursor<&[u8]>> = build_shapefile_reader(shapefile_bytes)?;
 
-    // Group features by canonical ISO3 before emitting. Most countries contribute one feature, but the
-    // two unrecognized territories Natural Earth ships as their own features (Somaliland, Northern
-    // Cyprus) alias to their sovereign's ISO3, so they must merge into that country's feature rather than
-    // producing a second feature sharing its region_code.
+    /* Natural Earth ships territories folded into a sovereign as their own features, aliased to that
+       sovereign's ISO3, so several features can share one canonical country. */
     let mut geometry_by_iso3: BTreeMap<String, GroupedGeometry> = BTreeMap::new();
     for shape_and_record in reader.iter_shapes_and_records() {
         let (shape, record) = shape_and_record?;

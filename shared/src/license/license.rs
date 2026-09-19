@@ -12,9 +12,7 @@ pub enum DistributionContext {
 }
 
 impl DistributionContext {
-    /// Order is significant: shard selection takes the first authorized class that has a shard for
-    /// the requested statistic, so this is a precedence list, not just a membership set. Reordering
-    /// changes which shard renders when a statistic ships under more than one authorized class.
+    /// Order is significant; the slice is a precedence list.
     pub fn authorized_classes(self) -> &'static [LicenseShardClass] {
         match self {
             DistributionContext::FirstParty => &[

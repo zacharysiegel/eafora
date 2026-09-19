@@ -9,7 +9,6 @@ use crate::http;
 
 const API_BASE_URL: &str = "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data";
 
-/// The indicators this adapter ingests, one dimension member each.
 pub const INDICATOR_TOTAL_FERTILITY_RATE: &str = "TOTFERRT";
 pub const INDICATOR_MEAN_AGE_AT_CHILDBIRTH: &str = "AGEMOTH";
 pub const INDICATOR_MEAN_AGE_AT_FIRST_BIRTH: &str = "AGEMOTH1";
@@ -79,8 +78,7 @@ pub struct EurostatExtraction {
     pub indicator_codes: &'static [&'static str],
 }
 
-/// Above 500,000 cells Eurostat answers asynchronously and above 5,000,000 it refuses; the largest extraction
-/// here is approx. 77,520, so the synchronous path is the only one this adapter needs.
+/// Above 500,000 cells Eurostat answers asynchronously and above 5,000,000 it refuses.
 pub async fn fetch_upstream(extraction: &EurostatExtraction) -> Result<String, AppError> {
     let indicator_parameters: String = extraction.indicator_codes
         .iter()
@@ -108,8 +106,7 @@ pub async fn fetch_upstream(extraction: &EurostatExtraction) -> Result<String, A
     Ok(response.text().await?)
 }
 
-/// Eurostat answers an over-large extraction with a SOAP fault under a successful status, so a body that does
-/// not deserialize is reported against the cell limit rather than as a parse bug.
+/// Eurostat answers an over-large extraction with a SOAP fault under a successful status.
 pub fn parse_response(
     extraction: &EurostatExtraction,
     body: &str,
@@ -133,8 +130,7 @@ pub fn parse_response(
     })
 }
 
-/// A response names territory under several revisions of the classification at once, so which revision a
-/// code belongs to is what decides whether it means what the canonical store thinks it means.
+/// A response names territory under several revisions of the classification at once.
 pub fn revision_by_geo_code(response: &EurostatResponse) -> BTreeMap<String, i32> {
     let Some(geo) = response.dimension.get(DIMENSION_GEO)
     else {
@@ -160,8 +156,8 @@ fn geo_revision_of(label: &str) -> Option<i32> {
     year.parse().ok()
 }
 
-/// JSON-stat addresses an observation by one flat index over the dimensions in `id` order, so a position is
-/// decomposed by the strides its dimension sizes imply, right-most varying fastest.
+/// JSON-stat addresses an observation by one flat index over the dimensions in `id` order, right-most varying
+/// fastest.
 fn parse_observations(response: &EurostatResponse) -> Result<Vec<ParsedEurostatObservation>, AppError> {
     let indicator_codes: Vec<&str> = positional_codes(response, DIMENSION_INDICATOR)?;
     let geo_codes: Vec<&str> = positional_codes(response, DIMENSION_GEO)?;
@@ -209,9 +205,7 @@ fn parse_observations(response: &EurostatResponse) -> Result<Vec<ParsedEurostatO
     Ok(observations)
 }
 
-/// The codes of one dimension's categories, ordered by the position each occupies. The index map is
-/// code-to-position, and a position missing from it would silently shift every code after it, so a gap is an
-/// error rather than a hole.
+/// The codes of one dimension's categories in position order; Eurostat's category index maps code to position.
 fn positional_codes<'a>(response: &'a EurostatResponse, dimension_name: &str) -> Result<Vec<&'a str>, AppError> {
     let dimension: &EurostatDimension = response.dimension.get(dimension_name).ok_or_else(|| {
         AppError::from(format!("eurostat response has no such dimension; [dimension={dimension_name}]"))
@@ -222,6 +216,7 @@ fn positional_codes<'a>(response: &'a EurostatResponse, dimension_name: &str) ->
         codes_by_position.insert(position, code.as_str());
     }
 
+    // A position missing from the index shifts every code after it.
     let is_contiguous: bool = codes_by_position.len() == dimension.category.index.len()
         && codes_by_position.keys().copied().eq(0..codes_by_position.len());
     if !is_contiguous {
@@ -240,7 +235,6 @@ fn axis_of(response: &EurostatResponse, dimension_name: &str) -> Result<usize, A
     })
 }
 
-/// The multiplier each axis contributes to a flat index: the product of every size to its right.
 fn strides_of(size: &[usize]) -> Vec<usize> {
     let mut strides: Vec<usize> = vec![1; size.len()];
     for axis in (0..size.len().saturating_sub(1)).rev() {
@@ -327,8 +321,8 @@ mod tests {
     fn parse_response_attaches_a_flag_to_the_observation_it_belongs_to() {
         let response: ParsedEurostatResponse = parse_country_level(FLAGGED_OBSERVATIONS).unwrap();
 
-        // The sample's status map flags positions 2 and 3, but only position 3 carries a value; a flag on a
-        // valueless cell has no observation to attach to and is dropped with it.
+        /* The sample's status map flags positions 2 and 3, but only position 3 carries a value; a flag on a
+           valueless cell has no observation to attach to and is dropped with it. */
         assert_eq!(response.observations.len(), 1);
         assert_eq!(response.observations[0].period_year, 2016);
         assert_eq!(response.observations[0].flag.as_deref(), Some("p"));

@@ -14,14 +14,13 @@ use crate::render::gpu_types::Vec2;
 /// above f64 rounding noise, so it flags only coincident points and exact spikes at any resolution.
 const NORMAL_EPSILON: f64 = 1e-12;
 
-/// A country's GPU-ready geometry. It owns its data and holds no GPU handles, so it is `Send`: a worker
-/// thread can build it, or the producer can write it into the artifact, without involving the renderer.
+/// A country's GPU-ready geometry. It holds no GPU handles, so it is `Send`.
 #[derive(Debug, Clone)]
 pub struct CountryMesh {
     pub region_code: String,
     pub vertices: Vec<ProjectedVertexAttributes>,
-    /// One per item in `vertices`: the unit direction to push that vertex to inflate the country outward
-    /// (away from its interior), used to raise and outline it when hovered or selected.
+    /// One per item in `vertices`: the unit direction to push that vertex to inflate the country
+    /// outward, away from its interior.
     pub outward_directions: Vec<Vec2>,
     pub fill_indices: Vec<u32>,
     pub boundary_indices: Vec<u32>,
@@ -96,15 +95,8 @@ fn flatten_rings(rings: &[&[(f64, f64)]]) -> (Vec<(f64, f64)>, Vec<usize>) {
 fn project_points(geographic_points: &[(f64, f64)]) -> Vec<f64> {
     let mut projected_coordinates: Vec<f64> = Vec::new();
 
-    // Antimeridian-crossing rings are not handled here. A ring whose source vertices span the
-    // +180/-180 seam (e.g. Russia's Chukotka, Fiji, Kiribati) projects to x-values on both far
-    // ends of the range, and earcut then triangulates the polygon across the entire ~358 degree
-    // span instead of the thin sliver hugging the seam, smearing the country across the map. This
-    // only matters if the geometry source stores such features as a single unsplit ring; if the
-    // source already splits them per hemisphere, the naive projection below is correct. If it
-    // does manifest, the fix is to clip each crossing ring against the antimeridian: insert new
-    // vertices where edges cross +/-180, split the ring into two rings (one per side of the
-    // line), and triangulate each independently.
+    /* A single ring spanning +/-180 triangulates across the whole longitude range; the geometry source
+       must supply such features already split per hemisphere. */
     for &(lon, lat) in geographic_points {
         let projected: ProjectedPoint = projection::project(lat, lon);
         projected_coordinates.push(projected.x);

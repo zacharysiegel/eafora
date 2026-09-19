@@ -94,8 +94,6 @@ async fn normalize_row(
     }))
 }
 
-/// Runs the full client + normalize + ingest pipeline under one transaction
-/// so a mid-run failure leaves the canonical store untouched.
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
 

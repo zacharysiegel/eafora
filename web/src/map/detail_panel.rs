@@ -15,8 +15,7 @@ use crate::map::labels;
 use crate::map::map::TopSurface;
 use crate::map::scroll_thumb::{self, ScrollThumbState};
 
-/// Births per woman at which a generation replaces itself. Drawn as the line a fertility series is read
-/// against, so it is the one value on the chart that does not come from the data.
+/// Births per woman at which a generation replaces itself.
 const REPLACEMENT_RATE: f64 = 2.1;
 
 /// The chart's coordinate space. It scales to the dock's width through the `viewBox`, so these are
@@ -26,10 +25,8 @@ const CHART_HEIGHT: f64 = 142.6;
 const PLOT_TOP: f64 = 8.0;
 const PLOT_BOTTOM: f64 = 133.4;
 
-/* A gutter either side of the plot: the unit's rotated title on the left, the reference line's value on the
-   right. Equal widths, so the plot stays centred in the panel. Both labels are anchored to the plot's edge and
-   grow away from it, so the gap holds whatever the label says and a long one runs out of the chart rather than
-   over the series. */
+/* A gutter either side of the plot, equal widths so the plot stays centred. The labels are anchored to the
+   plot's edge and grow outward, so a long one overruns the chart. */
 const AXIS_GUTTER_WIDTH: f64 = 27.0;
 /* The unit's title is rotated, so it needs only the height of its type and can stand further off the plot than
    the value on the right, which needs the width of its digits. */
@@ -38,11 +35,8 @@ const REFERENCE_LABEL_GAP: f64 = 6.0;
 const PLOT_LEFT: f64 = AXIS_GUTTER_WIDTH;
 const PLOT_RIGHT: f64 = CHART_WIDTH - AXIS_GUTTER_WIDTH;
 
-/// Half the active period's marker height, so a marker on the first or last period sits inside the drawing
-/// rather than half-clipped by its edge.
 const MARKER_RADIUS: f64 = 4.0;
 
-/// The readout's box height, which the view reserves whether or not a readout is showing.
 const READOUT_HEIGHT: f64 = 15.0;
 
 /// Headroom above and below the series, as a proportion of its extent, so a peak does not touch the top of
@@ -58,8 +52,7 @@ const FLAT_SERIES_HALF_EXTENT: f64 = 0.5;
 const CHANGE_INTERVAL_IN_YEARS_SHORT: i32 = 1;
 const CHANGE_INTERVAL_IN_YEARS_LONG: i32 = 10;
 
-/// Which detail surface is up. Independent of the selection, so collapsing leaves the region selected and
-/// outlined.
+/// Which detail surface is up. Independent of the selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DetailSurface {
     Summary,
@@ -80,9 +73,8 @@ pub fn RegionDetailPanel() -> impl IntoView {
        focus for a mouse click puts a focus ring on a control the reader did not ask to be on. */
     let expanded_by_keyboard: RwSignal<bool> = RwSignal::new(false);
 
-    /* Each surface is built once, when it becomes the one showing, and its values then update through the
-       closures below. Reading the figure here instead would rebuild the whole panel on every republish, which
-       means rebuilding the chart's elements on every scrub tick. */
+    /* Reading a signal at this level rebuilds the whole panel on every republish, so each surface reads at its
+       leaves. */
     view! {
         <Show when=move || surface.get() == DetailSurface::Summary && figure.with(Option::is_some)>
             {summary_panel(i18n, figure, surface, top_surface, expanded_by_keyboard)}
@@ -93,8 +85,7 @@ pub fn RegionDetailPanel() -> impl IntoView {
     }
 }
 
-/// The figure both surfaces render, whichever of the two the driver published. The world is the figure
-/// whenever no region is selected.
+/// The world is the figure whenever no region is selected.
 #[derive(Clone, PartialEq)]
 struct ActiveFigure {
     label: String,
@@ -132,8 +123,7 @@ fn active_figure(
     })
 }
 
-/// Reads one string off the active figure. Each of these subscribes only itself, so a republish rewrites the
-/// text that changed and leaves the elements holding it alone.
+/// Each returned closure subscribes only itself.
 fn figure_text(
     figure: Memo<Option<ActiveFigure>>,
     read: impl Fn(&ActiveFigure) -> String + Copy + Send + Sync + 'static,
@@ -152,7 +142,6 @@ fn figure_heading(figure: Memo<Option<ActiveFigure>>, i18n: I18nContext<Locale>)
     })
 }
 
-/// The small top-left figure: the value and its source, and the control that expands to the dock.
 fn summary_panel(
     i18n: I18nContext<Locale>,
     figure: Memo<Option<ActiveFigure>>,
@@ -199,8 +188,6 @@ fn summary_panel(
     }
 }
 
-/// The value block alone is rebuilt when a region loses or gains a reading, since it swaps a figure and its
-/// source for a sentence. Keeping it in its own closure holds that rebuild away from the panel around it.
 fn summary_figure(i18n: I18nContext<Locale>, figure: &ActiveFigure) -> AnyView {
     let CellView { value, source, data_status } = figure.cell;
     let statistic: StatisticKind = figure.statistic;
@@ -343,9 +330,8 @@ fn context_row(label: AnyView, value: impl Fn() -> String + Send + Sync + 'stati
     }
 }
 
-/// "Lowest of 217", "Highest of 217", or "22nd lowest of 217" between them, which states the direction rather
-/// than leaving the reader to infer it from a sorting convention. The ordinal is English, so the phrase is
-/// assembled here; a second locale wants the whole phrase interpolated in the locale file instead.
+/// Reads as "Lowest of N", "Highest of N", or "22nd lowest of N". The ordinal is English, so the phrase is
+/// assembled here.
 fn rank_text(i18n: I18nContext<Locale>, figure: Memo<Option<ActiveFigure>>) -> impl Fn() -> String + Copy + Send + Sync {
     figure_text(figure, move |figure| match figure.detail.rank {
         Some(rank) => match rank_phrase(rank) {
@@ -408,8 +394,7 @@ fn change_text(
     })
 }
 
-/// The difference between the active period's value and the one `years` earlier. `None` unless the shard
-/// covers both, so a gap yields nothing rather than a difference over the wrong interval.
+/// `None` unless the series covers both periods.
 fn change_over_years(series: &[SeriesPointView], active_period_start: NaiveDate, years: i32) -> Option<f64> {
     let earlier_period_start: NaiveDate = active_period_start.with_year(active_period_start.year() - years)?;
 
@@ -426,8 +411,7 @@ fn value_at(series: &[SeriesPointView], period_start: NaiveDate) -> Option<f64> 
         .map(|point| point.value)
 }
 
-/// Everything the chart draws, as the strings its attributes take. One memo, so a republish that leaves the
-/// drawing unchanged does not touch the DOM at all, and one that changes it rewrites only the values.
+/// Everything the chart draws, as the strings its attributes take.
 #[derive(Clone, PartialEq)]
 struct ChartGeometry {
     is_plottable: bool,
@@ -526,7 +510,7 @@ struct ChartCursor {
     readout: ChartReadout,
 }
 
-/// The readout's text and the box behind it, already in chart units, so the view only places what it is given.
+/// The readout's marks, already in chart units.
 #[derive(Clone, PartialEq)]
 struct ChartReadout {
     text: String,
@@ -577,8 +561,6 @@ mod readout_geometry {
     }
 }
 
-/// The plotted point nearest `plot_x`, so a pointer between two periods resolves to one of them rather than to
-/// an interpolation the series does not contain.
 #[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // only the pointer handler calls it, and ssr has no pointer
 fn nearest_point(series: &[SeriesPointView], scale: &ChartScale, plot_x: f64) -> Option<SeriesPointView> {
     series.iter().copied().min_by(|left, right| {
@@ -758,16 +740,14 @@ fn readout_text(cursor: RwSignal<Option<ChartCursor>>, read: impl Fn(&ChartReado
     cursor.with(|cursor| cursor.as_ref().map(|cursor| read(&cursor.readout)).unwrap_or_default())
 }
 
-/// Whether the period under the pointer becomes the active one, which a drag does on every step and an idle
-/// pointer never does.
+/// Whether the period under the pointer becomes the active one.
 #[derive(Clone, Copy, PartialEq)]
 enum Commit {
     Yes,
     No,
 }
 
-/// The period under the pointer, dispatched to the driver when the caller is dragging and it is not already
-/// the active one, so a drag across a wide period does not republish the same year on every step.
+/// The period under the pointer, dispatched to the driver when the caller is dragging.
 fn rest_and_commit(
     figure: Memo<Option<ActiveFigure>>,
     event: &leptos::ev::PointerEvent,
@@ -777,6 +757,7 @@ fn rest_and_commit(
         figure.with(|figure| (cursor_at(figure.as_ref(), event), figure.as_ref().map(|figure| figure.period_start)));
     let cursor: ChartCursor = resting_on?;
 
+    // A drag steps many times within a single period.
     if commit == Commit::Yes && Some(cursor.period_start) != active_period_start {
         canvas::dispatch_period(cursor.period_start);
     }
@@ -784,7 +765,7 @@ fn rest_and_commit(
     Some(cursor)
 }
 
-/// Keeps the last coordinate when the pointer has left, so an attribute is never written empty.
+/// Falls back to the plot's left edge, so an attribute is never written empty.
 fn cursor_unit(cursor: RwSignal<Option<ChartCursor>>, read: impl Fn(&ChartCursor) -> f64) -> String {
     chart_unit(cursor.with(|cursor| cursor.as_ref().map_or(PLOT_LEFT, read)))
 }
@@ -805,10 +786,8 @@ struct ActiveMarker {
     radius: f64,
 }
 
-/* A radius of zero draws nothing, which is how the marker is hidden. Rendering the element unconditionally
-   rather than only when the active period has a value keeps it mounted: Safari logs an invalid empty value for
-   every attribute Leptos removes when it tears an SVG element down, and scrubbing to a period the region does
-   not cover would tear this one down on each pass. */
+/* A radius of zero draws nothing, which is how the marker is hidden. Safari logs an invalid empty value for
+   every attribute Leptos removes when it tears an SVG element down. */
 fn active_marker(series: &[SeriesPointView], active_period_start: NaiveDate, scale: &ChartScale) -> ActiveMarker {
     let Some(value) = value_at(series, active_period_start)
     else {
@@ -946,7 +925,6 @@ fn sources_section(
     .into_any()
 }
 
-/// `is_contested` gates the tag: with one source there is nothing for a priority to have decided.
 fn source_row(
     i18n: I18nContext<Locale>,
     statistic: StatisticKind,
@@ -955,6 +933,7 @@ fn source_row(
     attributions: Option<&Vec<SourceAttribution>>,
 ) -> AnyView {
     let status: Option<String> = status_text(i18n, source_cell.data_status);
+    // With one source there is nothing for a priority to have decided.
     let is_tagged: bool = source_cell.is_preferred && is_contested;
 
     view! {
@@ -1000,8 +979,7 @@ fn attribution_lines(attributions: &[SourceAttribution]) -> AnyView {
     blocks.into_any()
 }
 
-/// The host a link points at, which says where it goes without claiming it is a "home" page and without a word
-/// to translate. The whole URL is the fallback, since a link is more useful mislabelled than unlabelled.
+/// The host a link points at, so the label needs no translation. The whole URL is the fallback.
 fn link_host(url: &str) -> String {
     let without_scheme: &str = url.split("://").nth(1).unwrap_or(url);
     let host: &str = without_scheme.split('/').next().unwrap_or(without_scheme);
@@ -1055,7 +1033,7 @@ fn source_label(i18n: I18nContext<Locale>, source: DataSourceKind) -> AnyView {
 }
 
 /// A control activated by keyboard has a visible focus ring; one activated by pointer does not.
-#[cfg(feature = "hydrate")]
+#[cfg(feature = "hydrate")] // interrogates the rendered element
 fn activated_by_keyboard(event: &leptos::ev::MouseEvent) -> bool {
     use wasm_bindgen::JsCast;
 
@@ -1074,7 +1052,7 @@ fn activated_by_keyboard(_event: &leptos::ev::MouseEvent) -> bool {
 /* Opening the dock destroys the control that opened it, so a keyboard reader's focus would fall to the document
    and the next tab would skip the dock. The collapse control takes it, and only for a keyboard activation: it
    sits inside the scrolling element so the arrow keys scroll on arrival. */
-#[cfg(feature = "hydrate")]
+#[cfg(feature = "hydrate")] // moves focus in the rendered document
 fn take_focus(collapse: NodeRef<Button>) {
     let Some(collapse) = collapse.get()
     else {
@@ -1089,7 +1067,7 @@ fn take_focus(_collapse: NodeRef<Button>) {}
 
 /// The dock covers the map's left edge, and how much depends on its stylesheet, so it measures itself rather
 /// than the camera assuming a width.
-#[cfg(feature = "hydrate")]
+#[cfg(feature = "hydrate")] // measures the laid-out element
 fn report_covered_surface(dock: NodeRef<Aside>) {
     let Some(dock) = dock.get()
     else {
@@ -1104,7 +1082,7 @@ fn report_covered_surface(dock: NodeRef<Aside>) {
 #[cfg(not(feature = "hydrate"))] // the ssr build has no laid-out element to measure
 fn report_covered_surface(_dock: NodeRef<Aside>) {}
 
-#[cfg(feature = "hydrate")]
+#[cfg(feature = "hydrate")] // dispatches to the driver
 fn dispatch_left_surface_inset(inset: f64) {
     crate::map::canvas::driver::apply_left_surface_inset(inset);
 }
@@ -1112,9 +1090,7 @@ fn dispatch_left_surface_inset(inset: f64) {
 #[cfg(not(feature = "hydrate"))] // the ssr build has no driver to dispatch to
 fn dispatch_left_surface_inset(_inset: f64) {}
 
-/// Arrows toward opposite corners, and toward each other to collapse.
-/// Sliders, for the panel of controls this swaps to: two rails, each with a knob, which is what it holds.
-/// The knobs carry their own fill and no stroke, against the outline the other glyphs are drawn with.
+/// A pair of sliders.
 fn controls_icon() -> impl IntoView {
     view! {
         <svg class="icon" viewBox="0 0 14 14" aria-hidden="true">
@@ -1125,6 +1101,7 @@ fn controls_icon() -> impl IntoView {
     }
 }
 
+/// Arrows toward opposite corners.
 fn expand_icon() -> impl IntoView {
     view! {
         <svg class="icon" viewBox="0 0 14 14" aria-hidden="true">
@@ -1133,6 +1110,7 @@ fn expand_icon() -> impl IntoView {
     }
 }
 
+/// Arrows toward each other.
 fn collapse_icon() -> impl IntoView {
     view! {
         <svg class="icon" viewBox="0 0 14 14" aria-hidden="true">

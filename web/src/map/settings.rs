@@ -80,9 +80,7 @@ pub fn SettingsModal() -> impl IntoView {
     }
 }
 
-// The persistence layer splits by build: `hydrate` (the client) has a DOM and a real localStorage-backed
-// store; `ssr` (the server) has neither, so it returns the component's defaults. Each build re-exports its
-// own pair of accessors.
+/* The ssr build has no localStorage, so it answers with the declared defaults. */
 #[cfg(feature = "hydrate")]
 pub use hydrate::regions_expand_on_hover;
 #[cfg(feature = "hydrate")]
@@ -97,8 +95,7 @@ mod hydrate {
     use base64::Engine;
     use shared::settings::{Setting, SettingKey, SettingValue, SettingsStore};
 
-    /// The web client's settings keys. Platform-specific: a touch platform, which has no hover, would not
-    /// define `RegionsExpandOnHover`.
+    /// The web client's settings keys.
     #[derive(Clone, Copy)]
     enum WebSettingKey {
         RegionsExpandOnHover,

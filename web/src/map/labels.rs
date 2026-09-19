@@ -50,8 +50,7 @@ pub fn reference_caption(i18n: I18nContext<Locale>, statistic: StatisticKind) ->
     }
 }
 
-/// How many decimal places a statistic's values are shown to. Eurostat publishes an age to one, and rendering
-/// a second asserts precision the source does not carry.
+/// An age is published to one decimal, so rendering a second asserts precision the data does not carry.
 pub fn statistic_decimals(statistic: StatisticKind) -> usize {
     match statistic {
         StatisticKind::Tfr | StatisticKind::Ccf => 2,

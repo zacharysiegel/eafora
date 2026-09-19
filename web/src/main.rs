@@ -3,17 +3,14 @@
    and cargo-leptos type-erases dev builds. */
 #![recursion_limit = "512"]
 
-/* With no argument this runs the dev server (`cargo leptos watch`); with `prerender` it renders the map
-   route once and writes the document the deploy serves. Production serves static files and runs no server. */
+// Production serves static files and runs no server.
 #[cfg(feature = "ssr")]
 const PRERENDER_ARGUMENT: &str = "prerender";
 
-/* 64 is the conventional status for a misuse of a command, and the scripts in this repository exit 64 for
-   the same reason, so a wrapper can tell a mistyped command from work that was attempted and failed. */
 #[cfg(feature = "ssr")]
 enum ExitStatus {
     Failed = 1,
-    Usage = 64,
+    Usage = 64, // the conventional status for a misuse of a command; this repository's scripts use it too
 }
 
 #[cfg(feature = "ssr")]

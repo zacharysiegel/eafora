@@ -8,13 +8,6 @@ use crate::error::AppError;
 use crate::ingest::ingest_db;
 use crate::ingest::{IngestReport, RecordOutcome};
 
-/// For each `(region, statistic, period, data_source)` cell, the existing
-/// `superseded is null` row is compared against the new value:
-///
-/// - no current row: INSERT the new row, count `values_added`.
-/// - current row matches new value + status: skip, count `values_skipped`.
-/// - current row differs: stamp the old row's `superseded`, INSERT a new
-///   row pointing at the new publication, count `values_revised`.
 pub async fn record_statistic_values(
     connection: &mut PgConnection,
     data_source_id: Uuid,

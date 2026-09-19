@@ -1,5 +1,4 @@
-//! The ISO 3166 + UN M49 country snapshot under `ingestion/db/seed-data/`, which every seed generator reads
-//! to resolve a country's canonical region code from an alpha-2 or alpha-3 code.
+//! Parses the ISO 3166 + UN M49 country snapshot under `./ingestion/db/seed-data/`.
 
 use std::error::Error;
 
@@ -47,8 +46,7 @@ pub fn parse_csv(text: &str) -> Result<Vec<CountryRow>, Box<dyn Error>> {
             intermediate_code: fields[10].clone(),
         };
         if row.region_name.is_empty() {
-            // UN M49 leaves the region fields blank for Antarctica and for Taiwan (which it folds into
-            // China); skip both.
+            /* UN M49 leaves the region fields blank for Antarctica and for Taiwan, which it folds into China. */
             continue;
         }
         country_rows.push(row);

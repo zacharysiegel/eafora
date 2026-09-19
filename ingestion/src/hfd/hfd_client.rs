@@ -17,7 +17,8 @@ const SESSION_COOKIE: &str = "Authorization";
 const ZIP_MAGIC: [u8; 2] = [b'P', b'K'];
 
 /// `VH` and `RR` are HFD's Lexis-shape suffixes: a cohort file is indexed by birth cohort, a period file by
-/// calendar year.
+/// calendar year. The archive's other members include input files, which carry each provider's own licence
+/// rather than HFD's.
 pub const COHORT_MEMBER: &str = "tfrVH.txt";
 pub const PERIOD_MEMBER: &str = "tfrRR.txt";
 
@@ -223,8 +224,6 @@ async fn download_cohort_archive(
     Ok(bytes)
 }
 
-/// HFD's input files carry each provider's own licence and are excluded from this crate entirely; the
-/// by-birth-order companions are a different statistic.
 pub fn read_member(archive: &[u8], member_name: &str) -> Result<String, AppError> {
     let reader: std::io::Cursor<&[u8]> = std::io::Cursor::new(archive);
     let mut zip: zip::ZipArchive<std::io::Cursor<&[u8]>> = zip::ZipArchive::new(reader)

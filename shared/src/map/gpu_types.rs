@@ -1,5 +1,4 @@
-//! The map's `#[repr(C)]` GPU-buffer structs. Their field order, types, and alignment must match
-//! what the WGSL shaders read, which is why they carry `bytemuck` derives.
+//! Field order, types, and alignment must match what the WGSL shaders read.
 
 use wgpu::TextureFormat;
 
@@ -19,9 +18,7 @@ pub struct FillVertexAttributes {
     pub color: Vec4,
 }
 
-/// Per-vertex input for raising/outlining a country: the vertex shader looks the country's state up by
-/// index and pushes the vertex along `outward_direction` to inflate it outward. A separate buffer from
-/// the static `positions` and from `FillVertexAttributes`.
+/// Per-vertex input for raising and outlining a country.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct EmphasisVertexAttributes {
@@ -29,15 +26,13 @@ pub struct EmphasisVertexAttributes {
     pub country_index: u32,
 }
 
-/// Padded to a multiple of 16 bytes. The antimeridian wrap is derived in the shader from the bounds
-/// per instance, so it is not stored here.
+/// Padded to a multiple of 16 bytes.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewportUniform {
     pub projected_min: Vec2,
     pub projected_max: Vec2,
-    /// The render surface's size in physical pixels. The shader uses it to convert the lift and outline
-    /// widths (given in pixels) into projected-space distances.
+    /// The render surface's size in physical pixels.
     pub surface_size: Vec2,
     pub _padding: Vec2,
 }
@@ -63,9 +58,7 @@ pub const COUNTRY_STATE_TEXTURE_FORMAT: TextureFormat = TextureFormat::Rg32Float
 /// The country-state texture's row width in texels; its height is whatever holds the layer's countries. The
 /// shader reads the width from the bound texture, so this is its only definition.
 ///
-/// A texture dimension is capped at 2048 under `Limits::downlevel_webgl2_defaults`, which this stays well
-/// under in both axes: 256 columns leaves room for far more rows than a layer carrying every subnational
-/// level needs.
+/// A texture dimension is capped at 2048 under `Limits::downlevel_webgl2_defaults`.
 pub const COUNTRY_STATE_TEXTURE_WIDTH: u32 = 256;
 
 #[cfg(test)]

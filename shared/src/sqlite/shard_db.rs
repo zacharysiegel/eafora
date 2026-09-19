@@ -1,10 +1,6 @@
 //! Load a statistic shard's bytes into an in-memory `(region, period_start) -> every source's cell` map,
 //! with the value range and period bounds computed at load. Which of a cell's sources wins is decided per
 //! read, from the shard's own preference ranks.
-//!
-//! Both paths load the shard entirely into memory: the non-wasm32 path through rusqlite's
-//! `deserialize`, wasm32 through the read-only VFS facade in `crate::sqlite::ro_memory_vfs`. Each is
-//! a target-gated submodule scoping its own bindings; both re-export the one `read_shard` signature.
 
 use std::collections::HashMap;
 
@@ -31,9 +27,8 @@ pub struct SeriesPoint {
     pub source_code: String,
 }
 
-/// A shard holds every source's value for a cell, so a consumer can present an alternative to the one
-/// preference picks. Keyed by `region.code` and period start, with the value and period ranges precomputed
-/// over the preferred value of each cell, which is what a map draws.
+/// Holds every source's value for a cell, so a consumer can present an alternative to the one preference
+/// picks.
 #[derive(Debug, Clone)]
 pub struct ShardValues {
     by_region: HashMap<String, HashMap<NaiveDate, Vec<CellValue>>>,
@@ -51,7 +46,7 @@ impl ShardValues {
         self.cell(region_code, period_start).map(|cell| cell.value)
     }
 
-    /// The value a map draws: the highest-priority source covering the cell.
+    /// The value from the highest-priority source covering the cell.
     pub fn cell(&self, region_code: &str, period_start: NaiveDate) -> Option<&CellValue> {
         let cells: &[CellValue] = self.cells(region_code, period_start);
 
@@ -107,8 +102,7 @@ impl ShardValues {
         series
     }
 
-    /// Each pair is a region code and that region's value at `period_start`. Unordered, since a caller
-    /// ranking these decides its own direction.
+    /// Each pair is a region code and that region's value at `period_start`. Unordered.
     pub fn preferred_values_at(&self, period_start: NaiveDate) -> Vec<(&str, f64)> {
         let mut region_values: Vec<(&str, f64)> = Vec::new();
 
@@ -189,7 +183,6 @@ fn preferred_cell<'cells>(
     })
 }
 
-/// Both target-gated readers accumulate rows and hand them here, rather than each deriving the ranges.
 fn create_shard_values(
     by_region: HashMap<String, HashMap<NaiveDate, Vec<CellValue>>>,
     preference_rank_by_source: HashMap<String, i32>,
@@ -200,8 +193,7 @@ fn create_shard_values(
     let mut earliest_period_start: NaiveDate = NaiveDate::MAX;
     let mut latest_period_start: NaiveDate = NaiveDate::MIN;
 
-    /* The legend and the color scale read this range, so it covers the values a map draws rather than every
-       candidate: an alternative source's outlier must not stretch the scale. */
+    // An alternative source's outlier must not stretch the value range.
     for by_period in by_region.values() {
         for (period_start, cells) in by_period {
             earliest_period_start = earliest_period_start.min(*period_start);
@@ -236,7 +228,7 @@ fn parse_period(text: &str) -> Result<NaiveDate, AppError> {
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::*;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))] // rusqlite does not build for wasm32
 mod native {
     use std::collections::HashMap;
     use std::ptr::NonNull;
@@ -372,7 +364,7 @@ mod native {
 #[cfg(target_arch = "wasm32")]
 pub use wasm::*;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(target_arch = "wasm32")] // rusqlite does not build for wasm32
 mod wasm {
     use std::collections::HashMap;
     use std::ffi::CString;
@@ -953,9 +945,8 @@ mod tests {
     }
 }
 
-// The wasm loader can't build a fixture (no rusqlite there), so it reads the committed sample that
-// the native `dump_sample_shard` produced. This is the one runtime wasm test: the VFS + raw-FFI
-// query is the genuinely target-divergent surface (native goes through rusqlite instead).
+/* rusqlite is unavailable on wasm32, so this reads the committed sample that `dump_sample_shard` produces.
+   The VFS and raw-FFI query are the target-divergent surface. */
 #[cfg(all(test, target_arch = "wasm32"))]
 mod wasm_tests {
     use super::*;

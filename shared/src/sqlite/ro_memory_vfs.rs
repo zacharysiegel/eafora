@@ -52,7 +52,6 @@ type ShardAppData = RefCell<HashMap<String, ReadOnlyMemory>>;
 struct ShardStore;
 
 impl VfsStore<ReadOnlyMemory, ShardAppData> for ShardStore {
-    /// Rejects: this read-only store never creates files; shards are added via `register_shard`.
     fn add_file(_vfs: *mut sqlite3_vfs, file: &str, _flags: i32) -> VfsResult<()> {
         Err(VfsError::new(SQLITE_READONLY, format!("cannot create {file} in the read-only shard VFS")))
     }

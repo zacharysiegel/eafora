@@ -1,10 +1,7 @@
 @use "../tokens" as tokens;
 
-/* The two panels at the top of the map, above the breakpoint at which they start sharing one slot.
-
-   The wrapper generates no box here, so each panel positions itself against `#map-view` and paints its own
-   sheet exactly as it would with no wrapper around it. Its own `panel` chrome goes unpainted for the same
-   reason, which is what lets one element be the sheet below the breakpoint and nothing above it. */
+/* The wrapper generates no box here, so each panel positions itself against `#map-view` and its own
+   `panel` chrome goes unpainted. */
 .top-panels {
     display: contents;
 }

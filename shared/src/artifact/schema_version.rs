@@ -1,12 +1,8 @@
-//! Forward-compatible schema-version gate for versioned JSON documents (manifest,
-//! discovery). Reads only the version field, so a future schema version that
-//! changes the document's shape is reported as a version mismatch rather than a
-//! field-level parse error. The rest of the (possibly incompatible) document is
-//! never deserialized here.
+//! Forward-compatible schema-version gate for versioned JSON documents. Reads only the version field, so a
+//! future schema version that changes the document's shape is reported as a version mismatch.
 
 use crate::error::AppError;
 
-/// Require the `field_name` integer in `bytes` to equal `expected`.
 pub fn require_schema_version(bytes: &[u8], field_name: &str, expected: u32) -> Result<(), AppError> {
     let found: u64 = read_schema_version(bytes, field_name)?;
 

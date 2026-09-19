@@ -16,7 +16,6 @@ create unique index if not exists source_choice_global_uq
     where region_id is null
 ;
 
--- at most one per-region override per (region, statistic, license_shard_class)
 create unique index if not exists source_choice_override_uq
     on source_choice (region_id, statistic_id, license_shard_class)
     where region_id is not null

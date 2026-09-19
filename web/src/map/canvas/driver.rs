@@ -31,42 +31,33 @@ thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
 }
 
-/// Greenwich, on the prime meridian. The home view is centered horizontally on its longitude (0°);
-/// vertically it is centered on the home-view latitude framing's midpoint (see `HOME_VIEW_MIN_LAT` /
-/// `home_viewport`), so only the longitude is used.
+/// Greenwich, on the prime meridian. Only the longitude is used.
 const HOME_CENTER: GeoPoint = GeoPoint {
     lat: 51.4779,
     lon: 0.0,
 };
 
-/// The home view's latitude framing, in degrees: chosen to enclose the drawn continents (Tierra del
-/// Fuego to northern Greenland) with no empty polar ocean. Deliberate design values, not derived from
-/// the geometry, so added polar data reframes the home view only when these are changed on purpose.
-/// Revisit if Antarctica or sub-Antarctic islands are added to the layer.
+/// The home view's latitude framing, in degrees: chosen by hand to enclose the drawn continents (Tierra
+/// del Fuego to northern Greenland) with no empty polar ocean.
 const HOME_VIEW_MIN_LAT: f64 = -56.0;
 const HOME_VIEW_MAX_LAT: f64 = 84.0;
 
-/// Wheel-zoom feel: the per-event zoom factor is `exp(-delta_y * WHEEL_ZOOM_SENSITIVITY)`, so scrolling
-/// is multiplicative and symmetric (opposite scrolls of equal magnitude compose to identity). A tuning
-/// constant with no correctness role.
+/// Wheel-zoom feel, as the exponential rate applied to a wheel event's `delta_y`. A tuning constant with
+/// no correctness role.
 const WHEEL_ZOOM_SENSITIVITY: f64 = 0.0015;
 
 /// Trackpad (or browser) pinch-zoom feel: the browser reports a trackpad pinch as a wheel event with
 /// `ctrlKey` set, at a smaller per-event delta than a scroll notch, so it gets a higher sensitivity than a
-/// scroll wheel. This is not the touchscreen two-finger pinch, which is a real multi-pointer gesture
-/// applied in `hit_test::pinch` by the finger-distance ratio (no sensitivity constant). Tuning constant
-/// with no correctness role.
+/// scroll wheel. This is not the touchscreen two-finger pinch. Tuning constant with no correctness role.
 const TRACKPAD_PINCH_ZOOM_SENSITIVITY: f64 = 0.006;
 
 /// Distinguishes a trackpad pinch from a real Ctrl+mouse-wheel, which both set `ctrlKey`: a pinch sends a
-/// small, pixel-mode delta, while a wheel notch is larger (or reported in line/page mode). A ctrlKey wheel
-/// event with a pixel delta below this is a pinch; at or above it (or in a non-pixel mode) it is treated
-/// as an ordinary wheel zoom.
+/// small, pixel-mode delta, while a wheel notch is larger (or reported in line/page mode).
 const TRACKPAD_PINCH_MAX_DELTA: f64 = 50.0;
 
 /// Caps a single wheel event's `delta_y` magnitude before the zoom factor is computed, so one line- or
 /// page-mode notch (whose delta is far larger than a pixel-mode notch) cannot zoom absurdly far. The
-/// deltaMode varies by browser and OS; this bounds the raw value rather than interpreting it.
+/// deltaMode varies by browser and OS.
 const MAX_WHEEL_DELTA: f64 = 240.0;
 
 /// Pointer travel in device pixels, between press and release, beyond which a single-pointer gesture is a
@@ -84,15 +75,14 @@ const ZOOM_TO_COUNTRY_MARGIN_PROPORTION: f64 = 1.5;
 /// surrounding region, not just itself.
 const ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT: f64 = 8.0;
 
-/// The floor, in projected units, on the margin opposite the clipped (pole) side. When a country sits
-/// hard against the pole-side clip edge, `Viewport::clamp_vertical_balanced` shrinks the opposite margin
-/// by the clipped amount, which would otherwise reach zero; this is the minimum it may shrink to.
+/// The floor, in projected units, on the margin opposite the clipped (pole) side.
 const ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN: f64 = 0.1;
 
 /// Minimum coverage for the default period, as a proportion of the best-covered period's.
 const MINIMUM_DEFAULT_COVERAGE_PROPORTION: f64 = 0.8;
 
-/// Canonical `region.code` of the World aggregate. World has no geometry, so it is never a hit-test result; the driver looks it up as the empty-state figure.
+/// Canonical `region.code` of the World aggregate. World has no geometry, so it is never a hit-test
+/// result.
 const WORLD_REGION_CODE: &str = "world";
 
 /// The result of hit-testing a pointer against the regions, compared to the previously known region.
@@ -103,8 +93,7 @@ enum RegionChange {
     Changed(Option<RegionHit>),
 }
 
-/// What a statistic or period change republishes: fresh controls and legend extent, the
-/// re-resolved selection when a region is selected, and the World figure for the empty state.
+/// What a statistic or period change republishes.
 struct RepublishedViews {
     view_controls: ViewControls,
     legend: LegendView,
@@ -157,8 +146,8 @@ impl Driver {
         self.transition = None;
         self.surface_dimensions = SurfaceDimensions { width, height };
 
-        // Preserve the current pan/zoom across a resize or device-pixel-ratio change, re-fitting only the
-        // aspect; do not reset to the home view.
+        /* Preserve the current pan/zoom across a resize or device-pixel-ratio change, re-fitting only the
+           aspect. */
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
         self.viewport = self.viewport.refit_to_surface(self.surface_dimensions, ceiling, home_min_y, home_max_y);
@@ -187,17 +176,16 @@ impl Driver {
 
         let schedule_result: Result<i32, JsValue> = window.request_animation_frame(callback.as_ref().unchecked_ref());
         if schedule_result.is_ok() {
-            // The pending flag is set only once a frame is actually scheduled, so a failed schedule stays
-            // retryable; otherwise the flag would latch and every later redraw would short-circuit on it.
+            // Set only once a frame is actually scheduled, so a failed schedule stays retryable.
             self.redraw_pending = true;
         }
     }
 
     /// Schedules one animation frame if none is already queued. Mirrors `request_redraw`'s failed-schedule
-    /// discipline; the `animation_frame_pending` gate (not `transition.is_some()`) is what guarantees exactly
-    /// one loop survives a cancel-then-restart interleaving, since a stale queued frame can outlive the
-    /// transition it was scheduled for.
+    /// discipline.
     fn schedule_animation_frame(&mut self) {
+        /* A queued frame can outlive the transition it was scheduled for, so this gate, not `transition`,
+           is what bounds the loop to one. */
         if self.animation_frame_pending {
             return;
         }
@@ -216,8 +204,7 @@ impl Driver {
         }
     }
 
-    /// Advances the zoom-to-country animation by one frame. Draws directly rather than through the
-    /// coalesced `request_redraw`, which would fight this loop's own scheduling.
+    /// Advances the zoom-to-country animation by one frame.
     fn advance_animation(&mut self, now_ms: f64) {
         self.animation_frame_pending = false;
 
@@ -228,6 +215,7 @@ impl Driver {
 
         let (viewport, progress): (Viewport, AnimationProgress) = transition.sample(now_ms, self.surface_dimensions);
         self.viewport = viewport;
+        // The coalesced `request_redraw` would fight this loop's own scheduling.
         self.draw();
 
         match progress {
@@ -249,10 +237,7 @@ impl Driver {
         self.schedule_animation_frame();
     }
 
-    /// The viewport that frames a country's projected bounds and centroid with a margin and a
-    /// generous-context minimum zoom-out, balanced against the home latitude range (so a pole-adjacent
-    /// country zooms in and stays centered rather than sliding off the far edge) and re-normalized across
-    /// the seam.
+    /// The viewport framing a country, balanced so a pole-adjacent country stays centered.
     fn zoom_target(&self, framing: CountryFraming) -> Viewport {
         let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
         let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
@@ -303,7 +288,7 @@ impl Driver {
     }
 
     /// The values the map colors from: the active statistic's first authorized license class. `None`
-    /// when the bundle ships no shard for that statistic, so the caller degrades to "no data".
+    /// when the bundle ships no shard for that statistic.
     fn active_shard_values<'bundle>(&self, bundle: &'bundle Bundle) -> Option<&'bundle ShardValues> {
         bundle.shard_values_for(self.frame_state.active_statistic)
     }
@@ -447,8 +432,6 @@ impl Driver {
         }
     }
 
-    /// Hit-tests `surface_point` against the regions, reporting a change only when the region under it
-    /// differs from `previous`, so callers skip work on repeat hits over the same region.
     fn region_change(&self, surface_point: SurfacePoint, previous: &Option<RegionCode>) -> RegionChange {
         let region_hit: Option<RegionHit> = self.region_at(surface_point);
         let region_code: Option<RegionCode> =
@@ -511,8 +494,7 @@ impl Driver {
         self.request_redraw();
     }
 
-    /// Advances the active gesture as a tracked pointer moves: a single pointer pans (and a `Tap` becomes
-    /// a `Pan` once it crosses the threshold), two pointers pinch.
+    /// Advances the active gesture as a tracked pointer moves.
     fn apply_pointer_move(&mut self, pointer_id: i32, surface_point: SurfacePoint) {
         match self.gesture {
             Gesture::Tap { pointer, origin } if pointer.pointer_id == pointer_id => {
@@ -568,9 +550,7 @@ impl Driver {
         self.request_redraw();
     }
 
-    /// Ends a released pointer: a tap (a single pointer that never dragged) selects, and may zoom, via
-    /// `select_from_tap`; a pan or pinch does neither. Returns the selection to publish, or `None` when
-    /// nothing selects.
+    /// Ends a released pointer. Returns the selection to publish, or `None` when nothing selects.
     fn end_pointer(&mut self, pointer_id: i32, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
         match self.gesture.release(pointer_id) {
             PointerRelease::Tap => self.select_from_tap(surface_point),
@@ -578,9 +558,8 @@ impl Driver {
         }
     }
 
-    /// Completes a tap at `surface_point`: selects the region there, and zooms to frame it when the tap
-    /// re-selects the already-selected region (so a first tap selects, and a second tap or a double-click
-    /// zooms). Returns the selection to publish.
+    /// Completes a tap at `surface_point`. A first tap selects a region; a second tap zooms to frame it.
+    /// Returns the selection to publish.
     fn select_from_tap(&mut self, surface_point: SurfacePoint) -> Option<Option<SelectionView>> {
         let region_hit: Option<RegionHit> = self.region_at(surface_point);
 
@@ -601,9 +580,7 @@ impl Driver {
         self.gesture.release(pointer_id);
     }
 
-    /// Wheel-zooms toward the cursor: maps the wheel delta to a multiplicative factor (scaled by
-    /// `sensitivity`, which differs for a scroll wheel versus a pinch) and zooms about the projected point
-    /// under the cursor, clamped to the zoom-out ceiling and the home latitude range.
+    /// Wheel-zooms toward the cursor.
     fn zoom_at(&mut self, surface_point: SurfacePoint, delta_y: f64, sensitivity: f64) {
         self.transition = None;
         let clamped_delta: f64 = delta_y.clamp(-MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
@@ -673,8 +650,7 @@ impl Driver {
         Some(self.republish(&bundle))
     }
 
-    /// Toggles the hovered-region lift (the "regions expand on hover" setting). Redraws only on a change;
-    /// affects rendering alone, so it does not republish the panel or controls.
+    /// Toggles the hovered-region lift (the "regions expand on hover" setting).
     fn set_hover_lift_enabled(&mut self, enabled: bool) {
         if self.frame_state.hover_lift_enabled == enabled {
             return;
@@ -684,8 +660,7 @@ impl Driver {
         self.request_redraw();
     }
 
-    /// Re-resolves the retained selection against the current frame state and bundles it with fresh
-    /// controls, so a statistic or period change refreshes both the detail panel and the controls.
+    /// Re-resolves the retained selection against the current frame state.
     fn republish(&mut self, bundle: &Bundle) -> RepublishedViews {
         let identity: Option<(String, String)> = self
             .selection
@@ -702,13 +677,11 @@ impl Driver {
     }
 }
 
-/// The two first-paint failure modes `start` distinguishes to choose the panel; each carries the
-/// originating error for logging.
+/// The first-paint failure modes, distinguished to choose which panel replaces the map.
 enum StartupError {
     /// A transient or data-integrity failure fetching or opening the bundle.
     DataUnavailable(AppError),
-    /// A missing hard capability: no Origin Private File System or no usable wgpu backend, both of
-    /// which show the unsupported panel.
+    /// A missing hard capability: no Origin Private File System or no usable wgpu backend.
     BrowserUnsupported(AppError),
 }
 
@@ -938,8 +911,7 @@ fn reset_active_period_if_uncovered(driver: &mut Driver, bundle: &Bundle) {
     }
 }
 
-/// Falls back to the Unix epoch when the default statistic's shard is missing, so the map still paints
-/// geometry with every region reading "no data".
+/// Falls back to the Unix epoch when the default statistic's shard is missing.
 fn initial_frame_state(bundle: &Bundle) -> FrameState {
     let active_statistic: StatisticKind = StatisticKind::Tfr;
     let active_period_start: NaiveDate = default_period_start(bundle, active_statistic)
@@ -981,12 +953,8 @@ fn backend_from_query() -> RendererBackend {
     }
 }
 
-/// The home view: the `HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT` latitude band fills the surface
-/// vertically, centered horizontally on the prime meridian (Greenwich, longitude 0°). Longitude runs at
-/// the same isotropic scale, so the surface width shows as much as fits and the rest is reached by
-/// panning; the wraparound places the prime meridian at the middle with the world continuing across the
-/// seam. Framing a fixed content band rather than the ±85° world keeps the empty ocean below the
-/// southernmost land off-screen.
+/// The home view: the `HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT` band fills the surface vertically,
+/// centered on the prime meridian.
 fn home_viewport(surface_dimensions: SurfaceDimensions) -> Viewport {
     let center_x: f64 = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon).x;
     let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
@@ -1012,9 +980,7 @@ fn zoom_to_country_min_height() -> f64 {
 }
 
 /// The largest height (furthest zoom-out): the home range, capped so the aspect-locked width never
-/// exceeds one world turn. On a surface wider than the range allows within one turn the cap wins, and the
-/// furthest zoom-out shows the full world width with a vertical slice of the range rather than the whole
-/// of it.
+/// exceeds one world turn.
 fn zoom_out_ceiling_height(surface_dimensions: SurfaceDimensions) -> f64 {
     let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
     let home_height: f64 = max_y - min_y;
@@ -1093,13 +1059,12 @@ fn advance_pending_animation(now_ms: f64) {
 }
 
 /// The current high-resolution monotonic timestamp (`performance.now()`), the same clock
-/// `requestAnimationFrame` stamps its callbacks with. Falls back to `0.0` if `performance` is
-/// unavailable, which collapses a started animation to its final frame rather than crashing.
+/// `requestAnimationFrame` stamps its callbacks with.
 fn now_ms() -> f64 {
     web_sys::window()
         .and_then(|window| window.performance())
         .map(|performance| performance.now())
-        .unwrap_or(0.0)
+        .unwrap_or(0.0) // A zero start collapses an animation to its final frame.
 }
 
 /// Whether two viewports are equal within a projected-space tolerance, used to skip a zoom-to-country
@@ -1278,8 +1243,7 @@ pub fn apply_period(period_start: NaiveDate) {
     publish_mutation(|driver| driver.scrub_to_period(period_start));
 }
 
-/// Reported by the chrome that does the covering, in surface pixels, so the framing does not have to know
-/// which panel is open or how wide its stylesheet makes it.
+/// Records the width, in surface pixels, of the chrome covering the surface's left edge.
 pub fn apply_left_surface_inset(inset: f64) {
     with_driver(|driver| driver.set_left_surface_inset(inset));
 }

@@ -86,8 +86,7 @@ impl Polygon {
     }
 
     /// Whether the edge from `a` to `b` crosses a ray cast east from `point` (latitude held at
-    /// `point.lat`, longitude increasing). True only when the endpoints sit on opposite sides of
-    /// `point.lat` and the edge meets that latitude at a longitude east of `point.lon`.
+    /// `point.lat`, longitude increasing).
     fn edge_crosses_eastward_ray(a: (f64, f64), b: (f64, f64), point: GeoPoint) -> bool {
         let (a_lon, a_lat): (f64, f64) = a;
         let (b_lon, b_lat): (f64, f64) = b;
@@ -256,7 +255,7 @@ pub(crate) mod tests {
     /// feature, so the writer is exercised here directly; run after changing the feature columns.
     #[test]
     #[ignore = "run manually to regenerate tests/samples/one-feature.fgb"]
-    #[cfg(not(target_arch = "wasm32"))] // not for wasm32: writes the committed sample via std::fs
+    #[cfg(not(target_arch = "wasm32"))] // writes the committed sample via std::fs
     fn dump_one_feature_fgb() {
         use flatgeobuf::{ColumnType, FgbWriter, GeometryType};
         use geozero::{ColumnValue, PropertyProcessor};
@@ -284,8 +283,8 @@ pub(crate) mod tests {
         std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/samples/one-feature.fgb"), bytes).unwrap();
     }
 
-    // flatgeobuf/geozero can compile for wasm yet trap at runtime (e.g. filesystem access), so a
-    // green `cargo check --target wasm32` doesn't prove the reader runs there; this checks it does.
+    /* flatgeobuf/geozero compile for wasm32 yet can trap at runtime (e.g. filesystem access), so
+       `cargo check --target wasm32` does not prove the reader runs there. */
     #[test]
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn parse_geometry_layer_parses_known_fixture() {

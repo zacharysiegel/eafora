@@ -60,7 +60,6 @@ enum RegionOutcome {
     Excluded,
 }
 
-/// One transaction over the whole run, so a mid-run failure leaves the canonical store untouched.
 pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<IngestReport, AppError> {
     let mut transaction: Transaction<'_, Postgres> = pool.begin().await?;
 
@@ -142,8 +141,8 @@ pub async fn fetch_and_store(pool: &PgPool, options: AdapterOptions) -> Result<I
     Ok(report)
 }
 
-/// One run reads several datasets, each carrying its own `updated` timestamp, so the revision is all of them
-/// together and any one of them moving defeats the skip.
+/// One run reads several datasets, each carrying its own `updated` timestamp, so no one of them identifies
+/// the run.
 fn revision_label_of(responses: &[(&EurostatExtraction, ParsedEurostatResponse)]) -> String {
     let updated_by_dataset: BTreeMap<&str, &str> = responses
         .iter()
@@ -160,9 +159,7 @@ fn revision_label_of(responses: &[(&EurostatExtraction, ParsedEurostatResponse)]
 }
 
 /// Eurostat marks a label with a revision only once that revision has retired the code, so a marked code the
-/// store does not hold is one the classification has recut and the seed deliberately leaves out: its ground is
-/// covered by the live code that took its name. An unmarked code the store does not hold is a gap, and reaches
-/// the region lookup to be reported as one.
+/// store does not hold has had its ground taken over by the live code that kept its name.
 fn is_from_seeded_revision(published_revision: Option<i32>, seeded_revision: Option<i32>) -> bool {
     match (published_revision, seeded_revision) {
         (Some(published), Some(seeded)) => published == seeded,
@@ -279,8 +276,7 @@ async fn resolve_country_region(
 }
 
 /// The alpha-2 a Eurostat geo code stands for, which is the code itself except where Eurostat departs from
-/// ISO 3166-1. Public because the seed generator resolves a NUTS region's country the same way, and a
-/// disagreement would parent those regions under the wrong country.
+/// ISO 3166-1.
 pub fn get_iso2_for_geo_code(geo_code: &str) -> &str {
     ISO2_BY_EUROSTAT_GEO_CODE
         .iter()
@@ -318,8 +314,7 @@ fn normalize_row(
     })
 }
 
-/// Every code is one character and every combination an ordered run of them, so membership decides the
-/// status and no tokenizer is needed.
+/// Every observation-status code is one character and every combination an ordered run of them.
 pub fn status_for_flag(flag: Option<&str>) -> DataStatus {
     let Some(flag) = flag
     else {

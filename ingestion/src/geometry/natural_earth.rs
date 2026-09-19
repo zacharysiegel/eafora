@@ -1,5 +1,3 @@
-//! Held in memory. No temp files between download and FlatGeobuf emission.
-
 use std::io::{Cursor, Read};
 
 use crate::error::AppError;

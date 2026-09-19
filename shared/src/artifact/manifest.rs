@@ -20,20 +20,18 @@ pub const SUBDIR_DATA: &str = "data";
 /// `<repository_base_url>/<MANIFEST_LATEST_KEY>` at startup.
 pub const MANIFEST_LATEST_KEY: &str = "latest/manifest.json";
 
-/// Stable-pointer key for one manifest schema version, which a consumer that cannot read
-/// `MANIFEST_LATEST_KEY` fetches instead. Every publish refreshes the key for the schema version it is
-/// publishing, so the key for a superseded version holds the last manifest published while that version was
-/// current.
+/// Stable-pointer key for one manifest schema version. Every publish refreshes only the key for the schema
+/// version it is publishing.
 pub fn schema_pointer_key(manifest_schema_version: u32) -> String {
     format!("latest/manifest.{manifest_schema_version}.json")
 }
 
-/// Which resolution a bundle carries. `Complete` has every period and every authorized source and is what
-/// the CDN serves; `Downsampled` collapses to the reference year and is the onboard bundle clients embed
-/// for first paint. A consumer holding both must never prefer the downsampled one.
+/// Which resolution a bundle carries. A consumer holding both must never prefer the downsampled one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BundleVariant {
+    /// Every period and every authorized source.
     Complete,
+    /// Collapsed to the reference year.
     Downsampled,
 }
 
@@ -87,8 +85,6 @@ pub struct ManifestEntry {
     pub sha256: String,
 }
 
-/// Peeks only the version field so a shape change in a future schema version is
-/// rejected with a clear message before the full (possibly incompatible) parse.
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError> {
     schema_version::require_schema_version(bytes, MANIFEST_SCHEMA_VERSION_FIELD, MANIFEST_SCHEMA_VERSION)?;
 
@@ -105,8 +101,7 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, AppError> {
 }
 
 /// The pointer key a consumer should try when it cannot read `MANIFEST_LATEST_KEY`, or `None` when the
-/// document is not a manifest from a newer schema version. A document at the reader's own version, one below
-/// it, or one whose version cannot be read is a fault to surface rather than a reason to serve older data.
+/// document is not a manifest from a newer schema version.
 pub fn schema_fallback_key(latest_manifest_bytes: &[u8]) -> Option<String> {
     let found: u64 = schema_version::read_schema_version(latest_manifest_bytes, MANIFEST_SCHEMA_VERSION_FIELD).ok()?;
 

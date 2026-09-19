@@ -8,11 +8,7 @@ use shared::canonical::canonical_model::SourceRevision;
 use crate::canonical::canonical_entity::{StatisticValue, StatisticValueEntity};
 use crate::error::AppError;
 
-/// Latest publication = most recently *published* one. `published` is the
-/// source's own publication timestamp; sources without a derivable one
-/// store null and rank last. `fetched` is only the tiebreaker (or the sole
-/// criterion when every row is null-published), never an override of a
-/// successfully-parsed `published`.
+/// `published` is null for a source with no derivable publication timestamp.
 pub async fn read_latest_publication<'e>(
     executor: impl PgExecutor<'e>,
     data_source_id: Uuid,

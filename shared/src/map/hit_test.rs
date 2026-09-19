@@ -27,10 +27,7 @@ pub struct RegionHit {
 }
 
 /// The region whose polygon contains `surface_point`, or `None` when the point is off every country
-/// (open ocean) or off the map. `surface_dimensions` is required because `surface_point` is in device
-/// pixels: the point is normalized against the surface extent before it can be mapped through the
-/// viewport. A longitude past the ±180 seam (from a pan across the antimeridian) is wrapped back
-/// into range so the cursor resolves to the same country as its on-map copy.
+/// (open ocean) or off the map. A longitude past ±180 is wrapped back into range.
 pub fn region_at_point(
     geometry: &GeometryLayer,
     viewport: Viewport,
@@ -61,10 +58,8 @@ pub fn region_at_point(
 }
 
 /// The `CountryFraming` of a country, computed after unwrapping its vertex longitudes into a contiguous
-/// frame via a largest-longitude-gap cut, so an antimeridian-crossing country (its Natural Earth geometry
-/// split near +180 and -180) frames its true extent rather than the whole globe. The unwrap is a no-op
-/// for a non-crossing country. Assumes a country's true
-/// longitude span is under 360° (every Natural Earth 50m country satisfies this).
+/// frame via a largest-longitude-gap cut. The unwrap is a no-op for a non-crossing country. Assumes a
+/// country's true longitude span is under 360°.
 pub fn country_framing(feature: &CountryFeature) -> CountryFraming {
     let base_lon: f64 = occupied_arc_start_longitude(feature);
 

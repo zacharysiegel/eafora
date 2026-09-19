@@ -178,9 +178,7 @@ fn span_proportion(
     latest_year: i32,
 ) -> f64 {
     let axis_years: i32 = latest_year - earliest_year;
-    /* An axis of one year is what the embedded bundle carries until the live bundle widens it, and covering
-       all of it would draw a capsule the width of the rail for that moment. The stylesheet floors the capsule
-       to a visible length, so nothing is lost by claiming none of the axis. */
+    /* A single-year axis has no span to cover; the stylesheet floors the capsule to a visible length. */
     if axis_years <= 0 {
         return 0.0;
     }

@@ -13,10 +13,8 @@ use shared::filesystem::{FileReference, Hashed};
 
 use crate::error::AppError;
 
-/// One value as it sits in the canonical store: a single source's
-/// reading for a `(region, statistic, period)` cell. Multiple candidates
-/// can exist for the same cell, one per data source that publishes it.
-/// Carries the source's `license_class`; the shard bin isn't decided yet.
+/// One source's reading for a `(region, statistic, period)` cell as the canonical store holds it.
+/// Several sources can publish the same cell.
 #[derive(Debug, Clone)]
 pub struct CandidateValue {
     pub region_id: Uuid,
@@ -68,9 +66,6 @@ impl TryFrom<CandidateValueProjection> for CandidateValue {
     }
 }
 
-/// Per-country attributes read from `country`/`region` for geometry writing: the `Country.iso3` (used
-/// to match a Natural Earth `ADM0_A3` feature to its seeded country), the English name, and the
-/// `region.code` slug written as the feature's join key.
 #[derive(Debug, Clone)]
 pub struct CountryMetadataProjection {
     pub iso3: String,
@@ -117,8 +112,6 @@ impl PartitionedValue {
     }
 }
 
-/// What one pass over a bundle's data sources yields: the revision each one is at, and the attribution a
-/// consumer must display for it.
 #[derive(Debug, Clone)]
 pub struct SourceDetail {
     pub revisions: BTreeMap<DataSourceKind, SourceRevision>,
@@ -153,9 +146,7 @@ pub struct BuildReport {
     pub data_source_revisions: BTreeMap<DataSourceKind, SourceRevision>,
 }
 
-/// The pair of bundles one build emits for a single version: the complete bundle (all periods and
-/// sources, published to the CDN) and the downsampled bundle (World Bank WDI at the United States
-/// reference year, embedded into clients). Each is a self-contained tree under the version directory.
+/// The pair of bundles one build emits for a single version.
 #[derive(Debug, Clone)]
 pub struct CoupledBuildReport {
     pub complete: BuildReport,

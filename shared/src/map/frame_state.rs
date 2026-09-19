@@ -10,8 +10,7 @@ pub struct RegionCode(pub String);
 #[derive(Debug, Clone)]
 pub struct FrameState {
     pub active_statistic: StatisticKind,
-    /// The year scrubber's current position; a single date, not a range, hence `_start` (a period
-    /// is a [start, end] pair).
+    /// A single date, not a period; a period is a [start, end] pair.
     pub active_period_start: NaiveDate,
     pub selected_region: Option<RegionCode>,
     pub hovered_region: Option<RegionCode>,

@@ -1,5 +1,3 @@
-// The choropleth legend is an inline, borderless overlay, unlike the bordered "sheet" panels;
-// pointer-events pass through to the map beneath it.
 .legend {
     position: absolute;
     bottom: var(--space-chrome-inset);

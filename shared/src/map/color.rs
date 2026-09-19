@@ -42,8 +42,7 @@ pub struct ColorScale {
 }
 
 impl ColorScale {
-    /// The scale's color at normalized position `t` in `[0, 1]` (`low` at 0, `high` at 1). A `StatisticColorTransform`
-    /// produces `t` from a raw value; the legend samples this to match what the map paints.
+    /// The scale's color at normalized position `t` in `[0, 1]` (`low` at 0, `high` at 1).
     pub fn sample(&self, t: f32) -> Rgba {
         (self.interpolator)(self.low, self.high, t)
     }
@@ -53,10 +52,8 @@ impl ColorScale {
     }
 }
 
-/// The choropleth color scale: accent red at position 0, white at position 1, grey for no-data. Which end of
-/// a statistic's range reaches the saturated red is the transform's decision, not the scale's: for a fertility
-/// rate it is the lowest value, for a mean age at childbirth the highest.
-/// The value → position mapping is a separate, per-statistic `StatisticColorTransform`.
+/// The choropleth color scale. A statistic's `StatisticColorTransform` decides which end of its range
+/// reaches the saturated red.
 pub const CHOROPLETH_SCALE: ColorScale = ColorScale {
     low: ACCENT_FILL,
     high: WHITE_FILL,
@@ -80,7 +77,7 @@ pub enum StatisticColorTransform {
 }
 
 impl StatisticColorTransform {
-    /// The position in `[0, 1]` for `value`. `min`/`max` are used only by `Linear`.
+    /// The position in `[0, 1]` for `value`.
     pub fn position(&self, value: f64, min: f64, max: f64) -> f32 {
         let position: f64 = match self {
             StatisticColorTransform::Linear => linear_normalization(value, min, max),
@@ -91,8 +88,7 @@ impl StatisticColorTransform {
         position as f32
     }
 
-    /// The value where the curve pivots (color changes fastest): `Some(x0)` for `PiecewiseCubicArctan`,
-    /// `None` for `Linear`. The legend marks it generically.
+    /// The value where the curve pivots, where color changes fastest.
     pub fn inflection(&self) -> Option<f64> {
         match self {
             StatisticColorTransform::Linear | StatisticColorTransform::LinearDescending => None,

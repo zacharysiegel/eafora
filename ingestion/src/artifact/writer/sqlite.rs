@@ -1,9 +1,3 @@
-//! Schema mirrors the Postgres `statistic_value` shape but is denormalized
-//! for client-side reads: `region_code` is duplicated for human-readable
-//! queries, `region_id` is kept as a BLOB for the rare cross-shard joins,
-//! periods are stored as ISO-8601 strings so client SQL doesn't need
-//! date-function support.
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};

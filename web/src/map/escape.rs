@@ -35,7 +35,7 @@ impl DismissableSurfaces {
     }
 }
 
-/// Whether the key belonged to a surface. An ignored key is left alone: with nothing open, Escape is not ours.
+/// Whether the key belonged to a surface.
 enum KeyDisposition {
     Consumed,
     Ignored,

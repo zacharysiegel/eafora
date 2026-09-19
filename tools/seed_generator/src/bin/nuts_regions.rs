@@ -169,7 +169,6 @@ fn select_codes(
     Ok(seeded_codes)
 }
 
-/// The codelist states each code's level, so a response given under the wrong `geoLevel` argument is caught here.
 fn get_territorial_codes<'a>(
     response: &'a EurostatResponse,
     geo_codes: &'a BTreeMap<String, GeoCode>,
@@ -190,6 +189,7 @@ fn get_territorial_codes<'a>(
             continue;
         }
 
+        // The codelist states each code's level, so a response given under the wrong geoLevel argument is caught.
         if geo_code.level != Some(expected_level) {
             return Err(format!(
                 "{code} sits at level {:?}, not the level {expected_level} its input file holds",

@@ -5,7 +5,6 @@
     right: var(--space-chrome-inset);
 }
 
-// Square and larger than an inline button, since it is the only control on that side of the map.
 .settings-button {
     width: 2.25rem;
     height: 2.25rem;
@@ -20,9 +19,7 @@
     display: block;
 }
 
-// Hidden until opened; open/close is instant (the zoom-to-country camera is the only v1 animation).
-// Positioned above the scrim so clicks on the panel reach its controls; the scrim only catches clicks
-// outside it.
+/* Above the scrim so clicks on the panel reach its controls. */
 .settings-modal {
     display: none;
     position: relative;
