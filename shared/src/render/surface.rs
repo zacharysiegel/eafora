@@ -3,9 +3,7 @@ use wgpu::{
     TextureUsages,
 };
 
-/// A configured wgpu surface plus the `SurfaceConfiguration` it was built with, so `resize` and the
-/// reconfigure-on-lost path can reapply a tweaked config without re-deriving it from the adapter's
-/// capabilities each time.
+/// Keeps the `SurfaceConfiguration` so a reconfigure need not re-derive it from the adapter's capabilities.
 pub struct WgpuSurface {
     inner: Surface<'static>,
     config: SurfaceConfiguration,

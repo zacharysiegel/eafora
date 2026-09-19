@@ -1,7 +1,7 @@
 //! User-settings framework: a typed key/value model and a persistence interface each platform
 //! implements. The individual settings a platform exposes are defined by that platform, not here.
 
-/// A setting's stable persistence key. Implemented by each platform's key enum.
+/// A setting's stable persistence key.
 pub trait SettingKey: Copy {
     fn storage_key(self) -> &'static str;
 }
@@ -57,8 +57,7 @@ pub trait SettingsStore {
     fn store<K: SettingKey>(&self, key: K, value: SettingValue);
 }
 
-/// A typed setting: its key and default, bundled so both live in exactly one place. Reading and
-/// writing go through here, the only path; there is no public raw byte or string accessor.
+/// Pairs a key with its default so both live in exactly one place.
 pub struct Setting<K, T> {
     key: K,
     default: T,

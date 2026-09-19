@@ -8,9 +8,9 @@ struct ViewportUniform {
 @group(0) @binding(0)
 var<uniform> viewport: ViewportUniform;
 
-/* Per-country emphasis, one texel per country, in the channel order of the CPU's CountryState. A texture
-   rather than a uniform array because a uniform block holds only 1,024 of these, and a layer carrying every
-   subnational level holds more countries than that. Read with textureLoad, which takes no sampler. */
+/* Per-country emphasis, one texel per country, in the channel order of the CPU's CountryState. A uniform
+   block holds at most 1,024 of these, which a layer carrying every subnational level can exceed. Read with
+   textureLoad, which takes no sampler. */
 @group(0) @binding(1)
 var country_state: texture_2d<f32>;
 
@@ -36,20 +36,15 @@ fn emphasis_outline_px(state: vec4<f32>) -> f32 {
 const PI: f32 = 3.141592653589793;
 const TWO_PI: f32 = 6.283185307179586;
 
-// The horizontal shift, in whole turns (2π), applied to the wrapped instance when the viewport
-// straddles the ±π antimeridian: -1 if the view has panned off the west edge, +1 off the east edge,
-// 0 when the view fits within one world copy. Derived from the bounds so the shader and the renderer's
-// instance-count decision share one crossing test. Assumes the viewport is never wider than 2π, so at
-// most one seam is crossed.
+/* The horizontal shift, in whole turns (2π), applied to the wrapped instance when the viewport
+   straddles the ±π antimeridian. Assumes the viewport is never wider than 2π. */
 fn wrap_direction() -> i32 {
     if (viewport.projected_min.x < -PI) { return -1; }
     if (viewport.projected_max.x > PI) { return 1; }
     return 0;
 }
 
-// Projects a Miller-projected position into clip space. Instance 0 is the natural copy; instance 1
-// (drawn only when the viewport crosses the seam) is shifted a full turn by `wrap_direction` so it
-// lands across the antimeridian. Instance 0 is never shifted, since 0 * wrap_direction == 0.
+// Projects a Miller-projected position into clip space; instance 1 is the copy shifted a full turn across the antimeridian.
 fn project_to_clip(position: vec2<f32>, instance_index: u32) -> vec4<f32> {
     let turns: i32 = i32(instance_index) * wrap_direction();
     let shifted_x: f32 = position.x + f32(turns) * TWO_PI;
@@ -60,12 +55,11 @@ fn project_to_clip(position: vec2<f32>, instance_index: u32) -> vec4<f32> {
     return vec4<f32>(normalized_x * 2.0 - 1.0, normalized_y * 2.0 - 1.0, 0.0, 1.0);
 }
 
-// Pushes a vertex outward along its boundary outward-direction by its country's lift plus `extra_px`,
-// converting screen pixels to projected units via the isotropic projected-units-per-pixel (equal in x
-// and y since the viewport shares the surface's aspect). A zero lift and zero extra leave it untouched.
+// Pushes a vertex outward along its boundary outward-direction by its country's lift plus `extra_px`.
 fn emphasis_offset(position: vec2<f32>, outward_direction: vec2<f32>, state: vec4<f32>, extra_px: f32) -> vec2<f32> {
     let lift_px: f32 = emphasis_lift_px(state) + extra_px;
     let projected_span_y: f32 = viewport.projected_max.y - viewport.projected_min.y;
+    // The viewport shares the surface's aspect, so the y span alone scales both axes.
     let projected_per_pixel: f32 = projected_span_y / viewport.surface_size.y;
     return position + outward_direction * (lift_px * projected_per_pixel);
 }
@@ -81,8 +75,7 @@ struct FillVertexInput {
 
 struct FillVertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    // Flat: the choropleth color is uniform per country, so take the provoking vertex's value rather
-    // than interpolate identical corners.
+    // The choropleth color is uniform per country.
     @location(0) @interpolate(flat) color: vec4<f32>,
 };
 

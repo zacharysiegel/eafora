@@ -37,8 +37,7 @@ pub struct Region {
     pub modified: DateTime<Utc>,
 }
 
-/// Depth in the region tree rather than any one publisher's classification: a `Subnational1` is a direct
-/// child of a country whatever the source that supplied it calls that tier.
+/// Depth in the region tree, independent of any publisher's classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RegionLevel {
     World,
@@ -46,6 +45,7 @@ pub enum RegionLevel {
     Subregion,
     IntermediateRegion,
     Country,
+    /// A direct child of a country, whatever the supplying source calls that tier.
     Subnational1,
     Subnational2,
     Subnational3,
@@ -133,11 +133,12 @@ pub enum StatisticKind {
 }
 
 /// Whether a statistic describes a slice of calendar time or a group of people followed through their
-/// lives. A period measure combines one year's rates across ages; a cohort measure counts what actually
-/// happened to everyone born in a given year.
+/// lives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TemporalBasis {
+    /// One year's rates combined across ages.
     Period,
+    /// What happened to everyone born in a given year.
     Cohort,
 }
 
@@ -341,7 +342,7 @@ pub struct SourceRevision {
 /// What a consumer must show to redistribute a source's data.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceAttribution {
-    /// Rendered verbatim; the canonical store calls it the exact display string for UI citations.
+    /// Rendered verbatim.
     pub attribution_text: String,
     pub license_name: String,
     pub license_url: String,

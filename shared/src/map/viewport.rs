@@ -10,10 +10,9 @@ use crate::math;
 /// (`project(4.0, 0.0).y - project(-4.0, 0.0).y`), pinned by a test.
 const MIN_ZOOM_IN_HEIGHT: f64 = 0.13969898581435658;
 
-/// The camera window in Miller-projected space. Stored projected, not geographic, so pan/zoom
-/// arithmetic is uniform on screen: a constant projected increment moves the view a constant screen
-/// distance, which a constant latitude increment would not (Miller's `y` is nonlinear in latitude).
-/// `x` may fall outside ±π after a horizontal pan past the antimeridian.
+/// The camera window in Miller-projected space. Stored projected, not geographic, so a constant
+/// projected increment moves the view a constant screen distance. `x` may fall outside ±π after a
+/// horizontal pan past the antimeridian.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
     pub min: ProjectedPoint,
@@ -39,10 +38,9 @@ impl Viewport {
         seed.zoom_to_height(requested_height, max_height, surface_dimensions)
     }
 
-    /// The construction-and-clamp core: a viewport of the given visible height (clamped into
-    /// `[MIN_ZOOM_IN_HEIGHT, max_height]`), keeping this viewport's center, with the width re-derived from
-    /// `surface`'s aspect so the map is never stretched. The width is derived from the clamped height
-    /// alone, never read from `self`, so a zero-width seed is valid.
+    /// A viewport of the given visible height, clamped into `[MIN_ZOOM_IN_HEIGHT, max_height]`, keeping
+    /// this viewport's center, with the width re-derived from `surface_dimensions`' aspect. The width never
+    /// reads `self`, so a zero-width seed is valid.
     pub fn zoom_to_height(&self, target_height: f64, max_height: f64, surface_dimensions: SurfaceDimensions) -> Viewport {
         let clamped_height: f64 = clamp_height(target_height, max_height);
         let center: ProjectedPoint = self.center();
@@ -162,12 +160,8 @@ impl Viewport {
         seed.zoom_to_height(new_max_y - new_min_y, new_max_y - new_min_y, surface_dimensions)
     }
 
-    /// This viewport shifted by whole turns of `2π` along `x` so its center lands in `[-π, π]`. This keeps
-    /// the renderer's two-instance antimeridian model valid for arbitrarily long horizontal pans: the
-    /// renderer draws only the natural copy plus one copy shifted by one turn, covering `[-π, 3π]`, so a
-    /// pan that slid the center far past the seam would otherwise leave the view outside every drawn copy
-    /// and blank the map. A whole-turn shift changes the resolved longitude only by a multiple of 360°,
-    /// which the hit-test's `wrap_longitude` folds away, so hover and selection are unaffected.
+    /// This viewport shifted by whole turns of `2π` along `x` so its center lands in `[-π, π]`, keeping the
+    /// view inside the copies the renderer draws.
     pub fn normalize_longitude_turns(&self) -> Viewport {
         let center_x: f64 = (self.min.x + self.max.x) / 2.0;
         let turns: f64 = ((center_x + PI) / TAU).floor();
@@ -209,8 +203,8 @@ impl Viewport {
         seed.zoom_to_height(padded_height, max_height, surface_dimensions)
     }
 
-    /// This viewport at the same zoom, rebuilt to `surface`'s aspect. A framing computed against a narrower
-    /// region than the one being drawn to has the right height and the wrong width.
+    /// This viewport at the same zoom, rebuilt to `surface_dimensions`' aspect. A framing computed against a
+    /// narrower region than the one being drawn to has the right height and the wrong width.
     pub fn at_surface_aspect(&self, surface_dimensions: SurfaceDimensions, max_height: f64) -> Viewport {
         self.zoom_to_height(self.height(), max_height, surface_dimensions)
     }
@@ -292,8 +286,7 @@ fn unwrap_nearest(reference: f64, target: f64) -> f64 {
     target - ((target - reference) / TAU).round() * TAU
 }
 
-/// Physical device pixels: the platform shell multiplies the CSS-pixel cursor position by
-/// `devicePixelRatio` so the point shares the device-pixel space of the render surface.
+/// A point in the render surface's physical device pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SurfacePoint {
     pub x: f64,

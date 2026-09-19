@@ -5,8 +5,7 @@ pub mod hit_test;
 pub mod projection;
 pub mod viewport;
 
-// render: the map's wgpu renderer, pipelines, mesh builder, and GPU-buffer types. Feature-gated so
-// the ingestion producer never links wgpu.
+// excluded from the ingestion producer, which must not link wgpu
 #[cfg(feature = "render")]
 pub mod country_mesh;
 #[cfg(feature = "render")]

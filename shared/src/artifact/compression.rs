@@ -21,7 +21,7 @@ pub fn compress(plain_bytes: &[u8]) -> Result<Vec<u8>, AppError> {
     Ok(compressed_bytes)
 }
 
-/// The highest quality and the largest window, affordable because only the producer encodes and it runs weekly.
+/// The highest quality and the largest window; only the producer encodes.
 fn encoder_parameters() -> BrotliEncoderParams {
     let mut parameters: BrotliEncoderParams = BrotliEncoderParams::default();
     parameters.quality = 11;

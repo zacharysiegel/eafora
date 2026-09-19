@@ -1,6 +1,5 @@
-//! Miller cylindrical projection. Longitude is the x axis in radians and NOT clamped to ±π (the
-//! renderer's horizontal-wraparound owns the antimeridian seam, not the projection); latitude drives
-//! the cylindrical y. Geographic coordinates are degrees; the projected plane is isotropic radians.
+//! Miller cylindrical projection. Longitude is the x axis in radians and NOT clamped to ±π; latitude
+//! drives the cylindrical y. Geographic coordinates are degrees; the projected plane is isotropic radians.
 
 use std::f64::consts::FRAC_PI_4;
 

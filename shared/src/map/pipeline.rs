@@ -10,15 +10,13 @@ use wgpu::{
 use crate::error::AppError;
 use crate::map::gpu_types::{FillVertexAttributes, EmphasisVertexAttributes, ProjectedVertexAttributes, ViewportUniform};
 
-/// The compiled pipelines the renderer draws through, built against a known surface format and so
-/// (re)created at attach time once that format is available.
+/// The compiled map render pipelines, built against a known surface format.
 pub struct RenderPipelines {
     /// Draws each country's boundary as line segments.
     pub boundary: RenderPipeline,
     /// Paints the choropleth triangles.
     pub fill: RenderPipeline,
-    /// The selected/hovered country's triangles, inflated and painted black, drawn behind its fill so
-    /// only the extra rim shows as a uniform outline.
+    /// The selected/hovered country's triangles, inflated and painted black.
     pub emphasis_outline: RenderPipeline,
 }
 
@@ -54,13 +52,11 @@ impl RenderPipelines {
     }
 }
 
-/// Pops all three OOM/Internal/Validation scopes innermost-first (the reverse of the push order the
-/// scope stack requires) and returns the first error captured. It deliberately drains every scope
-/// rather than short-circuiting on the first error: leaving a scope un-popped unbalances the device's
-/// error-scope stack.
+/// Returns the first error captured by the pushed scopes.
 async fn drain_error_scopes(error_scopes: [ErrorScopeGuard; 3]) -> Option<wgpu::Error> {
     let mut first_error: Option<wgpu::Error> = None;
 
+    // wgpu requires every pushed scope be popped, innermost first.
     for error_scope in error_scopes.into_iter().rev() {
         let error: Option<wgpu::Error> = error_scope.pop().await;
         first_error = first_error.or(error);
@@ -147,7 +143,6 @@ fn create_boundary_pipeline(
             conservative: false,
         },
         depth_stencil: None,
-        // No MSAA in v1; revisit to anti-alias the jagged boundary and coastline edges.
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,
@@ -173,12 +168,9 @@ fn create_triangle_pipeline(
     vertex_entry_point: &str,
     fragment_entry_point: &str,
 ) -> RenderPipeline {
-    // Position, color, and emphasis are separate vertex buffers, not interleaved: positions are static
-    // (uploaded once); colors are rebuilt when the active statistic or period changes; the emphasis
-    // buffer (per-vertex boundary outward-direction + country index) is static. Keeping them apart lets the color
-    // buffer be replaced without re-uploading geometry, and lets the boundary pipeline reuse the position
-    // and emphasis buffers without the colors. The fill and emphasis-outline pipelines share this layout;
-    // the emphasis outline reads the color attribute's buffer too but ignores it (its fragment shader is constant).
+    /* Separate vertex buffers so the color buffer can be rewritten without re-uploading geometry and the
+       boundary pipeline can bind positions and emphasis without colors. The emphasis-outline pass binds
+       the color buffer but its fragment shader ignores it. */
     let position_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x2];
     let color_attributes: [VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x4];
     let emphasis_attributes: [VertexAttribute; 2] = wgpu::vertex_attr_array![2 => Float32x2, 3 => Uint32];
@@ -219,7 +211,6 @@ fn create_triangle_pipeline(
             conservative: false,
         },
         depth_stencil: None,
-        // No MSAA in v1; revisit to anti-alias the jagged boundary and coastline edges.
         multisample: MultisampleState { count: 1, mask: !0, alpha_to_coverage_enabled: false },
         fragment: Some(FragmentState {
             module: shader_module,

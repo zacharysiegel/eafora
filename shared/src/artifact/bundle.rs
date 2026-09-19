@@ -29,8 +29,7 @@ pub struct StatisticShardKey {
     pub license_shard_class: LicenseShardClass,
 }
 
-/// A fully-loaded artifact bundle: pure parsed data, `Send + Sync`, holding no SQLite connection, so
-/// `Arc<Bundle>` crosses the hot-swap watch channel cleanly.
+/// Holds no SQLite connection, so `Arc<Bundle>` is `Send + Sync`.
 pub struct Bundle {
     pub manifest: Manifest,
     pub geometry: GeometryLayer,
@@ -99,8 +98,6 @@ impl Bundle {
     }
 }
 
-/// A digest match followed by a decode failure means the producer published the wrong form, so the message
-/// names the artifact.
 fn decompress_artifact(compressed_bytes: &[u8], relative_path: &str) -> Result<Vec<u8>, AppError> {
     compression::decompress(compressed_bytes)
         .map_err(|error| AppError::from(format!("decoding {relative_path} failed; [error={error}]")))
@@ -167,8 +164,7 @@ mod tests {
         }
     }
 
-    /// Seed a mock cache with a valid manifest + geometry + Base and NonCommercial Tfr shards.
-    /// Seeds the compressed form a published version holds, so every case below exercises the decode.
+    /// Seeds the compressed form a published version holds.
     async fn seeded_mock() -> MockArtifactCache {
         let geometry_bytes: Vec<u8> = compression::compress(&one_feature_fgb_bytes()).unwrap();
         let base_shard: Vec<u8> = compression::compress(&sample_shard_bytes()).unwrap();

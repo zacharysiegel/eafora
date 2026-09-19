@@ -39,9 +39,9 @@ use web_sys::HtmlCanvasElement;
 /// The outward lift, in screen pixels, applied to a hovered country so it reads as raised.
 const HOVER_LIFT_PX: f32 = 4.0;
 
-/// The black outline rim widths, in screen pixels: a thin rim on the hovered country and a bolder one on
-/// the selected country (its persistent on-map indicator, since selection does not lift).
+/// The hovered country's black outline rim width, in screen pixels.
 const HOVER_OUTLINE_PX: f32 = 2.0;
+/// The selected country's black outline rim width, in screen pixels.
 const SELECTED_OUTLINE_PX: f32 = 6.0;
 
 /// Which GPU backend the renderer's wgpu instance may use.
@@ -52,8 +52,7 @@ pub enum RendererBackend {
     ForceGl,
 }
 
-/// The wgpu state machine. `!Send` (the `PhantomData<*const ()>`) because wgpu resources are bound
-/// to the thread that created them: the single WASM thread on web, the Swift main thread on iOS.
+/// The wgpu state machine. `!Send` because wgpu resources are bound to the thread that created them.
 pub struct Renderer {
     instance: Instance,
     adapter: Adapter,
@@ -76,9 +75,9 @@ struct CountryGeometry {
     geometry_relative_path: String,
 }
 
-/// A GPU buffer paired with the number of elements it holds.
 struct CountedBuffer {
     buffer: Buffer,
+    /// Elements, not bytes.
     count: u32,
 }
 
@@ -141,7 +140,7 @@ impl EmphasisParameters {
     }
 }
 
-/// Independent of the surface's pixel format, so unlike the pipelines these outlive any surface.
+/// Independent of the surface's pixel format.
 struct MapBinding {
     viewport_buffer: Buffer,
     country_state_texture: Texture,
@@ -168,8 +167,6 @@ impl MapBinding {
     }
 }
 
-/// Created at attach and dropped at detach as a unit; the geometry, map binding, and color buffer all
-/// outlive the surface.
 struct AttachedState {
     surface: WgpuSurface,
     pipelines: RenderPipelines,
@@ -223,7 +220,7 @@ impl Renderer {
         })
     }
 
-    #[cfg(not(target_arch = "wasm32"))] // takes a raw window handle; the web attaches from a canvas
+    #[cfg(not(target_arch = "wasm32"))] // a raw window handle does not exist on wasm32
     pub async fn attach_surface_from_window_handle(&mut self, window_handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_window_handle(&self.instance, &self.adapter, &self.device, window_handle, width, height)?;
@@ -231,7 +228,7 @@ impl Renderer {
         self.attach(surface).await
     }
 
-    #[cfg(target_arch = "wasm32")] // attaches from an HtmlCanvasElement, not a raw window handle
+    #[cfg(target_arch = "wasm32")] // an HtmlCanvasElement exists only on wasm32
     pub async fn attach_surface_from_canvas(&mut self, canvas: HtmlCanvasElement, width: u32, height: u32) -> Result<(), AppError> {
         let surface: WgpuSurface =
             WgpuSurface::from_canvas(&self.instance, &self.adapter, &self.device, canvas, width, height)?;
@@ -476,9 +473,7 @@ impl Renderer {
             render_pass.draw_indexed(country_fill_range.clone(), 0, 0..instance_count);
         }
 
-        // wgpu has no RenderPass::end(); a pass ends only when dropped. Dropping records the end-of-pass
-        // (via the backend pass's own Drop) and releases the pass's mutable borrow of the encoder; both
-        // are required before encoder.finish().
+        // wgpu has no RenderPass::end(); a pass ends only when dropped.
         drop(render_pass);
 
         encoder.finish()
