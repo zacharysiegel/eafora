@@ -11,7 +11,6 @@ a {
     text-decoration: none;
 }
 
-// Applied to every element rendering a number so columns stay aligned (per docs/design/README.md).
 .numeric {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;

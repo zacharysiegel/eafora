@@ -12,16 +12,12 @@ use crate::client::{js, opfs};
 
 const ARTIFACTS_DIRECTORY: &str = "artifacts";
 
-/// The browser implementation of [`ArtifactCache`], backed by the Origin Private File System. A
-/// zero-sized, stateless type: it resolves `navigator.storage.getDirectory()` on every call and caches
-/// no directory handle (holding a `FileSystemDirectoryHandle` across calls is the antipattern the
-/// stateless design avoids). `!Send`, like every OPFS handle it touches.
+/// An [`ArtifactCache`] over the Origin Private File System. Resolves `navigator.storage.getDirectory()` on
+/// every call; an OPFS handle is `!Send` and is not held across calls.
 pub struct OpfsArtifactCache;
 
 impl OpfsArtifactCache {
-    /// Confirms OPFS is available (older Safari lacks it), ensures the `artifacts/` root exists, and
-    /// requests persistent storage. Returns a `cache: opfs unsupported`-prefixed error when OPFS is
-    /// absent.
+    /// Older Safari has no OPFS, so its absence is the unsupported case.
     pub async fn create() -> Result<OpfsArtifactCache, AppError> {
         let root: FileSystemDirectoryHandle = opfs::root()
             .await

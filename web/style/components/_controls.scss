@@ -7,15 +7,11 @@
     gap: var(--space-md);
     width: 18rem;
 
-    /* The native thumb's width, and the height reserved above the rail for the floating year. Declared here
-    so the capsule rules, the bound labels, and the year's horizontal offset all derive from one value; the
-    offset is a CSS calc, so nothing outside this file needs to know the geometry.
-
-    The thumb is a hairline because the browser confines the value to `[thumb / 2, width - thumb / 2]`, and a
-    wider one keeps the capsule that far from each end of the rail. A press anywhere on the rail's band starts
-    a drag, so the thumb is not what has to be hit. */
+    /* The thumb is a hairline because the browser confines the value to `[thumb / 2, width - thumb / 2]`, and
+    a wider one keeps the capsule that far from each end of the rail. A press anywhere on the rail's band
+    starts a drag, so the thumb is not what has to be hit. */
     --scrubber-thumb-width: 1px;
-    --scrubber-value-row-height: 1.1rem;
+    --scrubber-value-row-height: 1.1rem; // the row reserved above the rail for the floating year
 
     /* How far the capsule grows past the period at each end while the pointer is on it. */
     --scrubber-capsule-swell: 5px;
@@ -55,9 +51,8 @@
     outline-offset: -1px;
 }
 
-// The scrubber's row: the range's endpoints flank the rail, which reserves a row above itself for the
-// year that tracks the thumb. Tops align and the bounds carry the same reserved row, so a bound's text
-// centers on the rail's 1px line.
+/* Tops align and the bounds carry the same reserved row as the rail, so a bound's text centres on the rail's
+   line. */
 .controls-scrubber-row {
     display: flex;
     align-items: flex-start;
@@ -166,9 +161,7 @@
         background-color var(--duration-thumb) cubic-bezier(0.7, 0, 0.84, 0);
 }
 
-/* Under the pointer the capsule becomes a sheet like everything else in the interface: opaque white behind one
-   hairline. The negative margin matches the growth, so both ends travel outward and the centre stays put.
-   Arriving, the fill changes at once and the opening interior is what lets it show. */
+/* Arriving, the fill changes at once so the opening interior shows the white. */
 .controls-scrubber:hover ~ .controls-period,
 .controls-scrubber:focus-visible ~ .controls-period,
 .controls-scrubber.grabbing ~ .controls-period {
@@ -213,8 +206,7 @@
     border-bottom: var(--border-active);
 }
 
-/* The swap control exists only for the narrow layout, where this panel and the figure share one slot. Above
-   the breakpoint both are shown and there is nothing to swap; `_top-panels.scss` is what shows it. */
+/* Shown only where this panel and the figure share one slot. */
 .controls-swap {
     display: none;
 }

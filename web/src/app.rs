@@ -39,10 +39,8 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 
 #[component]
 pub fn App() -> impl IntoView {
-    // This site is statically generated: the server render runs at build time, so there is no
-    // per-request Accept-Language header or Cookie to read or set. Both SSR getters are therefore
-    // no-ops and the server renders the default locale; the locale cookie is enabled for client-side
-    // persistence, which begins to matter once a second locale and a switcher exist.
+    /* The server render runs at build time, so there is no per-request Accept-Language header or Cookie to
+       read or set. */
     let cookie_options: CookieOptions<Locale> = CookieOptions::default()
         .ssr_cookies_header_getter(|| None::<String>)
         .ssr_set_cookie(|_| {});

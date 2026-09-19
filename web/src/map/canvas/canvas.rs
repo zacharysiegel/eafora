@@ -4,8 +4,7 @@ use leptos::prelude::*;
 
 use shared::canonical::{DataSourceKind, DataStatus, StatisticKind};
 
-/* Only the driver the signals below are handed to reads the attribution map, and it does not run in the ssr
-   build. */
+// the ssr build has no driver to hand the attributions to
 #[cfg(feature = "hydrate")]
 use std::collections::BTreeMap;
 #[cfg(feature = "hydrate")]
@@ -13,8 +12,7 @@ use shared::canonical::SourceAttribution;
 
 use crate::i18n::*;
 
-/// First-paint lifecycle of the map canvas. Server-side rendering leaves it at `Loading`, since the
-/// renderer only runs client-side.
+/// First-paint lifecycle of the map canvas.
 #[cfg_attr(not(feature = "hydrate"), allow(dead_code))] // the ssr build never runs the renderer, so it constructs only Loading
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RenderStatus {
@@ -36,7 +34,7 @@ pub struct CellView {
     pub data_status: Option<DataStatus>,
 }
 
-/// One period of a region's series, carrying only what a chart plots.
+/// One period of a region's series.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SeriesPointView {
     pub period_start: NaiveDate,
@@ -60,7 +58,6 @@ pub struct RankView {
     pub of: usize,
 }
 
-/// What the expanded detail surface renders beyond the primary value, for a country or for the world.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegionDetail {
     /// The region's every period, oldest first.
@@ -72,7 +69,7 @@ pub struct RegionDetail {
     pub rank: Option<RankView>,
 }
 
-/// Published by the driver so a consumer can render the selection without bundle access.
+/// A self-contained view of the selected region, needing no lookup back into the bundle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectionView {
     pub region_code: String,
@@ -83,7 +80,7 @@ pub struct SelectionView {
     pub detail: RegionDetail,
 }
 
-/// Published by the driver so a consumer can render the empty-state world figure without bundle access.
+/// A self-contained view of the world figure, needing no lookup back into the bundle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlobalView {
     pub statistic: StatisticKind,
@@ -92,7 +89,7 @@ pub struct GlobalView {
     pub detail: RegionDetail,
 }
 
-#[cfg(feature = "hydrate")]
+#[cfg(feature = "hydrate")] // calls into the running driver
 pub fn dispatch_statistic(statistic: StatisticKind) {
     super::driver::apply_statistic(statistic);
 }
@@ -100,7 +97,7 @@ pub fn dispatch_statistic(statistic: StatisticKind) {
 #[cfg(not(feature = "hydrate"))] // the ssr build has no driver to dispatch to
 pub fn dispatch_statistic(_statistic: StatisticKind) {}
 
-#[cfg(feature = "hydrate")]
+#[cfg(feature = "hydrate")] // calls into the running driver
 pub fn dispatch_period(period_start: NaiveDate) {
     super::driver::apply_period(period_start);
 }
@@ -108,7 +105,7 @@ pub fn dispatch_period(period_start: NaiveDate) {
 #[cfg(not(feature = "hydrate"))] // the ssr build has no driver to dispatch to
 pub fn dispatch_period(_period_start: NaiveDate) {}
 
-/// Published by the driver so the controls render without bundle access.
+/// A self-contained view of the active statistic and period, needing no lookup back into the bundle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewControls {
     pub active_statistic: StatisticKind,
@@ -118,7 +115,7 @@ pub struct ViewControls {
     pub period_range: Option<(NaiveDate, NaiveDate)>,
 }
 
-/// Published by the driver so the legend renders without bundle access.
+/// A self-contained view of the legend's scale, needing no lookup back into the bundle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LegendView {
     pub statistic: StatisticKind,
@@ -130,7 +127,7 @@ pub fn MapCanvas() -> impl IntoView {
     let canvas_ref: NodeRef<Canvas> = NodeRef::new();
     let render_status: RwSignal<RenderStatus> = RwSignal::new(RenderStatus::Loading);
 
-    #[cfg(feature = "hydrate")]
+    #[cfg(feature = "hydrate")] // the ssr build has no driver to start
     Effect::new(move |_| {
         if let Some(canvas) = canvas_ref.get() {
             let selection: RwSignal<Option<SelectionView>> = expect_context();

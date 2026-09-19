@@ -11,9 +11,8 @@ pub struct PointerState {
     pub position: SurfacePoint,
 }
 
-/// The in-progress pointer gesture. Each variant owns exactly the state its stage needs, so combinations
-/// like a press origin with no pointer down cannot arise. Only `Tap` selects on release; `Pan` and
-/// `Pinch` do not.
+/// The in-progress pointer gesture. Each variant owns exactly the state its stage needs, so a press origin
+/// with no pointer down cannot arise.
 #[derive(Debug, Clone, Copy)]
 pub enum Gesture {
     Idle,
