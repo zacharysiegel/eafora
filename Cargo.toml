@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["shared", "ingestion", "tools/seed_generator", "web"]
+members = ["ingestion", "ios", "shared", "tools/seed_generator", "tools/uniffi_bindgen_swift", "web"]
 
 [workspace.package]
 edition = "2024"
@@ -23,6 +23,7 @@ env_logger = "0.11.*"
 dotenvy = "0.15.*"
 minimer = "2.1.*"
 secr = "1.2.*"
+uniffi = "0.32.*"
 rusqlite = { version = "0.32.*", features = ["bundled"] }
 sqlite-wasm-rs = { version = "0.4.*", default-features = false, features = ["precompiled"] }
 flatgeobuf = "4.6.*"

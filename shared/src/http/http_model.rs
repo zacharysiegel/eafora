@@ -1,4 +1,4 @@
-use crate::error::AppError;
+use crate::error::AppErrorStatic;
 
 pub enum HttpMethod {
     Get,
@@ -34,7 +34,7 @@ impl Response {
     }
 }
 
-/// Reports the body's length rather than its contents, which run to megabytes.
+/// Reports the body's length; the body runs to megabytes.
 impl std::fmt::Debug for Response {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
@@ -45,11 +45,11 @@ impl std::fmt::Debug for Response {
     }
 }
 
-/// The transport the artifact loader reaches the repository through. The returned future is deliberately
-/// not `Send`: some platforms' response handles are not, and one trait serves every platform.
+// The returned future carries no `Send` bound; an implementation may hold `!Send` handles. The error does,
+// so a caller awaiting this across an FFI can be `Send`.
 #[allow(async_fn_in_trait)]
 pub trait HttpFetch {
-    async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppError>;
+    async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppErrorStatic>;
 }
 
 #[cfg(test)]
@@ -58,8 +58,7 @@ pub(crate) mod tests {
 
     use super::*;
 
-    /// Serves the bodies it was seeded with and 404s everything else, recording each URL asked for so a
-    /// test can assert on what was and was not requested.
+    /// Serves the bodies it was seeded with and 404s the rest, recording each URL asked for.
     pub(crate) struct MockHttpFetch {
         bodies_by_url: BTreeMap<String, Vec<u8>>,
         requested_urls: tokio::sync::Mutex<Vec<String>>,
@@ -79,7 +78,7 @@ pub(crate) mod tests {
     }
 
     impl HttpFetch for MockHttpFetch {
-        async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppError> {
+        async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppErrorStatic> {
             self.requested_urls.lock().await.push(request.url.clone());
 
             let body: Option<&Vec<u8>> = self.bodies_by_url.get(&request.url);

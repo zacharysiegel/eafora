@@ -1,12 +1,12 @@
-use crate::error::AppError;
+use crate::error::AppErrorStatic;
 
 // The returned futures carry no `Send` bound; an implementation may hold `!Send` handles.
 #[allow(async_fn_in_trait)]
 pub trait ArtifactCache {
-    async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError>;
-    async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError>;
-    async fn list_versions(&self) -> Result<Vec<String>, AppError>;
-    async fn delete_version(&self, version_label: &str) -> Result<(), AppError>;
+    async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppErrorStatic>;
+    async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppErrorStatic>;
+    async fn list_versions(&self) -> Result<Vec<String>, AppErrorStatic>;
+    async fn delete_version(&self, version_label: &str) -> Result<(), AppErrorStatic>;
 }
 
 #[cfg(test)]
@@ -33,12 +33,12 @@ pub(crate) mod tests {
     }
 
     impl ArtifactCache for MockArtifactCache {
-        async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError> {
+        async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppErrorStatic> {
             self.insert(version_label, file_relative_path, bytes.to_vec()).await;
             Ok(())
         }
 
-        async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError> {
+        async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppErrorStatic> {
             let entries = self.entries.lock().await;
             let bytes: Option<Vec<u8>> = entries
                 .get(&(version_label.to_string(), file_relative_path.to_string()))
@@ -47,7 +47,7 @@ pub(crate) mod tests {
             Ok(bytes)
         }
 
-        async fn list_versions(&self) -> Result<Vec<String>, AppError> {
+        async fn list_versions(&self) -> Result<Vec<String>, AppErrorStatic> {
             let entries = self.entries.lock().await;
             let mut version_labels: Vec<String> = entries.keys().map(|(version_label, _)| version_label.clone()).collect();
             version_labels.dedup();
@@ -55,7 +55,7 @@ pub(crate) mod tests {
             Ok(version_labels)
         }
 
-        async fn delete_version(&self, version_label: &str) -> Result<(), AppError> {
+        async fn delete_version(&self, version_label: &str) -> Result<(), AppErrorStatic> {
             let mut entries = self.entries.lock().await;
             entries.retain(|(entry_version_label, _), _| entry_version_label != version_label);
 

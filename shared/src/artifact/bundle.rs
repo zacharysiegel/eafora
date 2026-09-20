@@ -7,7 +7,7 @@ use crate::artifact::compression;
 use crate::artifact::geometry::{self, GeometryLayer};
 use crate::artifact::manifest::{self, Manifest};
 use crate::canonical::canonical_model::{LicenseShardClass, StatisticKind};
-use crate::error::AppError;
+use crate::error::{AppError, AppErrorStatic};
 use crate::filesystem;
 use crate::license::DistributionContext;
 use crate::sqlite::shard_db::{self, ShardValues};
@@ -44,7 +44,7 @@ impl Bundle {
         cache: &C,
         version_label: &str,
         distribution_context: DistributionContext,
-    ) -> Result<Bundle, AppError> {
+    ) -> Result<Bundle, AppErrorStatic> {
         let manifest_bytes: Vec<u8> = get_required(cache, version_label, manifest::MANIFEST_FILENAME).await?;
         let manifest: Manifest = manifest::parse_manifest(&manifest_bytes)?;
 
@@ -103,11 +103,15 @@ fn decompress_artifact(compressed_bytes: &[u8], relative_path: &str) -> Result<V
         .map_err(|error| AppError::from(format!("decoding {relative_path} failed; [error={error}]")))
 }
 
-async fn get_required(cache: &impl ArtifactCache, version_label: &str, relative_path: &str) -> Result<Vec<u8>, AppError> {
+async fn get_required(
+    cache: &impl ArtifactCache,
+    version_label: &str,
+    relative_path: &str,
+) -> Result<Vec<u8>, AppErrorStatic> {
     let bytes: Option<Vec<u8>> = cache.get(version_label, relative_path).await?;
 
     bytes.ok_or_else(|| {
-        AppError::from(format!("bundle: {:?} missing from cache for version {:?}", relative_path, version_label))
+        AppErrorStatic::from(format!("bundle: {:?} missing from cache for version {:?}", relative_path, version_label))
     })
 }
 
@@ -200,7 +204,7 @@ mod tests {
         cache.insert(VERSION, BASE_SHARD_PATH, base_shard.clone()).await;
         cache.insert(VERSION, NONCOMMERCIAL_SHARD_PATH, base_shard).await;
 
-        let opened: Result<Bundle, AppError> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
+        let opened: Result<Bundle, AppErrorStatic> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
 
         let Err(error) = opened
         else {
@@ -249,7 +253,7 @@ mod tests {
         cache.insert(VERSION, BASE_SHARD_PATH, base_shard.clone()).await;
         cache.insert(VERSION, NONCOMMERCIAL_SHARD_PATH, base_shard).await;
 
-        let result: Result<Bundle, AppError> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
+        let result: Result<Bundle, AppErrorStatic> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
 
         assert!(result.is_err());
     }
@@ -294,7 +298,7 @@ mod tests {
     async fn bundle_open_rejects_missing_manifest() {
         let cache: MockArtifactCache = MockArtifactCache::new();
 
-        let result: Result<Bundle, AppError> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
+        let result: Result<Bundle, AppErrorStatic> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
 
         assert!(result.is_err());
     }
@@ -320,7 +324,7 @@ mod tests {
         cache.insert(VERSION, GEOMETRY_PATH, geometry_bytes).await;
         cache.insert(VERSION, BASE_SHARD_PATH, base_shard).await;
 
-        let result: Result<Bundle, AppError> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
+        let result: Result<Bundle, AppErrorStatic> = Bundle::open(&cache, VERSION, DistributionContext::FirstParty).await;
 
         assert!(result.is_err());
     }

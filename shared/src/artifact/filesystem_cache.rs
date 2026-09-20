@@ -3,11 +3,10 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use crate::artifact::ArtifactCache;
-use crate::error::AppError;
+use crate::error::AppErrorStatic;
 
-/// An [`ArtifactCache`] over a directory tree, holding each version's files under `<root>/<version_label>/`.
-/// A root that has been removed underneath a running process reads as an empty cache, which is what an
-/// operating system reclaiming a cache directory looks like from inside.
+/// An [`ArtifactCache`] over `<root>/<version_label>/`. A root removed underneath a running process reads
+/// as an empty cache.
 pub struct FilesystemArtifactCache {
     root: PathBuf,
 }
@@ -17,7 +16,7 @@ impl FilesystemArtifactCache {
         FilesystemArtifactCache { root }
     }
 
-    fn file_path(&self, version_label: &str, file_relative_path: &str) -> Result<PathBuf, AppError> {
+    fn file_path(&self, version_label: &str, file_relative_path: &str) -> Result<PathBuf, AppErrorStatic> {
         let mut path: PathBuf = self.root.join(validated_segment(version_label)?);
 
         for segment in file_relative_path.split('/').filter(|segment| !segment.is_empty()) {
@@ -29,25 +28,25 @@ impl FilesystemArtifactCache {
 }
 
 impl ArtifactCache for FilesystemArtifactCache {
-    async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppError> {
+    async fn put(&self, version_label: &str, file_relative_path: &str, bytes: &[u8]) -> Result<(), AppErrorStatic> {
         let path: PathBuf = self.file_path(version_label, file_relative_path)?;
 
         let parent: &Path = path
             .parent()
-            .ok_or_else(|| AppError::from(format!("cache path has no parent directory; [path={}]", path.display())))?;
+            .ok_or_else(|| AppErrorStatic::from(format!("cache path has no parent directory; [path={}]", path.display())))?;
 
         fs::create_dir_all(parent).map_err(|error| {
-            AppError::from(format!("creating a cache directory failed; [path={} error={error}]", parent.display()))
+            AppErrorStatic::from(format!("creating a cache directory failed; [path={} error={error}]", parent.display()))
         })?;
 
         fs::write(&path, bytes).map_err(|error| {
-            AppError::from(format!("writing a cached file failed; [path={} error={error}]", path.display()))
+            AppErrorStatic::from(format!("writing a cached file failed; [path={} error={error}]", path.display()))
         })?;
 
         Ok(())
     }
 
-    async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppError> {
+    async fn get(&self, version_label: &str, file_relative_path: &str) -> Result<Option<Vec<u8>>, AppErrorStatic> {
         let path: PathBuf = self.file_path(version_label, file_relative_path)?;
 
         let read: Result<Vec<u8>, std::io::Error> = fs::read(&path);
@@ -55,21 +54,21 @@ impl ArtifactCache for FilesystemArtifactCache {
         match read {
             Ok(bytes) => Ok(Some(bytes)),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(AppError::from(format!(
+            Err(error) => Err(AppErrorStatic::from(format!(
                 "reading a cached file failed; [path={} error={error}]",
                 path.display(),
             ))),
         }
     }
 
-    async fn list_versions(&self) -> Result<Vec<String>, AppError> {
+    async fn list_versions(&self) -> Result<Vec<String>, AppErrorStatic> {
         let entries: Result<fs::ReadDir, std::io::Error> = fs::read_dir(&self.root);
 
         let entries: fs::ReadDir = match entries {
             Ok(entries) => entries,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
             Err(error) => {
-                return Err(AppError::from(format!(
+                return Err(AppErrorStatic::from(format!(
                     "listing cached versions failed; [path={} error={error}]",
                     self.root.display(),
                 )))
@@ -80,7 +79,7 @@ impl ArtifactCache for FilesystemArtifactCache {
 
         for entry in entries {
             let entry: fs::DirEntry = entry.map_err(|error| {
-                AppError::from(format!(
+                AppErrorStatic::from(format!(
                     "reading a cache directory entry failed; [path={} error={error}]",
                     self.root.display(),
                 ))
@@ -104,7 +103,7 @@ impl ArtifactCache for FilesystemArtifactCache {
         Ok(version_labels)
     }
 
-    async fn delete_version(&self, version_label: &str) -> Result<(), AppError> {
+    async fn delete_version(&self, version_label: &str) -> Result<(), AppErrorStatic> {
         let path: PathBuf = self.root.join(validated_segment(version_label)?);
 
         let removed: Result<(), std::io::Error> = fs::remove_dir_all(&path);
@@ -112,7 +111,7 @@ impl ArtifactCache for FilesystemArtifactCache {
         match removed {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(AppError::from(format!(
+            Err(error) => Err(AppErrorStatic::from(format!(
                 "deleting a cached version failed; [path={} error={error}]",
                 path.display(),
             ))),
@@ -120,11 +119,11 @@ impl ArtifactCache for FilesystemArtifactCache {
     }
 }
 
-/// Every segment must name a child. An empty or `.` segment resolves to the cache root and `..` to above
-/// it, so any of them would have `delete_version` remove a directory the caller did not name.
-fn validated_segment(segment: &str) -> Result<&str, AppError> {
+/// Every segment must name a child; an empty, `.`, or `..` segment would have `delete_version` remove the
+/// cache root or above it.
+fn validated_segment(segment: &str) -> Result<&str, AppErrorStatic> {
     if segment.is_empty() || segment == "." || segment == ".." {
-        return Err(AppError::from(format!("cache path segment does not name a child; [segment={segment:?}]")));
+        return Err(AppErrorStatic::from(format!("cache path segment does not name a child; [segment={segment:?}]")));
     }
 
     Ok(segment)
@@ -193,8 +192,7 @@ mod tests {
         cache.delete_version("2026-08-14+macdiarmid").await.unwrap();
     }
 
-    /// The operating system may reclaim a cache directory while the process holding this cache runs. The
-    /// loader has to see an empty cache and refetch, not an error it cannot act on.
+    /// The operating system may reclaim the directory mid-session; the loader must see an empty cache.
     #[tokio::test]
     async fn a_root_removed_mid_session_reads_as_an_empty_cache_and_accepts_new_writes() {
         let (_root, cache): (TempDir, FilesystemArtifactCache) = create_cache();
@@ -217,7 +215,7 @@ mod tests {
     async fn put_rejects_a_relative_path_reaching_outside_the_cache_root() {
         let (_root, cache): (TempDir, FilesystemArtifactCache) = create_cache();
 
-        let error: AppError = cache
+        let error: AppErrorStatic = cache
             .put("2026-08-14+macdiarmid", "../escaped.sqlite", b"shard")
             .await
             .unwrap_err();
@@ -229,7 +227,7 @@ mod tests {
     async fn put_rejects_a_version_label_reaching_outside_the_cache_root() {
         let (_root, cache): (TempDir, FilesystemArtifactCache) = create_cache();
 
-        let error: AppError = cache.put("..", "manifest.json", b"{}").await.unwrap_err();
+        let error: AppErrorStatic = cache.put("..", "manifest.json", b"{}").await.unwrap_err();
 
         assert!(error.to_string().contains("does not name a child"));
     }
@@ -240,7 +238,7 @@ mod tests {
         let (_root, cache): (TempDir, FilesystemArtifactCache) = create_cache();
         cache.put("2026-08-14+macdiarmid", "manifest.json", b"{}").await.unwrap();
 
-        let error: AppError = cache.delete_version(".").await.unwrap_err();
+        let error: AppErrorStatic = cache.delete_version(".").await.unwrap_err();
 
         assert!(error.to_string().contains("does not name a child"));
         assert!(cache.get("2026-08-14+macdiarmid", "manifest.json").await.unwrap().is_some());
