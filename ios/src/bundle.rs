@@ -77,10 +77,10 @@ fn publish(bundle: Bundle) -> String {
     version_label
 }
 
-/// `send_replace` rather than `send`, which fails while no receiver exists.
 fn publish_to<T: Clone>(cell: &OnceLock<watch::Sender<T>>, value: T) {
     let sender: &watch::Sender<T> = cell.get_or_init(|| watch::channel(value.clone()).0);
 
+    // Stores the value even while no receiver exists.
     let _previous_value: T = sender.send_replace(value);
 }
 
