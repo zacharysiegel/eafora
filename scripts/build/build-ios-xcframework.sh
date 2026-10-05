@@ -84,7 +84,7 @@ function combine_slices {
 
     echo "combining both slices into ${XCFRAMEWORK_PATH#"${REPO_ROOT}/"}"
 
-    # -create-xcframework refuses to overwrite.
+    # -create-xcframework requires an output path that does not exist.
     rm -rf "${XCFRAMEWORK_PATH}"
 
     xcodebuild -create-xcframework \

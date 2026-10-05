@@ -66,7 +66,7 @@ pub fn destroy_renderer() {
     RENDERER.with_borrow_mut(|slot| slot.take());
 }
 
-/// Runs a future to completion without leaving the calling thread.
+/// Runs a future to completion on the calling thread.
 fn block_on_calling_thread<F: Future>(future: F) -> Result<F::Output, FfiError> {
     let built: Result<Runtime, std::io::Error> = Builder::new_current_thread().build();
 

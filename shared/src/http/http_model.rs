@@ -45,8 +45,8 @@ impl std::fmt::Debug for Response {
     }
 }
 
-// The returned future carries no `Send` bound; an implementation may hold `!Send` handles. The error does,
-// so a caller awaiting this across an FFI can be `Send`.
+// Implementations may hold `!Send` handles, so the returned future is unconstrained. The error is `Send` so
+// a caller awaiting this across an FFI can be.
 #[allow(async_fn_in_trait)]
 pub trait HttpFetch {
     async fn fetch(&self, request: &HttpRequest) -> Result<Response, AppErrorStatic>;

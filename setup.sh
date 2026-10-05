@@ -29,8 +29,7 @@ function check_prerequisites {
 }
 check_prerequisites
 
-# Nothing outside ios/ needs any of this, so a missing Xcode skips it and a failed step warns rather
-# than stopping the rest of the bootstrap.
+# Only ios/ needs any of this; a missing Xcode skips it and a failed step warns.
 function install_ios_toolchain {
     local xcodebuild_path
     xcodebuild_path=$(which xcodebuild 2>/dev/null || true)

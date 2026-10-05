@@ -27,7 +27,7 @@ impl HttpFetch for ReqwestHttpFetch {
         };
 
         let builder: RequestBuilder = match request.cache_mode {
-            // reqwest holds no cache of its own; the header is addressed to intermediaries.
+            // Addressed to intermediaries, the only caches between this client and the server.
             HttpCacheMode::Reload => builder.header(header::CACHE_CONTROL, HeaderValue::from_static("no-cache")),
             HttpCacheMode::Default => builder,
         };
@@ -58,7 +58,7 @@ mod tests {
 
     use super::*;
 
-    /// Serves `status_line` once on a loopback port, so the status arm needs no HTTP server dependency.
+    /// Serves `status_line` once on a loopback port using only std.
     fn serve_one_response(status_line: &'static str, body: &'static str) -> String {
         let listener: TcpListener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url: String = format!("http://{}/manifest.json", listener.local_addr().unwrap());
@@ -98,7 +98,7 @@ mod tests {
         assert_eq!(response.bytes, b"{}");
     }
 
-    /// A missing artifact is the caller's decision to make, so the status comes back rather than an error.
+    /// A non-success status is returned for the caller to judge.
     #[tokio::test]
     async fn fetch_reports_a_non_success_status_without_erroring() {
         let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create().unwrap();
@@ -110,7 +110,7 @@ mod tests {
         assert!(!response.is_success());
     }
 
-    /// The transport-failure arm, reached without a network: the URL never becomes a request at all.
+    /// The transport-failure arm, reached through a URL that fails to parse.
     #[tokio::test]
     async fn fetch_errors_when_the_url_cannot_be_parsed() {
         let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create().unwrap();

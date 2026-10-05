@@ -232,7 +232,7 @@ mod tests {
         assert!(error.to_string().contains("does not name a child"));
     }
 
-    /// `.` resolves to the cache root, so accepting it would delete every version rather than one.
+    /// `.` resolves to the cache root, so accepting it would delete every version.
     #[tokio::test]
     async fn delete_version_rejects_a_label_naming_the_cache_root() {
         let (_root, cache): (TempDir, FilesystemArtifactCache) = create_cache();

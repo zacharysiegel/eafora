@@ -231,9 +231,8 @@ async fn open_fetched_live_bundle(
     Ok(Bundle::open(cache, &manifest.version, distribution_context).await?)
 }
 
-/// At most `LIVE_FETCH_CONCURRENCY` files are in flight within this task; spawning would demand a `Send`
-/// bound `ArtifactCache` does not carry. The entries are cloned because a closure taking a reference and
-/// returning a future that borrows it cannot be proven general over lifetimes.
+/// At most `LIVE_FETCH_CONCURRENCY` files are in flight within this task; spawning would require
+/// `ArtifactCache` futures to be `Send`. Each future owns a cloned entry so the whole future is provably `Send`.
 async fn put_live_files(
     cache: &impl ArtifactCache,
     http_fetch: &impl HttpFetch,
@@ -521,8 +520,7 @@ mod tests {
         assert_eq!(resolved.manifest_bytes, b"discovered manifest");
     }
 
-    /// Discovery is advisory: an unreachable document leaves the static base in force rather than failing
-    /// the load.
+    /// Discovery is advisory: an unreachable document leaves the static base in force.
     #[tokio::test]
     async fn resolve_repository_falls_back_to_the_static_base_when_discovery_is_unreachable() {
         let static_base: &str = "/repository";
