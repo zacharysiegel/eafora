@@ -3,7 +3,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::watch;
 
 use shared::artifact::{load, Bundle, FilesystemArtifactCache};
-use shared::error::AppErrorStatic;
+use shared::error::{AppError, AppErrorStatic};
 use shared::http::{FilesystemFetch, ReqwestHttpFetch};
 use shared::license::DistributionContext;
 
@@ -55,14 +55,12 @@ pub async fn load_live_bundle(discovery_url: String, static_repository_base_url:
 }
 
 /// The receiver the renderer reads the current bundle through. Requires a bundle to have been opened.
-pub fn subscribe() -> Result<watch::Receiver<Arc<Bundle>>, FfiError> {
+pub fn subscribe() -> Result<watch::Receiver<Arc<Bundle>>, AppError> {
     let sender: Option<&watch::Sender<Arc<Bundle>>> = PUBLICATION.get();
 
     let Some(sender) = sender
     else {
-        return Err(FfiError::Failed {
-            message: "no bundle has been opened yet".to_string(),
-        });
+        return Err(AppError::from("no bundle has been opened yet".to_string()));
     };
 
     Ok(sender.subscribe())

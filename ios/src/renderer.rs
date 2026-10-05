@@ -36,29 +36,27 @@ pub fn create_renderer() -> Result<(), FfiError> {
 
 #[uniffi::export]
 pub fn attach_surface(handle: UiKitSurfaceHandle, width: u32, height: u32) -> Result<(), FfiError> {
-    with_renderer(|renderer| {
-        let attached: Result<(), AppError> = block_on_calling_thread(renderer.attach_surface_from_window_handle(
+    Ok(with_renderer(|renderer| {
+        block_on_calling_thread(renderer.attach_surface_from_window_handle(
             handle.to_window_handle(),
             width,
             height,
-        ))?;
-
-        attached.map_err(FfiError::from)
-    })
+        ))?
+    })?)
 }
 
 #[uniffi::export]
 pub fn resize_surface(width: u32, height: u32) -> Result<(), FfiError> {
-    with_renderer(|renderer| renderer.resize_surface(width, height).map_err(FfiError::from))
+    Ok(with_renderer(|renderer| renderer.resize_surface(width, height))?)
 }
 
 #[uniffi::export]
 pub fn detach_surface() -> Result<(), FfiError> {
-    with_renderer(|renderer| {
+    Ok(with_renderer(|renderer| {
         renderer.detach_surface();
 
         Ok(())
-    })
+    })?)
 }
 
 #[uniffi::export]
@@ -67,23 +65,21 @@ pub fn destroy_renderer() {
 }
 
 /// Runs a future to completion on the calling thread.
-fn block_on_calling_thread<F: Future>(future: F) -> Result<F::Output, FfiError> {
+fn block_on_calling_thread<F: Future>(future: F) -> Result<F::Output, AppError> {
     let built: Result<Runtime, std::io::Error> = Builder::new_current_thread().build();
 
-    let runtime: Runtime = built.map_err(|error| FfiError::Failed {
-        message: format!("building the renderer setup runtime failed; [error={error}]"),
+    let runtime: Runtime = built.map_err(|error| {
+        AppError::from(format!("building the renderer setup runtime failed; [error={error}]"))
     })?;
 
     Ok(runtime.block_on(future))
 }
 
-fn with_renderer(body: impl FnOnce(&mut Renderer) -> Result<(), FfiError>) -> Result<(), FfiError> {
+fn with_renderer(body: impl FnOnce(&mut Renderer) -> Result<(), AppError>) -> Result<(), AppError> {
     RENDERER.with_borrow_mut(|slot| {
         let Some(renderer) = slot.as_mut()
         else {
-            return Err(FfiError::Failed {
-                message: "no renderer exists on this thread".to_string(),
-            });
+            return Err(AppError::from("no renderer exists on this thread".to_string()));
         };
 
         body(renderer)
