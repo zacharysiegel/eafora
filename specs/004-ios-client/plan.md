@@ -57,7 +57,10 @@ ios/
 ├── Cargo.toml                  # crate-type = ["staticlib"]; depends on shared with the render feature
 └── src/
     ├── lib.rs                  # the UniFFI scaffolding and the module declarations
-    ├── client.rs               # EaforaClient, the opaque handle Swift holds
+    ├── configuration.rs        # the set-once cache directory and distribution context
+    ├── bundle_loading.rs       # the two loads and the published-bundle channel
+    ├── rendering.rs            # the thread-local renderer and its lifecycle
+    ├── revision.rs             # the build's git revision
     ├── distribution.rs         # the boundary's own DistributionContext
     ├── error.rs                # FfiError, the single-variant error Swift catches
     └── handle.rs               # WindowHandle marshaling, u64 pointers rebuilt into the shared enum
@@ -173,22 +176,23 @@ Each of these is a hazard the plan cannot close from this machine, listed with w
 
 ## Phase 1: design & contracts
 
-The FFI surface is one opaque handle and a small set of calls on it. Swift holds the handle; Rust holds all state, including the renderer, the bundle watch channel, the cache, and the runtime.
+The FFI surface is a set of free functions. Rust holds the state in statics: a set-once configuration, the published-bundle channel, and a per-thread renderer.
 
 ```
-EaforaClient
-    new(distribution: DistributionContext) -> EaforaClient
-    attach_surface(handle: WindowHandle, width: u32, height: u32)
-    resize_surface(width: u32, height: u32)
-    detach_surface()
-    draw_frame()
-    load_embedded_bundle(root_directory: String)
-    start_live_load(discovery_url: String)
-    region_at_point(x: f64, y: f64) -> Option<RegionHit>
+configure(cache_directory: String, distribution: DistributionContext)
+open_first_paint_bundle(embedded_directory: String) -> String
+load_live_bundle(discovery_url: String, static_repository_base_url: String) -> String
+create_renderer()
+destroy_renderer()
+attach_surface(handle: UiKitSurfaceHandle, width: u32, height: u32)
+resize_surface(width: u32, height: u32)
+detach_surface()
+draw_frame()
+region_at_point(x: f64, y: f64) -> Option<RegionHit>
     set_period(period_start: NaiveDate-as-String)
     set_statistic(statistic: StatisticKind)
-    pan(dx: f64, dy: f64) / zoom(factor: f64, at_x: f64, at_y: f64)
-    revision() -> String
+pan(dx: f64, dy: f64) / zoom(factor: f64, at_x: f64, at_y: f64)
+revision() -> String
 ```
 
 Three properties of this shape matter. The renderer never crosses the boundary, so no wgpu type needs a UniFFI representation. `draw_frame` takes no arguments because the viewport and frame state live in Rust, which is also what lets a gesture be a single call rather than a state exchange. And every fallible call returns `Result<_, AppError>`, which UniFFI maps to a Swift `throws` per the project's recorded preference for UniFFI's default error mapping.
@@ -224,7 +228,7 @@ To be appended per phase, recording deviations from this plan.
 
 ### Phase 0.1
 
-Deviations are recorded in [tasks.md](tasks.md) §Deviations from the plan, Phase 0.1. The consequential ones are that the renderer lives in a `thread_local!` in `ios` rather than inside `EaforaClient`, and that the surface's viewport-dependent functions are deferred to Phase A along with the driver orchestration they need.
+Deviations are recorded in [tasks.md](tasks.md) §Deviations from the plan, Phase 0.1. The consequential ones are that the renderer lives in a `thread_local!` in `ios`, and the surface is free functions rather than one object, and that the surface's viewport-dependent functions are deferred to Phase A along with the driver orchestration they need.
 
 ### Phase 0.2
 

@@ -315,10 +315,14 @@ mod tests {
 
     use chrono::{DateTime, Utc};
 
+    use tempfile::TempDir;
+
     use crate::artifact::cache::tests::MockArtifactCache;
-    use crate::artifact::{BundleVariant, ManifestEntry};
+    use crate::artifact::geometry::tests::one_feature_fgb_bytes;
+    use crate::artifact::{compression, BundleVariant, ManifestEntry};
     use crate::canonical::{LicenseShardClass, StatisticKind};
     use crate::http::http_model::tests::MockHttpFetch;
+    use crate::http::FilesystemFetch;
 
     use super::*;
 
@@ -356,6 +360,36 @@ mod tests {
             source_revisions: BTreeMap::new(),
             source_attributions: BTreeMap::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn load_embedded_bundle_reads_the_bundle_from_a_directory() {
+        let geometry_bytes: Vec<u8> = compression::compress(&one_feature_fgb_bytes()).unwrap();
+        let shard_bytes: Vec<u8> = compression::compress(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/samples/tfr-sample.sqlite"
+        )))
+        .unwrap();
+        let manifest: Manifest = two_file_manifest(&geometry_bytes, &shard_bytes);
+
+        let directory: TempDir = TempDir::new().unwrap();
+        std::fs::create_dir_all(directory.path().join("geometry")).unwrap();
+        std::fs::create_dir_all(directory.path().join("statistics")).unwrap();
+        std::fs::write(directory.path().join(manifest::MANIFEST_FILENAME), serde_json::to_vec(&manifest).unwrap())
+            .unwrap();
+        std::fs::write(directory.path().join("geometry/world.fgb"), &geometry_bytes).unwrap();
+        std::fs::write(directory.path().join("statistics/tfr.base.sqlite"), &shard_bytes).unwrap();
+
+        let cache: MockArtifactCache = MockArtifactCache::new();
+        let embedded_directory: &str = directory.path().to_str().unwrap();
+
+        let bundle: Bundle =
+            load_embedded_bundle(&cache, &FilesystemFetch, embedded_directory, DistributionContext::FirstParty)
+                .await
+                .unwrap();
+
+        assert_eq!(bundle.manifest.version, VERSION_LABEL);
+        assert!(cache.get(VERSION_LABEL, manifest::MANIFEST_FILENAME).await.unwrap().is_some());
     }
 
     #[tokio::test]
