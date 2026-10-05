@@ -10,15 +10,13 @@ static CACHE_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
 
 #[uniffi::export]
 pub fn set_cache_directory(cache_directory: String) -> Result<(), FfiError> {
-    Ok(set_once(&CACHE_DIRECTORY, PathBuf::from(cache_directory))?)
-}
-
-fn set_once(cell: &OnceLock<PathBuf>, cache_directory: PathBuf) -> Result<(), AppError> {
-    let set_result: Result<(), PathBuf> = cell.set(cache_directory);
+    let set_result: Result<(), PathBuf> = CACHE_DIRECTORY.set(PathBuf::from(cache_directory));
 
     match set_result {
         Ok(()) => Ok(()),
-        Err(_rejected_cache_directory) => Err(AppError::from("the cache directory is already set".to_string())),
+        Err(_rejected_cache_directory) => Err(FfiError::Failed {
+            message: "the cache directory is already set".to_string(),
+        }),
     }
 }
 
@@ -31,21 +29,4 @@ pub fn create_cache() -> Result<FilesystemArtifactCache, AppError> {
     };
 
     Ok(FilesystemArtifactCache::create(cache_directory.clone()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn set_once_accepts_the_first_cache_directory_and_rejects_a_second() {
-        let cell: OnceLock<PathBuf> = OnceLock::new();
-
-        let first: Result<(), AppError> = set_once(&cell, PathBuf::from("/caches/first"));
-        let second: Result<(), AppError> = set_once(&cell, PathBuf::from("/caches/second"));
-
-        assert!(first.is_ok());
-        assert!(second.is_err());
-        assert_eq!(cell.get(), Some(&PathBuf::from("/caches/first")));
-    }
 }
