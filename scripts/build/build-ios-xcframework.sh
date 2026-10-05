@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Builds target/uniffi/EaforaCore.xcframework from the ios crate, together with the Swift sources that
-# call into it.
+# Builds target/uniffi/EaforaCore.xcframework from the ios crate, and generates its Swift bindings into
+# target/uniffi/swift.
 #
 # Usage:
 #   ./scripts/build/build-ios-xcframework.sh
