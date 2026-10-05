@@ -51,7 +51,7 @@ Stacks on 0.1.
 7. Write `EaforaApp/Map/MapMTKView.swift` as a `UIViewRepresentable` over `MTKView`, and `MapCoordinator.swift` holding the `draw(in:)` callback.
 8. Attach the surface exactly once, when the `CAMetalLayer` first becomes available, passing the layer and view pointers through the FFI handle. Guard against the repeated-attach path the web client also had to guard.
 9. Implement the event-driven loop: `isPaused = true` plus `setNeedsDisplay()`, scheduled by the same events the web driver schedules on. Read `web/src/map/canvas/driver.rs` for the list rather than inventing one.
-10. Write `EaforaApp/DesignTokens.swift` from `web/style/_tokens.scss`, and `Localizable.xcstrings` with the strings the first screen needs.
+10. Write `EaforaApp/DesignTokens.swift` from `web/style/_tokens.scss`, and `Localizable.xcstrings` with the strings the first screen needs. The strings shared with the web client live in `web/locales/en.json` today; see `docs/backlog.md` before duplicating them.
 11. Write `EaforaApp/EaforaApp.swift` and `Map/MapView.swift`: launch straight into the map, no splash, per FR-034.
 12. XCTest the surface bridge (reported size matches the layer's drawable size) and the embedded-bundle locator.
 13. Verify first paint on the simulator against `docs/design/stub-mobile.html` frame 00, and confirm an idle app issues no GPU work.
