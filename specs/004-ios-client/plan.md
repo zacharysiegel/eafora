@@ -58,8 +58,8 @@ ios/
 └── src/
     ├── lib.rs                  # the UniFFI scaffolding and the module declarations
     ├── configuration.rs        # the set-once cache directory and distribution context
-    ├── bundle_loading.rs       # the two loads and the published-bundle channel
-    ├── rendering.rs            # the thread-local renderer and its lifecycle
+    ├── bundle.rs               # the two loads and the published-bundle channel
+    ├── renderer.rs             # the thread-local renderer and its lifecycle
     ├── revision.rs             # the build's git revision
     ├── distribution.rs         # the boundary's own DistributionContext
     ├── error.rs                # FfiError, the single-variant error Swift catches

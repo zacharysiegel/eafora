@@ -9,7 +9,7 @@ use shared::artifact::Bundle;
 use shared::error::AppError;
 use shared::map::{Renderer, RendererBackend};
 
-use crate::bundle_loading;
+use crate::bundle;
 use crate::error::FfiError;
 use crate::handle::UiKitSurfaceHandle;
 
@@ -23,7 +23,7 @@ thread_local! {
 /// Requires a published bundle; the renderer reads its geometry at construction.
 #[uniffi::export]
 pub fn create_renderer() -> Result<(), FfiError> {
-    let receiver: watch::Receiver<Arc<Bundle>> = bundle_loading::subscribe()?;
+    let receiver: watch::Receiver<Arc<Bundle>> = bundle::subscribe()?;
 
     let created: Result<Renderer, AppError> =
         block_on_calling_thread(Renderer::new(receiver, RendererBackend::Default))?;
