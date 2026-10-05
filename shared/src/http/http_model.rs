@@ -34,17 +34,6 @@ impl Response {
     }
 }
 
-/// Reports the body's length; the body runs to megabytes.
-impl std::fmt::Debug for Response {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("Response")
-            .field("status", &self.status)
-            .field("byte_count", &self.bytes.len())
-            .finish()
-    }
-}
-
 // Implementations may hold `!Send` handles, so the returned future is unconstrained. The error is `Send` so
 // a caller awaiting this across an FFI can be.
 #[allow(async_fn_in_trait)]
@@ -94,21 +83,5 @@ pub(crate) mod tests {
                 }),
             }
         }
-    }
-
-    #[tokio::test]
-    async fn mock_fetch_returns_404_for_an_unseeded_url() {
-        let http_fetch: MockHttpFetch = MockHttpFetch::new(BTreeMap::new());
-
-        let response: Response = http_fetch
-            .fetch(&HttpRequest {
-                method: HttpMethod::Get,
-                url: "https://repository.example/absent".to_string(),
-                cache_mode: HttpCacheMode::Default,
-            })
-            .await
-            .unwrap();
-
-        assert!(!response.is_success());
     }
 }

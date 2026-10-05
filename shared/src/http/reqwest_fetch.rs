@@ -115,10 +115,12 @@ mod tests {
     async fn fetch_errors_when_the_url_cannot_be_parsed() {
         let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create().unwrap();
 
-        let error: AppErrorStatic = http_fetch
-            .fetch(&get_request("manifest.json".to_string()))
-            .await
-            .unwrap_err();
+        let fetched: Result<Response, AppErrorStatic> = http_fetch.fetch(&get_request("manifest.json".to_string())).await;
+
+        let Err(error) = fetched
+        else {
+            panic!("a url that fails to parse was fetched");
+        };
 
         assert!(error.to_string().contains("fetching manifest.json failed"));
     }

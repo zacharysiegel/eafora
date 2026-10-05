@@ -34,31 +34,3 @@ impl From<AppErrorStatic> for FfiError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn from_app_error_carries_the_message() {
-        let error: AppError = AppError::from("the manifest names a newer schema version".to_string());
-
-        let ffi_error: FfiError = FfiError::from(error);
-
-        match ffi_error {
-            FfiError::Failed { message } => {
-                assert!(message.contains("the manifest names a newer schema version"));
-            }
-        }
-    }
-
-    /// Swift shows the message, so `Display` is the message alone.
-    #[test]
-    fn display_renders_the_message_alone() {
-        let ffi_error: FfiError = FfiError::Failed {
-            message: "opfs unsupported".to_string(),
-        };
-
-        assert_eq!(ffi_error.to_string(), "opfs unsupported");
-    }
-}

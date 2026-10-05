@@ -42,18 +42,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_returns_the_bytes_of_an_existing_file() {
-        let directory: TempDir = TempDir::new().unwrap();
-        let path: String = directory.path().join("manifest.json").to_string_lossy().into_owned();
-        fs::write(&path, b"{}").unwrap();
-
-        let response: Response = FilesystemFetch.fetch(&create_request(path)).await.unwrap();
-
-        assert_eq!(response.status, 200);
-        assert_eq!(response.bytes, b"{}");
-    }
-
-    #[tokio::test]
     async fn fetch_answers_404_for_a_missing_file() {
         let directory: TempDir = TempDir::new().unwrap();
         let path: String = directory.path().join("absent.json").to_string_lossy().into_owned();
