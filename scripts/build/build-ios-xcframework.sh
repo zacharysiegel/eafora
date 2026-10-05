@@ -5,7 +5,7 @@
 #
 # Usage:
 #   ./scripts/build/build-ios-xcframework.sh
-#   ./scripts/build/build-ios-xcframework.sh --debug    (faster; unshippable)
+#   ./scripts/build/build-ios-xcframework.sh --release
 
 set -euo pipefail
 
@@ -20,14 +20,14 @@ readonly XCFRAMEWORK_PATH="${OUTPUT_DIR}/${MODULE_NAME}.xcframework"
 readonly HEADERS_DIR="${OUTPUT_DIR}/headers"
 readonly SWIFT_SOURCES_DIR="${OUTPUT_DIR}/swift"
 
-CARGO_PROFILE_FLAG="--release"
-CARGO_PROFILE_DIR="release"
+CARGO_PROFILE_FLAG=""
+CARGO_PROFILE_DIR="debug"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --debug)
-            CARGO_PROFILE_FLAG=""
-            CARGO_PROFILE_DIR="debug"
+        --release)
+            CARGO_PROFILE_FLAG="--release"
+            CARGO_PROFILE_DIR="release"
             shift
             ;;
         *)
