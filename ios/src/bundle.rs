@@ -17,13 +17,13 @@ static PUBLICATION: OnceLock<watch::Sender<Arc<Bundle>>> = OnceLock::new();
 /// Opens the newest readable cached bundle, falling back to the bundle in `embedded_directory`.
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn open_first_paint_bundle(embedded_directory: String) -> Result<String, FfiError> {
-    let cache: FilesystemArtifactCache = cache::create_cache()?;
+    let cache: &FilesystemArtifactCache = cache::get_cache()?;
 
-    let cached: Option<Bundle> = load::open_newest_cached_bundle(&cache, DISTRIBUTION_CONTEXT).await?;
+    let cached: Option<Bundle> = load::open_newest_cached_bundle(cache, DISTRIBUTION_CONTEXT).await?;
 
     let bundle: Bundle = match cached {
         Some(cached) => cached,
-        None => load::load_embedded_bundle(&cache, &FilesystemFetch, &embedded_directory, DISTRIBUTION_CONTEXT).await?,
+        None => load::load_embedded_bundle(cache, &FilesystemFetch, &embedded_directory, DISTRIBUTION_CONTEXT).await?,
     };
 
     Ok(publish(bundle))
@@ -32,11 +32,11 @@ pub async fn open_first_paint_bundle(embedded_directory: String) -> Result<Strin
 /// Fetches the newest published bundle and republishes it through the channel the renderer holds.
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn load_live_bundle(discovery_url: String, static_repository_base_url: String) -> Result<String, FfiError> {
-    let cache: FilesystemArtifactCache = cache::create_cache()?;
+    let cache: &FilesystemArtifactCache = cache::get_cache()?;
     let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create()?;
 
     let bundle: Bundle = load::load_live_bundle(
-        &cache,
+        cache,
         &http_fetch,
         &discovery_url,
         &static_repository_base_url,
@@ -46,7 +46,7 @@ pub async fn load_live_bundle(discovery_url: String, static_repository_base_url:
 
     let version_label: String = publish(bundle);
 
-    let evicted: Result<(), AppErrorStatic> = load::evict_stale_versions(&cache).await;
+    let evicted: Result<(), AppErrorStatic> = load::evict_stale_versions(cache).await;
     if let Err(error) = evicted {
         log::warn!("evicting old cached bundle versions failed; [error={error}]");
     }
