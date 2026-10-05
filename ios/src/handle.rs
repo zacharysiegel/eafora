@@ -1,7 +1,6 @@
 use shared::render::WindowHandle;
 
-/// The pointers a UIKit shell hands across the boundary. Not a mirror of [`WindowHandle`], whose other
-/// variant names a platform this crate never builds for.
+/// The layer and view pointers Swift reads off a UIKit view.
 #[derive(uniffi::Record)]
 pub struct UiKitSurfaceHandle {
     pub layer_ptr: u64,
