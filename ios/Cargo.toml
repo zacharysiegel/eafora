@@ -7,7 +7,7 @@ publish = false
 [lib]
 # a static archive is what xcodebuild links into the xcframework.
 crate-type = ["staticlib"]
-name = "eafora_core"
+name = "eafora_ios"
 
 [dependencies]
 shared = { workspace = true, features = ["render"] }

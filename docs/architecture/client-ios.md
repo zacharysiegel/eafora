@@ -76,7 +76,7 @@ The Swift code is organized by feature: directory only when a feature has 2+ fil
 
 Directory names use PascalCase (`Map/`, `Region/`), matching iOS convention. The web crate uses lowercase (`map/`, `region/`) because Rust's convention is lowercase modules; both follow their host language's idiom rather than enforcing project-wide uniformity.
 
-The `core` crate is **not** referenced from the iOS project directly. Instead, the project references `target/uniffi/EaforaCore.xcframework` as a binary dependency (declared in `ios/project.yml`); the xcframework is built by the pipeline described in §Build toolchain. The xcframework lives under `target/` like every other generated artifact in the workspace; it is not committed and is rebuilt on demand.
+The `core` crate is **not** referenced from the iOS project directly. Instead, the project references `target/uniffi/EaforaIOS.xcframework` as a binary dependency (declared in `ios/project.yml`); the xcframework is built by the pipeline described in §Build toolchain. The xcframework lives under `target/` like every other generated artifact in the workspace; it is not committed and is rebuilt on demand.
 
 ## Build toolchain
 
@@ -95,8 +95,8 @@ The Rust core ships as an xcframework: a single `.xcframework` bundle containing
    ```
 
    `uniffi-bindgen-swift` is a tiny binary we define in the workspace (a `[[bin]]` containing `fn main() { uniffi::uniffi_bindgen_swift() }`). The `--xcframework` flag is what makes the modulemap suitable for the `xcodebuild -create-xcframework` step that follows.
-4. `xcodebuild -create-xcframework -library target/aarch64-apple-ios/release/libcore.a -headers target/uniffi-swift/Headers -library target/aarch64-apple-ios-sim/release/libcore.a -headers target/uniffi-swift/Headers -output target/uniffi/EaforaCore.xcframework` → produces the binary product under `target/` alongside the rest of the build outputs.
-5. `target/uniffi/EaforaCore.xcframework` is referenced as a binary framework dependency in `ios/project.yml` (via the relative path `../target/uniffi/EaforaCore.xcframework`), picked up by the regenerated `Eafora.xcodeproj`.
+4. `xcodebuild -create-xcframework -library target/aarch64-apple-ios/release/libcore.a -headers target/uniffi-swift/Headers -library target/aarch64-apple-ios-sim/release/libcore.a -headers target/uniffi-swift/Headers -output target/uniffi/EaforaIOS.xcframework` → produces the binary product under `target/` alongside the rest of the build outputs.
+5. `target/uniffi/EaforaIOS.xcframework` is referenced as a binary framework dependency in `ios/project.yml` (via the relative path `../target/uniffi/EaforaIOS.xcframework`), picked up by the regenerated `Eafora.xcodeproj`.
 
 The pipeline is encapsulated in `scripts/build-ios-xcframework.sh`, checked into the repo. Invoked:
 
@@ -221,7 +221,7 @@ targets:
     sources:
       - path: EaforaApp
     dependencies:
-      - framework: ../target/uniffi/EaforaCore.xcframework
+      - framework: ../target/uniffi/EaforaIOS.xcframework
       - sdk: MetalKit.framework
       - sdk: Metal.framework
     info:
@@ -254,7 +254,7 @@ Configuration the YAML expresses:
 
 - Deployment target: iOS 18.0 (per overview §iOS client).
 - Architectures: `arm64` only (Apple Silicon; armv7 is not built).
-- Frameworks: `EaforaCore.xcframework` linked against; `MetalKit.framework` and `Metal.framework` linked for the MTKView path.
+- Frameworks: `EaforaIOS.xcframework` linked against; `MetalKit.framework` and `Metal.framework` linked for the MTKView path.
 - Pre-build scripts: rebuild the xcframework on demand, then sync the embedded bundle into the app's `Resources/`, then inject the source revision into `Info.plist`.
 - Code-signing style: automatic for Debug (Xcode picks any installed cert that matches), manual for Release (uses a named distribution cert + provisioning profile created in App Store Connect). The Debug path is what developers use day-to-day; the Release path is what CI uses for App Store / TestFlight uploads.
 - `DEVELOPMENT_TEAM` is the 10-character Apple Developer Team identifier. One value, shared across every machine that builds the app (your developer Mac, the Mac mini CI). What differs per machine is which signing certificate is in the keychain — your dev machine has a Development cert; CI has a Distribution cert — and whether the App Store Connect API key for upload automation is installed (CI only). All of those live under the same team. Not a secret; the team ID appears in every provisioning profile inside the shipped `.ipa` and in the public `apple-app-site-association` file. Committed directly in `project.yml`. The actual auth lives in the certificates and the App Store Connect API key (per §Signing and CI, treated as a real secret).

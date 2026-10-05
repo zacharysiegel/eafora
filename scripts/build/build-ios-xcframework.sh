@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Builds target/uniffi/EaforaCore.xcframework from the ios crate, and generates its Swift bindings into
+# Builds target/uniffi/EaforaIOS.xcframework from the ios crate, and generates its Swift bindings into
 # target/uniffi/swift.
 #
 # Usage:
@@ -13,10 +13,12 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly DEVICE_TARGET="aarch64-apple-ios"
 readonly SIMULATOR_TARGET="aarch64-apple-ios-sim"
-readonly LIBRARY_FILENAME="libeafora_core.a"
-readonly MODULE_NAME="EaforaCore"
+readonly LIBRARY_FILENAME="libeafora_ios.a"
+readonly XCFRAMEWORK_NAME="EaforaIOS"
+# The generated Swift imports the C module by this name, which UniFFI derives from the library name.
+readonly FFI_MODULE_NAME="eafora_iosFFI"
 readonly OUTPUT_DIR="${REPO_ROOT}/target/uniffi"
-readonly XCFRAMEWORK_PATH="${OUTPUT_DIR}/${MODULE_NAME}.xcframework"
+readonly XCFRAMEWORK_PATH="${OUTPUT_DIR}/${XCFRAMEWORK_NAME}.xcframework"
 readonly HEADERS_DIR="${OUTPUT_DIR}/headers"
 readonly SWIFT_SOURCES_DIR="${OUTPUT_DIR}/swift"
 
@@ -73,7 +75,7 @@ function generate_swift_bindings {
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${SWIFT_SOURCES_DIR}" --swift-sources
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${HEADERS_DIR}" --headers
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${HEADERS_DIR}" \
-        --modulemap --xcframework --module-name "${MODULE_NAME}" --modulemap-filename module.modulemap
+        --modulemap --module-name "${FFI_MODULE_NAME}" --modulemap-filename module.modulemap
 }
 
 function combine_slices {

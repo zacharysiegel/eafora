@@ -18,7 +18,7 @@ Blocked until the `uniffi` dependency is approved. Everything here is Rust and s
 6. Write `ios/ffi/src/client.rs` with the `EaforaClient` surface from the plan's §Phase 1. It owns the `Renderer`, the bundle `watch` channel, the cache, and the runtime. Nothing wgpu-shaped crosses the boundary.
 7. Map `AppError` across as a single-variant error carrying its message, letting UniFFI's default mapping produce a Swift `throws`.
 8. Expose `revision()` over the existing `shared::revision::REVISION`; the constant and its `build.rs` already exist, so this is an accessor.
-9. Write `scripts/build/build-ios-xcframework.sh`: build both iOS slices, run the bindgen for Swift sources, headers, and modulemap, then combine with `xcodebuild -create-xcframework` into `target/uniffi/EaforaCore.xcframework`. Gitignore the output.
+9. Write `scripts/build/build-ios-xcframework.sh`: build both iOS slices, run the bindgen for Swift sources, headers, and modulemap, then combine with `xcodebuild -create-xcframework` into `target/uniffi/EaforaIOS.xcframework`. Gitignore the output.
 10. Extend `setup.sh` with `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`, `brew install xcodegen`, and the simulator-runtime install. Note `yq` is already present.
 11. Unit-test the handle marshaling and the error mapping in Rust. The renderer calls cannot be tested without a surface, which is Phase A.
 12. Verify the script produces an xcframework from a clean `target/`, and that `cargo test -p shared` and the web build both still pass, since the workspace gained a member.
@@ -82,6 +82,8 @@ Phase C (region detail, settings, About, gesture parity) and Phase D (Universal 
 - No `build.rs` and no `uniffi` `build` feature: `setup_scaffolding!()` in `lib.rs` is sufficient, and `crate-type = ["staticlib"]` alone works because the bindgen reads the archive directly.
 - FR-006 is only partly satisfied. `setup.sh` adds the two Rust targets, installs `xcodegen`, and downloads a simulator runtime when none is present. It does not run `xcodegen generate`, which needs an `ios/project.yml` that Phase A writes, and it checks for Xcode rather than running `xcode-select --install`. `yq` was already present.
 - FR-007 is deferred entirely. `ios/setup.sh` renders the AASA template by reading `TEAM_ID` and `BUNDLE_ID` from `ios/project.yml`, so it cannot exist before Phase A writes that file, and the AASA file itself is Phase D.
+- The library is `eafora_ios`, not `eafora_core`, and the xcframework is `EaforaIOS.xcframework`. "Core" read as a synonym for `shared`, which the archive contains but is not. UniFFI derives the generated Swift's `canImport(eafora_iosFFI)` from the library name, so the C module must be named `eafora_iosFFI`, which the script sets separately from the xcframework name. The spec's `EaforaCore` as a Swift object name is superseded by `EaforaClient`.
+- The modulemap is generated without `--xcframework`, which FR-003 called for. That flag emits `framework module`, and a Swift package consuming the resulting library xcframework fails with `cannot find type 'RustBuffer' in scope`; the plain `module` form builds for both the simulator and the device.
 - `scripts/build/build-ios-xcframework.sh` generates the Swift sources from the simulator archive rather than from both. The exported surface is identical across slices, so generating twice would only overwrite.
 
 ## Deviations from the plan, Phase 0.2
