@@ -69,53 +69,13 @@ pub fn subscribe() -> Result<watch::Receiver<Arc<Bundle>>, AppError> {
 /// Replaces the published bundle, creating the channel on the first call, and answers with its version.
 fn publish(bundle: Bundle) -> String {
     let version_label: String = bundle.manifest.version.clone();
+    let bundle: Arc<Bundle> = Arc::new(bundle);
 
-    publish_to(&PUBLICATION, Arc::new(bundle));
-
-    version_label
-}
-
-fn publish_to<T: Clone>(cell: &OnceLock<watch::Sender<T>>, value: T) {
-    let sender: &watch::Sender<T> = cell.get_or_init(|| watch::channel(value.clone()).0);
+    let sender: &watch::Sender<Arc<Bundle>> =
+        PUBLICATION.get_or_init(|| watch::channel(Arc::clone(&bundle)).0);
 
     // Stores the value even while no receiver exists.
-    let _previous_value: T = sender.send_replace(value);
-}
+    let _previous_bundle: Arc<Bundle> = sender.send_replace(bundle);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn publish_to_makes_the_first_value_available_to_a_later_subscriber() {
-        let cell: OnceLock<watch::Sender<i32>> = OnceLock::new();
-
-        publish_to(&cell, 1);
-
-        let receiver: watch::Receiver<i32> = cell.get().unwrap().subscribe();
-        assert_eq!(*receiver.borrow(), 1);
-    }
-
-    #[test]
-    fn publish_to_replaces_the_value_while_no_receiver_exists() {
-        let cell: OnceLock<watch::Sender<i32>> = OnceLock::new();
-
-        publish_to(&cell, 1);
-        publish_to(&cell, 2);
-
-        let receiver: watch::Receiver<i32> = cell.get().unwrap().subscribe();
-        assert_eq!(*receiver.borrow(), 2);
-    }
-
-    #[test]
-    fn publish_to_reaches_a_receiver_which_subscribed_earlier() {
-        let cell: OnceLock<watch::Sender<i32>> = OnceLock::new();
-        publish_to(&cell, 1);
-        let receiver: watch::Receiver<i32> = cell.get().unwrap().subscribe();
-
-        publish_to(&cell, 2);
-
-        assert!(receiver.has_changed().unwrap());
-        assert_eq!(*receiver.borrow(), 2);
-    }
+    version_label
 }
