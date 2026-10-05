@@ -6,11 +6,6 @@
 # Usage:
 #   ./scripts/build/build-ios-xcframework.sh
 #   ./scripts/build/build-ios-xcframework.sh --debug    (faster; unshippable)
-#
-# The ordering matters and is the reason this is a script. The bindgen reads the compiled archive to find
-# the exported surface, so both slices must exist before it runs; the three generator invocations are
-# separate because each emits one kind of file; and -create-xcframework refuses to overwrite, so the
-# previous output has to go first.
 
 set -euo pipefail
 
@@ -67,7 +62,6 @@ function build_slice {
     cargo build -p ios --target "${rust_target}" ${CARGO_PROFILE_FLAG}
 }
 
-# One invocation per kind of file, which is the only shape the generator offers.
 function generate_swift_bindings {
     local archive_path="$1"
 
@@ -75,6 +69,7 @@ function generate_swift_bindings {
     rm -rf "${HEADERS_DIR}" "${SWIFT_SOURCES_DIR}"
     mkdir -p "${HEADERS_DIR}" "${SWIFT_SOURCES_DIR}"
 
+    # Reads the exported surface from the built archive; emits one kind of file per run.
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${SWIFT_SOURCES_DIR}" --swift-sources
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${HEADERS_DIR}" --headers
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${HEADERS_DIR}" \
@@ -86,6 +81,8 @@ function combine_slices {
     local simulator_archive="$2"
 
     echo "combining both slices into ${XCFRAMEWORK_PATH#"${REPO_ROOT}/"}"
+
+    # -create-xcframework refuses to overwrite.
     rm -rf "${XCFRAMEWORK_PATH}"
 
     xcodebuild -create-xcframework \
