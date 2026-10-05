@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, OnceLock};
 
 use tokio::sync::watch;
 
@@ -12,13 +12,7 @@ use crate::error::FfiError;
 
 const DISTRIBUTION_CONTEXT: DistributionContext = DistributionContext::FirstParty;
 
-static PUBLICATION: Mutex<Option<BundlePublication>> = Mutex::new(None);
-
-/// The published bundle, once one has been opened; the renderer subscribes to the receiver.
-struct BundlePublication {
-    sender: watch::Sender<Arc<Bundle>>,
-    receiver: watch::Receiver<Arc<Bundle>>,
-}
+static PUBLICATION: OnceLock<watch::Sender<Arc<Bundle>>> = OnceLock::new();
 
 /// Opens the newest readable cached bundle, falling back to the bundle in `embedded_directory`.
 #[uniffi::export(async_runtime = "tokio")]
@@ -62,41 +56,68 @@ pub async fn load_live_bundle(discovery_url: String, static_repository_base_url:
 
 /// The receiver the renderer reads the current bundle through. Requires a bundle to have been opened.
 pub fn subscribe() -> Result<watch::Receiver<Arc<Bundle>>, FfiError> {
-    let publication: MutexGuard<'_, Option<BundlePublication>> =
-        PUBLICATION.lock().expect("the publication mutex is never poisoned");
+    let sender: Option<&watch::Sender<Arc<Bundle>>> = PUBLICATION.get();
 
-    let Some(publication) = publication.as_ref()
+    let Some(sender) = sender
     else {
         return Err(FfiError::Failed {
             message: "no bundle has been opened yet".to_string(),
         });
     };
 
-    Ok(publication.receiver.clone())
+    Ok(sender.subscribe())
 }
 
 /// Replaces the published bundle, creating the channel on the first call, and answers with its version.
 fn publish(bundle: Bundle) -> String {
     let version_label: String = bundle.manifest.version.clone();
-    let bundle: Arc<Bundle> = Arc::new(bundle);
-    let mut publication: MutexGuard<'_, Option<BundlePublication>> =
-        PUBLICATION.lock().expect("the publication mutex is never poisoned");
 
-    match publication.as_ref() {
-        Some(existing) => {
-            let sent: Result<(), watch::error::SendError<Arc<Bundle>>> = existing.sender.send(bundle);
-
-            if let Err(error) = sent {
-                log::warn!("publishing a bundle failed; [error={error}]");
-            }
-        }
-        None => {
-            let (sender, receiver): (watch::Sender<Arc<Bundle>>, watch::Receiver<Arc<Bundle>>) =
-                watch::channel(bundle);
-
-            *publication = Some(BundlePublication { sender, receiver });
-        }
-    }
+    publish_to(&PUBLICATION, Arc::new(bundle));
 
     version_label
+}
+
+/// `send_replace` rather than `send`, which fails while no receiver exists.
+fn publish_to<T: Clone>(cell: &OnceLock<watch::Sender<T>>, value: T) {
+    let sender: &watch::Sender<T> = cell.get_or_init(|| watch::channel(value.clone()).0);
+
+    let _previous_value: T = sender.send_replace(value);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn publish_to_makes_the_first_value_available_to_a_later_subscriber() {
+        let cell: OnceLock<watch::Sender<i32>> = OnceLock::new();
+
+        publish_to(&cell, 1);
+
+        let receiver: watch::Receiver<i32> = cell.get().unwrap().subscribe();
+        assert_eq!(*receiver.borrow(), 1);
+    }
+
+    #[test]
+    fn publish_to_replaces_the_value_while_no_receiver_exists() {
+        let cell: OnceLock<watch::Sender<i32>> = OnceLock::new();
+
+        publish_to(&cell, 1);
+        publish_to(&cell, 2);
+
+        let receiver: watch::Receiver<i32> = cell.get().unwrap().subscribe();
+        assert_eq!(*receiver.borrow(), 2);
+    }
+
+    #[test]
+    fn publish_to_reaches_a_receiver_which_subscribed_earlier() {
+        let cell: OnceLock<watch::Sender<i32>> = OnceLock::new();
+        publish_to(&cell, 1);
+        let receiver: watch::Receiver<i32> = cell.get().unwrap().subscribe();
+
+        publish_to(&cell, 2);
+
+        assert!(receiver.has_changed().unwrap());
+        assert_eq!(*receiver.borrow(), 2);
+    }
 }
