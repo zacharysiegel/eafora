@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use tokio::sync::watch;
 
@@ -13,6 +13,8 @@ use shared::error::{AppError, AppErrorStatic};
 use crate::distribution::FfiDistributionContext;
 use crate::error::FfiError;
 use crate::handle::UiKitSurfaceHandle;
+
+static CACHE_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
 
 /* wgpu state is bound to its creating thread, and UniFFI requires every exported object to be Send + Sync.
    Only the synchronous functions below touch this; an async export could resume on another thread. */
@@ -28,7 +30,6 @@ struct BundlePublication {
 
 #[derive(uniffi::Object)]
 pub struct EaforaClient {
-    cache: FilesystemArtifactCache,
     http_fetch: ReqwestHttpFetch,
     distribution_context: DistributionContext,
     publication: Mutex<Option<BundlePublication>>,
@@ -39,10 +40,7 @@ pub struct EaforaClient {
 #[uniffi::export(async_runtime = "tokio")]
 impl EaforaClient {
     #[uniffi::constructor]
-    pub fn new(
-        cache_directory: String,
-        distribution_context: FfiDistributionContext,
-    ) -> Result<EaforaClient, FfiError> {
+    pub fn new(distribution_context: FfiDistributionContext) -> Result<EaforaClient, FfiError> {
         let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create()?;
         let renderer_setup_runtime: tokio::runtime::Runtime = tokio::runtime::Builder::new_current_thread()
             .build()
@@ -51,7 +49,6 @@ impl EaforaClient {
             })?;
 
         Ok(EaforaClient {
-            cache: FilesystemArtifactCache::create(PathBuf::from(cache_directory)),
             http_fetch,
             distribution_context: DistributionContext::from(distribution_context),
             publication: Mutex::new(None),
@@ -61,14 +58,15 @@ impl EaforaClient {
 
     /// Opens the newest readable cached bundle, falling back to the files shipped in the app bundle.
     pub async fn open_first_paint_bundle(&self, embedded_base_url: String) -> Result<String, FfiError> {
-        let cached: Option<Bundle> =
-            load::open_newest_cached_bundle(&self.cache, self.distribution_context).await?;
+        let cache: FilesystemArtifactCache = create_cache()?;
+
+        let cached: Option<Bundle> = load::open_newest_cached_bundle(&cache, self.distribution_context).await?;
 
         let bundle: Bundle = match cached {
             Some(cached) => cached,
             None => {
                 load::load_embedded_bundle(
-                    &self.cache,
+                    &cache,
                     &self.http_fetch,
                     &embedded_base_url,
                     self.distribution_context,
@@ -86,8 +84,10 @@ impl EaforaClient {
         discovery_url: String,
         static_repository_base_url: String,
     ) -> Result<String, FfiError> {
+        let cache: FilesystemArtifactCache = create_cache()?;
+
         let bundle: Bundle = load::load_live_bundle(
-            &self.cache,
+            &cache,
             &self.http_fetch,
             &discovery_url,
             &static_repository_base_url,
@@ -97,7 +97,7 @@ impl EaforaClient {
 
         let version_label: String = self.publish(bundle);
 
-        let evicted: Result<(), AppErrorStatic> = load::evict_stale_versions(&self.cache).await;
+        let evicted: Result<(), AppErrorStatic> = load::evict_stale_versions(&cache).await;
         if let Err(error) = evicted {
             log::warn!("evicting old cached bundle versions failed; [error={error}]");
         }
@@ -210,6 +210,52 @@ impl EaforaClient {
 }
 
 #[uniffi::export]
+pub fn set_cache_directory(cache_directory: String) -> Result<(), FfiError> {
+    set_once(&CACHE_DIRECTORY, PathBuf::from(cache_directory))
+}
+
+fn set_once(cell: &OnceLock<PathBuf>, path: PathBuf) -> Result<(), FfiError> {
+    let set_result: Result<(), PathBuf> = cell.set(path);
+
+    match set_result {
+        Ok(()) => Ok(()),
+        Err(_rejected_path) => Err(FfiError::Failed {
+            message: "the cache directory is already set".to_string(),
+        }),
+    }
+}
+
+fn create_cache() -> Result<FilesystemArtifactCache, FfiError> {
+    let cache_directory: Option<&PathBuf> = CACHE_DIRECTORY.get();
+
+    let Some(cache_directory) = cache_directory
+    else {
+        return Err(FfiError::Failed {
+            message: "the cache directory has not been set".to_string(),
+        });
+    };
+
+    Ok(FilesystemArtifactCache::create(cache_directory.clone()))
+}
+
+#[uniffi::export]
 pub fn revision() -> String {
     shared::revision::REVISION.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_once_accepts_the_first_path_and_rejects_a_second() {
+        let cell: OnceLock<PathBuf> = OnceLock::new();
+
+        let first: Result<(), FfiError> = set_once(&cell, PathBuf::from("/caches/first"));
+        let second: Result<(), FfiError> = set_once(&cell, PathBuf::from("/caches/second"));
+
+        assert!(first.is_ok());
+        assert!(second.is_err());
+        assert_eq!(cell.get(), Some(&PathBuf::from("/caches/first")));
+    }
 }

@@ -177,7 +177,7 @@ The FFI surface is one opaque handle and a small set of calls on it. Swift holds
 
 ```
 EaforaClient
-    new(cache_directory: String, distribution: DistributionContext) -> EaforaClient
+    new(distribution: DistributionContext) -> EaforaClient
     attach_surface(handle: WindowHandle, width: u32, height: u32)
     resize_surface(width: u32, height: u32)
     detach_surface()
