@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter, Result as FormatResult};
 
 use shared::error::{AppError, AppErrorStatic};
 
-/// What Swift catches. UniFFI's error derive requires an enum; a caller that must distinguish failures
+/// What Swift catches. `#[derive(uniffi::Error)]` requires an enum; a caller that must distinguish failures
 /// matches on the message.
 #[derive(Debug, uniffi::Error)]
 pub enum FfiError {
