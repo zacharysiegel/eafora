@@ -57,7 +57,7 @@ ios/
 ├── Cargo.toml                  # crate-type = ["staticlib"]; depends on shared with the render feature
 └── src/
     ├── lib.rs                  # the UniFFI scaffolding and the module declarations
-    ├── configuration.rs        # the set-once cache directory and distribution context
+    ├── host_environment.rs     # the set-once cache directory and distribution context the host supplies
     ├── bundle.rs               # the two loads and the published-bundle channel
     ├── renderer.rs             # the thread-local renderer and its lifecycle
     ├── revision.rs             # the build's git revision
@@ -176,10 +176,10 @@ Each of these is a hazard the plan cannot close from this machine, listed with w
 
 ## Phase 1: design & contracts
 
-The FFI surface is a set of free functions. Rust holds the state in statics: a set-once configuration, the published-bundle channel, and a per-thread renderer.
+The FFI surface is a set of free functions. Rust holds the state in statics: a set-once host environment, the published-bundle channel, and a per-thread renderer.
 
 ```
-configure(cache_directory: String, distribution: DistributionContext)
+set_host_environment(cache_directory: String, distribution: DistributionContext)
 open_first_paint_bundle(embedded_directory: String) -> String
 load_live_bundle(discovery_url: String, static_repository_base_url: String) -> String
 create_renderer()

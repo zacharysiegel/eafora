@@ -7,7 +7,7 @@ use shared::error::AppErrorStatic;
 use shared::http::{FilesystemFetch, ReqwestHttpFetch};
 use shared::license::DistributionContext;
 
-use crate::configuration;
+use crate::host_environment;
 use crate::error::FfiError;
 
 static PUBLICATION: Mutex<Option<BundlePublication>> = Mutex::new(None);
@@ -21,8 +21,8 @@ struct BundlePublication {
 /// Opens the newest readable cached bundle, falling back to the bundle in `embedded_directory`.
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn open_first_paint_bundle(embedded_directory: String) -> Result<String, FfiError> {
-    let cache: FilesystemArtifactCache = configuration::create_cache()?;
-    let distribution_context: DistributionContext = configuration::get_distribution_context()?;
+    let cache: FilesystemArtifactCache = host_environment::create_cache()?;
+    let distribution_context: DistributionContext = host_environment::get_distribution_context()?;
 
     let cached: Option<Bundle> = load::open_newest_cached_bundle(&cache, distribution_context).await?;
 
@@ -37,8 +37,8 @@ pub async fn open_first_paint_bundle(embedded_directory: String) -> Result<Strin
 /// Fetches the newest published bundle and republishes it through the channel the renderer holds.
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn load_live_bundle(discovery_url: String, static_repository_base_url: String) -> Result<String, FfiError> {
-    let cache: FilesystemArtifactCache = configuration::create_cache()?;
-    let distribution_context: DistributionContext = configuration::get_distribution_context()?;
+    let cache: FilesystemArtifactCache = host_environment::create_cache()?;
+    let distribution_context: DistributionContext = host_environment::get_distribution_context()?;
     let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create()?;
 
     let bundle: Bundle = load::load_live_bundle(
