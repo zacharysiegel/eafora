@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
-use std::thread::{self, ThreadId};
+use std::sync::Arc;
 
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::watch;
@@ -14,12 +13,9 @@ use crate::bundle;
 use crate::error::FfiError;
 use crate::handle::UiKitSurfaceHandle;
 
-// The first thread to call a renderer function owns the renderer for the life of the process.
-static RENDERER_THREAD: OnceLock<ThreadId> = OnceLock::new();
-
-/* wgpu state is bound to its creating thread, so only the synchronous functions below touch this. UniFFI
-   polls an `async fn` exported with `#[uniffi::export]` on a multi-threaded runtime, so it may continue on a
-   different thread after each `.await`. */
+/* wgpu state is bound to its creating thread, so only the synchronous functions below touch this, and only
+   on the main thread. UniFFI polls an `async fn` exported with `#[uniffi::export]` on a multi-threaded
+   runtime, so it may continue on a different thread after each `.await`. */
 thread_local! {
     static RENDERER: RefCell<Option<Renderer>> = const { RefCell::new(None) };
 }
@@ -28,7 +24,7 @@ thread_local! {
 /// Requires a published bundle; the renderer reads its geometry at construction.
 #[uniffi::export]
 pub fn create_renderer() -> Result<(), FfiError> {
-    require_renderer_thread()?;
+    require_main_thread()?;
 
     let renderer_exists: bool = RENDERER.with_borrow(|slot| slot.is_some());
     if renderer_exists {
@@ -75,7 +71,7 @@ pub fn detach_surface() -> Result<(), FfiError> {
 
 #[uniffi::export]
 pub fn destroy_renderer() -> Result<(), FfiError> {
-    require_renderer_thread()?;
+    require_main_thread()?;
 
     RENDERER.with_borrow_mut(|slot| slot.take());
 
@@ -93,20 +89,19 @@ fn block_on_calling_thread<F: Future>(future: F) -> Result<F::Output, AppError> 
     Ok(runtime.block_on(future))
 }
 
-/// Records the calling thread as the renderer's owner on the first call, and refuses any other thread.
-fn require_renderer_thread() -> Result<(), AppError> {
-    let calling_thread: ThreadId = thread::current().id();
-    let owning_thread: &ThreadId = RENDERER_THREAD.get_or_init(|| calling_thread);
+fn require_main_thread() -> Result<(), AppError> {
+    // Nonzero on the process's main thread.
+    let main_thread_flag: libc::c_int = unsafe { libc::pthread_main_np() };
 
-    if *owning_thread != calling_thread {
-        return Err(AppError::from("the renderer belongs to another thread".to_string()));
+    if main_thread_flag == 0 {
+        return Err(AppError::from("renderer functions must be called on the main thread".to_string()));
     }
 
     Ok(())
 }
 
 fn with_renderer(body: impl FnOnce(&mut Renderer) -> Result<(), AppError>) -> Result<(), AppError> {
-    require_renderer_thread()?;
+    require_main_thread()?;
 
     RENDERER.with_borrow_mut(|slot| {
         let Some(renderer) = slot.as_mut()
@@ -122,16 +117,13 @@ fn with_renderer(body: impl FnOnce(&mut Renderer) -> Result<(), AppError>) -> Re
 mod tests {
     use super::*;
 
+    /// The test harness runs each test on a spawned thread, so only the refusal can be tested here.
     #[test]
-    fn require_renderer_thread_refuses_every_thread_after_the_first() {
-        let first_call: Result<(), AppError> = require_renderer_thread();
-        let repeated_call: Result<(), AppError> = require_renderer_thread();
-        let other_thread_refused: bool = thread::spawn(|| require_renderer_thread().is_err())
+    fn require_main_thread_refuses_a_spawned_thread() {
+        let spawned_thread_refused: bool = std::thread::spawn(|| require_main_thread().is_err())
             .join()
-            .expect("the other thread does not panic");
+            .expect("the spawned thread does not panic");
 
-        assert!(first_call.is_ok());
-        assert!(repeated_call.is_ok());
-        assert!(other_thread_refused);
+        assert!(spawned_thread_refused);
     }
 }

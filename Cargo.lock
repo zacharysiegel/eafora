@@ -3530,6 +3530,7 @@ dependencies = [
 name = "ios"
 version = "0.0.0"
 dependencies = [
+ "libc",
  "log",
  "shared",
  "tokio",

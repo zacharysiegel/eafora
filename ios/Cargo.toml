@@ -14,3 +14,4 @@ shared = { workspace = true, features = ["render"] }
 uniffi = { workspace = true, features = ["tokio"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 log = { workspace = true }
+libc = { workspace = true }
