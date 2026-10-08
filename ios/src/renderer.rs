@@ -13,8 +13,9 @@ use crate::bundle;
 use crate::error::FfiError;
 use crate::handle::UiKitSurfaceHandle;
 
-/* wgpu state is bound to its creating thread, so only the synchronous functions below touch this. An
-   exported `async fn` may continue on a different thread after each `.await`. */
+/* wgpu state is bound to its creating thread, so only the synchronous functions below touch this. UniFFI
+   polls an `async fn` exported with `#[uniffi::export]` on a multi-threaded runtime, so it may continue on a
+   different thread after each `.await`. */
 thread_local! {
     static RENDERER: RefCell<Option<Renderer>> = const { RefCell::new(None) };
 }
