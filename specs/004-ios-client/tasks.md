@@ -42,6 +42,8 @@ Independent of 0.1. No FR of its own: it exists so Phase B does not write 562 li
 
 Stacks on 0.1.
 
+Prerequisite, done: the home-view geometry (`shared/src/map/home_view.rs`) and the frame-state initialization and period reset (`FrameState::initial`, `FrameState::reset_active_period_if_uncovered`) moved from `web/src/map/canvas/driver.rs` into `shared`, so the iOS draw path can build a viewport and frame state without the web driver. Gestures, zoom-to-country, selection, and hover stay in the web driver until a Swift caller needs them.
+
 1. Write `ios/project.yml` for XcodeGen: the app target, the deployment target, the pre-build run-script phases in order (xcframework, embedded-bundle sync, revision injection), the xcframework link, and `Resources/embedded_artifacts` in Copy Bundle Resources. Run `xcodegen generate` and confirm the project opens.
 2. Gitignore `ios/Eafora.xcodeproj/` and `ios/EaforaApp/Resources/embedded_artifacts/`.
 3. Write `ios/setup.sh` per FR-046, and `ios/README.md` with the iOS quickstart.

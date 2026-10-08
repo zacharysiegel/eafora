@@ -14,8 +14,9 @@ use shared::AppError;
 use shared::artifact::Bundle;
 use shared::canonical::{DataSourceKind, DataStatus, SourceAttribution, StatisticKind};
 use shared::license::DistributionContext;
-use shared::map::{ViewportTransition, CountryFraming, FrameState, GeoPoint, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
+use shared::map::{ViewportTransition, CountryFraming, FrameState, ProjectedPoint, AnimationProgress, RegionCode, RegionHit, Renderer, RendererBackend, SurfacePoint, SurfaceDimensions, Viewport};
 use shared::map::hit_test;
+use shared::map::home_view;
 use shared::map::projection;
 use shared::sqlite::shard_db::{CellValue, SeriesPoint, ShardValues};
 
@@ -23,6 +24,7 @@ use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
 use crate::distribution;
 use crate::live_resolve;
+use crate::map::settings;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
 use super::{CellView, RankView, RegionDetail, RenderStatus, GlobalView, LegendView, SelectionView, SeriesPointView, SourceCellView, ViewControls};
@@ -30,17 +32,6 @@ use super::{CellView, RankView, RegionDetail, RenderStatus, GlobalView, LegendVi
 thread_local! {
     static DRIVER: RefCell<Option<Driver>> = const { RefCell::new(None) };
 }
-
-/// Greenwich, on the prime meridian. Only the longitude is used.
-const HOME_CENTER: GeoPoint = GeoPoint {
-    lat: 51.4779,
-    lon: 0.0,
-};
-
-/// The home view's latitude framing, in degrees: chosen by hand to enclose the drawn continents (Tierra
-/// del Fuego to northern Greenland) with no empty polar ocean.
-const HOME_VIEW_MIN_LAT: f64 = -56.0;
-const HOME_VIEW_MAX_LAT: f64 = 84.0;
 
 /// Wheel-zoom feel, as the exponential rate applied to a wheel event's `delta_y`. A tuning constant with
 /// no correctness role.
@@ -77,9 +68,6 @@ const ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT: f64 = 8.0;
 
 /// The floor, in projected units, on the margin opposite the clipped (pole) side.
 const ZOOM_TO_COUNTRY_MIN_EDGE_MARGIN: f64 = 0.1;
-
-/// Minimum coverage for the default period, as a proportion of the best-covered period's.
-const MINIMUM_DEFAULT_COVERAGE_PROPORTION: f64 = 0.8;
 
 /// Canonical `region.code` of the World aggregate. World has no geometry, so it is never a hit-test
 /// result.
@@ -146,11 +134,7 @@ impl Driver {
         self.transition = None;
         self.surface_dimensions = SurfaceDimensions { width, height };
 
-        /* Preserve the current pan/zoom across a resize or device-pixel-ratio change, re-fitting only the
-           aspect. */
-        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
-        let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
-        self.viewport = self.viewport.refit_to_surface(self.surface_dimensions, ceiling, home_min_y, home_max_y);
+        self.viewport = home_view::refit_to_surface(self.viewport, self.surface_dimensions);
 
         if let Err(error) = self.renderer.resize_surface(width, height) {
             log::error!("resizing the render surface failed [error={error}]");
@@ -239,8 +223,8 @@ impl Driver {
 
     /// The viewport framing a country, balanced so a pole-adjacent country stays centered.
     fn zoom_target(&self, framing: CountryFraming) -> Viewport {
-        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
-        let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
+        let (home_min_y, home_max_y): (f64, f64) = home_view::home_range_projected_y_bounds();
+        let ceiling: f64 = home_view::zoom_out_ceiling_height(self.surface_dimensions);
         let min_height: f64 = zoom_to_country_min_height();
 
         /* Framed against the uncovered region so a wide country clears the chrome, then rebuilt at the full
@@ -532,7 +516,7 @@ impl Driver {
 
     fn pan_view(&mut self, from: SurfacePoint, to: SurfacePoint) {
         self.transition = None;
-        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
+        let (home_min_y, home_max_y): (f64, f64) = home_view::home_range_projected_y_bounds();
         self.viewport = hit_test::pan(self.viewport, self.surface_dimensions, from, to, home_min_y, home_max_y);
 
         self.request_redraw();
@@ -540,8 +524,8 @@ impl Driver {
 
     fn pinch_view(&mut self, previous_a: SurfacePoint, previous_b: SurfacePoint, current_a: SurfacePoint, current_b: SurfacePoint) {
         self.transition = None;
-        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
-        let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
+        let (home_min_y, home_max_y): (f64, f64) = home_view::home_range_projected_y_bounds();
+        let ceiling: f64 = home_view::zoom_out_ceiling_height(self.surface_dimensions);
         self.viewport = hit_test::pinch(
             self.viewport, self.surface_dimensions, previous_a, previous_b, current_a, current_b,
             ceiling, home_min_y, home_max_y,
@@ -586,8 +570,8 @@ impl Driver {
         let clamped_delta: f64 = delta_y.clamp(-MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
         let factor: f64 = (-clamped_delta * sensitivity).exp();
 
-        let (home_min_y, home_max_y): (f64, f64) = home_range_projected_y_bounds();
-        let ceiling: f64 = zoom_out_ceiling_height(self.surface_dimensions);
+        let (home_min_y, home_max_y): (f64, f64) = home_view::home_range_projected_y_bounds();
+        let ceiling: f64 = home_view::zoom_out_ceiling_height(self.surface_dimensions);
         self.viewport = hit_test::zoom_at_surface_point(self.viewport, self.surface_dimensions, surface_point, factor, ceiling, home_min_y, home_max_y);
 
         self.request_redraw();
@@ -630,7 +614,7 @@ impl Driver {
 
         let bundle: Arc<Bundle> = self.current_bundle();
 
-        reset_active_period_if_uncovered(self, &bundle);
+        self.frame_state.reset_active_period_if_uncovered(&bundle);
 
         self.request_redraw();
 
@@ -765,7 +749,8 @@ async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Res
         log::warn!("evicting old cached bundle versions failed [error={error}]");
     }
 
-    let frame_state: FrameState = initial_frame_state(&bundle);
+    let hover_lift_enabled: bool = settings::regions_expand_on_hover();
+    let frame_state: FrameState = FrameState::initial(&bundle, hover_lift_enabled);
     let (bundle_sender, bundle_receiver): (watch::Sender<Arc<Bundle>>, watch::Receiver<Arc<Bundle>>) =
         watch::channel(Arc::new(bundle));
 
@@ -783,7 +768,7 @@ async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Res
     let driver: Driver = Driver {
         renderer,
         bundle_sender,
-        viewport: home_viewport(SurfaceDimensions { width, height }),
+        viewport: home_view::home_viewport(SurfaceDimensions { width, height }),
         surface_dimensions: SurfaceDimensions { width, height },
         frame_state,
         signals,
@@ -872,7 +857,7 @@ fn apply_live_bundle(live_bundle_sender: watch::Sender<Arc<Bundle>>, bundle: Bun
         let driver: &mut Driver = driver_slot.as_mut()?;
 
         let bundle: Arc<Bundle> = driver.current_bundle();
-        reset_active_period_if_uncovered(driver, &bundle);
+        driver.frame_state.reset_active_period_if_uncovered(&bundle);
 
         let views: RepublishedViews = driver.republish(&bundle);
         let attributions: BTreeMap<DataSourceKind, Vec<SourceAttribution>> =
@@ -889,49 +874,6 @@ fn apply_live_bundle(live_bundle_sender: watch::Sender<Arc<Bundle>>, bundle: Bun
         signals.global_view.set(Some(views.global));
         signals.source_attributions.set(attributions);
     }
-}
-
-/// Leaves the period unchanged when the statistic has no shard to take a default from.
-fn reset_active_period_if_uncovered(driver: &mut Driver, bundle: &Bundle) {
-    let Some((earliest, latest)) = driver
-        .active_shard_values(bundle)
-        .and_then(|shard_values| shard_values.period_range())
-    else {
-        return;
-    };
-
-    let covers_active_period: bool = driver.frame_state.active_period_start >= earliest
-        && driver.frame_state.active_period_start <= latest;
-    if covers_active_period {
-        return;
-    }
-
-    if let Some(period_start) = default_period_start(bundle, driver.frame_state.active_statistic) {
-        driver.frame_state.active_period_start = period_start;
-    }
-}
-
-/// Falls back to the Unix epoch when the default statistic's shard is missing.
-fn initial_frame_state(bundle: &Bundle) -> FrameState {
-    let active_statistic: StatisticKind = StatisticKind::Tfr;
-    let active_period_start: NaiveDate = default_period_start(bundle, active_statistic)
-        .unwrap_or_else(|| NaiveDate::from_epoch_days(0).expect("day 0 is the Unix epoch"));
-
-    FrameState {
-        active_statistic,
-        active_period_start,
-        selected_region: None,
-        hovered_region: None,
-        hover_lift_enabled: crate::map::settings::regions_expand_on_hover(),
-    }
-}
-
-/// Read through `Bundle::shard_values_for` so the seeded period and the coloured shard never disagree about
-/// which license class won.
-fn default_period_start(bundle: &Bundle, statistic: StatisticKind) -> Option<NaiveDate> {
-    let shard_values: &ShardValues = bundle.shard_values_for(statistic)?;
-
-    shard_values.newest_well_covered_period_start(MINIMUM_DEFAULT_COVERAGE_PROPORTION)
 }
 
 /// `?renderer=webgl2` forces the WebGL2 backend for developer parity testing. Not a user-facing
@@ -953,40 +895,12 @@ fn backend_from_query() -> RendererBackend {
     }
 }
 
-/// The home view: the `HOME_VIEW_MIN_LAT`..`HOME_VIEW_MAX_LAT` band fills the surface vertically,
-/// centered on the prime meridian.
-fn home_viewport(surface_dimensions: SurfaceDimensions) -> Viewport {
-    let center_x: f64 = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon).x;
-    let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
-
-    Viewport::fill_height(center_x, min_y, max_y, surface_dimensions)
-}
-
-/// The home latitude range's lower and upper bounds in projected space, the vertical limits pan and
-/// zoom-out clamp against.
-fn home_range_projected_y_bounds() -> (f64, f64) {
-    let southern_edge: ProjectedPoint = projection::project(HOME_VIEW_MIN_LAT, HOME_CENTER.lon);
-    let northern_edge: ProjectedPoint = projection::project(HOME_VIEW_MAX_LAT, HOME_CENTER.lon);
-
-    (southern_edge.y, northern_edge.y)
-}
-
 /// The projected height of the `ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT` band, the zoom-to-country height floor.
 fn zoom_to_country_min_height() -> f64 {
-    let northern_edge: ProjectedPoint = projection::project(ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT, HOME_CENTER.lon);
-    let southern_edge: ProjectedPoint = projection::project(-ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT, HOME_CENTER.lon);
+    let northern_edge: ProjectedPoint = projection::project(ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT, home_view::HOME_CENTER.lon);
+    let southern_edge: ProjectedPoint = projection::project(-ZOOM_TO_COUNTRY_MIN_BAND_HALF_LAT, home_view::HOME_CENTER.lon);
 
     northern_edge.y - southern_edge.y
-}
-
-/// The largest height (furthest zoom-out): the home range, capped so the aspect-locked width never
-/// exceeds one world turn.
-fn zoom_out_ceiling_height(surface_dimensions: SurfaceDimensions) -> f64 {
-    let (min_y, max_y): (f64, f64) = home_range_projected_y_bounds();
-    let home_height: f64 = max_y - min_y;
-    let width_cap_height: f64 = std::f64::consts::TAU * (surface_dimensions.height as f64 / surface_dimensions.width as f64);
-
-    home_height.min(width_cap_height)
 }
 
 /// Sizes the canvas's drawing buffer to its displayed size in device pixels so the map renders crisply
