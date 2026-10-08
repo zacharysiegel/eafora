@@ -2,7 +2,8 @@ use std::error::Error;
 
 minimer::define_app_error!(pub AppError);
 
-// The Send variant, for operations awaited across an FFI. Holds the message and backtrace.
+// Returned by functions awaited across an FFI, which requires `Send` futures. Holds the message and backtrace
+// but no source error.
 minimer::define_app_error_static!(pub AppErrorStatic);
 
 minimer::impl_from_error!(AppError, serde_json::Error);

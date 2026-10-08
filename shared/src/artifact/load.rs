@@ -577,7 +577,7 @@ mod tests {
     }
 }
 
-// UniFFI requires a Send future for the async export, so this pins the bound.
+// UniFFI requires the future of an exported `async fn` to be `Send`, so this pins the bound.
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod send_bound {
     use super::*;

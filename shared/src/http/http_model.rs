@@ -47,7 +47,7 @@ pub(crate) mod tests {
 
     use super::*;
 
-    /// Serves the bodies it was seeded with and 404s the rest, recording each URL asked for.
+    /// Serves the bodies it was seeded with and answers 404 for any other URL, recording each URL asked for.
     pub(crate) struct MockHttpFetch {
         bodies_by_url: BTreeMap<String, Vec<u8>>,
         requested_urls: tokio::sync::Mutex<Vec<String>>,

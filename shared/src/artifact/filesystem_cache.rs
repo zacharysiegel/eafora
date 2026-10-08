@@ -192,7 +192,7 @@ mod tests {
         cache.delete_version("2026-08-14+macdiarmid").await.unwrap();
     }
 
-    /// The operating system may reclaim the directory mid-session; the loader must see an empty cache.
+    /// The operating system may delete the directory while the app runs, which must read as an empty cache.
     #[tokio::test]
     async fn a_root_removed_mid_session_reads_as_an_empty_cache_and_accepts_new_writes() {
         let (_root, cache): (TempDir, FilesystemArtifactCache) = create_cache();

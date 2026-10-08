@@ -71,7 +71,7 @@ function generate_swift_bindings {
     rm -rf "${HEADERS_DIR}" "${SWIFT_SOURCES_DIR}"
     mkdir -p "${HEADERS_DIR}" "${SWIFT_SOURCES_DIR}"
 
-    # Reads the exported surface from the built archive; emits one kind of file per run.
+    # Reads the exported functions and types from the built archive; emits one kind of file per run.
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${SWIFT_SOURCES_DIR}" --swift-sources
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${HEADERS_DIR}" --headers
     cargo run --quiet -p uniffi_bindgen_swift -- "${archive_path}" "${HEADERS_DIR}" \

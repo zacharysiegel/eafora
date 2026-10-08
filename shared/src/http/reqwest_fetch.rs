@@ -110,7 +110,7 @@ mod tests {
         assert!(!response.is_success());
     }
 
-    /// The transport-failure arm, reached through a URL that fails to parse.
+    /// A URL that fails to parse makes the request itself fail.
     #[tokio::test]
     async fn fetch_errors_when_the_url_cannot_be_parsed() {
         let http_fetch: ReqwestHttpFetch = ReqwestHttpFetch::create().unwrap();
