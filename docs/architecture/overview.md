@@ -92,7 +92,7 @@ eafora/
 ├── docs/                   # cross-cutting research and architecture
 ├── specs/                  # per-feature spec-kit artifacts (NNN-slug)
 ├── .specify/               # spec-kit machinery
-├── core/                   # Rust core: data models, math, projection, wgpu, ingestion logic
+├── shared/                 # Rust core: data models, math, projection, wgpu, artifact loading and caching
 │   ├── Cargo.toml
 │   └── src/                # feature-organized modules; mod.rs only declares + re-exports
 ├── ingestion/              # actix-web binary (Singularity's lobby analog)
@@ -102,9 +102,10 @@ eafora/
 ├── web/                    # Leptos web shell (cargo-leptos workspace member)
 │   ├── Cargo.toml
 │   └── src/
-├── ios/                    # SwiftUI shell + UniFFI consumer; Xcode project + glue
-│   ├── Eafora.xcodeproj
-│   └── EaforaApp/
+├── ios/                    # UniFFI crate (`eafora_ios` staticlib) at the root; the SwiftUI app beside src/
+│   ├── Cargo.toml
+│   ├── src/                # the exported UniFFI surface
+│   └── EaforaApp/          # SwiftUI shell (Phase A)
 ├── android/                # Compose shell + UniFFI consumer
 │   ├── build.gradle.kts
 │   └── app/
@@ -118,16 +119,16 @@ eafora/
 
 Notes on this shape:
 
-- `core/` is the most-shared crate. It exposes both wasm-bindgen and UniFFI surfaces via thin adapter modules (see §FFI boundaries) and stays free of platform-specific code.
-- `ingestion/` is a separate crate that depends on `core` and adds the actix-web router, sqlx queries, source adapters, and artifact builders. Splitting it from `core` means clients don't pull in actix-web or sqlx into their WASM/UniFFI builds.
-- `ios/` and `android/` are not Cargo crates — they're native projects that consume artifacts produced by `core`. The `core` crate's UniFFI build emits an `xcframework` and an AAR that these projects link against.
-- `web/` is a Cargo workspace member because cargo-leptos drives it. It depends on `core` directly and adds Leptos components, routing, and the wasm-bindgen adapter.
+- `shared/` is the most-shared crate. It exports no binding surface and has no UniFFI dependency; the UniFFI surface lives in `ios/`, and the wasm entry point lives in `web/` (see §FFI boundaries).
+- `ingestion/` is a separate crate that depends on `shared` and adds the actix-web router, sqlx queries, source adapters, and artifact builders. Splitting it from `shared` means clients don't pull in actix-web or sqlx into their WASM/UniFFI builds.
+- `ios/` is a Cargo crate at its root, symmetric with `web/`: package `ios`, library `eafora_ios`, `crate-type = ["staticlib"]`, depending on `shared` with the `render` feature and on `uniffi`. `scripts/build/build-ios-xcframework.sh` builds it into `target/uniffi/EaforaIOS.xcframework`, which the SwiftUI app beside `ios/src/` links. `android/` is a native project that links a UniFFI-built AAR.
+- `web/` is a Cargo workspace member because cargo-leptos drives it. It depends on `shared` directly and adds Leptos components, routing, and the wasm-bindgen adapter.
 - The downsampled artifacts (small downsampled SQLite plus full-geometry FlatGeobuf shipped inside each native app build for instant first-launch UX) are the `downsampled/` subtree of each `$EAFORA_ARTIFACTS_DIR/<version-label>/` build. Every `ingestion build` emits both bundles for one version in a single run — the `complete/` bundle (all periods and sources; publishes to the CDN) and the `downsampled/` bundle — reading the canonical store directly and applying the downsampling rules (drop sub-national geometry, restrict statistics to World Bank WDI and keep a single reference year — the United States' most-recent period, while keeping country geometry at full 1:50m resolution) during shard emission. `ingestion build` also updates a `$EAFORA_ARTIFACTS_DIR/latest` symlink pointing at the newest `<version-label>/`. Each native client's build script (Xcode for iOS, Gradle for Android) reads `$EAFORA_ARTIFACTS_DIR/latest/downsampled/` and copies it into its own asset tree (`ios/EaforaApp/Resources/embedded_artifacts/`, `android/app/src/main/assets/embedded_artifacts/`). The dependency direction is client-pulls-from-producer, never producer-pushes-into-client. The web build has no equivalent embedded bundle. Reproducibility for any given commit comes from the canonical store at the producer machine, not from `git`.
 - Per the constitution's Singularity convention parity (Principle IV), `scripts/db/dbmate.sh` / `secrets.yaml` mirror Singularity verbatim. `setup.sh` and the Postgres runtime differ: Eafora installs Postgres via Homebrew and manages it via `launchd` rather than Podman Compose — a Principle IV deviation justified by v1's personal-hardware scope (see Constitution v1.3.3 SYNC IMPACT note). Containerization may return for cloud deployment post-v2.
 
 ### Workspace Cargo profile
 
-The workspace `Cargo.toml` sets `panic = "abort"` on `[profile.release]`:
+Setting `panic = "abort"` on `[profile.release]` is a pending decision. The workspace `Cargo.toml` does not set it today; its only custom profile is `[profile.wasm-release]`. The proposed setting:
 
 ```toml
 [profile.release]
@@ -144,10 +145,10 @@ This is a correctness / debuggability decision, not a binary-size optimization. 
 
 ### Module organization
 
-Per the user's organize-by-feature preference and Singularity's pattern, `core/src/` is laid out by feature, not by layer. Sketch:
+Per the user's organize-by-feature preference and Singularity's pattern, `shared/src/` is laid out by feature, not by layer. The sketch below is the original proposal and does not match the current module layout, which includes `map/`, `artifact/`, `render/`, `http/`, `canonical/`, `sqlite/`, and `license/`:
 
 ```
-core/src/
+shared/src/
 ├── lib.rs                  # workspace entrypoint; re-exports public API
 ├── error.rs                # uses minimer; per-feature error variants live in their feature module
 ├── geometry/               # vector polygon model, projection math, hit-testing
@@ -175,10 +176,6 @@ core/src/
 │   ├── flatgeobuf.rs
 │   ├── sqlite.rs
 │   └── manifest.rs
-├── ffi/                    # FFI adapters; one submodule per binding tool
-│   ├── mod.rs
-│   ├── wasm.rs             # wasm-bindgen surface
-│   └── uniffi.rs           # UniFFI surface
 └── boundary/               # contested-borders abstraction (per-locale swap design)
     └── mod.rs
 ```
@@ -197,18 +194,18 @@ Practical rules:
 
 1. **Use concrete types, never generics across the FFI boundary.** UniFFI does not support generics across FFI; wasm-bindgen does, but writing the API to UniFFI's constraints lets one definition serve both.
 2. **No trait objects or `dyn Trait` exposed.** Same reason.
-3. **All errors are concrete enums implementing minimer's traits**, with payload data limited to strings and primitives. Both UniFFI and wasm-bindgen marshal these cleanly.
+3. **Exported functions return a single error type with a string payload.** On iOS that is `FfiError::Failed { message: String }` (in `ios/src/error.rs`), which UniFFI maps to Swift `throws`; it is returned only by exported functions, and `AppError` stays everywhere else.
 4. **Async is supported but cancellation is not.** UniFFI added async support around 2023 but cancellation tokens are still missing as of early 2026. The core's async functions must self-cancel based on a polled flag if cancellation matters.
 5. **Vectors and maps cross the boundary, but expensively.** Returning a `Vec<CountryStatistic>` of 200 entries is fine; doing it 200 times per frame is not. Design the API for batch calls (one call returning all statistics for a viewport, not 200 calls returning one each). FFI overhead is roughly 1–10 µs per call before payload marshaling.
 
-The `ffi::wasm` and `ffi::uniffi` submodules contain the *only* code that knows about a binding tool. They wrap concrete `core::*` types in binding-specific facade types where the binding tool requires it (e.g. an `StatisticSetWeb` wrapping an `StatisticSet`). This isolation means the core itself stays binding-agnostic and independently testable.
+The binding surfaces live only in the platform crates: `web/` (wasm-bindgen) and `ios/` (UniFFI). `shared` and `web` have no UniFFI dependency, so the web build never compiles UniFFI. This isolation means the core itself stays binding-agnostic and independently testable.
 
 ### Error handling
 
 Per the constitution: **minimer**. The core uses `minimer::Error` (or whatever the published name turns out to be — the crate is the user's published generalization of Singularity's in-house `AppError`). Per-feature modules define their own concrete error variants where useful for matching:
 
 ```rust
-// core/src/statistic/error.rs (sketch)
+// shared/src/statistic/error.rs (sketch)
 #[derive(Debug)]
 pub enum StatisticError {
     InvalidIso(String),
@@ -219,28 +216,28 @@ pub enum StatisticError {
 // boundary code converts to minimer::Error / AppError at the public API surface
 ```
 
-The FFI layer maps these to the binding-specific representation: Swift `throws`, Kotlin exceptions, JS exceptions or Result-as-tagged-union.
+Each binding surface converts `shared::error::AppError` or `AppErrorStatic` into its own error representation. On iOS that is `FfiError::Failed { message }`, built from the error's `to_string()`, which Swift sees as `throws`.
 
 ### Async model
 
 Two regimes in the same crate:
 
-- **Native (iOS, Android, ingestion binary)**: full tokio multithreading. The `ingestion/` binary uses `tokio::main` with `features = ["full"]`. iOS and Android use UniFFI's async support for fetch/parse calls.
+- **Native (iOS, Android, ingestion binary)**: full tokio multithreading. The `ingestion/` binary uses `tokio::main` with `features = ["full"]`. On iOS the two bundle loads are `async` exports under `#[uniffi::export(async_runtime = "tokio")]`, which Swift sees as `async throws`. UniFFI requires their futures to be `Send`, so the functions on their await path return `shared::error::AppErrorStatic` (minimer's static error, which holds no boxed source error). The iOS renderer exports are synchronous and keep the renderer in a `thread_local!`, because wgpu state is bound to its creating thread and an async export may resume on another thread.
 - **WASM**: single-threaded (`SharedArrayBuffer` is intentionally avoided — see §Web client below). The core's WASM-facing surface is built without `Send + Sync` requirements; per-WASM state lives in `thread_local!`.
 
-To keep the core code agnostic, the `core` crate is `#[cfg]`-aware where it must be:
+To keep the core code agnostic, the `shared` crate is `#[cfg]`-aware where it must be:
 
 - Functions that genuinely need threading are gated behind `#[cfg(not(target_arch = "wasm32"))]`.
 - The default API works in both regimes by sticking to immediate values and `async fn` (which compiles fine in both).
 
 ### Geometry, projection, hit-testing
 
-The `core::geometry` module is the math heart of the renderer. Concretely:
+The `shared::map` module is the math heart of the renderer. Concretely:
 
-- **Projection**: **Miller cylindrical**, the only projection. Rectangular (~5:3 aspect ratio) so it fills the viewport corners with no UI dead zones; closed-form `(lon, lat) → (x, y)` in ~5 lines. Less polar inflation than Mercator while staying conformal at low latitudes. No alternate projections, no toggle, no v2+ plans for additional projections — this decision is closed. Implementation is a pure function in `core::geometry::projection`; no GIS library required.
+- **Projection**: **Miller cylindrical**, the only projection. Rectangular (~5:3 aspect ratio) so it fills the viewport corners with no UI dead zones; closed-form `(lon, lat) → (x, y)` in ~5 lines. Less polar inflation than Mercator while staying conformal at low latitudes. No alternate projections, no toggle, no v2+ plans for additional projections — this decision is closed. Implementation is a pure function in `shared::map::projection`; no GIS library required.
 - **Polygon representation**: full polygons everywhere; no LOD, no tile pyramid, no per-frame simplification. v1 ships ~200 country polygons (~5 MB compressed in FlatGeobuf, with the format's built-in R-tree spatial index used directly for hit-testing). When sub-national geometry lands in v2+, it joins the same FlatGeobuf as additional features and loads in the background after country features render; `geometry.md` covers how a second boundary source is reconciled with Natural Earth into that one layer. The wgpu pipeline rasterizes the same vertex data at every zoom level — small countries at low zoom contribute fewer pixels, which is the right behavior for free, with no LOD-boundary popping. Continuous zoom drops out automatically.
 - **Hit-testing**: A spatial index (R-tree or interval-tree) over the country polygons, queried at viewport-space resolution. **Critical UX rule**: the hit-test geometry uses the *unscaled* country polygon. The hover-scale effect only changes the rendering transform, never the hit-test — this is the user-stated requirement that off-the-shelf map SDKs typically violate.
-- **Animation**: Zoom-to-country uses a cubic-easing time curve; the camera target is the country's polygon centroid; the camera scale is computed from the polygon's bounding box plus a margin. Implemented as a `core::geometry::animation::ViewportTransition` the platform shell polls each frame.
+- **Animation**: Zoom-to-country uses a cubic-easing time curve; the camera target is the country's polygon centroid; the camera scale is computed from the polygon's bounding box plus a margin. Implemented as a `shared::map::viewport_transition::ViewportTransition` the platform shell polls each frame.
 
 ### wgpu rendering pipeline
 
@@ -255,10 +252,10 @@ The core owns a small set of wgpu render pipelines, all written in WGSL:
 
 Shaders are simple — the data is small (200 countries, simplified polygons), so we don't need indirect draws or compute. The core exposes a single `render(viewport, statistic_state) -> CommandBuffer` function the platform shells call from their render loop.
 
-The `core::render::surface` adapter receives a platform-agnostic surface handle (a `*mut c_void` plus dimensions) and creates a `wgpu::Surface` from it. Each platform shell does the small bit of glue to provide that handle:
+`shared::render::surface` builds a `WgpuSurface`. Native targets pass a `shared::render::WindowHandle` (`UiKit` or `AndroidNdk`, pointers carried as `u64`) plus dimensions to `WgpuSurface::from_window_handle`. Each platform shell does the small bit of glue to provide its surface target:
 
-- **Web**: `Instance::create_surface_from_canvas(&canvas)` (wasm-bindgen).
-- **iOS**: passes `MTKView`'s drawable layer pointer through UniFFI; Rust uses `raw-window-handle` 0.6's iOS variant.
+- **Web**: the web client passes an `HtmlCanvasElement` to `WgpuSurface::from_canvas`, which uses `SurfaceTarget::Canvas`.
+- **iOS**: Swift passes a `UiKitSurfaceHandle { layer_ptr, view_ptr }` record read off the `MTKView` to `attach_surface`; `ios/src/handle.rs` converts it to `WindowHandle::UiKit`, and Rust builds the surface through `raw-window-handle`'s UiKit variant.
 - **Android**: Kotlin passes the `Surface` jobject through JNI; Rust calls `ANativeWindow_fromSurface` and constructs the wgpu surface from the Vulkan handle (no GLES path at the API-31 baseline).
 
 ## FFI boundaries
@@ -273,7 +270,7 @@ Not everything goes through the Rust core. The cost of FFI calls plus the limita
 | Statistic math (color mapping, time-series interpolation, derivation) | Rust core | Same |
 | wgpu rendering pipeline | Rust core | Whole point of the architecture |
 | Artifact parsing (FlatGeobuf, SQLite reads) | Rust core | One source of truth for the data format |
-| HTTP fetches | Each platform's native HTTP stack | Battle-tested; integrates with platform caching, proxies, certs; async ergonomics are better; FFI overhead is dominated by the I/O time anyway (a few microseconds vs hundreds of milliseconds) |
+| HTTP fetches and artifact caching | Rust `shared` (`shared/src/artifact/load.rs`), over per-platform `HttpFetch` and `ArtifactCache` implementations | One loader for discovery reconciliation, version ranking, sha256 verification, and eviction across clients. iOS uses `ReqwestHttpFetch` and `FilesystemArtifactCache` from `shared`; the web client supplies a browser-fetch `HttpFetch` and an OPFS `ArtifactCache` |
 | UI chrome (header, panels, controls, navigation) | Each platform's native UI framework | The whole point of "native UI shells" |
 | Animations of UI chrome | Each platform's UI framework | Map animations are wgpu; UI animations are SwiftUI / Compose / CSS |
 | Domain-content i18n (country names, statistic names, units, source attribution, data-status labels) | Rust core | Hand-curated translation table written into the SQLite artifact at build time; sourced from ISO 3166 (countries) plus per-language overrides where the canonical name is unidiomatic. Joined to upstream-source values by ISO 3166 alpha-3. **v1 ships English only.** Single source of truth across all three clients; renaming happens in one place. FFI exposes `country_name(iso, locale)` / `statistic_definition(id, locale)` lookups |
@@ -282,41 +279,46 @@ Not everything goes through the Rust core. The cost of FFI calls plus the limita
 
 ### Per-binding adapters
 
-The `core::ffi::wasm` and `core::ffi::uniffi` modules are the *only* places that depend on a binding tool. Each defines a thin facade. Sketch for UniFFI:
+The `ios/` crate is the only place that exports through UniFFI. The UniFFI surface is free functions over statics:
 
 ```rust
-// core/src/ffi/uniffi.rs
+// ios/src/cache.rs: set once, before any load; held in a `static OnceLock<FilesystemArtifactCache>`
 #[uniffi::export]
-pub struct EaforaCore { /* opaque */ }
+pub fn set_cache_directory(cache_directory: String) -> Result<(), FfiError>;
 
-#[uniffi::export]
-impl EaforaCore {
-    #[uniffi::constructor]
-    pub fn new(artifact_path: String) -> Result<Self, EaforaError> { /* ... */ }
+// ios/src/bundle.rs: both return the live version label and publish the bundle through a
+// `static OnceLock<watch::Sender<Arc<Bundle>>>` the renderer subscribes to
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn open_first_paint_bundle(embedded_directory: String) -> Result<String, FfiError>;
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn load_live_bundle(discovery_url: String, static_repository_base_url: String) -> Result<String, FfiError>;
 
-    pub fn render_frame(&self, viewport: Viewport) -> Result<RenderCommands, EaforaError> { /* ... */ }
+// ios/src/renderer.rs: synchronous, all called from the same thread (Swift's main thread)
+#[uniffi::export] pub fn create_renderer() -> Result<(), FfiError>;
+#[uniffi::export] pub fn attach_surface(handle: UiKitSurfaceHandle, width: u32, height: u32) -> Result<(), FfiError>;
+#[uniffi::export] pub fn resize_surface(width: u32, height: u32) -> Result<(), FfiError>;
+#[uniffi::export] pub fn detach_surface() -> Result<(), FfiError>;
+#[uniffi::export] pub fn destroy_renderer();
 
-    pub fn country_at_point(&self, viewport: Viewport, point: ScreenPoint)
-        -> Option<CountryId> { /* ... */ }
-
-    pub async fn parse_country_payload(&self, json: String)
-        -> Result<CountryDetail, EaforaError> { /* ... */ }
-}
+// ios/src/revision.rs
+#[uniffi::export] pub fn revision() -> String;
 ```
 
-For wasm-bindgen the facade is similar but uses `#[wasm_bindgen]` and JS-friendly types (`Vec<u8>` instead of `String` for binary payloads, `JsValue` for fallible returns). The two facades wrap the same internal types from `core::statistic`, `core::geometry`, etc. — the duplication is in the *binding plumbing*, not the *logic*.
+`open_first_paint_bundle` opens the newest readable cached bundle, else the embedded bundle read from the app-bundle directory Swift passes in. Because the renderer subscribes to the published bundle, a live load repaints with no relaunch. The distribution context is the constant `DistributionContext::FirstParty`. These exports are provisional: drawing a frame, hit-testing a point, and changing the period, statistic, pan, or zoom are deferred to Phase A of `specs/004-ios-client/plan.md`, after the viewport, frame-state, and gesture orchestration in `web/src/map/canvas/driver.rs` moves into `shared`, and Phase A's Swift call sites decide each export's final shape.
+
+On the web, `web/` uses `shared` directly as a Rust dependency compiled to wasm32. Its only wasm-bindgen export is the `hydrate` entry point that cargo-leptos calls. The binding plumbing exists only on iOS; the logic lives in `shared`.
 
 ### UDL vs proc-macro for UniFFI
 
 Eafora uses the **proc-macro form** (`#[uniffi::export]` annotations on Rust items) rather than the declarative `.udl` file form.
 
-The discipline that earns the proc-macro form's payoff is **a dedicated FFI module** (`core/src/ffi/uniffi.rs`) that imports types from internal modules and either re-exports them with `#[uniffi::export]` annotations or wraps them in thin FFI-facing adapter types. The module is the single reviewable surface for "what the iOS and Android apps see," same property the `.udl` file would have given us — but without the duplication.
+The discipline that earns the proc-macro form's payoff is **a dedicated FFI crate** (`ios/`) that imports types from `shared` and either re-exports them with `#[uniffi::export]` annotations or wraps them in thin FFI-facing adapter types. The crate is the single reviewable surface for "what the iOS app sees," same property the `.udl` file would have given us, without the duplication.
 
 Why this over UDL:
 
 - Single source of truth. Each type is declared in Rust once; UDL would mean every struct exists twice (in `.udl` syntax and in Rust syntax) with the compiler's codegen-time check as the only mechanism keeping them in sync. Matches the project's general code-canonical-over-spec-docs preference.
 - Refactoring is mechanical. Renaming a struct field in Rust updates the FFI surface automatically; nothing to keep in sync.
-- The "FFI surface as a single reviewable thing" benefit comes from the dedicated module, not the file format. A PR that touches `core/src/ffi/uniffi.rs` is a PR that changes the FFI; a PR that doesn't touch it doesn't.
+- The "FFI surface as a single reviewable thing" benefit comes from the dedicated crate, not the file format. A PR that touches `ios/src/` is a PR that changes the FFI; a PR that doesn't touch it doesn't.
 
 What we give up: `uniffi-bindgen` can lint UDL without compiling Rust, which is a marginal iteration-speed win when shaping the FFI. Outweighed by the duplication cost.
 
@@ -346,9 +348,9 @@ Detailed plan: `docs/architecture/client-web.md` (follow-up branch). Key contrac
 - **Map rendering**: wgpu via WebGPU primarily, with WebGL2 fallback through wgpu's downlevel backend. Browser support in mid-2026: Chromium stable; Safari 18.4+ stable; Firefox WebGPU not yet shipped, falls back to WebGL2. Cargo: `wgpu = { version = "...", features = ["webgpu", "webgl"] }`.
 - **Threading**: single-threaded WASM. We **do not** use `SharedArrayBuffer` and therefore do not require `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` headers. This keeps the door open for future third-party embedding (UN portals, journalism sites) without wrestling with cross-origin isolation. Per-WASM state lives in `thread_local!`.
 - **Bundle size**: this anticipated approx. 500–700 KB brotli-compressed (approx. 2–3 MB raw WASM), of which Leptos is approx. 400 KB and wgpu+Naga approx. 600 KB. A measured release build is 3.60 MB raw and 1.19 MB brotli, so roughly double. `wasm-opt -O4` runs in release builds. Client code is reported by the perf-budget script but not capped, per `client.md` §Web first-paint perf budget.
-- **Data loading**: JS-side `fetch()` reads the artifact (manifest → SQLite + FlatGeobuf bytes) and stores in OPFS. Rust receives `&[u8]` and constructs the in-memory data structures. FlatGeobuf has a built-in R-tree spatial index that we use directly for hit-testing — no separate index build step. Country features parse first; subnational features parse in the background after the initial render. **For SQLite: download once, cache in OPFS, query in-memory via `sqlite-wasm-rs`** (a wasm32-targeted Rust SQLite crate; `rusqlite`-with-bundled-feature does not cross-compile to `wasm32-unknown-unknown` because there's no libc on that target). Non-wasm32 targets keep using `rusqlite`. This works because per-statistic SQLite files are small (tens of KB to a few MB through v2). Migration trigger: if any per-statistic file grows past approx. 30 MB, host the SQLite engine in a Worker and back it with an OPFS `FileSystemSyncAccessHandle` for streaming page reads. Not anticipated through v2.
+- **Data loading**: the loader in `shared/src/artifact/load.rs` reads the artifact (manifest → SQLite + FlatGeobuf bytes) through the web client's browser-fetch `HttpFetch` and stores it in its OPFS `ArtifactCache`, then constructs the in-memory data structures from the bytes. FlatGeobuf has a built-in R-tree spatial index that we use directly for hit-testing — no separate index build step. Country features parse first; subnational features parse in the background after the initial render. **For SQLite: download once, cache in OPFS, query in-memory via `sqlite-wasm-rs`** (a wasm32-targeted Rust SQLite crate; `rusqlite`-with-bundled-feature does not cross-compile to `wasm32-unknown-unknown` because there's no libc on that target). Non-wasm32 targets keep using `rusqlite`. This works because per-statistic SQLite files are small (tens of KB to a few MB through v2). Migration trigger: if any per-statistic file grows past approx. 30 MB, host the SQLite engine in a Worker and back it with an OPFS `FileSystemSyncAccessHandle` for streaming page reads. Not anticipated through v2.
 - **OPFS quota and eviction**: the cache layer must call `navigator.storage.persist()` on first launch to opt into persistent storage (avoids LRU eviction under disk pressure), call `navigator.storage.estimate()` before each artifact write to fail fast on quota-exceeded, and recover gracefully when the cache is missing on launch (re-fetch as if first run). Per-browser policies vary; the deep details belong in `docs/architecture/client-web.md` and reference [MDN: Storage quotas and eviction criteria](https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria).
-- **Hot reload**: `cargo leptos watch` for development; full WASM rebuild is ~5–15 s. Splitting `core` into a library crate and `web` into a thin entry crate minimizes recompile scope.
+- **Hot reload**: `cargo leptos watch` for development; full WASM rebuild is ~5–15 s. Splitting `shared` into a library crate and `web` into a thin entry crate minimizes recompile scope.
 
 ## iOS client (overview)
 
@@ -356,10 +358,10 @@ Detailed plan: `docs/architecture/client-ios.md` (follow-up branch). Key contrac
 
 - **UI**: SwiftUI.
 - **Map surface**: `MTKView` wrapped in `UIViewRepresentable`. Delegate methods (`drawableSizeWillChange`, `draw(in:)`) drive the render loop on the main thread; heavy compute is offloaded to background tasks before the next frame.
-- **Rust integration**: `core` is built as an xcframework via `cargo build --target aarch64-apple-ios --release` + `cargo build --target aarch64-apple-ios-sim --release` + `xcodebuild -create-xcframework`. UniFFI generates Swift bindings into the xcframework.
+- **Rust integration**: the `ios/` crate (library `eafora_ios`, `staticlib`) is built into `target/uniffi/EaforaIOS.xcframework` by `scripts/build/build-ios-xcframework.sh`. The script builds `aarch64-apple-ios` and `aarch64-apple-ios-sim` (debug by default, `--release` to opt in), runs `uniffi-bindgen-swift` (the `tools/uniffi_bindgen_swift` binary) against the simulator archive three times, for `--swift-sources`, `--headers`, and `--modulemap --module-name eafora_iosFFI --modulemap-filename module.modulemap`, then combines both slices with `xcodebuild -create-xcframework`. The modulemap is generated without `--xcframework`, which would emit a `framework module` that a consuming Swift package cannot import. The Swift bindings land in `target/uniffi/swift/eafora_ios.swift` and import the C module `eafora_iosFFI`.
 - **GPU baseline**: Apple A14 (iPhone 12, late 2020) / A15 (iPhone 13, September 2021) and later. iOS 18+ minimum SDK target. Drops every device older than the 2021 generation per the user's direction; cuts long-tail support burden, modern Metal feature levels are uniformly available across all supported devices, and active iPhone-user share in the anglosphere/EU on pre-2021 hardware is small enough to ignore for v1.
-- **Async**: Swift's `async`/`await` consumes UniFFI async functions naturally; cancellation is one-way (Swift task cancellation does not propagate; Rust must self-cancel).
-- **HTTP**: Swift's `URLSession`. Fetched JSON payloads are passed to the Rust core for parsing.
+- **Async**: Swift's `async`/`await` consumes the two `async throws` bundle loads naturally; cancellation is one-way (Swift task cancellation does not propagate; Rust must self-cancel). The renderer functions are synchronous and called from Swift's main thread.
+- **HTTP and caching**: Rust, in `shared` (`ReqwestHttpFetch`, `FilesystemArtifactCache`, and `FilesystemFetch` for the embedded bundle on disk), the same loader the web client uses. Swift chooses the cache directory (`Library/Caches/artifacts/`, so iOS may evict it), sets `NSURLIsExcludedFromBackupKey` on it, and passes its path to `set_cache_directory`; it locates the embedded bundle directory in the app bundle and passes it to `open_first_paint_bundle`.
 
 ## Android client (overview)
 
@@ -367,7 +369,7 @@ Detailed plan: `docs/architecture/client-android.md` (follow-up branch). Key con
 
 - **UI**: Jetpack Compose.
 - **Map surface**: `SurfaceView` wrapped in `AndroidView`. The render loop runs on a dedicated thread (not Choreographer-on-main) to avoid main-thread jank from GPU command encoding. Surface lifecycle (rotation, pause/resume) is explicitly handled via `SurfaceHolder.Callback`.
-- **Rust integration**: `core` is built as an AAR via `cargo-ndk -t aarch64-linux-android -t x86_64-linux-android build --release`; the resulting `.so` files go into `jniLibs/{arm64-v8a,x86_64}/`. UniFFI generates Kotlin bindings. (32-bit ARM is not built — see GPU baseline below for the API-31 cutoff rationale.)
+- **Rust integration**: an Android UniFFI library depending on `shared` (no such crate exists yet) is built as an AAR via `cargo-ndk -t aarch64-linux-android -t x86_64-linux-android build --release`; the resulting `.so` files go into `jniLibs/{arm64-v8a,x86_64}/`. UniFFI generates Kotlin bindings. (32-bit ARM is not built — see GPU baseline below for the API-31 cutoff rationale.)
 - **GPU baseline**: minSdk = **API 31** (Android 12, October 2021), per user direction symmetric with the iOS 2021-generation baseline. Vulkan 1.0 is universally available at this level; no OpenGL ES 3.0 fallback path is needed. The 32-bit `armv7-linux-androideabi` Cargo target can also be dropped from the cargo-ndk build (no API-31+ devices ship 32-bit ARM); only `aarch64-linux-android` and `x86_64-linux-android` (emulator) are required.
 - **HTTP**: **OkHttp**, called directly. Not Retrofit — Retrofit is an annotation-driven codegen layer over OkHttp that hides the HTTP shape behind interfaces, which conflicts with Constitution Principle V (explicit over implicit). OkHttp is the explicit choice, matches Singularity's pattern, and is the standard ergonomic Android HTTP client on its own.
 
@@ -453,7 +455,8 @@ This is a working direction for v2+, not a v1 commitment. The first source with 
 ### Client cache strategy
 
 - **Web**: OPFS. Per-origin quotas in 2026 are generous (Chrome ~60% of disk, Firefox ~50%, Safari more conservative); Eafora's 5–10 MB working set is negligible against any of these. First-launch download → OPFS → in-memory (Rust-side). Subsequent launches read OPFS without network unless `manifest.json` says a newer version exists.
-- **iOS / Android**: file-system cache in app sandbox. Same logic; `URLSession`/`OkHttp` already handle the HTTP cache headers.
+- **iOS**: `shared`'s `FilesystemArtifactCache` over `Library/Caches/artifacts/` in the app sandbox, fetched through `ReqwestHttpFetch`; the same loader as the web client. Swift chooses the directory and excludes it from backup.
+- **Android**: file-system cache in app sandbox. Same logic; `OkHttp` already handles the HTTP cache headers.
 - **Embedded downsampled artifact**: a small "good enough for first paint" SQLite + smaller FlatGeobuf is bundled in each build. App opens instantly with stale-but-real data while the latest is fetched in the background.
 
 ## Map rendering details
@@ -488,7 +491,7 @@ When the user clicks a country, the camera animates from current viewport to a v
 
 ### Borders
 
-`core::boundary` abstracts the boundary data set behind a trait. v1 ships a single set (Natural Earth 1:50m, US-recognized lines per the constitution). The data layer is set up so an alternate boundary set (e.g., one that matches India's recognized lines) can be swapped in by changing one config value, without changes to the rendering code. We do not actually ship multiple boundary sets in v1 — the flexibility is for a future v3+ if a real distribution case requires it.
+A planned contested-borders abstraction in `shared` abstracts the boundary data set behind a trait. v1 ships a single set (Natural Earth 1:50m, US-recognized lines per the constitution). The data layer is set up so an alternate boundary set (e.g., one that matches India's recognized lines) can be swapped in by changing one config value, without changes to the rendering code. We do not actually ship multiple boundary sets in v1 — the flexibility is for a future v3+ if a real distribution case requires it.
 
 ## Local development
 
@@ -498,7 +501,7 @@ The local-dev story mostly mirrors Singularity (deviation: Postgres runtime, see
 - Postgres runs on the host as a launchd-managed service (port 5432; `DATABASE_URL` is `postgresql://localhost/eafora` by default). If a developer already has Postgres bound to 5432, `setup.sh` errors out and the developer overrides via `DATABASE_URL` or rebinds the existing instance.
 - `scripts/db/dbmate.sh` wraps dbmate and re-runs `cargo sqlx prepare --workspace`.
 - `cargo leptos watch` runs the web app on localhost.
-- iOS dev: open `ios/Eafora.xcodeproj` in Xcode; the xcframework is rebuilt on the host by a Run Script build phase that invokes `cargo build` and `xcodebuild -create-xcframework`. iterations are slower than web (Xcode build + run on simulator is ~30–90 s after first build).
+- iOS dev: `./scripts/build/build-ios-xcframework.sh` rebuilds the xcframework and the Swift bindings; `setup.sh` installs the two iOS Rust targets, `xcodegen`, and a simulator runtime when Xcode is present. The Xcode project and its build phases arrive with the Swift app in Phase A. iterations are slower than web (Xcode build + run on simulator is ~30–90 s after first build).
 - Android dev: open `android/` in Android Studio; the AAR is rebuilt by a Gradle task that wraps `cargo-ndk`. Iterations are similar to iOS.
 
 ## CI/CD
@@ -511,11 +514,11 @@ A typical layout is a single workflow file with conditional jobs based on change
 
 | Job | Runner | Triggers on | Caching |
 |---|---|---|---|
-| `core` (build + test) | `ubuntu-latest` | any push | `Swatinem/rust-cache` for `~/.cargo/registry`, `target/` |
-| `web` (cargo-leptos build) | `ubuntu-latest` | changes in `core/`, `web/` | rust-cache + `wasm-pack` install cached |
-| `ingestion` (cargo build + test) | `ubuntu-latest` | changes in `core/`, `ingestion/` | rust-cache |
-| `ios` (xcframework + Xcode build) | `macos-latest` (Apple Silicon runner) | changes in `core/`, `ios/`; manual dispatch for TestFlight upload | rust-cache + DerivedData cache |
-| `android` (cargo-ndk + Gradle assemble) | `ubuntu-latest` | changes in `core/`, `android/` | rust-cache + Gradle cache + Android NDK cache |
+| `shared` (build + test) | `ubuntu-latest` | any push | `Swatinem/rust-cache` for `~/.cargo/registry`, `target/` |
+| `web` (cargo-leptos build) | `ubuntu-latest` | changes in `shared/`, `web/` | rust-cache + `wasm-pack` install cached |
+| `ingestion` (cargo build + test) | `ubuntu-latest` | changes in `shared/`, `ingestion/` | rust-cache |
+| `ios` (xcframework + Xcode build) | `macos-latest` (Apple Silicon runner) | changes in `shared/`, `ios/`; manual dispatch for TestFlight upload | rust-cache + DerivedData cache |
+| `android` (cargo-ndk + Gradle assemble) | `ubuntu-latest` | changes in `shared/`, `android/` | rust-cache + Gradle cache + Android NDK cache |
 
 Realistic build times on GitHub-hosted runners (approximate; verify against actual project): Rust workspace clean ~15–25 min, with cache ~3–5 min; cargo-leptos ~10–15 min; iOS xcframework ~25–40 min clean / ~10–15 min cached; Android ~20–30 min clean / ~5–10 min cached. **Total clean CI time across all jobs is ~60–90 min**, which fits comfortably in the GitHub Actions free-tier monthly minutes for a private repo at our build cadence.
 
@@ -529,7 +532,7 @@ iOS signing: App Store Connect API key (.p8) stored in repo secrets, decoded in 
 - **Enrollment**: individual or organization; identity verification typically 1–7 days; first submission viable ~2–5 business days after approval.
 - **App Store Connect API key** for CI: generated under Users and Access → Keys, downloaded once (cannot be re-downloaded), stored in the chosen CI service's secret store (e.g. GitHub Actions secrets) as `APPSTORE_CONNECT_API_KEY_CONTENT`, `_KEY_ID`, `_ISSUER_ID`.
 - **TestFlight**: internal testing (up to 100 testers, no review); external testing requires beta review (~24–48 hours).
-- **App Store review**: ~24–48 hours typical in 2026 for compliant apps. Common rejection reasons for a map / data viz app: misleading data, claims of endorsement without evidence, mishandling of politically contested borders. Eafora's neutrality principle (no editorial copy) and US-recognized-borders default reduce both risks; the contested-borders abstraction in `core::boundary` lets us swap if a market demands it.
+- **App Store review**: ~24–48 hours typical in 2026 for compliant apps. Common rejection reasons for a map / data viz app: misleading data, claims of endorsement without evidence, mishandling of politically contested borders. Eafora's neutrality principle (no editorial copy) and US-recognized-borders default reduce both risks; the planned contested-borders abstraction in `shared` lets us swap if a market demands it.
 
 ### Google Play
 

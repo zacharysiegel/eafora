@@ -57,7 +57,7 @@ ios/
 ├── Cargo.toml                  # crate-type = ["staticlib"]; depends on shared with the render feature
 └── src/
     ├── lib.rs                  # the UniFFI scaffolding and the module declarations
-    ├── cache.rs                # the set-once cache directory
+    ├── cache.rs                # the set-once filesystem artifact cache
     ├── bundle.rs               # the two loads and the published-bundle channel
     ├── renderer.rs             # the thread-local renderer and its lifecycle
     ├── revision.rs             # the build's git revision
@@ -69,12 +69,13 @@ tools/uniffi_bindgen_swift/     # [[bin]] wrapper calling uniffi's Swift bindgen
 
 # MOVED into shared, from web (Phase 0.2)
 shared/src/artifact/load.rs     # was web/src/client/load.rs, 374 lines, parameterized
-shared/src/artifact/discovery_resolve.rs  # was web/src/live_resolve.rs, 94 lines
+shared/src/artifact/discovery.rs          # gains the discovery reconciliation from web/src/live_resolve.rs
 shared/src/artifact/version_rank.rs       # was web/src/version_rank.rs, 94 lines
 
 # NEW — platform implementations of the two traits the loader needs (Phase 0.2)
 shared/src/artifact/filesystem_cache.rs   # std::fs ArtifactCache, used by iOS
 shared/src/http/reqwest_fetch.rs          # reqwest HttpFetch, used by iOS
+shared/src/http/filesystem_fetch.rs       # std::fs HttpFetch, reads the embedded bundle on disk
 
 # NEW — the app (Phase A onward)
 ios/
@@ -104,7 +105,8 @@ scripts/build/inject-git-revision.sh
 scripts/build/deploy-aasa.sh    # Phase D
 
 # MODIFIED
-shared/Cargo.toml               # crate-type, uniffi dependency, ios target table
+Cargo.toml                      # the ios and uniffi_bindgen_swift workspace members, the uniffi dependency
+shared/Cargo.toml               # reqwest for non-wasm targets
 setup.sh                        # simulator runtime, rust targets, xcodegen
 docs/task-order.md              # phase status
 ```
@@ -117,7 +119,7 @@ Everything below was verified against `shared` and `web` on `master` at `e8a0867
 
 The spec treats the Metal surface as new work. It is not. `WindowHandle::UiKit { layer_ptr: u64, view_ptr: u64 }` is defined at `shared/src/render/window_handle.rs:4`, its doc comment already anticipating a native shell. `WgpuSurface::from_window_handle` handles that variant at `shared/src/render/surface.rs:96`, converting it to a `RawWindowHandle::UiKit`, and `Renderer::attach_surface_from_window_handle(window_handle, width, height)` sits at `shared/src/map/renderer.rs:188`.
 
-So the iOS attach path is a call, not an implementation. What the FFI adds is marshaling: Swift passes two `u64` pointers, Rust rebuilds the enum. FR-009's "define `WindowHandle` as a UniFFI enum" becomes "expose the existing enum across the FFI".
+So the iOS attach path is a call, not an implementation. What the FFI adds is marshaling: Swift passes two `u64` pointers, Rust rebuilds the enum. FR-009's "define `WindowHandle` as a UniFFI enum" becomes a `UiKitSurfaceHandle { layer_ptr: u64, view_ptr: u64 }` UniFFI record, which `ios` converts to the existing `WindowHandle::UiKit`.
 
 ### Topic 2: Metal needs no backend work
 
@@ -145,7 +147,7 @@ The alternative is a `reqwest` implementation of the same trait, compiled into t
 
 ### Topic 5: the cache should be Rust too, for the same reason
 
-`ArtifactCache` (`shared/src/artifact/cache.rs:9`) is four async functions: `put`, `get`, `list_versions`, `delete_version`. The web implements it over OPFS because a browser has no filesystem. iOS does have one, so a `std::fs` implementation in `shared` satisfies the trait with no FFI callback at all, and Swift's only involvement is passing the cache directory path in at construction.
+`ArtifactCache` (`shared/src/artifact/cache.rs:9`) is four async functions: `put`, `get`, `list_versions`, `delete_version`. The web implements it over OPFS because a browser has no filesystem. iOS does have one, so a `std::fs` implementation in `shared` satisfies the trait with no FFI callback at all, and Swift's only involvement is passing the cache directory path to `set_cache_directory` once, before any load.
 
 This replaces FR-019 through FR-023. Two spec requirements survive as Swift-side concerns because they are platform policy rather than logic: the directory choice (FR-020, `Library/Caches/artifacts/`, chosen so iOS may evict it under pressure) and excluding it from backup (FR-021, `NSURLIsExcludedFromBackupKey`). Both are set by Swift on the directory before handing the path to Rust.
 
@@ -157,7 +159,7 @@ The P2 scenario — iOS purging the cache mid-session — becomes a Rust test ra
 
 Adding `crate-type = ["staticlib", "rlib"]` to `shared` would make every host build also produce a static library, slowing the ingestion and web builds for no benefit. The alternative is a thin `ios` crate that depends on `shared` and carries the `staticlib` type plus the UniFFI scaffolding, leaving `shared` untouched.
 
-**Decision: a separate crate.** It keeps the `staticlib` cost on the one target that wants it, gives the UniFFI attributes a home that is not the middle of the domain code, and means `shared` stays a library that the ingestion producer links without dragging FFI scaffolding along. This supersedes FR-008, which places the surface at `shared/src/ffi/uniffi.rs`: the module moves to the new crate and `shared` gains nothing.
+**Decision: a separate crate.** It keeps the `staticlib` cost on the one target that wants it, gives the UniFFI attributes a home that is not the middle of the domain code, and means `shared` stays a library that the ingestion producer links without dragging FFI scaffolding along. The UniFFI surface lives in this crate, `ios/` itself (package `ios`, library `eafora_ios`), which supersedes FR-008's placement in `shared`. `ios` is the only crate that depends on `uniffi`, so the web build never compiles UniFFI.
 
 ### Topic 7: the revision surface already exists
 
@@ -168,35 +170,34 @@ FR-011 asks for `eafora.revision()`. `shared/src/revision.rs` already exposes `R
 Each of these is a hazard the plan cannot close from this machine, listed with what would close it:
 
 - ~~**The UniFFI version and its Swift bindgen invocation.**~~ Resolved in Phase 0.1 against uniffi 0.32.1. `uniffi::uniffi_bindgen_swift()` exists behind the `cli` feature and is distinct from `uniffi_bindgen_main()`. Its CLI takes the archive and the output directory positionally, then one of `--swift-sources` / `--headers` / `--modulemap`; there is no `--out-dir` and no `--crate`, and `--library` on the general CLI is deprecated in favour of auto-detection. Three invocations are required because each emits one kind of file.
-- ~~**Whether UniFFI's async support covers the loader's shape.**~~ Resolved in Phase 0.1: the boundary uses UniFFI's async support, so Swift gets `async throws` rather than a blocked thread. UniFFI requires an exported `async fn` to return a `Send + 'static` future and offers no local-spawn escape off `wasm32`, which took two changes to satisfy. `shared` gained `AppErrorStatic` beside `AppError`, because `minimer::AppError` holds an `Option<Box<dyn Error>>` under no `Send` bound; every async function the boundary awaits returns the static one, while `AppError` keeps the source chain for everything else. `Send` is transitive through futures, since an async function's future structurally contains its own output, so that set is larger than the loader: the cache trait and its three implementations, the fetch trait and its two, `Bundle::open`, and the web's OPFS and JS glue. The compiler determines the boundary exactly. And `put_live_files` clones each manifest entry, because a closure whose argument is a reference and whose returned future borrows it cannot be proven general over lifetimes. A regression test in `shared/src/artifact/load.rs` pins the bound.
+- ~~**Whether UniFFI's async support covers the loader's shape.**~~ Resolved in Phase 0.1: the boundary uses UniFFI's async support, so Swift gets `async throws` rather than a blocked thread. UniFFI requires an exported `async fn` to return a `Send + 'static` future and offers no local-spawn escape off `wasm32`, which took two changes to satisfy. `shared` gained `AppErrorStatic` beside `AppError`, because `minimer::AppError` holds an `Option<Box<dyn Error>>` under no `Send` bound; every async function the boundary awaits returns the static one, while `AppError` keeps the source chain for everything else. `Send` is transitive through futures, since an async function's future structurally contains its own output, so that set is larger than the loader: the cache trait and its implementations, the fetch trait and its implementations, `Bundle::open`, and the web's OPFS and JS glue. The compiler determines the boundary exactly. And `put_live_files` clones each manifest entry, because a closure whose argument is a reference and whose returned future borrows it cannot be proven general over lifetimes. A regression test in `shared/src/artifact/load.rs` pins the bound.
 - **The XcodeGen schema.** `xcodegen` is not installed, so `project.yml` cannot be validated. Closing it: install it in Phase A and run `xcodegen generate`.
 - **`MTKView.isPaused` plus `setNeedsDisplay` semantics.** The event-driven loop is unverified. Closing it: run it on the simulator in Phase A.
 - **Everything in Phase D**, which needs an enrollment that does not exist.
 
 ## Phase 1: design & contracts
 
-The FFI surface is a set of free functions. Rust holds the state in statics: a set-once cache directory, the published-bundle channel, and a per-thread renderer.
+The FFI surface is a set of free functions. Rust holds the state in statics: the set-once artifact cache (a `FilesystemArtifactCache` built from the directory Swift passes to `set_cache_directory`), the published-bundle channel, and a per-thread renderer.
 
 ```
 set_cache_directory(cache_directory: String)
-open_first_paint_bundle(embedded_directory: String) -> String
-load_live_bundle(discovery_url: String, static_repository_base_url: String) -> String
+async open_first_paint_bundle(embedded_directory: String) -> String
+async load_live_bundle(discovery_url: String, static_repository_base_url: String) -> String
 create_renderer()
 destroy_renderer()
 attach_surface(handle: UiKitSurfaceHandle, width: u32, height: u32)
 resize_surface(width: u32, height: u32)
 detach_surface()
-draw_frame()
-region_at_point(x: f64, y: f64) -> Option<RegionHit>
-    set_period(period_start: NaiveDate-as-String)
-    set_statistic(statistic: StatisticKind)
-pan(dx: f64, dy: f64) / zoom(factor: f64, at_x: f64, at_y: f64)
 revision() -> String
 ```
 
-Three properties of this shape matter. The renderer never crosses the boundary, so no wgpu type needs a UniFFI representation. `draw_frame` takes no arguments because the viewport and frame state live in Rust, which is also what lets a gesture be a single call rather than a state exchange. And every fallible call returns `Result<_, AppError>`, which UniFFI maps to a Swift `throws` per the project's recorded preference for UniFFI's default error mapping.
+The two loads publish the opened bundle through a `tokio::sync::watch` channel the renderer subscribes to and return its version label, so a live load repaints with no relaunch; the distribution context is the constant `DistributionContext::FirstParty`. The renderer functions are synchronous and must all be called from Swift's main thread, because wgpu state is bound to its creating thread and an async export may resume on another.
 
-The Swift side then holds: `EaforaApp.swift` (lifecycle, sheets, link routing), `MapMTKView.swift` (the `UIViewRepresentable`), `MapCoordinator.swift` (the `draw(in:)` callback, gesture recognizers, and the `setNeedsDisplay` scheduling that mirrors the web driver's dirty-flag-plus-rAF pattern), `EmbeddedBundle.swift` (locating the bundled artifact root), and the two view files. Nothing else.
+The frame, hit-test, selection, and gesture functions (drawing a frame, the region at a point, setting the period and statistic, pan, and zoom) are deferred to Phase A. They need the viewport, frame-state, and gesture orchestration in `web/src/map/canvas/driver.rs` to move into `shared` first, and Phase A's Swift call sites decide their shape. The current exports are likewise provisional until those call sites exist.
+
+Two properties of this shape matter. The renderer never crosses the boundary, so no wgpu type needs a UniFFI representation. And every fallible call returns `Result<_, FfiError>`, a single-variant UniFFI error (`FfiError::Failed { message }`) converted from `AppError` and `AppErrorStatic`, which UniFFI maps to a Swift `throws` per the project's recorded preference for UniFFI's default error mapping.
+
+The Swift side then holds: `EaforaApp.swift` (lifecycle, sheets, link routing), `MapMTKView.swift` (the `UIViewRepresentable`), `MapCoordinator.swift` (the `draw(in:)` callback, gesture recognizers, and the `setNeedsDisplay` scheduling that mirrors the web driver's dirty-flag-plus-rAF pattern), `EmbeddedBundle.swift` (locating the bundled artifact root), and the two view files, plus choosing the cache directory (`Library/Caches/artifacts/`), excluding it from backup, and passing its path to `set_cache_directory` before any load. Nothing else.
 
 ## Phasing for PRs
 

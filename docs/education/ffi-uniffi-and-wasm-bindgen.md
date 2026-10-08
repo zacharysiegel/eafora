@@ -83,28 +83,30 @@ That's the entire authoring surface for a simple case. No `.udl`, no manual exte
 
 ### 2.4 The build-time pipeline
 
-You add a `build.rs` (or use `uniffi::setup_scaffolding!()`) that generates the C shim. Then you run `uniffi-bindgen generate --library libeafora.dylib --language swift --out-dir generated/` to emit Swift code. Same for Kotlin, Python, etc.
+You add a `build.rs` (or use `uniffi::setup_scaffolding!()`) that generates the C shim. Then you run a bindgen binary over the built library to emit host code. Eafora's `ios` crate calls `uniffi::setup_scaffolding!()` in `ios/src/lib.rs`, and its bindgen binary is `tools/uniffi_bindgen_swift`, which calls `uniffi::uniffi_bindgen_swift()`. `scripts/build/build-ios-xcframework.sh` runs it three times against the simulator archive (`--swift-sources`, `--headers`, and `--modulemap --module-name eafora_iosFFI --modulemap-filename module.modulemap`). It omits `--xcframework`, which would emit a `framework module` that a consuming Swift package cannot import.
 
 What you end up with on disk:
 
 ```
-core/
+ios/
   src/
-    lib.rs                    # your annotated Rust
-  Cargo.toml
+    lib.rs                    # module declarations + uniffi::setup_scaffolding!()
+    cache.rs, bundle.rs, renderer.rs, ...   # the #[uniffi::export] functions
+  Cargo.toml                  # [lib] name = "eafora_ios", crate-type = ["staticlib"]
 target/
-  release/
-    libeafora.dylib           # Rust artifact
-generated/
-  swift/
-    eafora.swift              # Swift binding
-    eaforaFFI.h               # C header
-    eaforaFFI.modulemap       # Swift module map
-  kotlin/
-    uniffi/eafora/eafora.kt   # Kotlin binding
+  aarch64-apple-ios-sim/
+    debug/
+      libeafora_ios.a         # Rust artifact (release/ with --release)
+  uniffi/
+    swift/
+      eafora_ios.swift        # Swift binding
+    headers/
+      eafora_iosFFI.h         # C header
+      module.modulemap        # C module map for eafora_iosFFI
+    EaforaIOS.xcframework     # device + simulator archives
 ```
 
-For iOS, you bundle the dylib (or static lib) plus the generated Swift into an **xcframework** — a multi-architecture container Apple's toolchain understands. For Android, you bundle the `.so` files (built per ABI: arm64-v8a, armeabi-v7a, x86_64) into the app's `jniLibs/` plus the generated Kotlin into the project's source set, typically packaged as an AAR.
+For iOS, you bundle the static library for each slice plus the C header and module map into an **xcframework**, a multi-architecture container Apple's toolchain understands. The generated Swift source sits beside it and is compiled by the consuming Swift target. For Android, you bundle the `.so` files (built per ABI: arm64-v8a, armeabi-v7a, x86_64) into the app's `jniLibs/` plus the generated Kotlin into the project's source set, typically packaged as an AAR.
 
 ### 2.5 The type system mapping
 
@@ -157,7 +159,7 @@ impl StatisticEngine {
 }
 ```
 
-For Eafora: `CountryStat`, `DataStatus`, `Indicator` etc. are records. `StatisticEngine`, `RenderContext`, `IngestionPipeline` are objects.
+For Eafora: the `ios` crate's whole surface is free functions, which keep their state in Rust-side statics. Its one record is `UiKitSurfaceHandle { layer_ptr: u64, view_ptr: u64 }`, and its one error is `FfiError::Failed { message: String }`.
 
 ### 2.7 Errors
 
@@ -185,7 +187,7 @@ UniFFI has supported async since ~late 2023. Annotate `async fn` functions and t
 
 Underneath, UniFFI runs a Rust runtime (you choose tokio) and bridges the Future to the host's executor. The host's `await` suspends; the Rust future completes; UniFFI marshals the result back and resumes the host coroutine/Task.
 
-This is great for Eafora because ingestion calls (HTTP, file I/O) are naturally async on the Rust side and you get to keep them that way across the boundary.
+This is great for Eafora because artifact loading (HTTP fetch, cache file I/O) is naturally async on the Rust side and you get to keep it that way across the boundary. The `ios` crate's `open_first_paint_bundle` and `load_live_bundle` are `async` exports under `#[uniffi::export(async_runtime = "tokio")]`, which Swift sees as `async throws`. UniFFI requires their futures to be `Send`, so the `shared` functions on their await path return `shared::error::AppErrorStatic`, minimer's static error type, which is `Send`.
 
 ### 2.9 Callbacks (Rust calling host)
 
@@ -233,14 +235,14 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub struct StatisticEngine {
-    inner: eafora_core::StatisticEngine,
+    inner: statistics::StatisticEngine,
 }
 
 #[wasm_bindgen]
 impl StatisticEngine {
     #[wasm_bindgen(constructor)]
     pub fn new() -> StatisticEngine {
-        StatisticEngine { inner: eafora_core::StatisticEngine::new() }
+        StatisticEngine { inner: statistics::StatisticEngine::new() }
     }
 
     pub fn lookup(&self, iso3: &str, year: u16) -> Option<CountryStat> {
@@ -318,7 +320,7 @@ For Leptos specifically: Leptos uses wasm_bindgen under the hood; you don't usua
 
 Same principle as UniFFI objects: large data (geometry buffers, SQLite databases) lives in Rust-side WASM linear memory. JS holds an opaque handle (the wasm-bindgen-generated class instance). Method calls jump into WASM; strings/numbers come back.
 
-For Eafora the pattern looks like:
+The pattern looks like:
 
 ```rust
 #[wasm_bindgen]
@@ -416,55 +418,59 @@ The conceptual difference that matters most: **UniFFI assumes a fixed type unive
 
 ## 5. How they fit Eafora
 
-Recall the architecture: a `core/` Rust crate holds all data, render, ingest, and statistic logic. Three clients consume it:
+Recall the architecture: the `shared` Rust crate holds the logic the clients have in common, including artifact loading, caching, and rendering. Each client is its own crate that depends on it:
 
 ```
-core/ (Rust crate)
-  ├── via UniFFI ──► iOS app (SwiftUI calls Swift bindings)
-  ├── via UniFFI ──► Android app (Compose calls Kotlin bindings)
-  └── via wasm_bindgen ──► Web app (Leptos in WASM calls Rust directly...
-                             see below)
+shared/ (Rust crate)
+  ├── via ios/ (Rust crate with UniFFI exports) ──► iOS app (SwiftUI calls Swift bindings)
+  └── via web/ (Rust crate) ──► Web app (Leptos in WASM calls Rust directly...
+                                  see below)
 ```
 
-The web case is special. Leptos runs **inside the same WASM module** as the core. There's no FFI boundary in the traditional sense — the Leptos UI is itself Rust compiled to WASM, calling `core` as a normal Rust crate. wasm_bindgen only enters the picture **at the boundary between WASM and the browser** (DOM access, fetch, console.log, GPU APIs). You don't wasm_bindgen-export the core's internal API; you wasm_bindgen-export only what crosses to JS.
+Android's binding crate is deferred.
+
+The web case is special. Leptos runs **inside the same WASM module** as `shared`. There's no FFI boundary in the traditional sense — the Leptos UI is itself Rust compiled to WASM, calling `shared` as a normal Rust crate. wasm_bindgen only enters the picture **at the boundary between WASM and the browser** (DOM access, fetch, console.log, GPU APIs). You don't wasm_bindgen-export `shared`'s internal API; you wasm_bindgen-export only what crosses to JS.
 
 So the actual picture:
 
 ```
-core/  ──Rust internal API──►  web/ (Leptos)
-                                 │
-                                 └─ wasm_bindgen ──► browser (DOM, fetch, WebGPU, IndexedDB)
+shared/  ──Rust internal API──►  web/ (Leptos)
+                                   │
+                                   └─ wasm_bindgen ──► browser (DOM, fetch, WebGPU, IndexedDB)
 
-core/ ──UniFFI──► xcframework ──► ios/ (SwiftUI)
-core/ ──UniFFI──► AAR ──────────► android/ (Compose)
+shared/  ──Rust internal API──►  ios/ ──UniFFI──► EaforaIOS.xcframework + eafora_ios.swift ──► SwiftUI app (in ios/, Phase A)
 ```
 
-This asymmetry is a feature, not a wart: the web client gets to call into core with no marshalling cost (it's all Rust→Rust, monomorphized at compile time). The mobile clients pay UniFFI's marshalling cost on every call, which is why object-typed handles + coarse-grained method calls matter for them.
+This asymmetry is a feature, not a wart: the web client gets to call into `shared` with no marshalling cost (it's all Rust→Rust, monomorphized at compile time). The iOS client pays UniFFI's marshalling cost on every call, which is why the `ios` crate holds its state in Rust-side statics and exports coarse-grained free functions.
 
-**Practical implication for the core crate's API design:** design the public surface with UniFFI's constraints in mind (no generics, no lifetimes, primitive + record + Arc-handle types), because that surface has to be UniFFI-exportable. The web client gets the same surface for free; it doesn't constrain the web case.
+**Practical implication for API design:** only the `ios` crate is UniFFI-exported, so `shared`'s public API stays ordinary Rust (generic parameters such as `&impl ArtifactCache`, borrowed `&str` arguments). The `ios` crate translates: its exports take UniFFI-compatible arguments (`String`, `u32`, the `UiKitSurfaceHandle` record), call `shared`, and map errors to `FfiError`. UniFFI does constrain `shared` in one way: an async export's future must be `Send`. So the functions on its await path return `AppErrorStatic`, the live loader's concurrent fetch futures each own their own manifest entry, and `Bundle` holds no SQLite connection. A `send_bound` test in `shared/src/artifact/load.rs` checks this.
 
-### What you'll write in the core crate
+### What you'll write in the iOS crate
 
 ```rust
-// core/src/ffi/mod.rs — the FFI boundary module
-// This is the only place UniFFI/wasm_bindgen attributes appear.
+// ios/src/cache.rs
+static CACHE: OnceLock<FilesystemArtifactCache> = OnceLock::new();
 
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-#[cfg_attr(feature = "wasm", derive(serde::Serialize, serde::Deserialize))]
-pub struct CountryStat { ... }
+#[uniffi::export]
+pub fn set_cache_directory(cache_directory: String) -> Result<(), FfiError> { ... }
 
-#[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
-pub struct StatisticEngine { ... }
+// ios/src/bundle.rs
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn open_first_paint_bundle(embedded_directory: String) -> Result<String, FfiError> { ... }
 
-#[cfg_attr(feature = "uniffi", uniffi::export)]
-#[cfg_attr(feature = "wasm", wasm_bindgen)]
-impl StatisticEngine {
-    pub fn lookup(&self, iso3: String, year: u16) -> Option<CountryStat> { ... }
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn load_live_bundle(discovery_url: String, static_repository_base_url: String) -> Result<String, FfiError> { ... }
+
+// ios/src/renderer.rs
+thread_local! {
+    static RENDERER: RefCell<Option<Renderer>> = const { RefCell::new(None) };
 }
+
+#[uniffi::export]
+pub fn attach_surface(handle: UiKitSurfaceHandle, width: u32, height: u32) -> Result<(), FfiError> { ... }
 ```
 
-Cargo features select which generator is active per build. The `uniffi` feature is on for the iOS/Android dylib build; the `wasm` feature is on for the WASM build. The internal `core` API (used by other Rust code in the workspace) stays clean of both attribute sets.
+`ios` is the only library crate that exports through UniFFI (the `tools/uniffi_bindgen_swift` binary also depends on `uniffi`, to run the bindgen). `shared` and `web` have no `uniffi` dependency, so the web build never compiles UniFFI. The renderer lives in a `thread_local!` because wgpu state is bound to its creating thread. The renderer exports are synchronous because an async export may resume on another thread, and all of them must be called from one thread (Swift's main thread). The exports are provisional: drawing, hit testing, and the period, statistic, pan, and zoom controls are deferred to Phase A, which first moves the viewport and gesture orchestration from `web/` into `shared`.
 
 ---
 

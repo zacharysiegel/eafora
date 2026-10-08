@@ -61,7 +61,7 @@ Stacks on 0.1.
 Stacks on A and 0.2.
 
 1. Choose and create the cache directory in Swift: `Library/Caches/artifacts/`, so iOS may evict it under pressure, and set `NSURLIsExcludedFromBackupKey` on it at first creation. Pass the path to `set_cache_directory`. Both are platform policy; everything below them is Rust.
-2. Wire `load_live_bundle` to the moved loader with the filesystem cache and the reqwest fetch. Discovery, the speculative parallel fetch, version ranking, hash verification, eviction, and the hot-swap publication all come from `shared` unchanged.
+2. Call the exported `load_live_bundle` from Swift with the discovery URL and the static repository base URL; it already runs the moved loader with the filesystem cache and the reqwest fetch. Discovery, the speculative parallel fetch, version ranking, hash verification, and eviction come from `shared` unchanged; the hot-swap publication is the `watch` channel in `ios/src/bundle.rs`.
 3. Confirm the app paints from a cached bundle on second launch, and that the newest complete version wins, which is the ranking rule the web side already tests.
 4. Handle the eviction case end to end: the OS removes the cache directory mid-session, and the client continues from what it holds rather than failing. The Rust test from 0.2 covers the logic; this step confirms the app's behaviour.
 5. Confirm the live swap repaints without a relaunch, which is the `watch` channel the renderer already consumes.

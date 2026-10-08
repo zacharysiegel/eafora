@@ -1,15 +1,15 @@
 # iOS client architecture
 
-> **Status: draft, 2026-06-17.** This document is the per-platform deep-dive companion to `docs/architecture/client.md` (cross-cutting client architecture) and `docs/architecture/overview.md` (system overview), and a sibling to `docs/architecture/client-web.md` (web client). It covers everything specific to the **iOS** client surface: the native Xcode project, the Rust core's xcframework binary product, the UniFFI binding generation, the SwiftUI + MTKView render bridge, the `Library/Caches`-backed artifact cache, the in-bundle embedded artifact, the App Store distribution flow, and the testing strategy. The sibling `client-android.md` lags iOS per overview §Per-platform v1 build vs iteration scope.
+> **Status: draft, 2026-06-17.** This document is the per-platform deep-dive companion to `docs/architecture/client.md` (cross-cutting client architecture) and `docs/architecture/overview.md` (system overview), and a sibling to `docs/architecture/client-web.md` (web client). It covers everything specific to the **iOS** client surface: the native Xcode project, the `ios` crate's xcframework binary product, the UniFFI binding generation, the SwiftUI + MTKView render bridge, the `Library/Caches`-backed artifact cache, the in-bundle embedded artifact, the App Store distribution flow, and the testing strategy. The sibling `client-android.md` lags iOS per overview §Per-platform v1 build vs iteration scope.
 
 ## Scope of this document
 
 This document covers everything between **the consumer-side contract `client.md` defines** and **a signed `.ipa` on TestFlight or the App Store**:
 
-- The `ios/` directory: a native Xcode project (not a Cargo crate) that consumes a Rust-produced xcframework.
+- The `ios/` directory: the `ios` Cargo crate that defines the UniFFI surface and builds into a static library, plus the native Xcode project beside `ios/src/` (added in Phase A) that consumes the xcframework built from it.
 - The xcframework build pipeline: `cargo build` for `aarch64-apple-ios` (device) and `aarch64-apple-ios-sim` (simulator); `xcodebuild -create-xcframework`; UniFFI-generated Swift bindings via the proc-macro form; the Run Script build phase that ties them together.
 - The SwiftUI shell: navigation, the design-token mapping from `docs/design/README.md` to a Swift extension, the MTKView + `UIViewRepresentable` map surface, the bottom-sheet region detail.
-- The platform glue: the `URLSession`-backed fetch adapter, the `FileManager`-backed `Library/Caches/` artifact cache, the bytes-in-`Resources/` embedded bundle.
+- The platform glue: choosing the `Library/Caches/` directory the Rust artifact cache writes to, and locating the embedded bundle in the app bundle's `Resources/`.
 - The UniFFI binding boundary: what crosses the FFI seam, what stays Swift-side, the async + error mapping conventions.
 - App Store distribution: signing via App Store Connect API key, TestFlight, Universal Links.
 - Testing strategy for the iOS-only TDD-required surfaces.
@@ -22,12 +22,12 @@ From the constitution, `docs/architecture/overview.md`, `docs/architecture/clien
 
 - UI framework: SwiftUI. (Overview §iOS client; Constitution III)
 - Map surface: `MTKView` wrapped in `UIViewRepresentable`; render loop on main thread; heavy compute offloaded to background tasks before the next frame. (Overview §iOS client)
-- Rust integration: `core` is built as an xcframework; UniFFI generates Swift bindings via the **proc-macro form** (`#[uniffi::export]` annotations on Rust items in a dedicated `core/src/ffi/uniffi.rs` module), not the declarative UDL form. (Overview §UDL vs proc-macro for UniFFI)
+- Rust integration: the `ios` crate is built as an xcframework; UniFFI generates Swift bindings via the **proc-macro form** (`#[uniffi::export]` annotations on free functions in the `ios` crate), not the declarative UDL form. (Overview §UDL vs proc-macro for UniFFI)
 - GPU baseline: Apple A14 / A15 (iPhone 12 / 13 generation, 2020–2021) and later; iOS 18+ minimum SDK target. (Overview §iOS client)
 - Async: Swift's `async`/`await` consumes UniFFI async functions; cancellation is one-way (Swift task cancellation does not propagate; Rust must self-cancel based on a polled flag if cancellation matters). (Overview §iOS client; §FFI design rules)
-- HTTP: `URLSession`. (Overview §iOS client; §FFI dividing line)
-- Cache: file system inside the app sandbox. (Overview §Client cache strategy)
-- Embedded bundle on native: bytes embedded in the app binary at build time; loads synchronously before the first frame; doubles as the offline-capable baseline. (Client §Embedded downsampled artifact)
+- HTTP: `shared::http::ReqwestHttpFetch`, inside Rust; Swift makes no artifact requests.
+- Cache: file system inside the app sandbox, written by Rust's `shared::artifact::FilesystemArtifactCache`. (Overview §Client cache strategy)
+- Embedded bundle on native: files copied into the app bundle at build time; opened before the renderer is created, so the first frame draws against it; doubles as the offline-capable baseline. (Client §Embedded downsampled artifact)
 - Web and iOS develop in parallel from v1, deliberately, to prevent the architecture from overfitting to the web platform's constraints. Android lags. The native apps double as personal-learning goals for the parallel game project; for funder pitches, only the web is the user-facing v1 deliverable. (Project memory)
 - Apple Developer Program: $99/year; App Store Connect API key for CI; TestFlight for testing; ~24–48 hour App Store review. (Overview §App store distribution)
 - Visual identity: sharp white-paper-with-red-ink, square corners (≤1px radius), 1px borders, no shadows, no gradients, only the zoom-to-country animation through v1. (`docs/design/README.md`)
@@ -35,12 +35,14 @@ From the constitution, `docs/architecture/overview.md`, `docs/architecture/clien
 
 ## Workspace placement
 
-The iOS client is a native Xcode project at `ios/`. It is **not** a Cargo crate; it consumes a Rust-produced xcframework that bundles `core/`'s static libraries plus UniFFI-generated Swift bindings.
+`ios/` is the root of the `ios` Cargo crate, symmetric with `web/`: package `ios`, `[lib] name = "eafora_ios"`, `crate-type = ["staticlib"]`, depending on `shared` with the `render` feature and on `uniffi` with the `tokio` feature. `shared` and `web` have no UniFFI dependency, so the web build never compiles UniFFI. The native Xcode project, added in Phase A, lives beside `ios/src/` inside `ios/` and consumes a Rust-produced xcframework that bundles the crate's static libraries with the UniFFI-generated C headers and modulemap; the generated Swift bindings are emitted separately to `target/uniffi/swift/eafora_ios.swift`.
 
 ```
 eafora/
-├── core/                                     # the shared Rust core (consumer surface)
+├── shared/                                   # the shared Rust library (consumer surface)
 ├── ios/                                      # this document's subject
+│   ├── Cargo.toml                            # the `ios` crate (lib name eafora_ios, staticlib)
+│   ├── src/                                  # the UniFFI surface: cache, bundle, renderer, handle, error, revision
 │   ├── project.yml                           # XcodeGen config; project file is generated from this, not committed
 │   ├── Eafora.xcodeproj/                     # GITIGNORED; regenerated by `xcodegen generate`
 │   ├── EaforaApp/                            # Swift sources for the app target
@@ -57,16 +59,14 @@ eafora/
 │   │   ├── Map/                              # the primary surface (client-side map view)
 │   │   │   ├── MapView.swift                 # SwiftUI container
 │   │   │   ├── MapMTKView.swift              # MTKView wrapped in UIViewRepresentable
-│   │   │   ├── MapRenderer.swift             # CAMetalLayer + drawable lifecycle, calls into core
+│   │   │   ├── MapRenderer.swift             # CAMetalLayer + drawable lifecycle, calls the renderer exports
 │   │   │   ├── LegendView.swift              # choropleth legend overlay
 │   │   │   └── ControlsView.swift            # statistic picker, year scrubber, source panel
 │   │   ├── Region/                           # region detail (a destination — region = any level of the region hierarchy: country, subregion, supranational, etc.)
 │   │   │   ├── RegionDetailView.swift
 │   │   │   └── HistoryChartView.swift
 │   │   ├── SettingsView.swift                # bottom-sheet Settings; About inlined at top, utility rows below, build info at bottom (no separate AboutView through v1)
-│   │   ├── FileSystemArtifactCache.swift     # implements the cache contract from core::artifact
-│   │   ├── URLSessionFetcher.swift           # URLSession-based fetch; bridges to core::artifact loader
-│   │   └── EmbeddedBundle.swift              # locates and reads the bundled embedded artifact
+│   │   └── EmbeddedBundle.swift              # locates the embedded bundle directory and passes it to open_first_paint_bundle
 │   ├── EaforaAppTests/                       # XCTest unit tests
 │   ├── EaforaAppUITests/                     # XCUITest UI tests (deferred per §Testing strategy)
 │   └── README.md                             # quickstart for iOS development
@@ -76,124 +76,121 @@ The Swift code is organized by feature: directory only when a feature has 2+ fil
 
 Directory names use PascalCase (`Map/`, `Region/`), matching iOS convention. The web crate uses lowercase (`map/`, `region/`) because Rust's convention is lowercase modules; both follow their host language's idiom rather than enforcing project-wide uniformity.
 
-The `core` crate is **not** referenced from the iOS project directly. Instead, the project references `target/uniffi/EaforaIOS.xcframework` as a binary dependency (declared in `ios/project.yml`); the xcframework is built by the pipeline described in §Build toolchain. The xcframework lives under `target/` like every other generated artifact in the workspace; it is not committed and is rebuilt on demand.
+The Xcode project does not reference the `ios` crate's sources directly. Instead, it references `target/uniffi/EaforaIOS.xcframework` as a binary dependency (declared in `ios/project.yml`); the xcframework is built by the pipeline described in §Build toolchain. The xcframework lives under `target/` like every other generated artifact in the workspace; it is not committed and is rebuilt on demand.
 
 ## Build toolchain
 
 ### xcframework build pipeline
 
-The Rust core ships as an xcframework: a single `.xcframework` bundle containing static libraries for every Apple target slice plus the matching Swift module headers. Build flow:
+The `ios` crate ships as an xcframework: a single `.xcframework` bundle containing static libraries for every Apple target slice plus the matching C headers and modulemap. Build flow (debug profile by default; `--release` on the script selects the release profile and the `release/` directories):
 
-1. `cargo build --target aarch64-apple-ios --release` → produces `target/aarch64-apple-ios/release/libcore.a` (device slice).
-2. `cargo build --target aarch64-apple-ios-sim --release` → produces `target/aarch64-apple-ios-sim/release/libcore.a` (Apple-Silicon-Mac simulator slice).
-3. Generate Swift bindings from the compiled library's UniFFI metadata. Use the dedicated `uniffi-bindgen-swift` binary (separate from the generic `uniffi-bindgen`; gives finer-grained control over Swift-specific artifacts like xcframework-compatible modulemaps). Three separate invocations to produce each artifact independently:
+1. `cargo build -p ios --target aarch64-apple-ios` → produces `target/aarch64-apple-ios/debug/libeafora_ios.a` (device slice).
+2. `cargo build -p ios --target aarch64-apple-ios-sim` → produces `target/aarch64-apple-ios-sim/debug/libeafora_ios.a` (Apple-Silicon-Mac simulator slice).
+3. Generate Swift bindings from the simulator archive's UniFFI metadata. Use the dedicated `uniffi-bindgen-swift` binary (separate from the generic `uniffi-bindgen`; gives finer-grained control over Swift-specific artifacts). Three separate invocations to produce each artifact independently:
 
    ```sh
-   cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/libcore.a target/uniffi-swift --swift-sources
-   cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/libcore.a target/uniffi-swift/Headers --headers
-   cargo run -p uniffi-bindgen-swift -- target/aarch64-apple-ios/release/libcore.a target/uniffi-swift/Modules --xcframework --modulemap --modulemap-filename module.modulemap
+   cargo run -p uniffi_bindgen_swift -- target/aarch64-apple-ios-sim/debug/libeafora_ios.a target/uniffi/swift --swift-sources
+   cargo run -p uniffi_bindgen_swift -- target/aarch64-apple-ios-sim/debug/libeafora_ios.a target/uniffi/headers --headers
+   cargo run -p uniffi_bindgen_swift -- target/aarch64-apple-ios-sim/debug/libeafora_ios.a target/uniffi/headers --modulemap --module-name eafora_iosFFI --modulemap-filename module.modulemap
    ```
 
-   `uniffi-bindgen-swift` is a tiny binary we define in the workspace (a `[[bin]]` containing `fn main() { uniffi::uniffi_bindgen_swift() }`). The `--xcframework` flag is what makes the modulemap suitable for the `xcodebuild -create-xcframework` step that follows.
-4. `xcodebuild -create-xcframework -library target/aarch64-apple-ios/release/libcore.a -headers target/uniffi-swift/Headers -library target/aarch64-apple-ios-sim/release/libcore.a -headers target/uniffi-swift/Headers -output target/uniffi/EaforaIOS.xcframework` → produces the binary product under `target/` alongside the rest of the build outputs.
+   `uniffi-bindgen-swift` is the binary of the workspace package `tools/uniffi_bindgen_swift`, whose `main` calls `uniffi::uniffi_bindgen_swift()`. The Swift bindings land in `target/uniffi/swift/eafora_ios.swift` and import the C module `eafora_iosFFI`. The modulemap is generated without `--xcframework`, because that flag emits a `framework module`, which a consuming Swift package cannot import.
+4. `xcodebuild -create-xcframework -library target/aarch64-apple-ios/debug/libeafora_ios.a -headers target/uniffi/headers -library target/aarch64-apple-ios-sim/debug/libeafora_ios.a -headers target/uniffi/headers -output target/uniffi/EaforaIOS.xcframework` → produces the binary product under `target/` alongside the rest of the build outputs.
 5. `target/uniffi/EaforaIOS.xcframework` is referenced as a binary framework dependency in `ios/project.yml` (via the relative path `../target/uniffi/EaforaIOS.xcframework`), picked up by the regenerated `Eafora.xcodeproj`.
 
-The pipeline is encapsulated in `scripts/build-ios-xcframework.sh`, checked into the repo. Invoked:
+The pipeline is encapsulated in `scripts/build/build-ios-xcframework.sh`, checked into the repo. Invoked:
 
 - As an Xcode Run Script build phase before the "Compile Sources" phase, so opening the project in Xcode and building rebuilds the xcframework if the Rust source has changed.
 - In CI explicitly before `xcodebuild build`.
 
-`setup.sh` does not invoke it — `setup.sh` sets up the environment (install toolchains, run `xcodegen generate` to produce the project file, decrypt secrets), not perform builds. The first build after a fresh clone runs `build-ios-xcframework.sh` for the first time via Xcode's pre-build phase; that's where the compilation happens.
+`setup.sh` does not invoke it. `setup.sh` sets up the environment (installs toolchains, including the iOS Rust targets, xcodegen, and a simulator runtime when Xcode is present; decrypts secrets) and performs no builds; running `xcodegen generate` is deferred to Phase A, which adds `project.yml`. The first build after a fresh clone runs `build-ios-xcframework.sh` for the first time via Xcode's pre-build phase; that's where the compilation happens.
 
-The Run Script build phase is conservative: it invokes the shell script unconditionally and lets the script's internal cache + Cargo's incremental compilation determine whether work actually happens. A no-op rebuild after the first run takes approx. 5–10 seconds — acceptable overhead for the every-build correctness guarantee.
+The Run Script build phase is conservative: it invokes the shell script unconditionally and lets Cargo's incremental compilation determine whether the slices are recompiled; the script regenerates the bindings and recreates the xcframework on every run. A no-op rebuild after the first run takes approx. 5–10 seconds — acceptable overhead for the every-build correctness guarantee.
 
 The xcframework itself is **gitignored**. Every build produces it from source; staleness is impossible.
 
-### UniFFI: proc-macro form, dedicated FFI module
+### UniFFI: proc-macro form, dedicated FFI crate
 
-Per overview §UDL vs proc-macro for UniFFI, Eafora uses the **proc-macro form**: `#[uniffi::export]` annotations on Rust items, no separate `.udl` file. The discipline that makes this work is a **dedicated FFI module** at `core/src/ffi/uniffi.rs` that imports types from internal modules and either re-exports them with annotations or wraps them in thin FFI-facing adapter types when the internal shape isn't the right contract for the boundary.
+Per overview §UDL vs proc-macro for UniFFI, Eafora uses the **proc-macro form**: `#[uniffi::export]` annotations on Rust items, no separate `.udl` file. The discipline that makes this work is a **dedicated FFI crate**, `ios`, whose `src/` holds every export: free functions over statics, with no exported object. The crate calls into `shared` and defines thin FFI-facing types where the internal shape isn't the right contract for the boundary.
 
-The module is the single reviewable surface for "what the iOS and Android apps see." A PR that touches it changes the FFI; a PR that doesn't touch it doesn't.
+The crate is the single reviewable surface for "what the iOS app sees." A PR that touches `ios/src/` changes the FFI; a PR that doesn't touch it doesn't.
 
-Sketch of `core/src/ffi/uniffi.rs`:
+Sketch of the exports, by file:
 
 ```rust
-use crate::artifact::Bundle;
-use crate::map::{FrameState, RegionCode, ScreenPoint, Viewport};
-
+// ios/src/lib.rs
 uniffi::setup_scaffolding!();
 
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum AppError {
-    #[error("{message}")]
-    GenericError { message: String },
+// ios/src/error.rs
+#[derive(Debug, uniffi::Error)]
+pub enum FfiError {
+    Failed { message: String },
 }
 
-#[derive(uniffi::Object)]
-pub struct EaforaCore {
-    // internal fields not exposed across the FFI; surface lives here once attached
-    inner: std::sync::Mutex<EaforaCoreInner>,
+// ios/src/cache.rs
+static CACHE: OnceLock<FilesystemArtifactCache> = OnceLock::new();
+
+#[uniffi::export]
+pub fn set_cache_directory(cache_directory: String) -> Result<(), FfiError> { /* ... */ }
+
+// ios/src/bundle.rs
+static PUBLICATION: OnceLock<watch::Sender<Arc<Bundle>>> = OnceLock::new();
+
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn open_first_paint_bundle(embedded_directory: String) -> Result<String, FfiError> { /* ... */ }
+
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn load_live_bundle(discovery_url: String, static_repository_base_url: String) -> Result<String, FfiError> { /* ... */ }
+
+// ios/src/handle.rs
+#[derive(uniffi::Record)]
+pub struct UiKitSurfaceHandle {
+    pub layer_ptr: u64,
+    pub view_ptr: u64,
+}
+
+// ios/src/renderer.rs
+thread_local! {
+    static RENDERER: RefCell<Option<Renderer>> = const { RefCell::new(None) };
 }
 
 #[uniffi::export]
-impl EaforaCore {
-    #[uniffi::constructor]
-    pub fn new(artifact_path: String) -> Result<std::sync::Arc<Self>, AppError> { /* ... */ }
+pub fn create_renderer() -> Result<(), FfiError> { /* ... */ }
 
-    pub fn attach_surface(&self, handle: WindowHandle, width: u32, height: u32) -> Result<(), AppError> { /* ... */ }
-    pub fn detach_surface(&self) -> Result<(), AppError> { /* ... */ }
-    pub fn resize_surface(&self, width: u32, height: u32) -> Result<(), AppError> { /* ... */ }
+#[uniffi::export]
+pub fn attach_surface(handle: UiKitSurfaceHandle, width: u32, height: u32) -> Result<(), FfiError> { /* ... */ }
 
-    pub fn draw_frame(&self, viewport: Viewport, frame_state: FrameState) -> Result<(), AppError> { /* ... */ }
+#[uniffi::export]
+pub fn resize_surface(width: u32, height: u32) -> Result<(), FfiError> { /* ... */ }
 
-    pub fn region_at_point(&self, viewport: Viewport, point: ScreenPoint) -> Option<RegionCode> { /* ... */ }
+#[uniffi::export]
+pub fn detach_surface() -> Result<(), FfiError> { /* ... */ }
 
-    pub async fn push_bundle(&self, manifest_path: String) -> Result<(), AppError> { /* ... */ }
+#[uniffi::export]
+pub fn destroy_renderer() -> Result<(), FfiError> { /* ... */ }
 
-    pub fn revision(&self) -> String { crate::REVISION.to_string() }
-}
-
-// Platform-agnostic window-handle enum. Each platform's shell constructs the matching variant;
-// Rust unwraps and converts into raw-window-handle's RawWindowHandle to build a wgpu::Surface.
-// Same FFI method on every platform; only the value's variant differs.
-#[derive(uniffi::Enum)]
-pub enum WindowHandle {
-    UiKit { layer_ptr: u64, view_ptr: u64 },          // iOS: CAMetalLayer + UIView pointers
-    AndroidNdk { native_window_ptr: u64 },             // Android: ANativeWindow pointer
-}
-
-// re-export internal types that are part of the FFI surface
-#[derive(uniffi::Record)]
-pub struct Viewport {
-    pub lon_min: f64,
-    pub lon_max: f64,
-    pub lat_min: f64,
-    pub lat_max: f64,
-}
-
-#[derive(uniffi::Record)]
-pub struct ScreenPoint {
-    pub x: f64,
-    pub y: f64,
-}
-// ...etc for FrameState, RegionCode, etc.
+// ios/src/revision.rs
+#[uniffi::export]
+pub fn revision() -> String { /* ... */ }
 ```
 
-The intent: opaque `EaforaCore` handle + concrete request / response types + a single `AppError` thrown on failure. Generic types and trait objects are absent (UniFFI doesn't support them). Per the project's error-strings-over-enums preference, `AppError` carries a `message` payload rather than a per-failure-mode variant; callers that need to branch (e.g. quota-exceeded vs. opfs-unsupported on the web side) match on a documented prefix in the message body.
+The intent: free functions over set-once statics + concrete request / response types + a single `FfiError` thrown on failure. Generic types and trait objects are absent (UniFFI doesn't support them). Per the project's error-strings-over-enums preference, `FfiError` carries a `message` payload rather than a per-failure-mode variant; a Swift caller that must distinguish failures matches on the message. `FfiError` is returned only by exported functions; the code behind them returns `shared::error::AppError`, or `AppErrorStatic` on the async load path (§Threading).
 
-`uniffi-bindgen-swift` reads the metadata that the proc-macros embed in the compiled `libcore.a` and produces idiomatic Swift: an `EaforaCore` class with a constructor and methods; `throws` for fallible methods; `async` for `async fn` Rust functions; optionals (`RegionCode?`) for `T?` returns. Swift `do` / `try` / `catch` is the call-site idiom.
+`uniffi-bindgen-swift` reads the metadata that the proc-macros embed in the compiled `libeafora_ios.a` and produces idiomatic Swift in `eafora_ios.swift`: a top-level function per export; `throws` for fallible functions; `async throws` for the two loads; a `UiKitSurfaceHandle` struct for the record. Swift `do` / `try` / `catch` is the call-site idiom.
 
-When a type's internal shape isn't quite right for the FFI (e.g. the internal `Bundle` carries `Arc` references that don't cross the boundary cleanly), the FFI module defines a thin adapter struct alongside the `#[uniffi::Record]` — wrapping or projecting the internal type's relevant fields. The adapter is the FFI surface; the internal type stays free to evolve.
+When a type's internal shape isn't quite right for the FFI, the `ios` crate defines a thin FFI-facing type that converts into the internal one: `UiKitSurfaceHandle` converts into `shared::render::WindowHandle::UiKit`. The FFI-facing type is the FFI surface; the internal type stays free to evolve. The bundle itself never crosses: the loads publish it inside Rust and return its version label.
+
+The current exports are provisional; Phase A's Swift call sites decide each export's final shape, and nothing is exported speculatively. `draw_frame`, `region_at_point`, `set_period`, `set_statistic`, `pan`, and `zoom` are not exported yet: they need the viewport, frame-state, and gesture orchestration in `web/src/map/canvas/driver.rs` to move into `shared` first, and they land in Phase A.
 
 ### Build profile
 
-The xcframework build invokes `cargo build --target aarch64-apple-ios --release` (and the simulator equivalent). The standard `[profile.release]` settings apply (including the workspace-wide `panic = "abort"` — see overview §Workspace Cargo profile); no additional iOS-specific tuning.
+The xcframework build invokes `cargo build -p ios --target aarch64-apple-ios` (and the simulator equivalent) in the debug profile by default; `build-ios-xcframework.sh --release` builds the release profile. The standard `[profile.release]` settings apply (Cargo defaults; the workspace sets no `panic` override, which overview §Workspace Cargo profile records as a pending decision); no additional iOS-specific tuning.
 
 Binary size doesn't justify a custom profile on iOS. The whole app ships once at install time and updates infrequently; users don't watch the size on every launch the way a web client downloads its WASM. The few megabytes a size-trade like `opt-level = "z"` would save are invisible to users, while the runtime cost (less aggressive inlining, slower hot paths) is real even if small. Standard release optimization wins.
 
 Web is the asymmetric case: every cold-cache page load downloads the WASM, so shaved KB are shaved network-transfer time on first paint — directly user-visible. Web's `[profile.wasm-release]` (see `client-web.md` §`wasm-opt`) does use `opt-level = "z"` for exactly that reason. iOS and Android don't.
 
-Expected size of `libcore.a` post-strip: roughly 8-12 MB per slice, dominated by `wgpu` + `flatgeobuf` + `rusqlite`'s sqlite3 bytes. The xcframework is the union of slices; `xcframework` deduplicates internally to the extent possible. App Store thinning at install time delivers only the architecture the device uses.
+Expected size of `libeafora_ios.a` post-strip: roughly 8-12 MB per slice, dominated by `wgpu` + `flatgeobuf` + `rusqlite`'s sqlite3 bytes. The xcframework is the union of slices; `xcframework` deduplicates internally to the extent possible. App Store thinning at install time delivers only the architecture the device uses.
 
 ### Xcode integration
 
@@ -204,7 +201,7 @@ This avoids:
 - Hand-edited XML in the project file (the format is opaque, version conflicts on it are painful, and small Xcode actions can rewrite huge swaths unpredictably).
 - The need to open Xcode to add a source file or change a build setting.
 
-`setup.sh` installs the iOS-side toolchain (`xcode-select --install`, `brew install xcodegen`, `rustup target add aarch64-apple-ios aarch64-apple-ios-sim`) and runs `xcodegen generate` to produce the initial project file. Setup is environment + project-file-materialization only; it does not compile or build (see §xcframework build pipeline for why building happens via Xcode's Run Script phase instead).
+`setup.sh` installs the iOS-side toolchain when Xcode is present (`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`, `brew install xcodegen`, and an iOS simulator runtime via `xcodebuild -downloadPlatform iOS` when none is installed). Running `xcodegen generate` to produce the initial project file is deferred to Phase A, which adds `project.yml`. Setup prepares the environment only; it does not generate the project file (deferred to Phase A) and does not compile or build (see §xcframework build pipeline for why building happens via Xcode's Run Script phase instead).
 
 Reference shape of `ios/project.yml`:
 
@@ -242,8 +239,8 @@ targets:
           CODE_SIGN_IDENTITY: "Apple Distribution"
           PROVISIONING_PROFILE_SPECIFIER: "Eafora App Store"
     preBuildScripts:
-      - name: Build EaforaCore xcframework
-        script: ../scripts/build-ios-xcframework.sh
+      - name: Build EaforaIOS xcframework
+        script: ../scripts/build/build-ios-xcframework.sh
       - name: Sync embedded artifacts
         script: ../scripts/build/sync-embedded-bundle.sh ${SRCROOT}/EaforaApp/Resources/embedded_artifacts/
       - name: Inject git revision
@@ -308,41 +305,34 @@ let revisionShort = String(revision.prefix(12))   // truncate at display time
 
 Full SHA is stored; truncation happens at display time. The `-dirty` suffix tags the SHA when the working tree has uncommitted changes — debug builds during dev iteration will routinely show as dirty, which is the correct signal.
 
-#### Core FFI (runtime surface)
+#### Rust FFI (runtime surface)
 
-The Rust core exposes its own revision via UniFFI. Used for anything the running app needs to **act** on the version: error-message annotations, log lines, server-reported-minimum-version comparisons. `core/build.rs` captures the revision at compile time:
+The Rust side exposes its own revision via UniFFI. Used for anything the running app needs to **act** on the version: error-message annotations, log lines, server-reported-minimum-version comparisons. `shared/build.rs` captures the revision at compile time:
 
 ```rust
-// core/build.rs
-use std::process::Command;
-
+// shared/build.rs (abridged)
 fn main() {
-    let revision = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+    // `git rev-parse HEAD`; a debug build falls back to "unknown", a release build fails without a revision.
+    let resolved_revision: String = /* ... */;
 
-    println!("cargo:rustc-env=EAFORA_REVISION={}", revision);
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    println!("cargo:rerun-if-changed=.git/refs");
+    println!("cargo:rustc-env=EAFORA_REVISION={}", resolved_revision);
 }
 
-// core/src/lib.rs
+// shared/src/revision.rs
 pub const REVISION: &str = env!("EAFORA_REVISION");
 
-// core/src/ffi/uniffi.rs
+// ios/src/revision.rs
 #[uniffi::export]
 pub fn revision() -> String {
-    crate::REVISION.to_string()
+    shared::revision::REVISION.to_string()
 }
 ```
 
-Swift sees `eafora.revision()` (top-level function in the generated bindings).
+Swift sees `revision()` (top-level function in the generated bindings).
 
 #### Why two values
 
-These two facts can diverge. The Info.plist `EaforaRevision` is "what was the source state when this Xcode build ran"; `core::REVISION` is "what was the source state when this Rust core compiled." Almost always identical, but in development they can drift if one side is rebuilt without the other. Surfacing them as separate values means the divergence is visible when it matters; conflating them into one would hide a real signal.
+These two facts can diverge. The Info.plist `EaforaRevision` is "what was the source state when this Xcode build ran"; `shared::revision::REVISION` is "what was the source state when the Rust library compiled." Almost always identical, but in development they can drift if one side is rebuilt without the other. Surfacing them as separate values means the divergence is visible when it matters; conflating them into one would hide a real signal.
 
 The name "revision" rather than "sha" is deliberate. The value is a git SHA today, but the *concept* the app cares about is "what source state did this binary come from"; if we ever migrate version control systems (Jujutsu, Mercurial, Pijul, anything else), the script changes, the displayed value changes, the consumer-facing name doesn't.
 
@@ -352,14 +342,16 @@ iOS rendering uses `MTKView` as the render surface and wgpu's Metal backend unde
 
 1. SwiftUI declares a `UIViewRepresentable` wrapping `MTKView`.
 2. `MTKView`'s delegate (`MTKViewDelegate`) is the SwiftUI-side `MapRenderer` Swift class.
-3. When the MTKView enters the window hierarchy and its `CAMetalLayer` becomes available, the `MapRenderer` calls `eaforaCore.attachSurface(handle: .uiKit(layerPtr: ..., viewPtr: ...), width: ..., height: ...)`. Rust constructs a `wgpu::Surface` against the layer and stores it on `EaforaCore` for the lifetime of the view. **One-time call, not per-frame.**
-4. On `mtkView(_:drawableSizeWillChange:)`, the `MapRenderer` calls `eaforaCore.resizeSurface(width: ..., height: ...)`. Rust reconfigures the wgpu surface to the new size.
-5. On `setNeedsDisplay()` triggering a `draw(in:)` callback, the `MapRenderer` calls `eaforaCore.drawFrame(viewport: ..., frameState: ...)`. Rust pulls the current frame's texture from its persistent surface (`surface.get_current_texture()`), encodes wgpu draw commands, submits to the Metal queue, presents.
-6. When the MTKView leaves the hierarchy (view torn down, scene phase changes), the `MapRenderer` calls `eaforaCore.detachSurface()`. Rust drops the wgpu surface; the rest of `EaforaCore` (bundle, pipelines, device) lives on.
+3. When the MTKView enters the window hierarchy and its `CAMetalLayer` becomes available, the `MapRenderer` calls `attachSurface(handle: UiKitSurfaceHandle(layerPtr: ..., viewPtr: ...), width: ..., height: ...)`. Rust converts the handle to `WindowHandle::UiKit`, builds a wgpu surface from the view pointer through `Instance::create_surface_unsafe`, and stores it on the renderer for the lifetime of the view. **One-time call, not per-frame.**
+4. On `mtkView(_:drawableSizeWillChange:)`, the `MapRenderer` calls `resizeSurface(width: ..., height: ...)`. Rust reconfigures the wgpu surface to the new size.
+5. On `setNeedsDisplay()` triggering a `draw(in:)` callback, the `MapRenderer` asks Rust to draw a frame: Rust pulls the current frame's texture from its persistent surface (`surface.get_current_texture()`), encodes wgpu draw commands, submits to the Metal queue, presents. The draw export is deferred to Phase A (§UniFFI: proc-macro form, dedicated FFI crate).
+6. When the MTKView leaves the hierarchy (view torn down, scene phase changes), the `MapRenderer` calls `detachSurface()`. Rust drops the wgpu surface; the rest of the renderer (bundle receiver, pipelines, device) lives on. `destroyRenderer()` drops the renderer itself.
 
-The Swift-to-Rust attach call hands a `WindowHandle.uiKit(layerPtr:, viewPtr:)` value — a UniFFI-marshaled enum carrying the platform-specific pointers as `u64`. Internally, Rust reconstructs `raw-window-handle`'s `RawWindowHandle::UiKit(...)` variant from the enum data and hands that to wgpu's surface constructor. Same FFI method (`attach_surface`) on every platform; the platform variation lives in the value the shell constructs (UiKit on iOS, AndroidNdk on Android), not in the FFI signature. (Verify the exact wgpu surface-creation API against the version pinned in `core/`'s Cargo.toml; the Metal-from-CAMetalLayer path is stable in wgpu but the function name has shifted across releases.)
+All renderer functions (`createRenderer`, `attachSurface`, `resizeSurface`, `detachSurface`, `destroyRenderer`) are synchronous and must be called from the same thread, Swift's main thread: the renderer lives in a `thread_local!` because wgpu state is bound to its creating thread, and an async export may resume on another thread.
 
-The renderer's wgpu device, queue, and pipeline state are constructed once at `EaforaCore::new` time. The surface is attached later when the view is ready. The two-phase setup is necessary because the platform render target doesn't exist at app init; everything else does.
+The Swift-to-Rust attach call hands a `UiKitSurfaceHandle(layerPtr:, viewPtr:)` value, a UniFFI record carrying the layer and view pointers as `u64`. Rust converts it to `shared::render::WindowHandle::UiKit`, from which `shared/src/render/surface.rs` builds the surface target and hands it to wgpu's surface constructor.
+
+The renderer's wgpu device, queue, and pipeline state are constructed once by `createRenderer()`, which requires a published bundle, so Swift calls it after `openFirstPaintBundle`. The surface is attached later when the view is ready. The two-phase setup is necessary because the platform render target doesn't exist at app init; everything else does.
 
 Per `docs/design/README.md`, the only v1 animation is the zoom-to-country camera move; every other state change is instant. Rendering is **event-driven**, not loop-driven: `MTKView.isPaused = true` plus `setNeedsDisplay()` on every state change. State changes — selection, hover, statistic-picker, year-scrubber drag, bundle hot-swap — invalidate the view; MTKView coalesces multiple invalidations between vsyncs into one draw call at the next vsync; the GPU stays idle when nothing is happening. The zoom-to-country move is the one case that runs a temporary per-frame loop: on re-selecting the already-selected country the shell polls the `shared::map::ViewportTransition` each vsync (via `setNeedsDisplay()` scheduled per frame) for a fresh interpolated viewport, then stops when the transition lands. The same shape `client-web.md` §Client-side map view describes for web (dirty flag + `requestAnimationFrame`), expressed in iOS's native vocabulary.
 
@@ -367,21 +359,21 @@ When v2+ adds further animations (per `docs/design/README.md` §Animation — un
 
 ### GPU baseline
 
-Per overview §iOS client, the deployment target is iOS 18 + Apple A14 / A15 minimum. Metal feature levels at this baseline are uniformly modern: argument buffers tier 2, indirect command buffers, programmable blending, etc. wgpu's Metal backend abstracts over the version differences automatically; the renderer (in `core::map::map_renderer`) does not branch on Metal feature levels.
+Per overview §iOS client, the deployment target is iOS 18 + Apple A14 / A15 minimum. Metal feature levels at this baseline are uniformly modern: argument buffers tier 2, indirect command buffers, programmable blending, etc. wgpu's Metal backend abstracts over the version differences automatically; the renderer (`shared::map::Renderer`) does not branch on Metal feature levels.
 
 ### Threading
 
-Unlike the web (single-threaded WASM), iOS supports full multithreading. The Rust core's tokio runtime can use `features = ["full"]` on this target. Practical use:
+Unlike the web (single-threaded WASM), iOS supports full multithreading. The `ios` crate enables tokio's `rt-multi-thread`, and its two async exports run on UniFFI's tokio runtime (`#[uniffi::export(async_runtime = "tokio")]`). Practical use:
 
-- Render loop: main thread, driven by MTKView's display link.
-- Live-bundle fetch: a background task spawned from the `MapRenderer` constructor, running on a tokio worker thread. The fetched bytes are handed to `core::artifact::Bundle` and published via `tokio::sync::watch::Sender<Arc<Bundle>>`.
+- Render loop: main thread, driven by MTKView's display link; the renderer exports are synchronous and bound to that thread (§Rendering: MTKView + wgpu Metal).
+- Live-bundle fetch: the `load_live_bundle` export, running on the tokio runtime. The fetched files are opened as a `shared::artifact::Bundle` and published via the `tokio::sync::watch::Sender<Arc<Bundle>>` the renderer subscribes to, so a live load repaints with no relaunch.
 - Subnational geometry parsing (v2+): another background task; published through the same watch channel as a partial-update.
 
 Per `client.md` §Bundle hot-swap, in-flight queries holding an old `Arc<Bundle>` complete against the old bundle; the swap is wait-free.
 
-The Swift side does not see tokio. It calls async UniFFI functions (`async fn` in Rust → `async` in Swift), and Swift's structured concurrency owns the Swift-side task lifecycle. Cancellation is one-way: cancelling a Swift `Task` does not cancel the Rust async future. Long-running Rust futures must self-poll a cancellation flag if the user-visible operation has a "Cancel" button (none through v1).
+The Swift side does not see tokio. It calls async UniFFI functions (`async fn` in Rust → `async throws` in Swift), and Swift's structured concurrency owns the Swift-side task lifecycle. Cancellation is one-way: cancelling a Swift `Task` does not cancel the Rust async future. Long-running Rust futures must self-poll a cancellation flag if the user-visible operation has a "Cancel" button (none through v1).
 
-**Open item — awaiting `Bundle::open` on the multi-threaded runtime.** `shared::artifact::ArtifactCache` deliberately has no `Send` bound on its async functions: the web's `OpfsArtifactCache` holds `!Send` `JsValue`, and one trait serves every platform (see `shared/src/artifact/cache.rs`). So `Bundle::open(&dyn ArtifactCache)` returns a `!Send` future that cannot be `tokio::spawn`'d directly onto the full multi-threaded runtime. The live-bundle fetch task above must therefore run `Bundle::open` on a current-thread / `tokio::task::LocalSet` task (or a dedicated loader thread) and publish only the finished `Arc<Bundle>` — which IS `Send + Sync` — across the watch channel. The trait and `Bundle` shapes are fixed in 005; pick the exact spawn mechanism when 004 implementation begins.
+UniFFI requires an async export's future to be `Send`. `shared::artifact::ArtifactCache` deliberately has no `Send` bound on its async functions: the web's `OpfsArtifactCache` holds `!Send` `JsValue`, and one trait serves every platform (see `shared/src/artifact/cache.rs`). The iOS loads call the loader in `shared/src/artifact/load.rs` with the concrete `FilesystemArtifactCache`, `ReqwestHttpFetch`, and `FilesystemFetch`, whose futures are `Send`, and every function on their await path returns `shared::error::AppErrorStatic` (minimer's static error, which holds no boxed source error). `AppError` stays everywhere else.
 
 ## Cache: `Library/Caches/`
 
@@ -407,37 +399,26 @@ Identical shape to the OPFS layout in the web client; only the root path differs
 
 - `Library/Caches/` is the right directory because iOS may purge it under storage pressure; the embedded bundle is the floor when that happens, and the live fetch path runs as if first launch on the next online start. Purge events are silently recovered. (Compare `Library/Application Support/`, which iOS does not reclaim — wrong shape for cached-from-network data.)
 - No quota or `persist()` machinery: iOS does not expose a per-app quota the way browsers do; the cache writes until disk pressure forces a purge, at which point the loader runs the fetch path again. There is no `navigator.storage.persist()` equivalent.
-- No support-version branching: every supported iOS version (iOS 18+) has the same `FileManager` API. There is no equivalent of the OPFS-unsupported fallback path.
-- `NSURLIsExcludedFromBackupKey` set on the `artifacts/` directory at first creation; the cache contents are reproducible from the CDN and don't belong in iCloud / iTunes backup.
+- No support-version branching: the cache uses `std::fs`, which behaves the same on every supported iOS version (iOS 18+). There is no equivalent of the OPFS-unsupported fallback path.
+- `NSURLIsExcludedFromBackupKey` is set by Swift on the `artifacts/` directory before it passes the path to `set_cache_directory`; the cache contents are reproducible from the CDN and don't belong in iCloud / iTunes backup.
 
-### Implementation: `FileSystemArtifactCache.swift`
+### Implementation: `FilesystemArtifactCache`
 
-The cache adapter on iOS is a Swift class implementing the same contract `core::artifact` defines. Reading and writing happens entirely Swift-side via `FileManager` + `Data(contentsOf:)` / `Data.write(to:)`; the byte buffers are then handed into Rust through UniFFI on demand. This avoids a Rust-Swift boundary cross per byte and keeps file-system access on the platform's native API.
+The cache on iOS is `shared::artifact::FilesystemArtifactCache` (`shared/src/artifact/filesystem_cache.rs`), the `ArtifactCache` implementation over `std::fs`, in Rust. Reading and writing happen entirely in Rust; no artifact bytes cross the FFI.
 
-The cache contract surface from Swift's perspective:
+Swift chooses the directory (`Library/Caches/artifacts/`) and calls `setCacheDirectory(cacheDirectory:)` once, before any load. The `ios` crate holds the cache in `static CACHE: OnceLock<FilesystemArtifactCache>`; a second call throws.
 
-```swift
-protocol ArtifactCache {
-    func put(versionLabel: String, fileRelativePath: String, bytes: Data) async throws
-    func get(versionLabel: String, fileRelativePath: String) async throws -> Data?
-    func listVersions() async throws -> [String]
-    func deleteVersion(versionLabel: String) async throws
-}
-```
-
-`FileSystemArtifactCache` implements this against `Library/Caches/artifacts/`. Errors propagate as Swift `throws`; the caller (the UniFFI wrapper around the loader in `core::artifact`) catches and converts to the Rust `AppError` shape the loader expects.
-
-Eviction policy from `client.md` §Cache eviction (keep current + most-recent prior) is implemented in `evictOldVersions()`, called at app launch after the cache initializes. Enumerates version subdirectories, picks the two most recent by `<version_label>` lexicographic order (correct because of the `YYYY-MM-DD+<surname>` shape), deletes the rest.
+Eviction policy from `client.md` §Cache eviction (keep current + most-recent prior) is `shared::artifact::load::evict_stale_versions`, which `load_live_bundle` runs after publishing a live bundle. It keeps the two newest versions, ranked by each version's manifest, and deletes the rest. Opening the first-paint bundle also discards any cached version this build cannot open.
 
 ## Embedded bundle: app bundle Resources
 
-Per `client.md` §Embedded downsampled artifact, native clients ship the embedded bundle as bytes embedded in the app binary at build time. On iOS:
+Per `client.md` §Embedded downsampled artifact, native clients ship the embedded bundle inside the app at build time. On iOS:
 
 - The downsampled output (`manifest.json` + `geometry/` + statistic shards) is copied into `ios/EaforaApp/Resources/embedded_artifacts/` by `scripts/build/sync-embedded-bundle.sh` (Run Script build phase 2; see §Build toolchain).
 - The "Copy Bundle Resources" build phase copies that directory into the `.app` bundle.
-- At app launch, `EmbeddedBundle.swift` locates the bundle root via `Bundle.main.url(forResource: "embedded_artifacts", withExtension: nil)`, reads the manifest, and constructs a `core::artifact::Bundle` synchronously **before the first frame is drawn**.
-- The renderer's `tokio::sync::watch::Sender<Arc<Bundle>>` is initialized with the embedded bundle. The map renders its first frame against the embedded data within milliseconds of process start.
-- In parallel, `EaforaApp.swift` kicks off the discovery + live-fetch flow defined in `client.md` §Discovery and live bundle resolution: fire the discovery fetch (`https://app.eafora.org/discovery`) and a speculative manifest fetch (against the static `repository_base_url` fallback) concurrently; reconcile per `client.md`; persist any verified bytes to the file-system cache; publish the resulting `Arc<Bundle>` to the renderer's watch channel. If both fetches fail, the embedded bundle remains the floor.
+- At app launch, `EmbeddedBundle.swift` locates the bundle root via `Bundle.main.url(forResource: "embedded_artifacts", withExtension: nil)` and passes its path to `openFirstPaintBundle(embeddedDirectory:)`. In Rust, that export opens the newest readable cached bundle, or else reads the embedded bundle from that directory through `shared::http::FilesystemFetch`, verifies each file's SHA-256, writes it into the cache, and opens it. Swift awaits it, then calls `createRenderer()`, **before the first frame is drawn**.
+- The first published bundle creates the `tokio::sync::watch::Sender<Arc<Bundle>>` (`static PUBLICATION` in `ios/src/bundle.rs`) that the renderer subscribes to. The map renders its first frame against that bundle.
+- Swift then calls `loadLiveBundle(discoveryUrl:staticRepositoryBaseUrl:)`, which runs the discovery + live-fetch flow defined in `client.md` §Discovery and live bundle resolution in Rust: fire the discovery fetch (`https://app.eafora.org/discovery`) and a speculative manifest fetch (against the static `repository_base_url` fallback) concurrently; reconcile per `client.md`; persist verified bytes to the file-system cache; publish the resulting `Arc<Bundle>` to the renderer's watch channel. If both fetches fail, the first-paint bundle remains the floor. Both loads return the published version label.
 - On hot-swap, the live-fetch task replaces the published bundle (per `client.md` §Bundle hot-swap); the next `setNeedsDisplay()` redraws the map against the new data.
 
 The embedded bundle is **also the offline-capable baseline**. A user opening Eafora without connectivity and without a populated cache still sees a usable, if slightly stale, atlas. Updates to the embedded bundle ride app updates: the user installs a new app build (whose `ingestion build --downsampled` output captured a newer baseline), and the floor advances.
@@ -587,7 +568,7 @@ SwiftUI's default transitions (`.animation()`, `withAnimation { ... }`) are **no
 v1 ships English-only, but the localization machinery is in place from day one so future locales are mechanical (add a translation column) instead of a refactor (find every bare string literal). Per overview §FFI dividing line, the split is:
 
 - UI-chrome strings (controls, errors, About-page prose, accessibility labels, navigation titles) live in the iOS app and use Apple's localization machinery.
-- Domain-content strings (region names, statistic names, source attributions, data-status labels) live in the SQLite shard built by ingestion, joined to upstream-source values by code. **Out of scope for this section** — the iOS app reads them via `core::*` queries; the i18n is producer-side.
+- Domain-content strings (region names, statistic names, source attributions, data-status labels) live in the SQLite shard built by ingestion, joined to upstream-source values by code. **Out of scope for this section** — the iOS app reads them through the Rust exports; the i18n is producer-side.
 
 #### String Catalog
 
@@ -651,44 +632,32 @@ Text("\(publicationDate.formatted(date: .abbreviated, time: .omitted))")
 
 Locale-aware formatting handles thousand separators, decimal points, date order — all of which differ by locale even when the user's UI is English (an en-DE user sees German-style number formatting, en-US user sees American-style). Free correctness; no reason to skip.
 
-Domain-content i18n (region names, etc.) is deferred per overview §FFI. The producer side adds translation columns to the seed-data tables when a second locale becomes a real deliverable; the iOS client reads them via `core::canonical::region_name(code, locale)`-shaped queries — same mechanism, different layer of the stack.
+Domain-content i18n (region names, etc.) is deferred per overview §FFI. The producer side adds translation columns to the seed-data tables when a second locale becomes a real deliverable; the iOS client reads them through the same shard queries the web client uses.
 
-## URLSession fetch adapter
+## HTTP fetch: `ReqwestHttpFetch`
 
-`URLSessionFetcher.swift` owns the platform-side fetch path. It mirrors the loader contract from `core::artifact`:
+Artifact fetching runs in Rust, in `shared`, shared with the web client. `shared::http::ReqwestHttpFetch` (`shared/src/http/reqwest_fetch.rs`) is the `HttpFetch` implementation `load_live_bundle` uses; `shared::http::FilesystemFetch` (`shared/src/http/filesystem_fetch.rs`) reads the embedded bundle from disk through the same interface. Swift makes no artifact requests.
 
-```swift
-final class URLSessionFetcher {
-    init(repositoryBaseURL: URL) { ... }
+The loader in `shared/src/artifact/load.rs` owns discovery reconciliation, version ranking, SHA-256 verification, the bound on concurrent file fetches, and eviction. The fetch implementations just propagate errors.
 
-    func fetchManifest() async throws -> Data { ... }
+Swift passes the discovery URL and the static repository base URL to `loadLiveBundle(discoveryUrl:staticRepositoryBaseUrl:)`. The loader resolves `repository_base_url` at runtime via the discovery URL flow defined in `client.md` §Discovery and live bundle resolution and uses it for every shard fetch, falling back to the static base when discovery itself fails. Where Swift reads the static base from is deferred to Phase A. The indirection earns its keep on iOS specifically — TestFlight and App Store installs live on devices for months or years, and an R2 re-platform without the discovery indirection would silently break every install in the field on the next launch.
 
-    func fetchArtifactFile(versionLabel: String, relativePath: String) async throws -> Data { ... }
-}
-```
-
-Concurrency cap: `URLSession.shared` defaults are reasonable for the per-platform cap (`client.md` §Stage 3 specifies 4 concurrent for native; configure `URLSessionConfiguration.httpMaximumConnectionsPerHost = 4` if the default exceeds it).
-
-Retry: per `client.md` §Stage 3, the loader inside `core::artifact` owns the retry loop (approx. 100 ms / 400 ms backoff). The fetch adapter just propagates errors.
-
-`repositoryBaseURL` is resolved at runtime via the discovery URL flow defined in `client.md` §Discovery and live bundle resolution: the app fetches `https://app.eafora.org/discovery`, reads `repository_base_url` from the response, and uses that for every shard fetch. A static fallback (populated at build time from the committed discovery document and written into a generated Swift constant) handles the case where discovery itself fails. The indirection earns its keep on iOS specifically — TestFlight and App Store installs live on devices for months or years, and an R2 re-platform without the discovery indirection would silently break every install in the field on the next launch.
-
-For local development, override the discovery URL itself (point it at a local web server serving a development discovery document) rather than overriding `repositoryBaseURL` directly. Keeps the production code path identical to dev; one less divergence to debug.
+For local development, override the discovery URL itself (point it at a local web server serving a development discovery document) rather than overriding the static repository base URL directly. Keeps the production code path identical to dev; one less divergence to debug.
 
 ## UniFFI surface
 
-The UniFFI binding is the only place Swift sees Rust. The boundary is intentionally narrow:
+The UniFFI binding is the only place Swift sees Rust. The boundary is intentionally narrow, and the exports are free functions over statics, with no exported object:
 
-- Lifecycle: `EaforaCore.init(artifactPath:)` constructs the core given a path to the embedded-bundle root. The core opens the manifest, parses it, opens any SQLite shards in memory, and is ready.
-- Surface lifecycle: `attach_surface(handle: WindowHandle, width, height)` + `detach_surface()` + `resize_surface(width, height)`. The shell calls `attach_surface` once when the MTKView's layer becomes available, passing a `WindowHandle.uiKit` value containing the layer + view pointers; Rust constructs a `wgpu::Surface` against the layer and holds it for the view's lifetime. `resize_surface` reconfigures on size change. `detach_surface` drops the surface when the view goes away. The same `attach_surface` method serves Android: shell constructs `WindowHandle.androidNdk` instead. Single FFI signature; platform-specific data lives in the enum variant.
-- Per-frame draw: `draw_frame(viewport, frame_state)` issues wgpu draw calls against the already-attached surface. Rust pulls the current texture from `wgpu::Surface::get_current_texture()`, encodes draw commands, submits, presents. No platform-specific data crosses the FFI per frame; the surface was attached once. No drawing instructions cross the FFI either — the renderer draws directly into the texture from its persistent surface.
-- Hit testing: `region_at_point(viewport, point)` returns an optional `RegionCode`. Used for tap-to-select on the map.
-- Live-bundle handoff: `push_bundle(manifest_path: String)` lets the Swift fetcher hand a freshly-cached live bundle to the core. Swift writes the fetched bytes to the cache directory at the manifest-declared paths first, then calls `push_bundle` with the absolute path to the manifest. Rust opens the manifest from disk, reads its `relative_path` entries, opens each shard relative to the manifest's directory, **validates SHA-256s** (this is the only verification — Swift doesn't duplicate it), constructs a `core::artifact::Bundle`, publishes it to the renderer's watch channel. Verification mismatch returns an error; Swift handles retry per the loader's retry policy. No bundle bytes cross the FFI — only a path string. (Resolve the exact UniFFI signature against `core/src/ffi/uniffi.rs` when implementing.)
-- Errors: every fallible function returns `Result<T, AppError>` in Rust → throws `AppError` in Swift. Per the project's error-strings preference, `AppError` is a single-variant enum carrying a `message: String`; no per-failure typed variants.
+- Cache: `set_cache_directory(cache_directory)` sets the cache root once, before any load (§Implementation: `FilesystemArtifactCache`).
+- Bundle loads: `open_first_paint_bundle(embedded_directory)` opens the newest readable cached bundle, else the embedded bundle read from the app-bundle directory; `load_live_bundle(discovery_url, static_repository_base_url)` fetches, verifies, and caches the live bundle. Both are `async` (Swift sees `async throws`), both publish into `static PUBLICATION: OnceLock<watch::Sender<Arc<Bundle>>>`, and both return the published version label. The distribution context is the constant `DistributionContext::FirstParty`. No bundle bytes cross the FFI; only path and URL strings and the version label.
+- Renderer lifecycle: `create_renderer()`, `attach_surface(handle: UiKitSurfaceHandle, width, height)`, `resize_surface(width, height)`, `detach_surface()`, `destroy_renderer()`. Synchronous, and called from Swift's main thread (§Rendering: MTKView + wgpu Metal). `UiKitSurfaceHandle { layer_ptr, view_ptr }` is a record converted to `shared::render::WindowHandle::UiKit`.
+- Revision: `revision()` (§Build version provenance).
+- Deferred to Phase A: per-frame draw, hit testing (`region_at_point`), and the period, statistic, pan, and zoom controls (§UniFFI: proc-macro form, dedicated FFI crate).
+- Errors: every fallible export returns `Result<T, FfiError>` in Rust → throws `FfiError` in Swift. Per the project's error-strings preference, `FfiError` is a single-variant enum (`Failed { message: String }`); no per-failure typed variants.
 
-Anything that doesn't need to cross the seam stays Swift-side: `URLSession`, `FileManager`, `MTKView`, navigation state, animation timing (when v2+ adds it), the entire SwiftUI view tree. Per overview §FFI dividing line, this is intentional and load-bearing.
+Swift-side: choosing the cache directory and excluding it from backup, locating the embedded bundle directory in the app bundle, `MTKView` and its `UIViewRepresentable` bridge, gestures, redraw scheduling, navigation state, animation timing (when v2+ adds it), the entire SwiftUI view tree. Per overview §FFI dividing line, this is intentional and load-bearing.
 
-Asymmetric with the web client: web has no `ffi/` directory and no `core::ffi::wasm` module (per `client-web.md` §Workspace placement), because Leptos is itself Rust and calls `core::*` directly as a normal Cargo dependency — there's no language boundary to mediate. iOS doesn't have that option: Swift can't depend on `core/` as a Cargo crate, so the only path is `core/src/ffi/uniffi.rs` exposing the Rust surface for `uniffi-bindgen-swift` to consume. The asymmetry follows from the language boundary actually existing on iOS and not existing on web; both are correct for their platform.
+`web/` and `ios/` are sibling crates over `shared`. The web crate has no FFI layer (per `client-web.md` §Workspace placement), because Leptos is itself Rust and calls `shared::*` directly as a normal Cargo dependency — there's no language boundary to mediate. Swift can't depend on `shared` as a Cargo crate, so the `ios` crate exposes a UniFFI surface over `shared` for `uniffi-bindgen-swift` to consume. `shared` and `web` carry no UniFFI dependency, so the web build never compiles UniFFI. The asymmetry follows from the language boundary actually existing on iOS and not existing on web; both are correct for their platform.
 
 ## App Store distribution
 
@@ -727,7 +696,7 @@ xcodebuild -exportArchive \
 
 CI does not retain `.xcarchive`s. They're produced as a byproduct of `xcodebuild archive`, immediately consumed by the upload step, and discarded.
 
-The recovery path for crash-report symbolication months after a build shipped is `git checkout <revision> && xcodebuild archive`, where `<revision>` comes from the `EaforaRevision` value recorded in the binary's `Info.plist` (per §Build version provenance). The user's crash report carries the revision; we check out the matching source state; we rebuild; the rebuilt archive's `.dSYM` UUIDs match the original (assuming our build is deterministic enough — pinned Xcode + Rust toolchains, standard release profile, `panic = "abort"` workspace-wide). Symbolication proceeds normally.
+The recovery path for crash-report symbolication months after a build shipped is `git checkout <revision> && xcodebuild archive`, where `<revision>` comes from the `EaforaRevision` value recorded in the binary's `Info.plist` (per §Build version provenance). The user's crash report carries the revision; we check out the matching source state; we rebuild; the rebuilt archive's `.dSYM` UUIDs match the original (assuming our build is deterministic enough — pinned Xcode + Rust toolchains, standard release profile). Symbolication proceeds normally.
 
 The git-revision-in-binary plumbing is what makes archive retention unnecessary. Without it, we'd have to retain archives because there'd be no way to know which source state to check out for a given user-reported crash. With it, the archive becomes recoverable from source, so storing it is redundant.
 
@@ -747,7 +716,7 @@ Review takes approx. 24–48 hours for compliant apps. Common rejection causes f
 
 - Misleading data: Eafora's per-cell provenance with retrieval timestamp + license (Constitution II) addresses this directly. Every datum is attributable.
 - Claims of endorsement without evidence: addressed by Constitution I (no editorial copy) and by sticking to source-attributed data.
-- Mishandling of politically contested borders: addressed by Constitution VI's US-recognized-borders default plus the `core::boundary` swap design (overview §Borders) for any future market that requires alternate boundaries.
+- Mishandling of politically contested borders: addressed by Constitution VI's US-recognized-borders default plus the boundary swap design (overview §Borders) for any future market that requires alternate boundaries.
 
 The owner submits via a personal Apple Developer Program account — the same enrollment path any individual developer uses.
 
@@ -869,20 +838,18 @@ Per overview §Domain and email, the production domain is `eafora.org`, register
 
 Per Constitution Principle VII, the iOS-only TDD-required surfaces are:
 
-- `FileSystemArtifactCache` contract: a `cache.put(...)` → `cache.get(...)` round-trip; assert byte-equal returns; assert a missing key returns `nil`; assert eviction removes the right versions; assert directory creation is idempotent. Runs against the iOS simulator's `Library/Caches/` via XCTest.
-- `URLSessionFetcher` error mapping: simulated 4xx / 5xx responses (via `URLProtocol` interception) map to thrown errors carrying the source URL and HTTP status in the message body.
 - MTKView ↔ Rust surface bridge: assert the surface's reported size matches the MTKView's `drawableSize`; assert resize events propagate. iOS simulator.
-- `EmbeddedBundle.swift` contract: assert the bundle reads from `Bundle.main`, parses the manifest, and constructs a `core::artifact::Bundle` synchronously without I/O on a background queue (the spec requires synchronous startup load).
+- `EmbeddedBundle.swift` contract: assert it locates the `embedded_artifacts` directory in `Bundle.main` and that `openFirstPaintBundle` opens a bundle from the path it passes.
 - Universal Link routing: assert that an incoming `https://eafora.org/region/usa` URL sets `selectedRegion` to `RegionCode("usa")` and the region-detail sheet presents with that region; assert the same from a fresh launch and from a backgrounded resume. Assert that `https://eafora.org/about` sets `settingsPresented = true` and the Settings sheet presents (About is the top section, visible without scrolling).
 
-Cross-platform surfaces (manifest parsing, SHA-256 verification, license-class authorization, FlatGeobuf hit testing) are tested in `core/` once and not re-tested per platform. See `client.md` §Testing strategy.
+Cross-platform surfaces (manifest parsing, SHA-256 verification, license-class authorization, FlatGeobuf hit testing, the `FilesystemArtifactCache` contract, and the loader's fetch and eviction behavior) are tested in `shared/` once and not re-tested per platform. See `client.md` §Testing strategy.
 
 XCUITest (UI automation) is **not** in scope for the foreseeable future (through v3+). The visual ground truth lives in `docs/design/stub-mobile.html`; parity is checked manually against the stubs before review submission. The cost of a full UI-automation suite (test maintenance, simulator flakiness, CI time) exceeds the value of automating what a manual check already catches at Eafora's surface area.
 
 ## Things to verify
 
-1. `uniffi-bindgen-swift` exact flag set — the per-artifact invocation pattern (separate calls for `--swift-sources`, `--headers`, `--xcframework --modulemap`) is documented as of UniFFI 0.29+; verify against the version pinned in `core/`'s Cargo.toml.
-2. **wgpu `Surface::from_metal_layer` (or current equivalent)** — verify against the wgpu version pinned in `core/`. The Metal-from-CAMetalLayer path is stable in wgpu but the function name has shifted across releases.
+1. `uniffi-bindgen-swift` exact flag set: settled in `scripts/build/build-ios-xcframework.sh` against the workspace's pinned `uniffi`: separate calls for `--swift-sources`, `--headers`, and `--modulemap --module-name eafora_iosFFI --modulemap-filename module.modulemap`, without `--xcframework`.
+2. **wgpu surface creation from a `CAMetalLayer`**: settled in `shared/src/render/surface.rs`, which builds the surface target from `WindowHandle` and calls `Instance::create_surface_unsafe` against the wgpu version pinned in the workspace `Cargo.toml`.
 3. **MTKView `isPaused` + `setNeedsDisplay()` semantics** — confirm against current MTKView docs that this combination drives the on-demand-only render loop without periodic GPU wakeups.
 4. **`xcodebuild -create-xcframework` flag form** — the `-library` + `-headers` repetition for multiple slices has been stable since 2020 but is worth a spot-check against current Xcode docs.
 5. `xcodebuild -exportArchive` direct-upload flow — verify `ExportOptions.plist`'s `destination = upload` key + the `-authenticationKey*` flag spellings against the Xcode version pinned in CI. The two-call chain (archive → exportArchive-with-upload) replaces the older three-call chain (archive → exportArchive → altool); spot-check the modern shape works end-to-end against the current Xcode before relying on it. Fallback if it doesn't: separate `xcodebuild -exportArchive` (export only) + `xcrun altool --upload-package`, even though `altool` is deprecated.
@@ -890,7 +857,7 @@ XCUITest (UI automation) is **not** in scope for the foreseeable future (through
 
 ## Follow-up work
 
-- First `/speckit.specify` feature spec for the iOS client: see `docs/task-order.md` §Sequence step 4. The implementation feature lands the Xcode project, the xcframework build pipeline, the SwiftUI shell with `MapView` + `RegionDetailView`, the file-system cache adapter, and the in-bundle embedded artifact loader — enough to render the static-stub-equivalent of `docs/design/stub-mobile.html` against real data on the iOS simulator.
+- The iOS client feature (`specs/004-ios-client/`) has landed the `ios` crate and the xcframework build pipeline; Phase A lands the Xcode project, the SwiftUI shell with `MapView` + `RegionDetailView`, the cache-directory setup, and the embedded artifact location, enough to render the static-stub-equivalent of `docs/design/stub-mobile.html` against real data on the iOS simulator.
 - Initial Apple Developer Program enrollment is a prerequisite. TestFlight internal testing can begin as soon as enrollment completes; external testing follows after a beta review.
 
 Deferred-but-not-blocking iOS work lives in `docs/backlog.md` §Client (currently empty) once items earn deferral as concrete work.
