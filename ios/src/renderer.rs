@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::ffi::c_int;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -91,7 +92,7 @@ fn block_on_calling_thread<F: Future>(future: F) -> Result<F::Output, AppError> 
 
 fn require_main_thread() -> Result<(), AppError> {
     // Nonzero on the process's main thread.
-    let main_thread_flag: libc::c_int = unsafe { libc::pthread_main_np() };
+    let main_thread_flag: c_int = unsafe { libc::pthread_main_np() };
 
     if main_thread_flag == 0 {
         return Err(AppError::from("renderer functions must be called on the main thread".to_string()));
