@@ -105,6 +105,8 @@ fn is_main_thread() -> bool {
     main_thread_flag != 0
 }
 
+/// Runs `body` with the renderer, which a thread-local lends only within a closure. Requires the main thread and
+/// a created renderer.
 fn with_renderer(body: impl FnOnce(&mut Renderer) -> Result<(), AppError>) -> Result<(), AppError> {
     require_main_thread()?;
 
