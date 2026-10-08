@@ -210,7 +210,7 @@ A complete vertical slice with no licence exposure: 81 provinces against 81 seed
 - [ ] T065 `./scripts/test/test-shaders.sh` after any WGSL change; WGSL is validated at pipeline creation, not by `cargo build`.
 - [ ] T066 `./scripts/db/setup-test-db.sh` before the integration suites whenever a migration lands, or they run against a stale schema.
 - [ ] T067 The full sweep: `cargo test -p ingestion`, `cargo test -p shared`, `cargo test -p web --lib`, `cargo check -p web --lib --no-default-features --features hydrate --target wasm32-unknown-unknown`, `cargo check -p web --no-default-features --features ssr`.
-- [ ] T068 End to end: `./scripts/build/publish-web-local.sh --build`, then `./scripts/build/build-site.sh`, `./scripts/build/verify-site-tree.sh`, `./scripts/build/measure-site-budget.sh`. `build-site.sh` refuses while a dev server holds port 3000. A manifest schema bump makes the embedded re-sync mandatory, and older published versions become unopenable and log a parse warning per publish.
+- [ ] T068 End to end: `./scripts/build/publish-web-local.sh --build`, then `./scripts/build/build-site.sh`, `./scripts/build/verify-site-tree.sh`, `./scripts/build/measure-site-budget.sh`. `build-site.sh` refuses while a dev server holds the configured port. A manifest schema bump makes the embedded re-sync mandatory, and older published versions become unopenable and log a parse warning per publish.
 - [ ] T069 Look at it, on both backends. Check a level switch repaints, that ranks read against the right peer set, that the UK draws whole at 2024 and subdivided at 2015, and that no border shows a sliver where a subdivided country meets a whole one.
 
 ---
