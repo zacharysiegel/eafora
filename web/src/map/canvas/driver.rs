@@ -24,6 +24,7 @@ use crate::client::cache::OpfsArtifactCache;
 use crate::client::load;
 use crate::distribution;
 use crate::live_resolve;
+use crate::map::settings;
 
 use super::gesture::{Gesture, PointerRelease, PointerState, is_map_gesture_button};
 use super::{CellView, RankView, RegionDetail, RenderStatus, GlobalView, LegendView, SelectionView, SeriesPointView, SourceCellView, ViewControls};
@@ -748,7 +749,8 @@ async fn set_up_driver(canvas: HtmlCanvasElement, signals: DriverSignals) -> Res
         log::warn!("evicting old cached bundle versions failed [error={error}]");
     }
 
-    let frame_state: FrameState = FrameState::initial(&bundle, crate::map::settings::regions_expand_on_hover());
+    let hover_lift_enabled: bool = settings::regions_expand_on_hover();
+    let frame_state: FrameState = FrameState::initial(&bundle, hover_lift_enabled);
     let (bundle_sender, bundle_receiver): (watch::Sender<Arc<Bundle>>, watch::Receiver<Arc<Bundle>>) =
         watch::channel(Arc::new(bundle));
 
