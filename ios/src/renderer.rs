@@ -91,14 +91,18 @@ fn block_on_calling_thread<F: Future>(future: F) -> Result<F::Output, AppError> 
 }
 
 fn require_main_thread() -> Result<(), AppError> {
-    // Nonzero on the process's main thread.
-    let main_thread_flag: c_int = unsafe { libc::pthread_main_np() };
-
-    if main_thread_flag == 0 {
+    if !is_main_thread() {
         return Err(AppError::from("renderer functions must be called on the main thread".to_string()));
     }
 
     Ok(())
+}
+
+fn is_main_thread() -> bool {
+    // Nonzero on the process's main thread.
+    let main_thread_flag: c_int = unsafe { libc::pthread_main_np() };
+
+    main_thread_flag != 0
 }
 
 fn with_renderer(body: impl FnOnce(&mut Renderer) -> Result<(), AppError>) -> Result<(), AppError> {
