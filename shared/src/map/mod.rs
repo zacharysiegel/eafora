@@ -2,6 +2,7 @@ pub mod viewport_transition;
 pub mod color;
 pub mod frame_state;
 pub mod hit_test;
+pub mod home_view;
 pub mod projection;
 pub mod viewport;
 
@@ -19,6 +20,7 @@ pub use viewport_transition::*;
 pub use color::*;
 pub use frame_state::*;
 pub use hit_test::*;
+pub use home_view::*;
 pub use projection::*;
 pub use viewport::*;
 
