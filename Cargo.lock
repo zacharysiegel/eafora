@@ -4272,9 +4272,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "minimer"
-version = "2.1.0"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2578b45f1f6542abb224ec996be72a1b5b1ff78a23bbda079c9e89ee0e3fc599"
+checksum = "8ba9f008b21866fe72e152562f7c9ad26dd333144b7f324c551320822356555d"
 
 [[package]]
 name = "miniz_oxide"
