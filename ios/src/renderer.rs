@@ -3,7 +3,7 @@ use std::ffi::c_int;
 use std::future::Future;
 use std::sync::Arc;
 
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::{self, Runtime};
 use tokio::sync::watch;
 
 use shared::artifact::Bundle;
@@ -81,7 +81,7 @@ pub fn destroy_renderer() -> Result<(), FfiError> {
 
 /// Runs a future to completion on the calling thread.
 fn block_on_calling_thread<F: Future>(future: F) -> Result<F::Output, AppError> {
-    let built: Result<Runtime, std::io::Error> = Builder::new_current_thread().build();
+    let built: Result<Runtime, std::io::Error> = runtime::Builder::new_current_thread().build();
 
     let runtime: Runtime = built.map_err(|error| {
         AppError::from(format!("building the renderer setup runtime failed; [error={error}]"))
