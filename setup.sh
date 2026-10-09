@@ -26,6 +26,7 @@ function check_prerequisites {
     required_program "cargo"  "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
     required_program "dbmate" "brew install dbmate"
     required_program "cargo-leptos" "cargo install --locked cargo-leptos"
+    required_program "cargo-sweep" "cargo install --locked cargo-sweep"
 }
 check_prerequisites
 

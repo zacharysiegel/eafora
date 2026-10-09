@@ -100,6 +100,7 @@ It is equivalent to `cd shared && wasm-pack test --headless --chrome`.
   `scripts/git/pr-integrate.sh` flows wrap it.
 - `gh` — the GitHub CLI, used to open PRs (`gh pr create`). Install via
   https://cli.github.com.
+- `cargo-sweep` — `scripts/git/pr-integrate.sh` runs it through `scripts/build/sweep-target.sh` after every integration, deleting build artifacts no build has used for two weeks, because Cargo never deletes superseded ones and `target/` otherwise grows to hundreds of gigabytes. Install with `cargo install --locked cargo-sweep`.
 
 ## Spec-driven workflow (optional)
 

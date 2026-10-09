@@ -31,6 +31,8 @@
 #   7. Push master (`git push origin master`).
 #   8. Run `./scripts/git/cleanup-merged.sh <branch>` to delete the branch from
 #      origin, locally, and prune.
+#   9. Run `./scripts/build/sweep-target.sh` to delete build artifacts no recent build has used. A failed
+#      sweep warns and never fails the integration, which has already been pushed.
 
 set -euo pipefail
 
@@ -178,6 +180,14 @@ function main {
 
     echo ">>> Cleaning up '$BRANCH'"
     "$(dirname "$0")/cleanup-merged.sh" "$BRANCH"
+
+    echo ">>> Sweeping unused build artifacts"
+    local sweep_status=0
+    "$(dirname "$0")/../build/sweep-target.sh" || sweep_status=$?
+
+    if test "${sweep_status}" -ne 0; then
+        echo "warning: the target sweep failed; [status=${sweep_status}]" >&2
+    fi
 
     echo ">>> Done."
 }
