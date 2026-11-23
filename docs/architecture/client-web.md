@@ -408,7 +408,9 @@ The `artifacts/` directory exists so the same OPFS root can carry other Eafora d
 
 ### API usage
 
-`navigator.storage.getDirectory()` returns the OPFS root. The cache constructor walks down to `artifacts/`, creating the directory on first launch. Each `put` resolves to a `FileSystemFileHandle.createWritable()` on the main thread — async writes are supported there in every browser shipping OPFS. Each `get` resolves to a `FileSystemFileHandle.getFile()` followed by `Blob.arrayBuffer()`.
+`navigator.storage.getDirectory()` returns the OPFS root. Support is probed synchronously (`opfs::ensure_supported`, a `Reflect`-based check that the member exists and is callable) before the first call: a browser without it throws a `TypeError` from the call itself instead of rejecting a promise, and a throw escaping a wasm import never becomes an `Err` in Rust — the awaited future dies before any render status is set, leaving the loading overlay up indefinitely. The probe turns that absence into the `cache: opfs unsupported` error that selects the unsupported panel. The `persist()` and `estimate()` members are probed the same way and treated as optional: without them the cache skips the persistence request and the quota pre-check, and writes proceed until the browser rejects one.
+
+The cache constructor walks down to `artifacts/`, creating the directory on first launch. Each `put` resolves to a `FileSystemFileHandle.createWritable()` on the main thread — async writes are supported there in every browser shipping OPFS. Each `get` resolves to a `FileSystemFileHandle.getFile()` followed by `Blob.arrayBuffer()`.
 
 The `FileSystemSyncAccessHandle` API is **not** used by the main-thread cache adapter — it is Worker-only on every shipping browser today. It is reserved for the deferred Worker-based SQLite engine (§Threading model) where SQLite needs synchronous page reads against an OPFS-backed file.
 

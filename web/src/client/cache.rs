@@ -17,7 +17,7 @@ const ARTIFACTS_DIRECTORY: &str = "artifacts";
 pub struct OpfsArtifactCache;
 
 impl OpfsArtifactCache {
-    /// Older Safari has no OPFS, so its absence is the unsupported case.
+    /// A browser with no OPFS is the unsupported case.
     pub async fn create() -> Result<OpfsArtifactCache, AppErrorStatic> {
         let root: FileSystemDirectoryHandle = opfs::root()
             .await

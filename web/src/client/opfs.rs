@@ -1,4 +1,4 @@
-use js_sys::{ArrayBuffer, AsyncIterator, IteratorNext, Promise, Uint8Array};
+use js_sys::{ArrayBuffer, AsyncIterator, IteratorNext, Promise, Reflect, Uint8Array};
 use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
@@ -13,7 +13,40 @@ use crate::client::js;
 const ERROR_PREFIX_QUOTA_EXCEEDED: &str = "opfs: quota exceeded";
 const QUOTA_SAFETY_MARGIN_BYTES: f64 = 1_048_576.0; // 1 MB headroom left free on every write
 
+/// Fails when the browser has no OPFS at all. A browser missing `navigator.storage.getDirectory` throws
+/// from the call itself instead of returning a rejected promise, and that throw escapes the Rust future
+/// rather than becoming an `Err`, so the startup chain would never set a render status. Probing the API
+/// synchronously first turns the absence into an ordinary error the caller can map to the unsupported
+/// panel.
+pub fn ensure_supported() -> Result<(), AppErrorStatic> {
+    let window: web_sys::Window = js::get_window()?;
+    let navigator: web_sys::Navigator = window.navigator();
+
+    if !has_storage_function(&navigator, "getDirectory")? {
+        return Err(AppErrorStatic::from("navigator.storage.getDirectory is unavailable"));
+    }
+
+    Ok(())
+}
+
+/// `false` when `navigator.storage` is absent or lacks a callable member of that name. A bool rather than
+/// an error because the storage policy differs per member: the directory root is required, while
+/// persistence and quota estimation are advisory.
+fn has_storage_function(navigator: &web_sys::Navigator, name: &str) -> Result<bool, AppErrorStatic> {
+    let storage: JsValue = Reflect::get(navigator.as_ref(), &JsValue::from_str("storage")).map_err(js::error)?;
+
+    if !storage.is_object() {
+        return Ok(false);
+    }
+
+    let member: JsValue = Reflect::get(&storage, &JsValue::from_str(name)).map_err(js::error)?;
+
+    Ok(member.is_function())
+}
+
 pub async fn root() -> Result<FileSystemDirectoryHandle, AppErrorStatic> {
+    ensure_supported()?;
+
     let window: web_sys::Window = js::get_window()?;
 
     let directory_promise: Promise = window.navigator().storage().get_directory();
@@ -25,8 +58,14 @@ pub async fn root() -> Result<FileSystemDirectoryHandle, AppErrorStatic> {
 /// Requests persistent (non-evictable) storage; `Ok(true)` if granted, `Ok(false)` if denied.
 pub async fn request_persistence() -> Result<bool, AppErrorStatic> {
     let window: web_sys::Window = js::get_window()?;
+    let navigator: web_sys::Navigator = window.navigator();
 
-    let persist_promise: Promise = window.navigator().storage().persist().map_err(js::error)?;
+    // Advisory, so a browser shipping OPFS without `persist()` simply stays on best-effort storage.
+    if !has_storage_function(&navigator, "persist")? {
+        return Ok(false);
+    }
+
+    let persist_promise: Promise = navigator.storage().persist().map_err(js::error)?;
     let granted: JsValue = JsFuture::from(persist_promise).await.map_err(js::error)?;
     let granted: bool = granted.as_bool().unwrap_or(false);
     Ok(granted)
@@ -101,13 +140,19 @@ pub async fn list_directory_keys(handle: &FileSystemDirectoryHandle) -> Result<V
     Ok(key_strings)
 }
 
-pub async fn estimate() -> Result<StorageEstimate, AppErrorStatic> {
+/// `None` when the browser lacks `navigator.storage.estimate()`; the quota pre-check is best-effort.
+pub async fn estimate() -> Result<Option<StorageEstimate>, AppErrorStatic> {
     let window: web_sys::Window = js::get_window()?;
+    let navigator: web_sys::Navigator = window.navigator();
 
-    let estimate_promise: Promise = window.navigator().storage().estimate().map_err(js::error)?;
+    if !has_storage_function(&navigator, "estimate")? {
+        return Ok(None);
+    }
+
+    let estimate_promise: Promise = navigator.storage().estimate().map_err(js::error)?;
     let estimate_value: JsValue = JsFuture::from(estimate_promise).await.map_err(js::error)?;
 
-    Ok(estimate_value.unchecked_into::<StorageEstimate>())
+    Ok(Some(estimate_value.unchecked_into::<StorageEstimate>()))
 }
 
 pub async fn write_file(file_handle: &FileSystemFileHandle, bytes: &[u8]) -> Result<(), AppErrorStatic> {
@@ -129,7 +174,9 @@ pub async fn write_file(file_handle: &FileSystemFileHandle, bytes: &[u8]) -> Res
 /// bytes would leave less than the safety margin free. Not the sole guard: a missing estimate is treated
 /// permissively, and a true overflow still surfaces as a `QuotaExceededError` from the write itself.
 pub async fn check_quota(incoming_len: usize) -> Result<(), AppErrorStatic> {
-    let storage_estimate: StorageEstimate = estimate().await?;
+    let Some(storage_estimate): Option<StorageEstimate> = estimate().await? else {
+        return Ok(());
+    };
 
     let usage: f64 = storage_estimate.get_usage().unwrap_or(0.0);
     let quota: f64 = storage_estimate.get_quota().unwrap_or(f64::INFINITY);
@@ -160,6 +207,11 @@ fn write_error(error: JsValue) -> AppErrorStatic {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+    fn ensure_supported_accepts_a_browser_with_opfs() {
+        assert!(ensure_supported().is_ok());
+    }
 
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
     fn quota_allows_leaves_the_safety_margin_free() {
